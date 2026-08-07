@@ -1236,42 +1236,41 @@ public struct AssignmentCardRow: View {
             // Content Area (Tapping opens Assignment Details)
             Button(action: onEdit) {
                 VStack(alignment: .leading, spacing: 4) {
-                    if let course = assignment.course {
-                        let rawCode = course.courseCode?.trimmingCharacters(in: .whitespaces)
-                        let rawName = course.courseName.trimmingCharacters(in: .whitespaces)
-                        let displayCode = (rawCode != nil && !rawCode!.isEmpty && rawCode!.lowercased() != "course") ? rawCode! : rawName
-                        if !displayCode.isEmpty && displayCode.lowercased() != "unassigned" {
-                            HStack(spacing: 6) {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "book.fill")
-                                        .font(.system(size: 8, weight: .bold))
-                                    Text(displayCode.uppercased())
-                                        .font(.system(size: 9, weight: .bold))
+                    let displayCourseTitle: String = {
+                        if let course = assignment.course {
+                            let code = (course.courseCode ?? "").trimmingCharacters(in: .whitespaces)
+                            let name = course.courseName.trimmingCharacters(in: .whitespaces)
+                            if !code.isEmpty && code.lowercased() != "crs" && code.lowercased() != "course" {
+                                if !name.isEmpty {
+                                    let cleanCode = code.trimmingCharacters(in: .whitespaces)
+                                    let cleanName = name.trimmingCharacters(in: .whitespaces)
+                                    if cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
+                                        return cleanName
+                                    }
+                                    return "\(cleanCode) · \(cleanName)"
                                 }
-                                .foregroundColor(courseColor)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(courseColor.opacity(0.12))
-                                .cornerRadius(6)
+                                return code
                             }
+                            return name.isEmpty ? "COURSE" : name
                         }
-                    }
+                        return "COURSE"
+                    }()
 
-                    HStack(spacing: 5) {
-                        Image(systemName: "doc.text.fill")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                        Text(assignment.title)
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(assignment.isCompleted ? Color(red: 0.35, green: 0.42, blue: 0.52) : Color(red: 0.08, green: 0.12, blue: 0.22))
-                            .strikethrough(assignment.isCompleted)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(2)
-                    }
-
-                    Text(formattedDueDate(assignment.dueDate))
+                    Text(displayCourseTitle)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                        .foregroundColor(courseColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(courseColor.opacity(0.15))
+                        .cornerRadius(8)
+                        .lineLimit(1)
+
+                    Text(assignment.title)
+                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                        .foregroundColor(assignment.isCompleted ? Color(red: 0.35, green: 0.42, blue: 0.52) : Color(red: 0.08, green: 0.12, blue: 0.22))
+                        .strikethrough(assignment.isCompleted)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(3)
                 }
             }
             .buttonStyle(.plain)

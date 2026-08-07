@@ -308,8 +308,8 @@ public struct WeeklyDashboardView: View {
                                             }
                                             .transaction { $0.animation = nil }
 
-                                            // Item Count Display under Week Circle (Replaces color dots per user directive)
-                                            Text(weekCount == 1 ? "1 Item" : "\(weekCount) Items")
+                                            // Item Count Display under Week Circle (Static 'Items' per user directive)
+                                            Text("Items")
                                                 .font(.system(size: 11, weight: .bold, design: .rounded))
                                                 .foregroundColor(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
                                                 .frame(height: 16)
