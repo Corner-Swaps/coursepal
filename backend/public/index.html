@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ClassPal — Your academic syllabus tracker. Manage weekly readings, assignments, and course materials in one place.">
+    <meta name="theme-color" content="#3b82f6">
+    <title>ClassPal — Academic Tracking Application</title>
+    <!-- Preload critical fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Favicon and App Icons -->
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container" role="main" aria-label="ClassPal App">
+        <!-- Dynamic Island -->
+        <div class="dynamic-island" aria-hidden="true">
+            <div class="dynamic-camera"></div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="mobile-top-bar" aria-hidden="true">
+            <span class="top-time" id="live-clock">9:41</span>
+            <div class="top-icons">
+                <i class="fa-solid fa-signal" aria-hidden="true"></i>
+                <i class="fa-solid fa-wifi" aria-hidden="true"></i>
+                <i class="fa-solid fa-battery-full" aria-hidden="true"></i>
+            </div>
+        </div>
+
+        <!-- Main Stream Canvas -->
+        <main class="stream-container">
+
+            <!-- TAB 1: READINGS -->
+            <section id="tab-readings" class="tab-page active" role="tabpanel" aria-label="Readings">
+
+                <!-- Page Header -->
+                <div class="readings-page-header">
+                    <div class="readings-header-left">
+                        <h1 class="readings-page-title" id="readings-dynamic-title">All Weeks</h1>
+                        <span class="readings-page-subtitle" id="readings-count-label" aria-live="polite">0 readings scheduled</span>
+                    </div>
+                </div>
+
+                <!-- Week Filter Quick Row -->
+                <div class="week-filter-scroll-row" id="week-filter-bar" role="group" aria-label="Filter by week"></div>
+
+                <!-- Share & Trash Full-Width Button Row (matching native iOS layout) -->
+                <div class="action-buttons-row">
+                    <button class="action-btn share-btn" id="btn-share-schedule" aria-label="Share schedule">
+                        <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+                        <span>Share Schedule</span>
+                    </button>
+                    <button class="action-btn trash-btn" id="btn-open-trash" aria-label="Open trash folder">
+                        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                        <span>Trash</span>
+                    </button>
+                </div>
+
+                <!-- Search Bar -->
+                <div class="search-bar-wrapper">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <input
+                        type="search"
+                        id="readings-search"
+                        class="search-input"
+                        placeholder="Search readings…"
+                        aria-label="Search readings"
+                        autocomplete="off"
+                    >
+                </div>
+
+                <!-- Readings Cards List -->
+                <div id="readings-container" aria-live="polite" aria-label="Readings list"></div>
+            </section>
+
+            <!-- TAB 2: ASSIGNMENTS -->
+            <section id="tab-assignments" class="tab-page" role="tabpanel" aria-label="Assignments">
+
+                <!-- Page Header -->
+                <div class="readings-page-header">
+                    <div class="readings-header-left">
+                        <h1 class="readings-page-title">Assignments</h1>
+                        <span class="readings-page-subtitle" id="assignments-count-label" aria-live="polite">0 due this term</span>
+                    </div>
+                    <div class="readings-header-actions">
+                        <button class="readings-icon-action share-action" id="btn-share-assignments" aria-label="Share assignments">
+                            <i class="fa-solid fa-square-share-nodes" aria-hidden="true"></i>
+                            <span>Share</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Calendar Card -->
+                <div class="calendar-card-reference" role="region" aria-label="Assignment calendar">
+                    <div class="month-nav-header-top">
+                        <button class="month-arrow-btn" id="btn-prev-month" aria-label="Previous month">
+                            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                        </button>
+                        <span class="hero-month-year" id="hero-month-label" aria-live="polite">Aug 2026</span>
+                        <button class="month-arrow-btn" id="btn-next-month" aria-label="Next month">
+                            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="calendar-card-main-row">
+                        <div class="hero-date-left" aria-live="polite">
+                            <span class="hero-day-name" id="hero-day-name-label">Tuesday</span>
+                            <span class="hero-day-number" id="hero-day-num-label">4</span>
+                        </div>
+                        <div class="mini-month-right">
+                            <div class="mini-month-header" aria-hidden="true">
+                                <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                            </div>
+                            <div class="mini-month-days" id="mini-month-days-container" role="grid" aria-label="Calendar days"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sort Toggle -->
+                <div class="sort-toggle-row" role="group" aria-label="Sort assignments by">
+                    <button class="sort-toggle-btn active" id="sort-by-date" aria-pressed="true">Due Date</button>
+                    <button class="sort-toggle-btn" id="sort-by-course" aria-pressed="false">Course</button>
+                    <button class="sort-toggle-btn" id="sort-by-calendar-date" aria-pressed="false">Calendar</button>
+                </div>
+
+                <!-- Search Bar -->
+                <div class="search-bar-wrapper">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <input
+                        type="search"
+                        id="assignments-search"
+                        class="search-input"
+                        placeholder="Search assignments…"
+                        aria-label="Search assignments"
+                        autocomplete="off"
+                    >
+                </div>
+
+                <!-- Assignment Cards -->
+                <div id="assignments-container" aria-live="polite" aria-label="Assignments list"></div>
+            </section>
+
+            <!-- TAB 3: SYLLABUS -->
+            <section id="tab-syllabus" class="tab-page" role="tabpanel" aria-label="Syllabus">
+                <div class="readings-page-header">
+                    <div class="readings-header-left">
+                        <h1 class="readings-page-title">Syllabus</h1>
+                        <span class="readings-page-subtitle" id="syllabus-count-label" aria-live="polite">0 courses</span>
+                    </div>
+                </div>
+                <div id="syllabi-container" aria-live="polite" aria-label="Syllabi list"></div>
+            </section>
+
+            <!-- TAB 4: SHARE -->
+            <section id="tab-vault" class="tab-page" role="tabpanel" aria-label="Share Center">
+                <div class="readings-page-header">
+                    <div class="readings-header-left">
+                        <h1 class="readings-page-title">Share</h1>
+                        <span class="readings-page-subtitle" id="vault-count-label" aria-live="polite">Share your course syllabi, schedules, and materials</span>
+                    </div>
+                </div>
+                <div id="vault-container" aria-live="polite" aria-label="Share center items"></div>
+            </section>
+        </main>
+
+        <!-- Bottom Nav Bar -->
+        <nav class="bottom-nav-bar-uniform" role="tablist" aria-label="Main navigation">
+            <button class="nav-item-uniform active" data-tab="readings" role="tab" aria-selected="true" aria-controls="tab-readings">
+                <i class="fa-solid fa-book" aria-hidden="true"></i>
+                <span>Readings</span>
+            </button>
+
+            <button class="nav-item-uniform" data-tab="assignments" role="tab" aria-selected="false" aria-controls="tab-assignments">
+                <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+                <span>Assignments</span>
+            </button>
+
+            <button class="nav-item-uniform add-center-btn" id="btn-menu-add-item" aria-label="Add new item" aria-haspopup="dialog">
+                <div class="add-plus-circle" aria-hidden="true">
+                    <i class="fa-solid fa-plus"></i>
+                </div>
+            </button>
+
+            <button class="nav-item-uniform" data-tab="syllabus" role="tab" aria-selected="false" aria-controls="tab-syllabus">
+                <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+                <span>Syllabus</span>
+            </button>
+
+            <button class="nav-item-uniform" data-tab="vault" role="tab" aria-selected="false" aria-controls="tab-vault">
+                <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+                <span>Share</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- MODAL: ADD CHOICE -->
+    <div class="modal-overlay hidden" id="modal-add-choice" role="dialog" aria-modal="true" aria-labelledby="modal-add-choice-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-add-choice-title">Add New Item</h3>
+                <button class="close-btn" id="btn-close-choice" aria-label="Close">&times;</button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <button class="menu-choice-btn" id="choice-add-task">
+                    <div class="choice-icon-bubble bg-blue"><i class="fa-solid fa-plus" aria-hidden="true"></i></div>
+                    <div style="text-align:left;">
+                        <strong>Add Assignment or Task</strong>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Add homework, reading, or lab item</div>
+                    </div>
+                </button>
+                <button class="menu-choice-btn" id="choice-add-course">
+                    <div class="choice-icon-bubble bg-purple"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i></div>
+                    <div style="text-align:left;">
+                        <strong>Create New Course</strong>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Create course with brand color &amp; syllabus</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: READING INFO -->
+    <div class="modal-overlay hidden" id="modal-reading-info" role="dialog" aria-modal="true" aria-labelledby="info-reading-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <span class="course-code-tag" id="info-course-badge">CS 202</span>
+                    <h3 id="info-reading-title" style="margin-top:6px;">Reading Title</h3>
+                </div>
+                <button class="close-btn" id="btn-close-reading-info" aria-label="Close">&times;</button>
+            </div>
+            <div style="margin-top:10px;">
+                <h4 style="font-size:0.85rem; font-weight:700; color:var(--text-dark);">Summary</h4>
+                <p id="info-reading-summary" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px; line-height:1.5;"></p>
+                <h4 style="font-size:0.85rem; font-weight:700; color:var(--text-dark); margin-top:14px;">Key Takeaways</h4>
+                <p id="info-reading-takeaways" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px; line-height:1.5; white-space:pre-line;"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: COURSE DETAIL -->
+    <div class="modal-overlay hidden" id="modal-course-detail" role="dialog" aria-modal="true" aria-labelledby="course-detail-name">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <span class="course-code-tag" id="course-detail-code">CS 202</span>
+                    <h3 id="course-detail-name" style="margin-top:6px;">Data Structures &amp; Algorithms</h3>
+                </div>
+                <button class="close-btn" id="btn-close-course-detail" aria-label="Close">&times;</button>
+            </div>
+            <div style="margin-top:10px;">
+                <div class="sharing-code-box">
+                    <span>PEER CODE: <strong id="course-detail-share-code">CS202-984</strong></span>
+                    <button class="btn-copy-sm" id="btn-copy-course-code">Copy</button>
+                </div>
+                <h4 style="font-size:0.85rem; font-weight:700; margin-top:14px;">Course Readings</h4>
+                <div id="course-detail-readings" style="display:flex; flex-direction:column; gap:6px; margin-top:6px;"></div>
+                <h4 style="font-size:0.85rem; font-weight:700; margin-top:14px;">Course Assignments</h4>
+                <div id="course-detail-assignments" style="display:flex; flex-direction:column; gap:6px; margin-top:6px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD TASK FORM -->
+    <div class="modal-overlay hidden" id="modal-add-task-form" role="dialog" aria-modal="true" aria-labelledby="modal-add-task-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-add-task-title">Add Item or Assignment</h3>
+                <button class="close-btn" id="btn-close-task-form" aria-label="Close">&times;</button>
+            </div>
+            <input type="text" id="task-title-input" class="modal-input" placeholder="Item Title (e.g. Problem Set #5)" autocomplete="off" aria-label="Item title">
+            <div class="input-error-msg" id="task-title-error">Please enter a title.</div>
+            <select id="task-kind-select" class="modal-input" aria-label="Item type">
+                <option value="assignment">Assignment / Homework</option>
+                <option value="reading">Weekly Reading</option>
+            </select>
+            <select id="task-course-select" class="modal-input" aria-label="Course"></select>
+            <input type="number" id="task-week-input" class="modal-input" placeholder="Week Number (1–16)" min="1" max="16" value="1" aria-label="Week number">
+            <input type="text" id="task-duedate-input" class="modal-input" placeholder="Due Date (e.g. Aug 25, 2026)" autocomplete="off" aria-label="Due date">
+            <input type="text" id="task-points-input" class="modal-input" placeholder="Points (e.g. 100 pts)" autocomplete="off" aria-label="Points">
+            <button class="btn-coral" id="btn-submit-new-task">Save Item</button>
+        </div>
+    </div>
+
+    <!-- MODAL: UPLOAD DOC FORM -->
+    <div class="modal-overlay hidden" id="modal-add-doc-form" role="dialog" aria-modal="true" aria-labelledby="modal-add-doc-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-add-doc-title">Upload Class Material</h3>
+                <button class="close-btn" id="btn-close-doc-form" aria-label="Close">&times;</button>
+            </div>
+            <input type="file" id="doc-file-input" class="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" aria-label="Select file">
+            <div id="doc-file-dropzone" style="border: 2px dashed var(--accent-blue); border-radius: 16px; padding: 20px; text-align: center; background: var(--accent-blue-subtle); cursor: pointer; margin-bottom: 12px; transition: all 0.2s ease;" role="button" tabindex="0" aria-label="Click to pick file">
+                <i class="fa-solid fa-file-arrow-up" style="font-size: 1.8rem; color: var(--accent-blue); margin-bottom: 6px;" aria-hidden="true"></i>
+                <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-dark);" id="dropzone-text">Click to Pick File</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">PDF, DOCX, TXT, PNG, JPG</div>
+            </div>
+            <input type="text" id="doc-title-input" class="modal-input" placeholder="Material Name" autocomplete="off" aria-label="Document name">
+            <select id="doc-category-select" class="modal-input" aria-label="Document category">
+                <option value="Prompt PDFs">Prompt PDFs / Syllabi</option>
+                <option value="Homework">Homework Sheet</option>
+                <option value="Slides">Lecture Slides</option>
+                <option value="Scans">Image Scans</option>
+            </select>
+            <button class="btn-coral" id="btn-submit-new-doc">Upload &amp; Save</button>
+        </div>
+    </div>
+
+    <!-- MODAL: DOC VIEWER -->
+    <div class="modal-overlay hidden" id="modal-doc-viewer" role="dialog" aria-modal="true" aria-labelledby="viewer-doc-title">
+        <div class="modal-card" style="width:88%; max-width:330px; max-height:75vh; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div class="modal-header">
+                <div>
+                    <span class="course-code-tag" id="viewer-doc-category">PDF Document</span>
+                    <h3 id="viewer-doc-title" style="margin-top:4px; font-size:0.95rem;">Document Preview</h3>
+                </div>
+                <button class="close-btn" id="btn-close-doc-viewer" aria-label="Close">&times;</button>
+            </div>
+            <div id="viewer-doc-content" class="viewer-content" style="flex:1; overflow-y:auto; background:var(--bg-canvas); border-radius:12px; padding:12px; font-size:0.8rem; line-height:1.5; color:var(--text-dark); margin-top:8px; border:1px solid var(--border-color); white-space:pre-wrap;"></div>
+            <div style="margin-top:12px;">
+                <button class="btn-coral" id="btn-download-viewer-doc">View Full Document</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: FULL DOC READER -->
+    <div class="modal-overlay hidden" id="modal-full-doc-reader" role="dialog" aria-modal="true" aria-labelledby="full-reader-title">
+        <div class="modal-card" style="width:88%; max-width:330px; max-height:75vh; display:flex; flex-direction:column; padding:16px; box-sizing:border-box;">
+            <div class="modal-header">
+                <div>
+                    <span class="course-code-tag" id="full-reader-badge">ORIGINAL DOCUMENT</span>
+                    <h3 id="full-reader-title" style="font-size:0.95rem; margin-top:4px;">Full Document View</h3>
+                </div>
+                <button class="close-btn" id="btn-close-full-reader" aria-label="Close">&times;</button>
+            </div>
+            <div id="full-reader-body" style="flex:1; overflow-y:auto; background:#fff; border-radius:14px; padding:12px; border:1px solid var(--border-color); font-family:monospace; font-size:0.78rem; line-height:1.5; color:var(--text-dark); margin-top:8px; white-space:pre-wrap;"></div>
+            <div style="margin-top:12px;">
+                <button class="btn-coral" id="btn-copy-full-text">Copy Text</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: EDIT ASSIGNMENT -->
+    <div class="modal-overlay hidden" id="modal-edit-assignment" role="dialog" aria-modal="true" aria-labelledby="modal-edit-assignment-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-edit-assignment-title">Edit Assignment</h3>
+                <button class="close-btn" id="btn-close-edit-assignment" aria-label="Close">&times;</button>
+            </div>
+            <input type="hidden" id="edit-assignment-id">
+            <input type="text" id="edit-assignment-title" class="modal-input" placeholder="Assignment Title" aria-label="Assignment title" autocomplete="off">
+            <input type="text" id="edit-assignment-duedate" class="modal-input" placeholder="Due Date (e.g. Aug 20, 2026)" aria-label="Due date" autocomplete="off">
+            <input type="text" id="edit-assignment-points" class="modal-input" placeholder="Points (e.g. 100 pts)" aria-label="Points" autocomplete="off">
+            <button class="btn-coral" id="btn-save-edit-assignment">Save Changes</button>
+        </div>
+    </div>
+
+    <!-- MODAL: CREATE COURSE -->
+    <div class="modal-overlay hidden" id="modal-add-course-form" role="dialog" aria-modal="true" aria-labelledby="modal-create-course-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-create-course-title">Create New Course</h3>
+                <button class="close-btn" id="btn-close-course-form" aria-label="Close">&times;</button>
+            </div>
+            <input type="text" id="new-course-code-input" class="modal-input" placeholder="Course Code (e.g. PHYS 150)" autocomplete="off" aria-label="Course code">
+            <div class="input-error-msg" id="course-code-error">Please enter a course code.</div>
+            <input type="text" id="new-course-name-input" class="modal-input" placeholder="Course Name" autocomplete="off" aria-label="Course name">
+            
+            <label style="font-size:0.75rem; font-weight:700; color:var(--text-muted); margin-top:6px; display:block;">Course Brand Color</label>
+            <select id="new-course-color-input" class="modal-input" aria-label="Course color theme">
+                <option value="#2563EB">Blue Theme</option>
+                <option value="#DC2626">Red Theme</option>
+                <option value="#D97706">Amber Theme</option>
+                <option value="#059669">Green Theme</option>
+                <option value="#8B5CF6">Purple Theme</option>
+                <option value="#EC4899">Pink Theme</option>
+                <option value="#06B6D4">Teal Theme</option>
+                <option value="#4F46E5">Indigo Theme</option>
+            </select>
+
+            <label style="font-size:0.75rem; font-weight:700; color:var(--text-muted); margin-top:8px; display:block;">Syllabus &amp; Course Materials</label>
+            <div style="display:flex; gap:6px; margin-bottom:8px;">
+                <input type="file" id="course-doc-file-input" class="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
+                <button class="menu-choice-btn" id="btn-course-upload-pdf" type="button" style="padding:8px 10px; font-size:0.75rem;">
+                    <i class="fa-solid fa-file-arrow-up" style="color:var(--accent-blue);"></i> <span id="course-pdf-status">Attach PDF</span>
+                </button>
+                <button class="menu-choice-btn" id="btn-course-scan-camera" type="button" style="padding:8px 10px; font-size:0.75rem;">
+                    <i class="fa-solid fa-camera" style="color:var(--accent-green);"></i> <span>Scan Camera</span>
+                </button>
+            </div>
+
+            <label style="font-size:0.75rem; font-weight:700; color:var(--text-muted); display:block;">Copy &amp; Paste Syllabus Section</label>
+            <textarea id="new-course-syllabus-text" class="modal-input" placeholder="Copy &amp; paste course schedule or syllabus text here..." style="min-height:70px; resize:vertical; font-family:var(--font-body); font-size:0.78rem; margin-bottom:10px;"></textarea>
+
+            <button class="btn-coral" id="btn-submit-new-course">Create Course</button>
+        </div>
+    </div>
+
+    <!-- MODAL: TRASH -->
+    <div class="modal-overlay hidden" id="modal-trash" role="dialog" aria-modal="true" aria-labelledby="modal-trash-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-trash-title">Trash Folder</h3>
+                <button class="close-btn" id="btn-close-trash" aria-label="Close">&times;</button>
+            </div>
+            <div id="trash-items-list" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast-notification" class="toast-notification hidden" role="status" aria-live="polite">Notification</div>
+
+    <script src="app.js"></script>
+</body>
+</html>

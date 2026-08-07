@@ -1,0 +1,25 @@
+CS 202 Data Structures and Algorithms
+Fall 2026 Course Schedule & Syllabus
+Instructor: Dr. Robert Vance
+Email: rvance@university.edu
+Office Hours: Mon/Wed 2:00 PM - 4:00 PM
+
+COURSE OVERVIEW:
+This course covers fundamental data structures including arrays, linked lists, stacks, queues, binary trees, AVL trees, graphs, and hash tables.
+
+WEEKLY SCHEDULE & READINGS:
+Week 1: Introduction to Memory Allocation, Stack vs Heap, and Pointers.
+Reading: Chapter 1 - Memory Foundations & Pointer Arithmetic.
+Assignment: Problem Set #1 - Pointer Operations (Due Sept 12).
+
+Week 2: Linked Lists and Doubly Linked Lists.
+Reading: Chapter 2 - Node Structures and Pointer Updates.
+Assignment: Lab #1 - Singly vs Doubly Linked Lists (Due Sept 19).
+
+Week 3: Binary Search Trees and AVL Rotations.
+Reading: Chapter 3 - Tree Traversal and Height Balance.
+Assignment: Problem Set #2 - AVL Tree Rotations (Due Sept 26).
+
+Week 4: Graph Algorithms, Depth-First Search (DFS) and Breadth-First Search (BFS).
+Reading: Chapter 4 - Graph Representations and Matrix Adjacency.
+Assignment: Midterm Exam Project - Graph Traversals (Due Oct 10).
