@@ -303,15 +303,15 @@ public struct AddTaskModalView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                // Section 1: Item Type & Primary Details
-                Section("Details") {
+                // Section 1: Item Type & Primary Title (No duplicate inner section header)
+                Section {
                     Picker("Item Type", selection: $itemCategory) {
                         Text("Assignment").tag(0)
                         Text("Reading").tag(1)
                     }
                     .pickerStyle(.segmented)
 
-                    TextField("Title (e.g. Research Study Design)", text: $taskTitle)
+                    TextField(itemCategory == 1 ? "Reading Title (e.g. Chapter 1 Sexuality)" : "Assignment Title (e.g. Research Study Design)", text: $taskTitle)
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
 
                     if !courses.isEmpty {
@@ -328,8 +328,8 @@ public struct AddTaskModalView: View {
                     }
                 }
 
-                // Section 2: Week, Points & Grade Weight Pickers (Independently Decoupled)
-                Section("Week, Points & Grade Weight") {
+                // Section 2: Week & Due Date Schedule
+                Section("Schedule") {
                     Picker("Week", selection: $weekNumber) {
                         ForEach(1...20, id: \.self) { w in
                             Text("Week \(w)").tag(w)
@@ -344,25 +344,6 @@ public struct AddTaskModalView: View {
                         isSyncing = false
                     }
 
-                    Picker("Points Possible", selection: $pointsPossibleVal) {
-                        ForEach(Array(stride(from: 0, through: 500, by: 5)), id: \.self) { pts in
-                            Text("\(pts) Points").tag(pts)
-                        }
-                    }
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .pickerStyle(.menu)
-
-                    Picker("Grade Weight", selection: $gradeWeightPercent) {
-                        ForEach(0...100, id: \.self) { pct in
-                            Text("\(pct)%").tag(pct)
-                        }
-                    }
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .pickerStyle(.menu)
-                }
-
-                // Section 3: Due Date Calendar & Time Selection
-                Section("Due Date & Time") {
                     DatePicker("Due Date", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .onChange(of: dueDate) { _, newDate in
@@ -373,42 +354,81 @@ public struct AddTaskModalView: View {
                         }
                 }
 
-                // Section 4: Resource Link Selection
-                Section("Resource Link") {
-                    TextField("Paste video or article URL...", text: $videoUrlText)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-
-                    if URLHelper.isValidURL(videoUrlText), let url = URLHelper.formatURL(videoUrlText) {
-                        Link(destination: url) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "link.circle.fill")
-                                    .font(.system(size: 12, weight: .bold))
-                                Text(url.absoluteString)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .lineLimit(1)
-                                Image(systemName: "arrow.up.right.square")
-                                    .font(.system(size: 11, weight: .bold))
+                // Section 3: Dynamic Fields Relevant to Item Type
+                if itemCategory == 0 {
+                    // Assignment Fields: Points & Grade Weight
+                    Section("Points & Grade Weight") {
+                        Picker("Points Possible", selection: $pointsPossibleVal) {
+                            ForEach(Array(stride(from: 0, through: 500, by: 5)), id: \.self) { pts in
+                                Text("\(pts) Points").tag(pts)
                             }
-                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                            .padding(.vertical, 4)
                         }
-                        .buttonStyle(.plain)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .pickerStyle(.menu)
+
+                        Picker("Grade Weight", selection: $gradeWeightPercent) {
+                            ForEach(0...100, id: \.self) { pct in
+                                Text("\(pct)%").tag(pct)
+                            }
+                        }
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .pickerStyle(.menu)
+                    }
+                } else {
+                    // Reading Fields: Media Type & Link
+                    Section("Media & Link") {
+                        Picker("Media Type", selection: $selectedMediaType) {
+                            Text("Textbook").tag(MediaType.textbook)
+                            Text("Video").tag(MediaType.video)
+                            Text("Podcast").tag(MediaType.podcast)
+                            Text("Article / Paper").tag(MediaType.article)
+                        }
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .pickerStyle(.menu)
+
+                        TextField("Paste video or article URL (optional)...", text: $videoUrlText)
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+
+                        if URLHelper.isValidURL(videoUrlText), let url = URLHelper.formatURL(videoUrlText) {
+                            Link(destination: url) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "link.circle.fill")
+                                        .font(.system(size: 12, weight: .bold))
+                                    Text(url.absoluteString)
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .lineLimit(1)
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.system(size: 11, weight: .bold))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
 
-                // Section 5: Notes Section (Double Size Input Pill)
+                // Section 4: Notes Section (Double Size Input Pill)
                 Section("Notes") {
                     TextField("Instructions & Notes...", text: $notesText, axis: .vertical)
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .lineLimit(6...14)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color(red: 0.95, green: 0.96, blue: 0.98))
+            .scrollDismissesKeyboard(.immediately)
             .onAppear {
                 if selectedCourse == nil {
                     selectedCourse = courses.first
                 }
             }
             .navigationTitle("Details")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(red: 0.95, green: 0.96, blue: 0.98), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -417,6 +437,7 @@ public struct AddTaskModalView: View {
                     Button("Save") {
                         saveTask()
                     }
+                    .bold()
                     .disabled(taskTitle.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -682,6 +703,8 @@ public struct UploadDocModalView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 4)
 
+                let totalCount = vaultDocs.isEmpty ? 3 : 4
+
                 VStack(spacing: 14) {
                     // Choice 1: Select PDF / Documents (Supports Multiple Selection)
                     Button(action: { showingFileImporter = true }) {
@@ -699,7 +722,7 @@ public struct UploadDocModalView: View {
                                 Text("Select Multiple PDF Files")
                                     .font(.system(size: 14.5, weight: .bold))
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                Text("Select 1, 2, or more PDFs simultaneously")
+                                Text("1 of \(totalCount) • Select 1, 2, or more PDFs simultaneously")
                                     .font(.system(size: 12))
                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                             }
@@ -722,7 +745,54 @@ public struct UploadDocModalView: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Choice 2: Scan Document with Camera
+                    // Choice 2 (Only if Vault Documents exist): Choose Saved Document from Vault
+                    if !vaultDocs.isEmpty {
+                        Button(action: { showingVaultSelector = true }) {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color(red: 0.58, green: 0.32, blue: 0.92))
+                                        .frame(width: 40, height: 40)
+                                    Image(systemName: "folder.fill.badge.plus")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundColor(.white)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text("Choose Saved Document from Vault")
+                                            .font(.system(size: 14.5, weight: .bold))
+                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                        Text("(\(vaultDocs.count))")
+                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.58, green: 0.32, blue: 0.92))
+                                    }
+                                    Text("2 of 4 • Select from \(vaultDocs.count) saved documents in repository")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.white)
+                            .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                            )
+                            .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // Choice 3 (or 2 if no vault docs): Scan Document with Camera
+                    let cameraChoiceNum = vaultDocs.isEmpty ? 2 : 3
                     Button(action: { showingCameraScanner = true }) {
                         HStack(spacing: 14) {
                             ZStack {
@@ -738,46 +808,7 @@ public struct UploadDocModalView: View {
                                 Text("Scan with Camera")
                                     .font(.system(size: 14.5, weight: .bold))
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                Text("Snap photos of physical document or syllabus")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        }
-                        .padding(14)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.white)
-                        .cornerRadius(16)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-
-                    // Choice 4: Choose Saved Document from Vault
-                    Button(action: { showingVaultSelector = true }) {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color(red: 0.58, green: 0.32, blue: 0.92))
-                                    .frame(width: 40, height: 40)
-                                Image(systemName: "folder.fill.badge.plus")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Choose Saved Document from Vault")
-                                    .font(.system(size: 14.5, weight: .bold))
-                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                Text("4 of 4 • Select an existing PDF saved in repository")
+                                Text("\(cameraChoiceNum) of \(totalCount) • Snap photos of physical document or syllabus")
                                     .font(.system(size: 12))
                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                             }
@@ -935,22 +966,9 @@ public struct UploadDocModalView: View {
                 let ext = selectedUrl.pathExtension.uppercased()
                 let fileType = ext == "PDF" ? "PDF" : (ext.isEmpty ? "Document" : ext)
                 let textToParse = (contentText != nil && !contentText!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ? contentText! : selectedUrl.lastPathComponent
-
-                let dto = LocalSyllabusParser.shared.parseText(textToParse)
+                let dto = (try? await APIService.shared.parseSyllabusText(textToParse)) ?? LocalSyllabusParser.shared.parseText(textToParse)
                 CourseImporter.importDTO(dto, into: modelContext)
-
                 let createdCourse = courses.first(where: { $0.courseCode == dto.courseCode || $0.courseName == dto.courseName }) ?? courses.first
-
-                let vaultDoc = VaultDocument(
-                    title: selectedUrl.lastPathComponent,
-                    category: "Syllabi",
-                    fileSize: fileSizeLabel,
-                    fileType: fileType,
-                    courseCode: createdCourse?.courseCode ?? dto.courseCode,
-                    fileContent: contentText,
-                    rawFileData: fileData
-                )
-                modelContext.insert(vaultDoc)
 
                 let syllabusDoc = SyllabusDocument(
                     docTitle: "\(dto.courseCode ?? "CRS"): \(dto.courseName) Syllabus",
@@ -1038,6 +1056,7 @@ public struct AddCourseModalView: View {
 
     public var onCourseCreated: (() -> Void)? = nil
 
+    @Query private var vaultDocs: [VaultDocument]
     @State private var courseCode: String = ""
     @State private var courseName: String = ""
     @State private var courseDescription: String = ""
@@ -1049,7 +1068,12 @@ public struct AddCourseModalView: View {
 
     @State private var showingFileImporter: Bool = false
     @State private var showingCameraScanner: Bool = false
+    @State private var showingVaultSelector: Bool = false
     @State private var showValidationHighlight: Bool = false
+
+    private var chooseBadgeText: String {
+        vaultDocs.isEmpty ? "CHOOSE 1 OF 3" : "CHOOSE 1 OF 4"
+    }
 
     private var hasSyllabusSource: Bool {
         let hasPdf = (attachedFileName != nil && !attachedFileName!.isEmpty) || (fileContentText != nil && !fileContentText!.isEmpty)
@@ -1138,7 +1162,7 @@ public struct AddCourseModalView: View {
                             .background(Color(red: 0.06, green: 0.73, blue: 0.50))
                             .cornerRadius(6)
                     } else {
-                        Text("CHOOSE 1 OF 4")
+                        Text(chooseBadgeText)
                             .font(.system(size: 9, weight: .bold))
                             .foregroundColor(Color(red: 0.88, green: 0.40, blue: 0.12))
                             .padding(.horizontal, 6)
@@ -1166,11 +1190,51 @@ public struct AddCourseModalView: View {
                     .buttonStyle(.plain)
                 }
 
+                // CHOOSE SAVED DOCUMENT FROM VAULT (Moved below Upload PDF; rendered ONLY if vaultDocs exist)
+                if !vaultDocs.isEmpty {
+                    Section(header: HStack {
+                        Text("Choose Vault Document (\(vaultDocs.count))")
+                        Spacer()
+                        Text("CHOOSE 1 OF 4")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color(red: 0.88, green: 0.40, blue: 0.12))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(red: 0.88, green: 0.40, blue: 0.12).opacity(0.12))
+                            .cornerRadius(6)
+                    }) {
+                        Button(action: { showingVaultSelector = true }) {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(red: 0.55, green: 0.36, blue: 0.96))
+                                        .frame(width: 34, height: 34)
+                                    Image(systemName: "archivebox.fill")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                }
+                                Text("Choose Saved Document from Vault")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                Spacer()
+                                Text("(\(vaultDocs.count) Saved)")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.55, green: 0.36, blue: 0.96))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color(red: 0.55, green: 0.36, blue: 0.96).opacity(0.12))
+                                    .cornerRadius(6)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
                 // SCAN SYLLABUS WITH CAMERA
                 Section(header: HStack {
                     Text("Camera Scan")
                     Spacer()
-                    Text("CHOOSE 1 OF 4")
+                    Text(chooseBadgeText)
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(Color(red: 0.88, green: 0.40, blue: 0.12))
                         .padding(.horizontal, 6)
@@ -1211,7 +1275,7 @@ public struct AddCourseModalView: View {
                             .background(Color(red: 0.06, green: 0.73, blue: 0.50))
                             .cornerRadius(6)
                     } else {
-                        Text("CHOOSE 1 OF 4")
+                        Text(chooseBadgeText)
                             .font(.system(size: 9, weight: .bold))
                             .foregroundColor(Color(red: 0.88, green: 0.40, blue: 0.12))
                             .padding(.horizontal, 6)
@@ -1222,39 +1286,6 @@ public struct AddCourseModalView: View {
                 }) {
                     TextEditor(text: $pastedSyllabusText)
                         .frame(minHeight: 120)
-                }
-
-                // CHOOSE SAVED DOCUMENT FROM VAULT
-                Section(header: HStack {
-                    Text("Choose Vault Document")
-                    Spacer()
-                    Text("CHOOSE 1 OF 4")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(Color(red: 0.88, green: 0.40, blue: 0.12))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color(red: 0.88, green: 0.40, blue: 0.12).opacity(0.12))
-                        .cornerRadius(6)
-                }) {
-                    Button(action: {
-                        // Open vault document selector
-                    }) {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(red: 0.55, green: 0.36, blue: 0.96))
-                                    .frame(width: 34, height: 34)
-                                Image(systemName: "archivebox.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-                            Text("Choose Saved Document from Vault")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                            Spacer()
-                        }
-                    }
-                    .buttonStyle(.plain)
                 }
             }
             .scrollDismissesKeyboard(.interactively)
@@ -1280,34 +1311,64 @@ public struct AddCourseModalView: View {
                     .disabled(!canSave)
                 }
             }
-            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.pdf, .plainText, .item], allowsMultipleSelection: true) { result in
+            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result, !urls.isEmpty {
                     attachedFileName = urls.map { $0.lastPathComponent }.joined(separator: ", ")
                     var allTextParts: [String] = []
 
                     for selectedUrl in urls {
-                        if selectedUrl.startAccessingSecurityScopedResource() {
-                            defer { selectedUrl.stopAccessingSecurityScopedResource() }
-                            if attachedFileData == nil, let d = try? Data(contentsOf: selectedUrl) {
-                                attachedFileData = d
-                            }
-                            if let txt = try? String(contentsOf: selectedUrl, encoding: .utf8), !txt.isEmpty {
-                                allTextParts.append(txt)
-                            } else if let pdf = PDFDocument(url: selectedUrl) {
-                                var pages: [String] = []
-                                for i in 0..<pdf.pageCount {
-                                    if let p = pdf.page(at: i), let pStr = p.string, !pStr.isEmpty {
-                                        pages.append(pStr)
-                                    }
-                                }
-                                if !pages.isEmpty {
-                                    allTextParts.append(pages.joined(separator: "\n\n"))
-                                }
-                            }
+                        if attachedFileData == nil, let d = try? Data(contentsOf: selectedUrl) {
+                            attachedFileData = d
+                        }
+                        if let txt = DocumentExtractor.extractText(from: selectedUrl) {
+                            allTextParts.append(txt)
                         }
                     }
                     if !allTextParts.isEmpty {
                         fileContentText = allTextParts.joined(separator: "\n\n=== NEXT DOCUMENT ===\n\n")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingVaultSelector) {
+                NavigationStack {
+                    List {
+                        ForEach(vaultDocs) { doc in
+                            Button(action: {
+                                showingVaultSelector = false
+                                attachedFileName = doc.title
+                                fileContentText = doc.fileContent ?? (doc.rawFileData != nil ? String(data: doc.rawFileData!, encoding: .utf8) : nil)
+                                attachedFileData = doc.rawFileData
+                                if let txt = fileContentText {
+                                    let dto = LocalSyllabusParser.shared.parseText(txt)
+                                    if courseName.isEmpty { courseName = dto.courseName }
+                                    if courseCode.isEmpty { courseCode = dto.courseCode ?? "" }
+                                }
+                            }) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "doc.fill")
+                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(doc.title)
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                        Text("\(doc.courseCode ?? "General") • \(doc.fileSize)")
+                                            .font(.caption)
+                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                    }
+                                    Spacer()
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(Color(red: 0.06, green: 0.73, blue: 0.50))
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .navigationTitle("Select Vault Document")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { showingVaultSelector = false }
+                        }
                     }
                 }
             }
@@ -1437,21 +1498,8 @@ public struct AddCourseModalView: View {
             targetCourse.courseDescription = cleanDesc
         }
 
-        // Save attached PDF document into Vault & Syllabus storage with rawFileData
+        // Save attached PDF document into Syllabus storage with rawFileData
         if let pdfName = attachedFileName {
-            let bytes = Double(attachedFileData?.count ?? 0)
-            let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
-            let doc = VaultDocument(
-                title: pdfName,
-                category: "Syllabi",
-                fileSize: sizeMB,
-                fileType: pdfName.lowercased().hasSuffix(".pdf") ? "PDF" : "Document",
-                courseCode: targetCourse.courseCode,
-                fileContent: fileContentText,
-                rawFileData: attachedFileData
-            )
-            modelContext.insert(doc)
-
             let sylDoc = SyllabusDocument(
                 docTitle: pdfName,
                 fileName: pdfName,
@@ -1568,7 +1616,7 @@ public struct AddNewItemModalView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Add Assignment or Task")
+                            Text("Add Reading or Assignment")
                                 .font(.system(size: 14.5, weight: .bold))
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Text("Add homework, reading, or lab item")

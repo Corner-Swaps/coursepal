@@ -130,12 +130,14 @@ public struct WeeklyDashboardView: View {
                 VStack(spacing: 16) {
 
                     // MARK: - Page Header (Top Title & Top Right Action Pills: Filter, Done Checkmark, Trash)
+                    let remainingTotalCount = activeReadings.filter({ !$0.isCompleted }).count
+
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Readings")
                                 .font(.system(size: 24, weight: .bold, design: .rounded))
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                            Text("\(activeReadings.count) reading\(activeReadings.count == 1 ? "" : "s") this term")
+                            Text("\(remainingTotalCount) reading\(remainingTotalCount == 1 ? "" : "s") remaining")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         }
@@ -212,7 +214,6 @@ public struct WeeklyDashboardView: View {
                     .padding(.top, 18)
 
                     // MARK: - 1. Master Tall Hero Weekly Reading Tracker Card Box (Matching Assignments Calendar Scale ~280-300pt Tall)
-                    let totalReadingsCount = activeReadings.count
 
                     VStack(alignment: .leading, spacing: 16) {
                         // 1. Clean Title at the Very Top (Full width, unsquished, no icon, no subtitle)
@@ -251,7 +252,7 @@ public struct WeeklyDashboardView: View {
                                                 .foregroundColor(selectedWeekFilter == 0 ? .white : Color(red: 0.35, green: 0.42, blue: 0.52))
                                         }
 
-                                        Text("\(totalReadingsCount) Total")
+                                        Text("\(remainingTotalCount) Total")
                                             .font(.system(size: 11.5, weight: .bold, design: .rounded))
                                             .foregroundColor(selectedWeekFilter == 0 ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.45, green: 0.52, blue: 0.62))
                                     }
@@ -275,8 +276,9 @@ public struct WeeklyDashboardView: View {
                                 ForEach(weekNums, id: \.self) { weekNum in
                                     let isSelected = selectedWeekFilter == weekNum
                                     let weekReadings = readingsByWeek[weekNum] ?? []
-                                    let weekDone = !weekReadings.isEmpty && weekReadings.allSatisfy { $0.isCompleted }
-                                    let weekCount = weekReadings.count
+                                    let uncompletedWeekReadings = weekReadings.filter { !$0.isCompleted }
+                                    let weekDone = !weekReadings.isEmpty && uncompletedWeekReadings.isEmpty
+                                    let weekCount = uncompletedWeekReadings.count
 
                                     Button(action: {
                                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -1114,9 +1116,8 @@ public struct EditReadingSheet: View {
                             Text("Title")
                                 .font(.caption)
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            TextField("Textbook, Video or Article Title", text: $reading.title, axis: .vertical)
+                            TextField("Title", text: $reading.title)
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .lineLimit(2...4)
                         }
                         .padding(.vertical, 1)
 
@@ -1239,7 +1240,6 @@ public struct EditReadingSheet: View {
                 .scrollContentBackground(.hidden)
                 .background(Color(red: 0.95, green: 0.96, blue: 0.98))
                 .scrollDismissesKeyboard(.immediately)
-                .padding(.bottom, 220)
             }
             .onAppear {
                 courseNameInput = reading.week?.course?.courseName ?? ""
@@ -1250,7 +1250,7 @@ public struct EditReadingSheet: View {
                 chapterInput = reading.chapterText ?? ""
                 notesInput = "" // Notes are NOT pre-filled automatically
             }
-            .navigationTitle("Reading Detail")
+            .navigationTitle("Details")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(red: 0.95, green: 0.96, blue: 0.98), for: .navigationBar)

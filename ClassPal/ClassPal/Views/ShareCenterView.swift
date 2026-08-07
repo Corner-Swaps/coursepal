@@ -104,18 +104,18 @@ public struct ShareCenterView: View {
                                     ForEach(courses) { course in
                                         let codeColor = CourseColorHelper.color(for: course.hexColor)
                                         HStack(spacing: 10) {
-                                            // Left Accent Color Line (Matching Syllabus Card height 36)
+                                            // Left Accent Color Line (Matching Syllabus Card height 42 1:1)
                                             RoundedRectangle(cornerRadius: 3)
                                                 .fill(codeColor)
-                                                .frame(width: 4, height: 36)
+                                                .frame(width: 4, height: 42)
 
-                                            VStack(alignment: .leading, spacing: 2) {
+                                            VStack(alignment: .leading, spacing: 3) {
                                                 Text(course.courseCode ?? course.courseName)
-                                                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                                                    .font(.system(size: 15, weight: .bold, design: .rounded))
                                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                     .lineLimit(1)
                                                 Text(course.courseName)
-                                                    .font(.system(size: 11, weight: .medium))
+                                                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                     .lineLimit(1)
                                             }
@@ -126,7 +126,7 @@ public struct ShareCenterView: View {
                                             HStack(spacing: 6) {
                                                 HStack(spacing: 5) {
                                                     Text(course.sharingCode.isEmpty ? "—" : course.sharingCode)
-                                                        .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                                                        .font(.system(size: 13, weight: .bold, design: .monospaced))
                                                         .foregroundColor(codeColor)
 
                                                     Button(action: {
@@ -140,13 +140,13 @@ public struct ShareCenterView: View {
                                                     }) {
                                                         let isCopied = (copiedCode == course.sharingCode)
                                                         Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                                                            .font(.system(size: 11, weight: .bold))
+                                                            .font(.system(size: 11.5, weight: .bold))
                                                             .foregroundColor(isCopied ? .green : codeColor)
                                                     }
                                                     .buttonStyle(.plain)
                                                 }
-                                                .padding(.horizontal, 9)
-                                                .padding(.vertical, 5)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
                                                 .background(codeColor.opacity(0.10))
                                                 .cornerRadius(8)
 
@@ -163,23 +163,23 @@ public struct ShareCenterView: View {
                                                 }) {
                                                     HStack(spacing: 4) {
                                                         Image(systemName: "square.and.arrow.up")
-                                                            .font(.system(size: 11, weight: .bold))
+                                                            .font(.system(size: 11.5, weight: .bold))
                                                         Text("Share")
-                                                            .font(.system(size: 11, weight: .bold))
+                                                            .font(.system(size: 11.5, weight: .bold))
                                                     }
                                                     .foregroundColor(codeColor)
-                                                    .padding(.horizontal, 9)
-                                                    .padding(.vertical, 5)
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 6)
                                                     .background(codeColor.opacity(0.12))
                                                     .cornerRadius(8)
                                                 }
                                                 .buttonStyle(.plain)
                                             }
                                         }
-                                        .padding(12)
+                                        .padding(14)
                                         .background(Color.white)
                                         .cornerRadius(16)
-                                        .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 2)
+                                        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
                                     }
                                 }
                             }
@@ -204,7 +204,7 @@ public struct ShareCenterView: View {
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
                                 Text("Paste the link or enter the course code shared with you. ClassPal will load their course schedule, readings, and assignments.")
-                                    .font(.system(size: 13.5))
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                     .fixedSize(horizontal: false, vertical: true)
 
@@ -213,13 +213,13 @@ public struct ShareCenterView: View {
                                         Image(systemName: "key.fill")
                                             .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                         TextField("Enter course code or paste link...", text: $inputCode)
-                                            .font(.system(size: 15, weight: .semibold))
+                                            .font(.system(size: 15, weight: .semibold, design: .rounded))
                                             .autocorrectionDisabled()
                                             #if os(iOS)
                                             .textInputAutocapitalization(.never)
                                             #endif
                                     }
-                                    .padding(12)
+                                    .padding(14)
                                     .background(Color(red: 0.95, green: 0.96, blue: 0.98))
                                     .cornerRadius(12)
                                     .overlay(
@@ -232,21 +232,21 @@ public struct ShareCenterView: View {
                                             Image(systemName: "arrow.down.circle.fill")
                                                 .font(.system(size: 15, weight: .bold))
                                             Text("Join Course")
-                                                .font(.system(size: 14, weight: .bold))
+                                                .font(.system(size: 14.5, weight: .bold, design: .rounded))
                                         }
                                         .foregroundColor(.white)
                                         .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
+                                        .padding(.vertical, 14)
                                         .background(Color(red: 0.55, green: 0.27, blue: 0.96))
                                         .cornerRadius(12)
                                     }
                                     .buttonStyle(.plain)
                                 }
                             }
-                            .padding(14)
+                            .padding(16)
                             .background(Color.white)
                             .cornerRadius(16)
-                            .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 2)
+                            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
                         }
                         .padding(.horizontal, 18)
                     }

@@ -123,6 +123,8 @@ public final class LocalSyllabusParser {
         "total 100 points",
         "grading criteria",
         "grade points",
+        "criteria grade points",
+        "% of grade",
         "exceeds standard",
         "at standard",
         "approaching standard",
@@ -133,10 +135,13 @@ public final class LocalSyllabusParser {
         "3 credits",
         "isbn:",
         "organization and coherence",
+        "organization & coherence",
         "evidence and support",
+        "evidence & support",
         "critical analysis",
         "professional ethics",
         "cultural competence",
+        "identity formation",
         "quality of presentation",
         "feedback on the strength",
         "feedback on the improvement",
@@ -243,10 +248,19 @@ public final class LocalSyllabusParser {
             }
 
             let lower = line.lowercased()
-            let isHeader = lower.hasPrefix("week ") || lower.hasPrefix("chapter ") ||
-                           lower.hasPrefix("ch. ") || lower.contains("syllabus") ||
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let isStandaloneDigit = (Int(trimmed) != nil && (Int(trimmed)! >= 1 && Int(trimmed)! <= 16))
+            let months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+            let containsMonth = months.contains(where: { lower.contains($0) })
+
+            let isHeader = isStandaloneDigit || containsMonth ||
+                           lower.hasPrefix("week") || lower.hasPrefix("chapter") ||
+                           lower.hasPrefix("ch.") || lower.hasPrefix("ch ") ||
+                           lower.hasPrefix("watch") || lower.hasPrefix("required") ||
+                           lower.hasPrefix("read") || lower.hasPrefix("listen") ||
+                           lower.hasPrefix("podcast") || lower.contains("syllabus") ||
                            lower.contains("course") || lower.contains("policy") ||
-                           lower.contains("grading") || (line.contains(":") && line.count < 40) ||
+                           lower.contains("grading") || (line.contains(":") && line.count < 60) ||
                            line.contains("%") || line.contains("points") || lower.contains("due") ||
                            lower.contains("assignment") || lower.contains("report") || lower.contains("presentation") ||
                            line.hasPrefix("•") || line.hasPrefix("*") || line.hasPrefix("-")
@@ -281,19 +295,68 @@ public final class LocalSyllabusParser {
     ) -> [AssignmentDTO] {
         var results: [AssignmentDTO] = []
         var lastMatchedIndex: Int? = nil
+        var inPolicySection = false
 
         let pointsRegex = try? NSRegularExpression(
             pattern: #"\b(\d{1,4})\s*(pts|points|pt|%|percent)"#,
             options: [.caseInsensitive]
         )
 
-        let instructionPrefixes = ["this paper", "the video", "the deadline", "each week", "in small groups", "beginning in", "prepare an", "write an", "following our", "by the end", "in response", "guided by", "students will"]
+        let instructionPrefixes = [
+            "this paper", "the video", "the deadline", "each week", "in small groups",
+            "beginning in", "prepare an", "write an", "following our", "by the end",
+            "in response", "guided by", "students will", "students are", "group members",
+            "after presenting", "the purpose of", "on weeks when", "this feedback",
+            "for further guidance", "for this assignment", "within their", "the goal",
+            "videos where", "to ensure", "in consultation", "apa formatting", "as a counseling",
+            "participation grades", "at the beginning", "at the end", "graduate students",
+            "if circumstances", "emergency situations", "being busy", "a student who",
+            "the guideline", "instructors may", "in the absence", "assignments may",
+            "all mc courses", "recognizing that", "active engagement", "similarly it",
+            "consistent attendance", "many mc courses", "assignments require", "cityu requires",
+            "students are responsible", "the most current", "city university of", "we value",
+            "cityu will not", "any student who", "cityu adheres", "in the u.s.", "sex include",
+            "sexual harassment", "cityu also", "questions regarding", "in canada", "discrimination",
+            "as an educational", "the university will", "information on", "cityu has a policy",
+            "the university's policy", "accommodations must", "academic integrity in",
+            "students taking courses", "regular class", "attendance in this class",
+            "all students are required", "arriving late", "it is expected", "excused absences",
+            "absences related", "in the event", "as student and", "students who feel",
+            "students with more", "3% of students", "a complete copy", "final assignments for",
+            "due dates that", "students with a documented", "please contact", "confidentiality will",
+            "once approved", "cityu librarians", "contact a cityu", "all students receive",
+            "to gain access", "resources include", "because the counselling", "the university's goal",
+            "active self-care", "similarly in", "emotionally sensitive", "students are encouraged",
+            "it is important", "in such cases", "this may be done", "as part of",
+            "personal counselling", "additional resources", "in addition to", "counselling students",
+            "students will be", "respect the dignity", "maintain a positive", "demonstrate exemplary",
+            "access city university", "recognize that", "ensure that all", "respect and behave",
+            "as an ambassador", "actively develop", "respond to feedback", "balance enthusiastic",
+            "commit to active", "embrace both"
+        ]
+
+        let policySectionHeaders = [
+            "course policies", "late assignments", "university policies", "non-discrimination",
+            "religious accommodations", "academic integrity", "ai use policy", "support services",
+            "disability services", "sensitive content notice", "master of counselling's professional code",
+            "professional code (2.0)", "hallmarks of maturity"
+        ]
 
         for (idx, line) in lines.enumerated() {
             let lower = line.trimmingCharacters(in: .whitespaces).lowercased()
+            if lower.isEmpty { continue }
+
+            // Check if we reached a policy section
+            if policySectionHeaders.contains(where: { lower.contains($0) }) {
+                inPolicySection = true
+            }
+            if inPolicySection { continue }
+
             if isBoilerplatePolicyLine(lower) { continue }
 
-            let isInstruction = instructionPrefixes.contains(where: { lower.hasPrefix($0) })
+            let isInstruction = instructionPrefixes.contains(where: { lower.hasPrefix($0) }) ||
+                                (lower.count > 45 && (lower.hasSuffix(".") || lower.hasSuffix(". ")) && !lower.contains("assignment ") && !lower.contains("overview of required"))
+
             let extractedDates = extractAllDates(from: line, fallbackYear: termYear)
             let primaryIsoDate = extractedDates.first?.isoString
 
@@ -318,13 +381,18 @@ public final class LocalSyllabusParser {
             let nsLine = line as NSString
             let range = NSRange(location: 0, length: nsLine.length)
             let matches = pointsRegex?.matches(in: line, options: [], range: range) ?? []
-            let isAssignKeyword = lower.contains("assignment") || lower.contains("paper") || lower.contains("report") || lower.contains("presentation") || lower.contains("project")
 
-            if !matches.isEmpty || isAssignKeyword {
+            // Check explicit assignment indicators: percentage e.g. "20%", "(assignment 1)", "assignment 1", or header table
+            let percentMatches = (try? NSRegularExpression(pattern: #"\b(\d{1,3})%"#, options: []))?.matches(in: line, options: [], range: range) ?? []
+            let numMatches = (try? NSRegularExpression(pattern: #"(?i)\(?assignment\s*\d{1,2}\)?"#, options: []))?.matches(in: line, options: [], range: range) ?? []
+            let isAssignHeaderLine = !percentMatches.isEmpty || !numMatches.isEmpty || lower.hasPrefix("overview of required assignments")
+
+            let isAssignKeyword = lower.contains("assignment") || lower.contains("paper") || lower.contains("report") || lower.contains("presentation") || lower.contains("project") || lower.contains("attendance")
+
+            if isAssignHeaderLine || (!matches.isEmpty && isAssignKeyword) {
                 var weightStr: String? = nil
                 var pointsStr = "100 Points"
 
-                let percentMatches = (try? NSRegularExpression(pattern: #"\b(\d{1,3})%"#, options: []))?.matches(in: line, options: [], range: range) ?? []
                 let ptsMatches = (try? NSRegularExpression(pattern: #"\b(\d{1,4})\s*(pts|points|pt\b)"#, options: [.caseInsensitive]))?.matches(in: line, options: [], range: range) ?? []
 
                 if !percentMatches.isEmpty {
@@ -346,6 +414,12 @@ public final class LocalSyllabusParser {
 
                 let videoUrl = extractVideoUrl(from: line)
                 let cleanTitle = buildStrict3To5WordTitle(from: line, removePoints: true, removeDates: true)
+
+                // Verify cleanTitle is not noise
+                if cleanTitle.lowercased().contains("overview required") || cleanTitle.lowercased().contains("total 100") || cleanTitle.lowercased().contains("page ") {
+                    continue
+                }
+
                 let tag = classifySemanticCategory(title: line, points: weightStr ?? pointsStr, url: videoUrl)
 
                 if (tag == .assignment || tag == .inClass) && cleanTitle.count >= 3 {
@@ -397,7 +471,6 @@ public final class LocalSyllabusParser {
             }
         }
 
-        // print("Pass A Return: \(results.map { "\($0.title): date=\($0.dueDate ?? "nil")" })")
         return results
     }
 
@@ -415,16 +488,46 @@ public final class LocalSyllabusParser {
         var currentReadings: [ReadingDTO] = []
         var currentWeekTheme = "Week 1 Schedule"
         var currentWeekDateRange: String? = nil
+        var currentWeekDateIso: String? = nil
+        var inPolicySection = false
 
         let weekHeaderPatterns = [
             #"(?i)^\s*week\s*(\d{1,2})\b"#,
+            #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b"#,
             #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"#
         ]
 
-        for line in lines {
+        let policySectionHeaders = [
+            "course policies", "late assignments", "university policies", "non-discrimination",
+            "religious accommodations", "academic integrity", "ai use policy", "support services",
+            "disability services", "sensitive content notice", "master of counselling's professional code",
+            "professional code (2.0)", "hallmarks of maturity"
+        ]
+
+        var lastBookTitle: String? = nil
+
+        for (idx, line) in lines.enumerated() {
             let lower = line.trimmingCharacters(in: .whitespaces).lowercased()
+            if lower.isEmpty { continue }
+
+            let isWeekOrScheduleHeader = lower.contains("date content requirements") ||
+                                         lower.contains("weekly schedule") ||
+                                         lower.contains("course schedule") ||
+                                         lower.hasPrefix("week ") ||
+                                         lower.hasPrefix("week 1") ||
+                                         (lower.hasPrefix("1 ") && (lower.contains("jul") || lower.contains("aug") || lower.contains("sep") || lower.contains("jan") || lower.contains("feb") || lower.contains("mar")))
+
+            if isWeekOrScheduleHeader {
+                inPolicySection = false
+            }
+
+            if policySectionHeaders.contains(where: { lower.contains($0) }) && !isWeekOrScheduleHeader {
+                inPolicySection = true
+            }
+            if inPolicySection { continue }
+
             if isBoilerplatePolicyLine(lower) { continue }
-            let instructionPrefixes = ["this paper", "the video", "the deadline", "each week", "in small groups", "beginning in", "prepare an", "write an", "following our", "by the end", "in response", "guided by", "students will"]
+            let instructionPrefixes = ["this paper", "the video", "the deadline", "each week", "in small groups", "beginning in", "prepare an", "write an", "following our", "by the end", "in response", "guided by", "students will", "students are"]
             if instructionPrefixes.contains(where: { lower.hasPrefix($0) }) { continue }
 
             let nsLine = line as NSString
@@ -441,8 +544,23 @@ public final class LocalSyllabusParser {
                 }
             }
 
+            // Standalone digit week header check (e.g. "1" on line N followed by "July 3rd" on line N+1)
+            if foundWeekNum == nil {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if let wNum = Int(trimmed), wNum >= 1 && wNum <= 16 {
+                    if idx + 1 < lines.count {
+                        let nextLower = lines[idx + 1].lowercased()
+                        let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+                        if months.contains(where: { nextLower.contains($0) }) {
+                            foundWeekNum = wNum
+                        }
+                    }
+                }
+            }
+
             if let wNum = foundWeekNum {
-                if !currentReadings.isEmpty || currentWeekNum != wNum {
+                inPolicySection = false
+                if !currentReadings.isEmpty || (currentWeekNum != wNum && !weeks.contains(where: { $0.weekNumber == currentWeekNum })) {
                     let weekDTO = WeekDTO(
                         id: "week-\(currentWeekNum)",
                         weekNumber: currentWeekNum,
@@ -458,67 +576,117 @@ public final class LocalSyllabusParser {
                 currentWeekNum = wNum
                 currentWeekTheme = "Week \(wNum)"
                 let dates = extractAllDates(from: line, fallbackYear: termYear)
-                if let d = dates.first { currentWeekDateRange = d.displayString }
+                if let d = dates.first {
+                    currentWeekDateRange = d.displayString
+                    currentWeekDateIso = d.isoString
+                } else if idx + 1 < lines.count {
+                    let nextDates = extractAllDates(from: lines[idx + 1], fallbackYear: termYear)
+                    if let dNext = nextDates.first {
+                        currentWeekDateRange = dNext.displayString
+                        currentWeekDateIso = dNext.isoString
+                    }
+                }
                 continue
             }
 
+            // Track textbook title lines above chapter bullet points
+            let cleanLower = lower.trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪● \t"))
+            if (lower.contains("sexuality counseling") || lower.contains("human sexuality") || lower.contains("growing into resilience") || lower.contains("edition") || lower.contains("textbook")) && !cleanLower.hasPrefix("chapter") && !cleanLower.hasPrefix("ch.") {
+                lastBookTitle = line.trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪● \t"))
+            }
+
             let videoUrl = extractVideoUrl(from: line)
-            let pointsMatches = (try? NSRegularExpression(pattern: #"\b(\d{1,4})\s*(pts|points|pt|%)"#, options: [.caseInsensitive]))?.matches(in: line, options: [], range: range) ?? []
-            let hasPoints = !pointsMatches.isEmpty
+            let hasValidUrl = URLHelper.isValidURL(videoUrl)
 
-            let tag = classifySemanticCategory(title: line, points: hasPoints ? "Points" : nil, url: videoUrl)
-            let dates = extractAllDates(from: line, fallbackYear: termYear)
-            let defaultWeekDateIso: String = {
-                let weekDate = WeekDateConverter.date(forWeek: currentWeekNum)
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withFullDate]
-                return formatter.string(from: weekDate)
-            }()
-            let isoDate = dates.first?.isoString ?? defaultWeekDateIso
+            let isBookCitation = cleanLower.hasPrefix("chapter") ||
+                                 cleanLower.hasPrefix("ch.") ||
+                                 cleanLower.hasPrefix("ch ") ||
+                                 cleanLower.hasPrefix("read:") ||
+                                 cleanLower.hasPrefix("read ") ||
+                                 cleanLower.hasPrefix("watch:") ||
+                                 cleanLower.hasPrefix("watch ") ||
+                                 cleanLower.hasPrefix("listen:") ||
+                                 cleanLower.hasPrefix("podcast:") ||
+                                 lower.contains("chapter ") ||
+                                 lower.contains("ch. ") ||
+                                 lower.contains("isbn:") ||
+                                 lower.contains("(6th ed)") ||
+                                 lower.contains("7th canadian edition") ||
+                                 lower.contains("required:") ||
+                                 hasValidUrl
 
-            let cleanTitle = buildStrict5To6WordTitle(from: line, removePoints: true, removeDates: true)
+            // Only process reading if it is a genuine book citation or has a valid link
+            if isBookCitation {
+                let defaultWeekDateIso: String = {
+                    if let wIso = currentWeekDateIso { return wIso }
+                    let weekDate = WeekDateConverter.date(forWeek: currentWeekNum)
+                    let formatter = ISO8601DateFormatter()
+                    formatter.formatOptions = [.withFullDate]
+                    return formatter.string(from: weekDate)
+                }()
+                let dates = extractAllDates(from: line, fallbackYear: termYear)
+                let isoDate = dates.first?.isoString ?? defaultWeekDateIso
 
-            switch tag {
-            case .reading, .media:
-                let validUrl = URLHelper.isValidURL(videoUrl) ? videoUrl : nil
-                let mediaTypeStr = (validUrl != nil) ? "video" : "textbook"
-                let summary = "Required reading for \(cleanTitle)."
-                let readingDTO = ReadingDTO(
-                    id: "read-\(UUID().uuidString.prefix(8))",
-                    title: cleanTitle,
-                    mediaType: mediaTypeStr,
-                    isCompleted: false,
-                    summaryText: summary,
-                    keyTakeawaysText: "• Review \(cleanTitle)",
-                    estimatedTimeText: tag == .media ? "~20–30 min" : "~40–60 min",
-                    videoUrl: validUrl,
-                    dueDate: isoDate,
-                    dateRangeStr: currentWeekDateRange
-                )
-                if !currentReadings.contains(where: { $0.title.lowercased() == cleanTitle.lowercased() }) {
-                    currentReadings.append(readingDTO)
+                // Keep readable title
+                var rawTitle = line.trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪● \t"))
+                if rawTitle.lowercased().hasPrefix("watch:") {
+                    rawTitle = String(rawTitle.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+                } else if rawTitle.lowercased().hasPrefix("required:") {
+                    rawTitle = String(rawTitle.dropFirst(9)).trimmingCharacters(in: .whitespaces)
                 }
 
-            case .assignment, .inClass:
-                let percentMatches = (try? NSRegularExpression(pattern: #"\b(\d{1,3})%"#, options: []))?.matches(in: line, options: [], range: range) ?? []
-                let ptsMatches = (try? NSRegularExpression(pattern: #"\b(\d{1,4})\s*(pts|points|pt\b)"#, options: [.caseInsensitive]))?.matches(in: line, options: [], range: range) ?? []
+                var cleanTitle = buildStrict5To6WordTitle(from: rawTitle, removePoints: true, removeDates: true)
 
-                let pointsStr = !ptsMatches.isEmpty ? nsLine.substring(with: ptsMatches.first!.range) : "100 Points"
-                let weightStr = !percentMatches.isEmpty ? nsLine.substring(with: percentMatches.first!.range) : nil
+                // Filter out table column headers mistaken for readings
+                let lowerTitle = cleanTitle.lowercased().trimmingCharacters(in: .whitespaces)
+                if lowerTitle == "assignment" || lowerTitle == "assignments" || lowerTitle == "requirements" || lowerTitle == "date content requirements" || lowerTitle == "in class assignment" {
+                    continue
+                }
 
-                let assignDTO = AssignmentDTO(
-                    id: "assign-\(UUID().uuidString.prefix(8))",
-                    title: cleanTitle,
-                    dueDate: isoDate,
-                    fullInstructions: videoUrl != nil ? "Link: \(videoUrl!)" : "Week \(currentWeekNum) Task",
-                    pointsPossible: pointsStr,
-                    weightPercentage: weightStr,
-                    noteText: videoUrl
-                )
-                scheduleAssignments.append(assignDTO)
+                if cleanTitle.lowercased().hasPrefix("http://") || cleanTitle.lowercased().hasPrefix("https://") {
+                    let vUrl = videoUrl ?? ""
+                    if vUrl.contains("youtube.com") || vUrl.contains("youtu.be") {
+                        cleanTitle = "YouTube Video"
+                    } else if vUrl.contains("ted.com") {
+                        cleanTitle = "TED Talk"
+                    } else if vUrl.contains("podbean") {
+                        cleanTitle = "Podcast Episode"
+                    } else {
+                        cleanTitle = "Web Resource"
+                    }
+                }
 
-            case .noise:
-                break
+                // If chapter title is short, prefix with book context
+                if (cleanLower.hasPrefix("chapter") || cleanLower.hasPrefix("ch.")) && cleanTitle.count < 30 {
+                    if let book = lastBookTitle {
+                        let shortBook = book.components(separatedBy: ":").first ?? book
+                        cleanTitle = "\(rawTitle) (\(shortBook))"
+                    } else {
+                        cleanTitle = rawTitle
+                    }
+                } else if rawTitle.count >= 5 && !rawTitle.lowercased().hasPrefix("http") {
+                    cleanTitle = rawTitle
+                }
+
+                if cleanTitle.count >= 3 && !cleanTitle.lowercased().contains("overview required") && !cleanTitle.lowercased().contains("required:") {
+                    let mediaTypeStr = (hasValidUrl || lower.contains("watch") || lower.contains("ted") || lower.contains("podcast")) ? "video" : "textbook"
+                    let summary = "Required reading for \(cleanTitle)."
+                    let readingDTO = ReadingDTO(
+                        id: "read-\(UUID().uuidString.prefix(8))",
+                        title: cleanTitle,
+                        mediaType: mediaTypeStr,
+                        isCompleted: false,
+                        summaryText: summary,
+                        keyTakeawaysText: "• Review \(cleanTitle)",
+                        estimatedTimeText: mediaTypeStr == "video" ? "~20–30 min" : "~40–60 min",
+                        videoUrl: hasValidUrl ? videoUrl : nil,
+                        dueDate: isoDate,
+                        dateRangeStr: currentWeekDateRange
+                    )
+                    if !currentReadings.contains(where: { $0.title.lowercased() == cleanTitle.lowercased() }) {
+                        currentReadings.append(readingDTO)
+                    }
+                }
             }
         }
 
@@ -609,7 +777,7 @@ public final class LocalSyllabusParser {
     }
 
     public func buildStrict5To6WordTitle(from text: String, removePoints: Bool = true, removeDates: Bool = true) -> String {
-        var clean = text
+        var clean = DocumentExtractor.sanitizeText(text)
 
         // Strip dates
         clean = clean.replacingOccurrences(of: #"(?i)\bdue\s+.*$"#, with: "", options: .regularExpression)
@@ -635,7 +803,7 @@ public final class LocalSyllabusParser {
         clean = clean.replacingOccurrences(of: #"[^\w\s]"#, with: " ", options: .regularExpression)
         let words = clean.components(separatedBy: .whitespacesAndNewlines)
             .map { $0.trimmingCharacters(in: .punctuationCharacters) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && DocumentExtractor.isReadableEnglishText($0) }
 
         let stopWords: Set<String> = ["a", "an", "the", "on", "by", "for", "of", "and", "in", "to", "with", "at", "is", "are", "or"]
         var meaningfulWords = words.filter { !stopWords.contains($0.lowercased()) && Int($0) == nil }
@@ -802,9 +970,13 @@ public final class LocalSyllabusParser {
                     if let nRange = Range(match.range(at: 2), in: line) {
                         let rawName = String(line[nRange]).trimmingCharacters(in: .whitespaces)
                         let cleanName = rawName.replacingOccurrences(of: #"(?i)^\s*(syllabus|course|class|outline|fall|spring|summer|winter|202[0-9])\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
-                        let formattedName = buildStrict3To5WordTitle(from: cleanName.isEmpty ? rawName : cleanName, removePoints: true, removeDates: true)
-                        if !normalizedCode.isEmpty && !formattedName.isEmpty && formattedName.lowercased() != "syllabus" {
-                            return (normalizedCode, formattedName)
+                        var cleanTitleWords = cleanName.isEmpty ? rawName : cleanName
+                        if let stopRange = cleanTitleWords.range(of: #"(?i)\s+(vanwdy|school of|credits|\d+\s*credits|effective|course dates|faculty|primary faculty|email|building|room)\b"#, options: .regularExpression) {
+                            cleanTitleWords = String(cleanTitleWords[..<stopRange.lowerBound])
+                        }
+                        let cleanedTitle = cleanTitleWords.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !normalizedCode.isEmpty && !cleanedTitle.isEmpty && cleanedTitle.lowercased() != "syllabus" {
+                            return (normalizedCode, cleanedTitle)
                         }
                     }
                     foundCode = normalizedCode

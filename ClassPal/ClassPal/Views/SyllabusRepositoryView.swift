@@ -56,7 +56,7 @@ public struct SyllabusRepositoryView: View {
     @State private var selectedVaultCategory: String = "syllabi" // "syllabi" (Courses) or "documents"
     @Binding var showingUploadModal: Bool
 
-    /// Unique deduplicated document list presented with clean left document icon rows
+    /// Unique deduplicated document list presented in the Documents tab
     private var unifiedVaultDocs: [VaultDocument] {
         var seenIDs = Set<PersistentIdentifier>()
         var result: [VaultDocument] = []
@@ -67,26 +67,24 @@ public struct SyllabusRepositoryView: View {
                 result.append(doc)
             }
         }
-
-        if selectedVaultCategory == "syllabi" {
-            var seenTitles = Set<String>(result.map { $0.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
-            for sylDoc in dbSyllabi {
-                let titleKey = sylDoc.docTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                if !seenTitles.contains(titleKey) {
-                    seenTitles.insert(titleKey)
-                    let bytes = Double(sylDoc.rawFileData?.count ?? 0)
-                    let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
-                    let syntheticDoc = VaultDocument(
-                        title: sylDoc.docTitle,
-                        category: "Syllabi",
-                        fileSize: sizeMB,
-                        fileType: "PDF",
-                        courseCode: sylDoc.course?.courseCode ?? "CRS",
-                        fileContent: nil,
-                        rawFileData: sylDoc.rawFileData
-                    )
-                    result.append(syntheticDoc)
-                }
+        var seenTitles = Set<String>(result.map { $0.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
+        for sylDoc in dbSyllabi {
+            let titleKey = sylDoc.docTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !seenTitles.contains(titleKey) {
+                seenTitles.insert(titleKey)
+                let bytes = Double(sylDoc.rawFileData?.count ?? 0)
+                let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
+                let ext = (sylDoc.fileName ?? sylDoc.docTitle).components(separatedBy: ".").last?.uppercased() ?? "PDF"
+                let syntheticDoc = VaultDocument(
+                    title: sylDoc.docTitle,
+                    category: "Syllabus",
+                    fileSize: sizeMB,
+                    fileType: ext,
+                    courseCode: sylDoc.course?.courseCode ?? "CRS",
+                    fileContent: nil,
+                    rawFileData: sylDoc.rawFileData
+                )
+                result.append(syntheticDoc)
             }
         }
 
@@ -349,7 +347,7 @@ public struct SyllabusRepositoryView: View {
             .sheet(item: $selectedDocForPreview) { doc in
                 VaultDocPreviewSheet(document: doc)
             }
-            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.pdf, .plainText, .item], allowsMultipleSelection: true) { result in
+            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result, !urls.isEmpty {
                     for url in urls {
                         importPDFDocument(url)
@@ -361,25 +359,9 @@ public struct SyllabusRepositoryView: View {
     }
 
     private func importPDFDocument(_ url: URL) {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-
         let fileData: Data? = try? Data(contentsOf: url)
-        var extractedText = ""
 
-        if let txt = try? String(contentsOf: url, encoding: .utf8), !txt.isEmpty {
-            extractedText = txt
-        } else if let pdf = PDFDocument(url: url) {
-            var pages: [String] = []
-            for i in 0..<pdf.pageCount {
-                if let p = pdf.page(at: i), let pStr = p.string, !pStr.isEmpty {
-                    pages.append(pStr)
-                }
-            }
-            extractedText = pages.joined(separator: "\n\n")
-        }
-
-        guard !extractedText.isEmpty else { return }
+        guard let extractedText = DocumentExtractor.extractText(from: url), !extractedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
         let dto = LocalSyllabusParser.shared.parseText(extractedText)
         CourseImporter.importDTO(dto, into: modelContext)
@@ -387,7 +369,8 @@ public struct SyllabusRepositoryView: View {
         let bytes = Double(fileData?.count ?? 0)
         let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
         let cCode = dto.courseCode ?? ""
-        let documentTitle = (!cCode.isEmpty && cCode != "CRS-101") ? "\(cCode) - \(dto.courseName).pdf" : url.lastPathComponent
+        let ext = url.pathExtension.isEmpty ? "pdf" : url.pathExtension
+        let documentTitle = (!cCode.isEmpty && cCode != "CRS-101") ? "\(cCode) - \(dto.courseName).\(ext)" : url.lastPathComponent
         let doc = VaultDocument(
             title: documentTitle,
             category: "Syllabus",

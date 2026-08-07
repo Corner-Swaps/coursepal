@@ -72,7 +72,7 @@ public struct SyllabusScanView: View {
             }
             .fileImporter(
                 isPresented: $isShowingFilePicker,
-                allowedContentTypes: [.pdf, .plainText, .item],
+                allowedContentTypes: DocumentExtractor.supportedContentTypes,
                 allowsMultipleSelection: true
             ) { result in
                 if case .success(let urls) = result, !urls.isEmpty {
@@ -109,28 +109,13 @@ public struct SyllabusScanView: View {
         var extractedDocs: [String] = []
 
         for url in urls {
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-
-            var extractedText = ""
-            if let textContent = try? String(contentsOf: url, encoding: .utf8), !textContent.isEmpty {
-                extractedText = textContent
-            } else if let pdfDoc = PDFDocument(url: url) {
-                var pages: [String] = []
-                for i in 0..<pdfDoc.pageCount {
-                    if let page = pdfDoc.page(at: i), let pageText = page.string, !pageText.isEmpty {
-                        pages.append(pageText)
-                    }
-                }
-                extractedText = pages.joined(separator: "\n")
-            }
-            if !extractedText.isEmpty {
-                extractedDocs.append(extractedText)
+            if let text = DocumentExtractor.extractText(from: url) {
+                extractedDocs.append(text)
             }
         }
 
         guard !extractedDocs.isEmpty else {
-            errorMessage = "Could not extract text from selected PDF(s). Try scanning with camera instead."
+            errorMessage = "Could not extract text from selected document(s). Try scanning with camera instead."
             return
         }
 
@@ -200,18 +185,6 @@ public struct SyllabusScanView: View {
         let createdCourse = courses.first(where: { $0.courseCode == dto.courseCode || $0.courseName == dto.courseName }) ?? courses.first
         let rawData = rawSyllabusText.data(using: .utf8)
         let docTitle = "\(dto.courseCode ?? "Course")_Syllabus"
-
-        let vaultDoc = VaultDocument(
-            title: docTitle,
-            category: "Syllabi",
-            fileSize: "1.2 MB",
-            fileType: "TXT",
-            courseCode: createdCourse?.courseCode ?? dto.courseCode,
-            fileContent: rawSyllabusText,
-            rawFileData: rawData
-        )
-        modelContext.insert(vaultDoc)
-
         let syllabusDoc = SyllabusDocument(
             docTitle: "\(dto.courseCode ?? "CRS"): \(dto.courseName) Syllabus",
             officeHoursText: "Refer to original syllabus document",

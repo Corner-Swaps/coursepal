@@ -124,7 +124,7 @@ public struct AssignmentDetailView: View {
             }
             .padding()
         }
-        .navigationTitle("Assignment Detail")
+        .navigationTitle("Details")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

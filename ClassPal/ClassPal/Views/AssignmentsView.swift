@@ -385,49 +385,26 @@ public struct AssignmentsView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 14) {
                             if sortMode == "assignments" || sortMode == "all" {
-                                let groupedByDate = Dictionary(
-                                    grouping: activeAssignments,
-                                    by: { WeekDateConverter.formattedDueDate(for: $0.dueDate, weekNumber: $0.weekNumber) }
-                                )
-                                let sortedDates = groupedByDate.keys.sorted { dateStrA, dateStrB in
-                                    let dateA = groupedByDate[dateStrA]?.first?.dueDate ?? Date.distantPast
-                                    let dateB = groupedByDate[dateStrB]?.first?.dueDate ?? Date.distantPast
-                                    return dateA < dateB
-                                }
+                                let sortedAssignments = activeAssignments.sorted(by: { ($0.dueDate ?? Date.distantFuture) < ($1.dueDate ?? Date.distantFuture) })
 
-                                VStack(alignment: .leading, spacing: 14) {
-                                    ForEach(sortedDates, id: \.self) { dateGroup in
-                                        let items = groupedByDate[dateGroup] ?? []
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            HStack(spacing: 6) {
-                                                Text(dateGroup)
-                                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                                    .padding(.horizontal, 8)
-                                                    .padding(.vertical, 3)
-                                                    .background(Color(red: 0.94, green: 0.96, blue: 1.0))
-                                                    .cornerRadius(6)
+                                VStack(alignment: .leading, spacing: 10) {
+                                    ForEach(sortedAssignments) { assignment in
+                                        AssignmentCardRow(
+                                            assignment: assignment,
+                                            onToggle: {
+                                                withAnimation {
+                                                    assignment.isCompleted.toggle()
+                                                    try? modelContext.save()
+                                                }
+                                            },
+                                            onEdit: { editingAssignment = assignment },
+                                            onDelete: {
+                                                withAnimation(.easeInOut(duration: 0.25)) {
+                                                    assignment.isDeleted = true
+                                                    try? modelContext.save()
+                                                }
                                             }
-
-                                            ForEach(items) { assignment in
-                                                AssignmentCardRow(
-                                                    assignment: assignment,
-                                                    onToggle: {
-                                                        withAnimation {
-                                                            assignment.isCompleted.toggle()
-                                                            try? modelContext.save()
-                                                        }
-                                                    },
-                                                    onEdit: { editingAssignment = assignment },
-                                                    onDelete: {
-                                                        withAnimation(.easeInOut(duration: 0.25)) {
-                                                            assignment.isDeleted = true
-                                                            try? modelContext.save()
-                                                        }
-                                                    }
-                                                )
-                                            }
-                                        }
+                                        )
                                     }
                                 }
                             } else if sortMode == "completed" {
@@ -1120,8 +1097,8 @@ public struct AssignmentsView: View {
             .onAppear {
                 sortMode = "assignments"
             }
+            .dismissKeyboardOnTap()
         }
-        .dismissKeyboardOnTap()
     }
 
     private func dueDateForAssignment(_ assign: Assignment) -> Date {
@@ -1271,6 +1248,13 @@ public struct AssignmentCardRow: View {
                         .strikethrough(assignment.isCompleted)
                         .multilineTextAlignment(.leading)
                         .lineLimit(3)
+
+                    // Date Display (Formatted identically to Readings: "Due [Day], [Month] [Date] · Week [WeekNumber]")
+                    let assignDateText = WeekDateConverter.formattedDueDate(for: assignment.dueDate, weekNumber: assignment.weekNumber)
+                    Text(assignDateText)
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                        .padding(.top, 1)
                 }
             }
             .buttonStyle(.plain)
@@ -1364,17 +1348,17 @@ public struct SortTabTile: View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 16.5, weight: .bold))
                     .foregroundColor(iconColor)
 
                 Text(title)
-                    .font(.system(size: 11.5, weight: isSelected ? .bold : .medium))
+                    .font(.system(size: 12, weight: isSelected ? .bold : .semibold, design: .rounded))
                     .foregroundColor(isSelected ? Color(red: 0.08, green: 0.12, blue: 0.22) : Color(red: 0.35, green: 0.42, blue: 0.52))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.vertical, 10.5)
             .padding(.horizontal, 4)
             .background(isSelected ? Color(red: 0.93, green: 0.94, blue: 0.96) : Color(red: 0.97, green: 0.98, blue: 0.99))
             .cornerRadius(12)
@@ -1532,7 +1516,6 @@ public struct EditAssignmentSheet: View {
                 .scrollContentBackground(.hidden)
                 .background(Color(red: 0.95, green: 0.96, blue: 0.98))
                 .scrollDismissesKeyboard(.immediately)
-                .padding(.bottom, 220)
             }
             .onAppear {
                 weekNumberState = assignment.weekNumber
@@ -1549,7 +1532,7 @@ public struct EditAssignmentSheet: View {
                 let weightDigits = rawWeight.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
                 gradeWeightPercentState = Int(weightDigits) ?? (pointsValueState / 5)
             }
-            .navigationTitle("Assignment Detail")
+            .navigationTitle("Details")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(red: 0.95, green: 0.96, blue: 0.98), for: .navigationBar)

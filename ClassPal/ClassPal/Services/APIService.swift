@@ -155,39 +155,120 @@ public final class APIService: ObservableObject {
 
     private init() {}
 
-    @Published public var useLocalOnlyMode: Bool = true
+    @Published public var geminiAPIKey: String = "AIzaSyD1RwSh5O9bp8q2Ch2Vi52l05r4ImQOPiE"
+    @Published public var useLocalOnlyMode: Bool = false
 
     public func parseSyllabusText(_ rawText: String) async throws -> CourseDTO {
-        if useLocalOnlyMode {
-            return LocalSyllabusParser.shared.parseText(rawText)
-        }
-
-        guard let url = URL(string: "\(baseURL)/api/syllabi/parse") else {
-            return LocalSyllabusParser.shared.parseText(rawText)
-        }
-
-        do {
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.timeoutInterval = 5
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-            let body: [String: Any] = [
-                "userId": currentUserId.uuidString,
-                "rawText": rawText
-            ]
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                return LocalSyllabusParser.shared.parseText(rawText)
+        if !useLocalOnlyMode, !geminiAPIKey.isEmpty {
+            do {
+                return try await parseSyllabusWithGemini(rawText)
+            } catch {
+                print("[APIService] Gemini Cloud AI failed or offline: \(error). Falling back to LocalSyllabusParser.")
             }
-
-            return try JSONDecoder().decode(CourseDTO.self, from: data)
-        } catch {
-            print("[APIService] Remote server unavailable. Falling back to 100% On-Device Local Parsing.")
-            return LocalSyllabusParser.shared.parseText(rawText)
         }
+        return LocalSyllabusParser.shared.parseText(rawText)
+    }
+
+    public func parseSyllabusWithGemini(_ rawText: String) async throws -> CourseDTO {
+        let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=\(geminiAPIKey)"
+        guard let url = URL(string: endpoint) else {
+            throw URLError(.badURL)
+        }
+
+        let prompt = """
+        You are an expert academic syllabus parser. Extract structured course data from the following syllabus.
+        CRITICAL RULES:
+        1. Reading titles MUST be short, clean titles between 5 to 6 words that are strictly appropriate to the topic of the reading/chapter.
+        2. Point system and percentage system MUST be separate:
+           - points_possible e.g. "100 Points"
+           - weight_percentage e.g. "20%"
+        3. Include exact course_name, course_code (e.g. "CPC 514"), term_weeks (integer), sharing_code.
+        4. Group readings and assignments into weeks (week_number 1, 2, ...).
+        5. Due dates must be in formatted strings like "Due Monday, July 6 · Week 1".
+
+        Return ONLY valid JSON matching this exact structure:
+        {
+          "id": "\(UUID().uuidString)",
+          "course_name": "Full Course Name",
+          "course_code": "CPC 514",
+          "term_weeks": 16,
+          "sharing_code": "CPC514",
+          "weeks": [
+            {
+              "id": "\(UUID().uuidString)",
+              "week_number": 1,
+              "date_range_str": "Jul 1 - Jul 7",
+              "readings": [
+                {
+                  "id": "\(UUID().uuidString)",
+                  "title": "Short title between 5 to 6 words",
+                  "media_type": "textbook",
+                  "due_date": "Due Monday, July 6 · Week 1"
+                }
+              ]
+            }
+          ],
+          "assignments": [
+            {
+              "id": "\(UUID().uuidString)",
+              "title": "Assignment Name",
+              "due_date": "Due Sunday, July 12 · Week 2",
+              "points_possible": "100 Points",
+              "weight_percentage": "20%",
+              "full_instructions": "Full assignment instructions"
+            }
+          ]
+        }
+
+        SYLLABUS CONTENT:
+        \(rawText)
+        """
+
+        let payload: [String: Any] = [
+            "contents": [
+                [
+                    "parts": [
+                        ["text": prompt]
+                    ]
+                ]
+            ],
+            "generationConfig": [
+                "responseMimeType": "application/json",
+                "temperature": 0.1
+            ]
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        struct GeminiPart: Decodable {
+            let text: String
+        }
+        struct GeminiContent: Decodable {
+            let parts: [GeminiPart]
+        }
+        struct GeminiCandidate: Decodable {
+            let content: GeminiContent
+        }
+        struct GeminiResponse: Decodable {
+            let candidates: [GeminiCandidate]
+        }
+
+        let geminiResp = try JSONDecoder().decode(GeminiResponse.self, from: data)
+        guard let jsonText = geminiResp.candidates.first?.content.parts.first?.text,
+              let jsonBodyData = jsonText.data(using: .utf8) else {
+            throw URLError(.cannotParseResponse)
+        }
+
+        return try JSONDecoder().decode(CourseDTO.self, from: jsonBodyData)
     }
 
     public func parseSyllabusImageData(_ imageData: Data) async throws -> CourseDTO {
