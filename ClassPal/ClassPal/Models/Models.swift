@@ -44,7 +44,14 @@ public final class Course {
         self.courseDescription = courseDescription
         self.hexColor = hexColor
         self.termWeeks = termWeeks
-        self.sharingCode = sharingCode.isEmpty ? "\(courseCode?.prefix(3).uppercased() ?? "CRS")-\(Int.random(in: 100...999))" : sharingCode
+        let cleanDigits = sharingCode.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        if cleanDigits.count >= 6 {
+            self.sharingCode = String(cleanDigits.prefix(6))
+        } else if !cleanDigits.isEmpty {
+            self.sharingCode = cleanDigits
+        } else {
+            self.sharingCode = String(format: "%06d", Int.random(in: 100000...999999))
+        }
         self.isDeleted = isDeleted
         self.createdAt = createdAt
     }
@@ -75,6 +82,21 @@ public final class Week {
         self.startDate = startDate
         self.theme = theme
         self.dateRangeStr = dateRangeStr
+    }
+
+    public var computedEndDate: Date? {
+        if let str = dateRangeStr, !str.isEmpty {
+            let dates = LocalSyllabusParser.shared.extractAllDates(from: str, fallbackYear: 2026)
+            if dates.count >= 2 {
+                return dates.last?.date
+            } else if let first = dates.first {
+                return Calendar.current.date(byAdding: .day, value: 6, to: first.date)
+            }
+        }
+        if let start = startDate {
+            return Calendar.current.date(byAdding: .day, value: 6, to: start)
+        }
+        return nil
     }
 }
 
@@ -168,6 +190,7 @@ public final class Assignment {
     public var dueDate: Date?
     public var fullInstructions: String?
     public var pointsPossible: String?
+    public var pointsBreakdown: String?
     public var weightPercentage: String?
     public var noteText: String?
     public var isCompleted: Bool
@@ -176,6 +199,8 @@ public final class Assignment {
     public var sourcePageNumber: Int?
     public var courseCode: String?
     public var semanticCategoryRaw: String?
+    public var subTypeRaw: String?
+    public var mediaUrl: String?
     
     public var course: Course?
 
@@ -186,6 +211,7 @@ public final class Assignment {
         dueDate: Date? = nil,
         fullInstructions: String? = nil,
         pointsPossible: String? = nil,
+        pointsBreakdown: String? = nil,
         noteText: String? = nil,
         isCompleted: Bool = false,
         isDeleted: Bool = false,
@@ -193,7 +219,9 @@ public final class Assignment {
         sourcePageNumber: Int? = 1,
         courseCode: String? = nil,
         semanticCategoryRaw: String? = "assignment",
-        weightPercentage: String? = nil
+        weightPercentage: String? = nil,
+        subTypeRaw: String? = "PAPER",
+        mediaUrl: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -201,6 +229,7 @@ public final class Assignment {
         self.dueDate = dueDate
         self.fullInstructions = fullInstructions
         self.pointsPossible = pointsPossible
+        self.pointsBreakdown = pointsBreakdown
         self.weightPercentage = weightPercentage
         self.noteText = noteText
         self.isCompleted = isCompleted
@@ -209,6 +238,25 @@ public final class Assignment {
         self.sourcePageNumber = sourcePageNumber
         self.courseCode = courseCode
         self.semanticCategoryRaw = semanticCategoryRaw
+        self.subTypeRaw = subTypeRaw
+        self.mediaUrl = mediaUrl
+    }
+
+    public var displaySubType: String {
+        subTypeRaw?.uppercased() ?? "PAPER"
+    }
+
+    public var subTypeIconName: String {
+        switch (subTypeRaw ?? "").uppercased() {
+        case "TEXTBOOK": return "book.fill"
+        case "ARTICLE": return "doc.text.fill"
+        case "VIDEO": return "play.tv.fill"
+        case "PODCAST": return "waveform.path.ecg"
+        case "IN_CLASS": return "person.3.fill"
+        case "PAPER": return "doc.richtext.fill"
+        case "PRESENTATION": return "rectangle.inset.topleft.filled"
+        default: return "doc.fill"
+        }
     }
 }
 
@@ -286,6 +334,15 @@ public final class VaultDocument {
 
 public struct CourseImporter {
     public static func importDTO(_ dto: CourseDTO, into modelContext: ModelContext) {
+        if let code = dto.courseCode, !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let descriptor = FetchDescriptor<Course>()
+            if let existingCourses = try? modelContext.fetch(descriptor),
+               let existing = existingCourses.first(where: { $0.courseCode?.lowercased() == code.lowercased() }) {
+                importDTO(dto, into: existing, modelContext: modelContext)
+                return
+            }
+        }
+
         let stableId: UUID
         if let parsed = UUID(uuidString: dto.id) {
             stableId = parsed
@@ -318,6 +375,10 @@ public struct CourseImporter {
             sharingCode: dto.sharingCode
         )
 
+        if let items = dto.items, !items.isEmpty {
+            importItemDTOs(items, into: newCourse, modelContext: modelContext)
+        }
+
         let weeksToImport = dto.weeks ?? (1...16).map { w in
             WeekDTO(id: "week-\(w)", weekNumber: w, startDate: nil, theme: "Week \(w) Schedule", readings: [])
         }
@@ -334,12 +395,20 @@ public struct CourseImporter {
                 weekId = UUID(uuid: (d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7],d[8],d[9],d[10],d[11],d[12],d[13],d[14],d[15]))
             }
 
-            let week = Week(id: weekId, weekNumber: wDTO.weekNumber, theme: wDTO.theme, dateRangeStr: wDTO.dateRangeStr)
-            week.course = newCourse
+            let week: Week
+            if let existingWeek = newCourse.weeks.first(where: { $0.weekNumber == wDTO.weekNumber }) {
+                week = existingWeek
+            } else {
+                week = Week(id: weekId, weekNumber: wDTO.weekNumber, theme: wDTO.theme, dateRangeStr: wDTO.dateRangeStr)
+                week.course = newCourse
+                newCourse.weeks.append(week)
+                modelContext.insert(week)
+            }
 
             if let readings = wDTO.readings, !readings.isEmpty {
                 for rDTO in readings {
-                    // Map parser strings ("reading", "media") → MediaType enum
+                    if week.readings.contains(where: { $0.title.lowercased() == rDTO.title.lowercased() }) { continue }
+
                     let mediaType: MediaType = {
                         switch (rDTO.mediaType ?? "textbook").lowercased() {
                         case "media", "video":   return .video
@@ -358,7 +427,11 @@ public struct CourseImporter {
                         return nil
                     }()
 
-                    let parsedDueDate = LocalSyllabusParser.parseISO8601Date(from: rDTO.dueDate ?? "", fallbackYear: 2026).date
+                    let parsedDueDate: Date? = {
+                        guard let dStr = rDTO.dueDate, !dStr.isEmpty else { return nil }
+                        return LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026).date
+                    }()
+
                     let reading = Reading(
                         id: UUID(),
                         title: rDTO.title,
@@ -368,8 +441,8 @@ public struct CourseImporter {
                         keyTakeawaysText: takeaways,
                         estimatedTimeText: estTime,
                         videoUrl: videoUrl,
-                        dueDate: parsedDueDate,
-                        dateRangeStr: rDTO.dateRangeStr,
+                        dueDate: parsedDueDate ?? week.computedEndDate,
+                        dateRangeStr: rDTO.dateRangeStr ?? week.dateRangeStr,
                         courseCode: newCourse.courseCode
                     )
                     reading.week = week
@@ -377,8 +450,6 @@ public struct CourseImporter {
                     modelContext.insert(reading)
                 }
             }
-            newCourse.weeks.append(week)
-            modelContext.insert(week)
         }
 
         if let assignments = dto.assignments {
@@ -386,50 +457,33 @@ public struct CourseImporter {
             let dfShort = DateFormatter()
             dfShort.dateFormat = "yyyy-MM-dd"
 
-            var courseStartDate: Date = {
-                var comp = DateComponents()
-                comp.year = 2026; comp.month = 7; comp.day = 1
-                return Calendar.current.date(from: comp) ?? Date()
-            }()
-
-            for aDTO in dto.assignments ?? [] {
-                if let dueStr = aDTO.dueDate, !dueStr.isEmpty {
-                    let d = isoFmt.date(from: dueStr) ?? dfShort.date(from: dueStr)
-                    if let d = d, d < courseStartDate { courseStartDate = d }
-                }
-            }
-
             for aDTO in assignments {
+                if newCourse.assignments.contains(where: { $0.title.lowercased() == aDTO.title.lowercased() }) { continue }
+
                 var parsedDueDate: Date? = nil
                 if let dueStr = aDTO.dueDate, !dueStr.isEmpty {
                     parsedDueDate = isoFmt.date(from: dueStr) ?? dfShort.date(from: dueStr)
                 }
 
-                let finalDueDate: Date
-                let weekNumber: Int
-                if let pd = parsedDueDate {
-                    finalDueDate = pd
-                    let days = Calendar.current.dateComponents([.day], from: courseStartDate, to: pd).day ?? 0
-                    weekNumber = max(1, min(16, (days / 7) + 1))
-                } else {
-                    let assignIdx = assignments.firstIndex(where: { $0.id == aDTO.id }) ?? 0
-                    let spreadWeek = max(1, ((assignIdx + 1) * max(1, (dto.termWeeks ?? 12) / max(1, assignments.count))))
-                    weekNumber = min(16, spreadWeek)
-                    var comp = DateComponents()
-                    comp.year = 2026; comp.month = 7 + weekNumber / 4; comp.day = 1 + (weekNumber % 4) * 7
-                    finalDueDate = Calendar.current.date(from: comp) ?? Date()
-                }
+                let finalDueDate: Date = parsedDueDate ?? Date()
+                let days = Calendar.current.dateComponents([.day], from: WeekDateConverter.baseTermStartDate, to: finalDueDate).day ?? 0
+                let weekNumber = max(1, min(16, (days / 7) + 1))
 
                 let assignment = Assignment(
                     id: UUID(),
                     title: aDTO.title,
                     weekNumber: weekNumber,
                     dueDate: finalDueDate,
-                    fullInstructions: aDTO.fullInstructions,
+                    fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
                     pointsPossible: aDTO.pointsPossible ?? "100 Points",
+                    pointsBreakdown: nil,
                     noteText: aDTO.noteText,
+                    isCompleted: false,
+                    isDeleted: false,
                     courseCode: newCourse.courseCode,
-                    weightPercentage: aDTO.weightPercentage
+                    weightPercentage: aDTO.weightPercentage,
+                    subTypeRaw: "PAPER",
+                    mediaUrl: nil
                 )
                 assignment.course = newCourse
                 newCourse.assignments.append(assignment)
@@ -437,7 +491,6 @@ public struct CourseImporter {
             }
         }
 
-        // Create linked SyllabusDocument
         let docTitle = "\(newCourse.courseCode ?? newCourse.courseName) Syllabus"
         let syllabusDoc = SyllabusDocument(
             id: UUID(),
@@ -451,7 +504,225 @@ public struct CourseImporter {
         modelContext.insert(syllabusDoc)
 
         modelContext.insert(newCourse)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+            let totalItems = newCourse.assignments.count + newCourse.weeks.reduce(0) { $0 + $1.readings.count }
+            let courseCode = newCourse.courseCode ?? newCourse.courseName
+            print("💾 [DATABASE] Successfully saved \(totalItems) items to Course: \(courseCode)")
+        } catch {
+            print("⚠️ [DATABASE ERROR] Failed to persist data: \(error)")
+        }
+    }
+
+    public static func importDTO(_ dto: CourseDTO, into existingCourse: Course, modelContext: ModelContext) {
+        if let items = dto.items, !items.isEmpty {
+            importItemDTOs(items, into: existingCourse, modelContext: modelContext)
+        }
+
+        let weeksToImport = dto.weeks ?? []
+        for wDTO in weeksToImport {
+            let week: Week
+            if let targetWeek = existingCourse.weeks.first(where: { $0.weekNumber == wDTO.weekNumber }) {
+                week = targetWeek
+                if let theme = wDTO.theme, !theme.isEmpty { week.theme = theme }
+                if let dateRange = wDTO.dateRangeStr, !dateRange.isEmpty { week.dateRangeStr = dateRange }
+            } else {
+                let weekId = UUID(uuidString: wDTO.id) ?? UUID()
+                week = Week(id: weekId, weekNumber: wDTO.weekNumber, theme: wDTO.theme, dateRangeStr: wDTO.dateRangeStr)
+                week.course = existingCourse
+                existingCourse.weeks.append(week)
+                modelContext.insert(week)
+            }
+
+            if let readings = wDTO.readings, !readings.isEmpty {
+                for rDTO in readings {
+                    let mediaType: MediaType = {
+                        switch (rDTO.mediaType ?? "textbook").lowercased() {
+                        case "media", "video":   return .video
+                        case "podcast":           return .podcast
+                        case "article":           return .article
+                        case "reading", "textbook": return .textbook
+                        default:                  return .textbook
+                        }
+                    }()
+                    let summary = rDTO.summaryText ?? "Required reading: \(rDTO.title)."
+                    let takeaways = rDTO.keyTakeawaysText ?? "• Review \(rDTO.title)"
+                    let estTime = rDTO.estimatedTimeText ?? (mediaType == .video || mediaType == .podcast ? "~20–30 min" : "~40–60 min")
+                    let videoUrl: String? = {
+                        if let cand = rDTO.videoUrl, URLHelper.isValidURL(cand) { return cand }
+                        if let cand = rDTO.summaryText, URLHelper.isValidURL(cand) { return cand }
+                        return nil
+                    }()
+
+                    let parsedDueDate: Date? = {
+                        guard let dStr = rDTO.dueDate, !dStr.isEmpty else { return nil }
+                        return LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026).date
+                    }()
+
+                    if let existingReading = week.readings.first(where: { $0.title.lowercased() == rDTO.title.lowercased() }) {
+                        existingReading.summaryText = summary
+                        existingReading.keyTakeawaysText = takeaways
+                        existingReading.estimatedTimeText = estTime
+                        if let pDate = parsedDueDate { existingReading.dueDate = pDate }
+                    } else {
+                        let reading = Reading(
+                            id: UUID(),
+                            title: rDTO.title,
+                            mediaType: mediaType,
+                            isCompleted: rDTO.isCompleted ?? false,
+                            summaryText: summary,
+                            keyTakeawaysText: takeaways,
+                            estimatedTimeText: estTime,
+                            videoUrl: videoUrl,
+                            dueDate: parsedDueDate ?? week.computedEndDate,
+                            dateRangeStr: rDTO.dateRangeStr ?? week.dateRangeStr,
+                            courseCode: existingCourse.courseCode
+                        )
+                        reading.week = week
+                        week.readings.append(reading)
+                        modelContext.insert(reading)
+                    }
+                }
+            }
+        }
+
+        if let assignments = dto.assignments {
+            let isoFmt = ISO8601DateFormatter()
+            let dfShort = DateFormatter()
+            dfShort.dateFormat = "yyyy-MM-dd"
+
+            for aDTO in assignments {
+                var parsedDueDate: Date? = nil
+                if let dueStr = aDTO.dueDate, !dueStr.isEmpty {
+                    parsedDueDate = isoFmt.date(from: dueStr) ?? dfShort.date(from: dueStr)
+                }
+
+                let finalDueDate: Date = parsedDueDate ?? Date()
+                let days = Calendar.current.dateComponents([.day], from: WeekDateConverter.baseTermStartDate, to: finalDueDate).day ?? 0
+                let weekNumber = max(1, min(16, (days / 7) + 1))
+
+                if let existingAssignment = existingCourse.assignments.first(where: { $0.title.lowercased() == aDTO.title.lowercased() }) {
+                    if let inst = aDTO.fullInstructions, !inst.isEmpty { existingAssignment.fullInstructions = inst }
+                    if let pts = aDTO.pointsPossible, !pts.isEmpty { existingAssignment.pointsPossible = pts }
+                    if let weight = aDTO.weightPercentage, !weight.isEmpty { existingAssignment.weightPercentage = weight }
+                    if parsedDueDate != nil { existingAssignment.dueDate = finalDueDate }
+                } else {
+                    let assignment = Assignment(
+                        id: UUID(),
+                        title: aDTO.title,
+                        weekNumber: weekNumber,
+                        dueDate: finalDueDate,
+                        fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
+                        pointsPossible: aDTO.pointsPossible ?? "100 Points",
+                        pointsBreakdown: nil,
+                        noteText: nil,
+                        isCompleted: false,
+                        isDeleted: false,
+                        courseCode: existingCourse.courseCode,
+                        weightPercentage: aDTO.weightPercentage,
+                        subTypeRaw: "PAPER",
+                        mediaUrl: nil
+                    )
+                    assignment.course = existingCourse
+                    existingCourse.assignments.append(assignment)
+                    modelContext.insert(assignment)
+                }
+            }
+        }
+
+        do {
+            try modelContext.save()
+            let totalItems = existingCourse.assignments.count + existingCourse.weeks.reduce(0) { $0 + $1.readings.count }
+            let courseCode = existingCourse.courseCode ?? existingCourse.courseName
+            print("💾 [DATABASE] Successfully saved \(totalItems) items to Course: \(courseCode)")
+        } catch {
+            print("⚠️ [DATABASE ERROR] Failed to persist data: \(error)")
+        }
+    }
+
+    private static func importItemDTOs(_ items: [ItemDTO], into course: Course, modelContext: ModelContext) {
+        for item in items {
+            let weekNum = item.weekNumber ?? 1
+            let parsedDueDate: Date? = {
+                guard let dStr = item.dueDateIso, !dStr.isEmpty else { return nil }
+                return LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026).date
+            }()
+            let isAssignment = item.category.lowercased() == "assignment" || item.category.lowercased().contains("assignment") || item.category.lowercased().contains("exam") || item.category.lowercased().contains("project")
+            if isAssignment {
+                if let existing = course.assignments.first(where: { $0.title.lowercased() == item.title.lowercased() }) {
+                    if let desc = item.description, !desc.isEmpty { existing.fullInstructions = desc }
+                    if let pts = item.points, !pts.isEmpty { existing.pointsPossible = pts }
+                    if let bd = item.pointsBreakdown, !bd.isEmpty { existing.pointsBreakdown = bd }
+                    if let weight = item.percentage, !weight.isEmpty { existing.weightPercentage = weight }
+                    if let sub = item.subType, !sub.isEmpty { existing.subTypeRaw = sub }
+                    if let media = item.mediaUrl, !media.isEmpty { existing.mediaUrl = media }
+                    if let pDate = parsedDueDate { existing.dueDate = pDate }
+                } else {
+                    let assignment = Assignment(
+                        id: UUID(),
+                        title: item.title,
+                        weekNumber: weekNum,
+                        dueDate: parsedDueDate ?? Date(),
+                        fullInstructions: item.description ?? "Complete \(item.title)",
+                        pointsPossible: item.points ?? "100 Points Possible",
+                        pointsBreakdown: item.pointsBreakdown,
+                        noteText: nil,
+                        isCompleted: false,
+                        isDeleted: false,
+                        courseCode: course.courseCode,
+                        weightPercentage: item.percentage ?? "10%",
+                        subTypeRaw: item.subType ?? "PAPER",
+                        mediaUrl: item.mediaUrl
+                    )
+                    assignment.course = course
+                    course.assignments.append(assignment)
+                    modelContext.insert(assignment)
+                }
+            } else {
+                let week: Week
+                if let targetWeek = course.weeks.first(where: { $0.weekNumber == weekNum }) {
+                    week = targetWeek
+                } else {
+                    week = Week(id: UUID(), weekNumber: weekNum, theme: "Week \(weekNum) Schedule")
+                    week.course = course
+                    course.weeks.append(week)
+                    modelContext.insert(week)
+                }
+
+                let mediaType: MediaType = {
+                    switch (item.subType ?? "TEXTBOOK").lowercased() {
+                    case "video": return .video
+                    case "podcast": return .podcast
+                    case "article": return .article
+                    default: return .textbook
+                    }
+                }()
+
+                if let existing = week.readings.first(where: { $0.title.lowercased() == item.title.lowercased() }) {
+                    if let desc = item.description, !desc.isEmpty { existing.summaryText = desc }
+                    if let media = item.mediaUrl, !media.isEmpty { existing.videoUrl = media }
+                    if let pDate = parsedDueDate { existing.dueDate = pDate }
+                } else {
+                    let reading = Reading(
+                        id: UUID(),
+                        title: item.title,
+                        mediaType: mediaType,
+                        isCompleted: false,
+                        isDeleted: false,
+                        summaryText: item.description ?? "Required reading for \(item.title).",
+                        keyTakeawaysText: nil,
+                        estimatedTimeText: item.subType == "VIDEO" ? "~20 min video" : "~45 min read",
+                        videoUrl: item.mediaUrl,
+                        dueDate: parsedDueDate ?? week.computedEndDate,
+                        dateRangeStr: week.dateRangeStr,
+                        courseCode: course.courseCode
+                    )
+                    reading.week = week
+                    week.readings.append(reading)
+                    modelContext.insert(reading)
+                }
+            }
+        }
     }
 }
 
@@ -482,12 +753,35 @@ public enum WeekDateConverter {
         return calendar.date(byAdding: .day, value: max(0, weekNumber - 1) * 7, to: startDate) ?? startDate
     }
 
-    public static func formattedDueDate(for date: Date?, weekNumber: Int) -> String {
+    public static func formattedDueDate(for date: Date?, week: Week? = nil, weekNumber: Int = 1) -> String {
         let weekNum = max(1, weekNumber)
-        let d = date ?? WeekDateConverter.date(forWeek: weekNum)
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE, MMMM d"
-        return "Due " + formatter.string(from: d) + " · Week \(weekNum)"
+
+        let targetDate: Date = {
+            let weekEndDate = week?.computedEndDate
+
+            if let explicitDate = date {
+                if let wEnd = weekEndDate {
+                    if explicitDate > wEnd {
+                        return wEnd
+                    }
+                    if let dates = week?.dateRangeStr.flatMap({ LocalSyllabusParser.shared.extractAllDates(from: $0, fallbackYear: 2026) }),
+                       let wStart = dates.first?.date, explicitDate < wStart {
+                        return wEnd
+                    }
+                }
+                return explicitDate
+            }
+
+            if let wEnd = weekEndDate {
+                return wEnd
+            }
+
+            return WeekDateConverter.date(forWeek: weekNum)
+        }()
+
+        return "Due " + formatter.string(from: targetDate) + " · Week \(weekNum)"
     }
 }
 

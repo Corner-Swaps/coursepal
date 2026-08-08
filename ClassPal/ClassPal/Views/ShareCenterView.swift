@@ -10,6 +10,7 @@ public struct ShareCenterView: View {
     @State private var isSuccessNotice: Bool = true
     @State private var copiedCode: String? = nil
     @State private var selectedInviteCategory: String = "share" // "share" or "join"
+    @State private var foundCourseForPopup: Course? = nil
 
     public init() {}
 
@@ -107,7 +108,7 @@ public struct ShareCenterView: View {
                                             // Left Accent Color Line (Matching Syllabus Card height 42 1:1)
                                             RoundedRectangle(cornerRadius: 3)
                                                 .fill(codeColor)
-                                                .frame(width: 4, height: 42)
+                                                .frame(width: 4, height: 36)
 
                                             VStack(alignment: .leading, spacing: 3) {
                                                 Text(course.courseCode ?? course.courseName)
@@ -161,17 +162,13 @@ public struct ShareCenterView: View {
                                                     }
                                                     #endif
                                                 }) {
-                                                    HStack(spacing: 4) {
-                                                        Image(systemName: "square.and.arrow.up")
-                                                            .font(.system(size: 11.5, weight: .bold))
-                                                        Text("Share")
-                                                            .font(.system(size: 11.5, weight: .bold))
-                                                    }
-                                                    .foregroundColor(codeColor)
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 6)
-                                                    .background(codeColor.opacity(0.12))
-                                                    .cornerRadius(8)
+                                                    Image(systemName: "square.and.arrow.up")
+                                                        .font(.system(size: 12, weight: .bold))
+                                                        .foregroundColor(codeColor)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 6)
+                                                        .background(codeColor.opacity(0.12))
+                                                        .cornerRadius(8)
                                                 }
                                                 .buttonStyle(.plain)
                                             }
@@ -266,13 +263,96 @@ public struct ShareCenterView: View {
                 importSharedCourse()
             }
         }
+        .sheet(item: $foundCourseForPopup) { course in
+            NavigationStack {
+                VStack(spacing: 20) {
+                    ZStack {
+                        Circle()
+                            .fill(Color(red: 0.06, green: 0.73, blue: 0.50).opacity(0.12))
+                            .frame(width: 72, height: 72)
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 38))
+                            .foregroundColor(Color(red: 0.06, green: 0.73, blue: 0.50))
+                    }
+                    .padding(.top, 10)
+
+                    VStack(spacing: 6) {
+                        Text("Course Found!")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                        Text(course.courseName)
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+
+                        Text("Code: \(course.courseCode ?? "CRS") • Share Code: \(course.sharingCode)")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                    }
+
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text("Duration")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(course.termWeeks) Weeks")
+                                .font(.subheadline)
+                                .bold()
+                        }
+                        Divider()
+                        HStack {
+                            Text("Materials / Readings")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            let totalReadings = course.weeks.reduce(0) { $0 + $1.readings.count }
+                            Text("\(totalReadings) Items")
+                                .font(.subheadline)
+                                .bold()
+                        }
+                    }
+                    .padding()
+                    .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                    .cornerRadius(14)
+
+                    Button(action: {
+                        foundCourseForPopup = nil
+                        showNotice("Enrolled in \(course.courseName) successfully!", success: true)
+                    }) {
+                        HStack {
+                            Image(systemName: "folder.badge.plus")
+                            Text("Enroll & Open Course")
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color(red: 0.06, green: 0.73, blue: 0.50))
+                        .foregroundColor(.white)
+                        .cornerRadius(14)
+                    }
+
+                    Spacer()
+                }
+                .padding(24)
+                .navigationTitle("Join Course Preview")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { foundCourseForPopup = nil }
+                    }
+                }
+            }
+        }
     }
 
     public static func extractCourseCode(from input: String) -> String {
         let raw = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return "" }
 
-        // 1. URL with query parameter e.g. https://classpal.app/join?code=BIO-110
+        // 1. URL with query parameter e.g. https://classpal.app/join?code=849204
         if raw.lowercased().contains("code=") {
             let components = raw.components(separatedBy: CharacterSet(charactersIn: "?&"))
             for comp in components {
@@ -283,7 +363,7 @@ public struct ShareCenterView: View {
             }
         }
 
-        // 2. URL path e.g. https://classpal.app/join/BIO-110
+        // 2. URL path e.g. https://classpal.app/join/849204
         if raw.lowercased().contains("/join/") {
             let parts = raw.components(separatedBy: "/join/")
             if let last = parts.last {
@@ -293,7 +373,6 @@ public struct ShareCenterView: View {
             }
         }
 
-        // 3. Raw text or code (e.g. BIO-110 or https://...)
         let clean = raw.replacingOccurrences(of: "https://", with: "", options: .caseInsensitive)
                        .replacingOccurrences(of: "http://", with: "", options: .caseInsensitive)
                        .replacingOccurrences(of: "classpal://", with: "", options: .caseInsensitive)
@@ -304,41 +383,45 @@ public struct ShareCenterView: View {
 
     private func importSharedCourse() {
         let clean = Self.extractCourseCode(from: inputCode)
+        let digitsOnly = clean.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+
         guard !clean.isEmpty else {
-            showNotice("Please enter a valid course code or paste an invite link.", success: false)
+            showNotice("Please enter a valid course code or 6-digit share code.", success: false)
             return
         }
 
         let existingCourse = courses.first(where: {
-            ($0.courseCode?.uppercased() ?? "") == clean ||
-            $0.sharingCode.uppercased() == clean ||
-            $0.courseName.uppercased() == clean
+            let scDigits = $0.sharingCode.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+            let ccDigits = ($0.courseCode ?? "").components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+            return ($0.courseCode?.uppercased() ?? "") == clean ||
+                   $0.sharingCode.uppercased() == clean ||
+                   (!digitsOnly.isEmpty && (scDigits == digitsOnly || ccDigits == digitsOnly))
         })
 
+        let targetCourse: Course
         if let existing = existingCourse {
-            showNotice("Joined \(existing.courseCode ?? "Course"): \(existing.courseName)!", success: true)
-            inputCode = ""
-            return
+            targetCourse = existing
+        } else {
+            let newCourse = Course(
+                courseName: "Shared Course (\(clean))",
+                courseCode: clean,
+                hexColor: "#7C3AED",
+                termWeeks: 12,
+                sharingCode: digitsOnly.isEmpty ? String(format: "%06d", Int.random(in: 100000...999999)) : digitsOnly
+            )
+
+            for w in 1...12 {
+                let wk = Week(weekNumber: w, theme: "Week \(w) Schedule")
+                wk.course = newCourse
+                newCourse.weeks.append(wk)
+            }
+
+            modelContext.insert(newCourse)
+            try? modelContext.save()
+            targetCourse = newCourse
         }
 
-        let newCourse = Course(
-            courseName: "Course \(clean)",
-            courseCode: clean,
-            hexColor: "#7C3AED",
-            termWeeks: 12,
-            sharingCode: clean
-        )
-
-        for w in 1...12 {
-            let wk = Week(weekNumber: w, theme: "Week \(w)")
-            wk.course = newCourse
-            newCourse.weeks.append(wk)
-        }
-
-        modelContext.insert(newCourse)
-        try? modelContext.save()
-
-        showNotice("Joined course \(clean)! Upload syllabus to populate schedule.", success: true)
+        foundCourseForPopup = targetCourse
         inputCode = ""
     }
 

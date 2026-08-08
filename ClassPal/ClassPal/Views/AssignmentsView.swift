@@ -95,7 +95,7 @@ public struct AssignmentsView: View {
                         }
                         Spacer()
 
-                        // Top Right Corner Action Icons: Filter (Left of checkmark), Done (Green Count) & Trash (Red Count)
+                        // Top Right Corner Action Icons: Filter (Left of checkma  K      Krk), Done (Green Count) & Trash (Red Count)
                         HStack(spacing: 8) {
                             Button(action: {
                                 showingCourseFilterSheet = true
@@ -657,7 +657,7 @@ public struct AssignmentsView: View {
                                                 // Colored accent bar
                                                 RoundedRectangle(cornerRadius: 3)
                                                     .fill(courseColor)
-                                                    .frame(width: 4, height: 26)
+                                                    .frame(width: 4, height: 36)
 
                                                 // Course identity (Guaranteed no duplicates: e.g. "Human Sexuality" or "BIO 110 · Cellular Biology")
                                                 let fullTitle: String = {
@@ -714,7 +714,7 @@ public struct AssignmentsView: View {
                                                             HStack(alignment: .center, spacing: 10) {
                                                                 RoundedRectangle(cornerRadius: 3)
                                                                     .fill(courseColor)
-                                                                    .frame(width: 4, height: 28)
+                                                                    .frame(width: 4, height: 36)
 
                                                                 VStack(alignment: .leading, spacing: 3) {
                                                                     Text(assignment.title)
@@ -787,7 +787,7 @@ public struct AssignmentsView: View {
                                                                 HStack(alignment: .center, spacing: 10) {
                                                                     RoundedRectangle(cornerRadius: 3)
                                                                         .fill(courseColor)
-                                                                        .frame(width: 4, height: 28)
+                                                                        .frame(width: 4, height: 36)
 
                                                                     VStack(alignment: .leading, spacing: 3) {
                                                                         Text(week.theme ?? "Core Concepts")
@@ -834,7 +834,7 @@ public struct AssignmentsView: View {
                                                             HStack(alignment: .center, spacing: 10) {
                                                                 RoundedRectangle(cornerRadius: 3)
                                                                     .fill(courseColor)
-                                                                    .frame(width: 4, height: 28)
+                                                                    .frame(width: 4, height: 36)
 
                                                                 VStack(alignment: .leading, spacing: 3) {
                                                                     Text(ReadingTitleCleaner.cleanTitle(reading.title))
@@ -1205,10 +1205,10 @@ public struct AssignmentCardRow: View {
 
     public var body: some View {
         HStack(spacing: 8) {
-            // Little Vertical Course Color Line Indicator
+            // Vertical Course Color Line Indicator
             RoundedRectangle(cornerRadius: 3)
                 .fill(courseColor)
-                .frame(width: 4, height: 52)
+                .frame(width: 4, height: 36)
 
             // Content Area (Tapping opens Assignment Details)
             Button(action: onEdit) {

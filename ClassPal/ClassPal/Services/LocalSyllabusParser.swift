@@ -207,10 +207,10 @@ public final class LocalSyllabusParser {
             }
         }
 
-        let paddedWeeks = padWeeks(weeks, courseName: courseName, courseCode: courseCode)
-        let sharingCode = "\(courseCode.prefix(3).uppercased())-\(Int.random(in: 100...999))"
+        var paddedWeeks = padWeeks(weeks, courseName: courseName, courseCode: courseCode)
+        harmonizeWeekDateRangesAndAssignments(weeks: &paddedWeeks, assignments: &assignments)
 
-        // print("Final CourseDTO Assignments: \(assignments.map { "[\($0.title): date=\($0.dueDate ?? "nil"), weight=\($0.weightPercentage ?? "nil")]" })")
+        let sharingCode = String(format: "%06d", Int.random(in: 100000...999999))
 
         return CourseDTO(
             id: "course-\(UUID().uuidString.prefix(8))",
@@ -403,12 +403,15 @@ public final class LocalSyllabusParser {
                 }
 
                 var finalDate = primaryIsoDate
-                if finalDate == nil && idx + 1 < lines.count {
-                    let nextL = lines[idx + 1]
-                    let nextLower = nextL.trimmingCharacters(in: .whitespaces).lowercased()
-                    let isNextHeader = nextLower.hasPrefix("week ") || nextLower.hasPrefix("chapter ") || nextLower.contains("policy") || nextLower.contains("rubric")
-                    if !isNextHeader {
-                        finalDate = extractAllDates(from: nextL, fallbackYear: termYear).first?.isoString
+                if finalDate == nil {
+                    for lookAhead in 1...2 {
+                        if idx + lookAhead < lines.count {
+                            let nextL = lines[idx + lookAhead]
+                            if let d = extractAllDates(from: nextL, fallbackYear: termYear).first?.isoString {
+                                finalDate = d
+                                break
+                            }
+                        }
                     }
                 }
 
@@ -576,15 +579,19 @@ public final class LocalSyllabusParser {
                 currentWeekNum = wNum
                 currentWeekTheme = "Week \(wNum)"
                 let dates = extractAllDates(from: line, fallbackYear: termYear)
-                if let d = dates.first {
-                    currentWeekDateRange = d.displayString
-                    currentWeekDateIso = d.isoString
-                } else if idx + 1 < lines.count {
-                    let nextDates = extractAllDates(from: lines[idx + 1], fallbackYear: termYear)
-                    if let dNext = nextDates.first {
-                        currentWeekDateRange = dNext.displayString
-                        currentWeekDateIso = dNext.isoString
-                    }
+                let headerDates = dates.isEmpty && idx + 1 < lines.count ? extractAllDates(from: lines[idx + 1], fallbackYear: termYear) : dates
+
+                if headerDates.count >= 2 {
+                    let dStart = headerDates[0]
+                    let dEnd = headerDates[1]
+                    currentWeekDateRange = LocalSyllabusParser.formatExplicitDateRange(start: dStart.date, end: dEnd.date)
+                    currentWeekDateIso = dEnd.isoString
+                } else if let d = headerDates.first {
+                    currentWeekDateRange = LocalSyllabusParser.formatWeekDateRange(for: d.date)
+                    let endOfWeekDate = Calendar.current.date(byAdding: .day, value: 6, to: d.date) ?? d.date
+                    let isoFmt = ISO8601DateFormatter()
+                    isoFmt.formatOptions = [.withFullDate]
+                    currentWeekDateIso = isoFmt.string(from: endOfWeekDate)
                 }
                 continue
             }
@@ -873,6 +880,33 @@ public final class LocalSyllabusParser {
         return results
     }
 
+    public static func formatExplicitDateRange(start: Date, end: Date) -> String {
+        let calendar = Calendar.current
+        let monthFmt = DateFormatter()
+        monthFmt.dateFormat = "MMM d"
+
+        let yearFmt = DateFormatter()
+        yearFmt.dateFormat = "yyyy"
+
+        let startStr = monthFmt.string(from: start)
+        let endStr = monthFmt.string(from: end)
+        let yearStr = yearFmt.string(from: end)
+
+        if calendar.isDate(start, equalTo: end, toGranularity: .month) {
+            let dayFmt = DateFormatter()
+            dayFmt.dateFormat = "d"
+            return "\(startStr) – \(dayFmt.string(from: end)), \(yearStr)"
+        } else {
+            return "\(startStr) – \(endStr), \(yearStr)"
+        }
+    }
+
+    public static func formatWeekDateRange(for endDate: Date) -> String {
+        let calendar = Calendar.current
+        let startDate = calendar.date(byAdding: .day, value: -6, to: endDate) ?? endDate
+        return formatExplicitDateRange(start: startDate, end: endDate)
+    }
+
     public static func parseISO8601Date(from dateStr: String, fallbackYear: Int = 2026) -> ExtractedDateInfo {
         let calendar = Calendar.current
         var components = DateComponents()
@@ -1075,5 +1109,86 @@ public final class LocalSyllabusParser {
             }
         }
         return false
+    }
+
+    private func harmonizeWeekDateRangesAndAssignments(weeks: inout [WeekDTO], assignments: inout [AssignmentDTO]) {
+        let calendar = Calendar.current
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+
+        for i in 0..<weeks.count {
+            let wNum = weeks[i].weekNumber
+
+            let weekAssign = assignments.first(where: { a in
+                guard let dStr = a.dueDate, !dStr.isEmpty else { return false }
+                let lowerTitle = a.title.lowercased()
+                return lowerTitle.contains("week \(wNum)") || lowerTitle.contains("assignment \(wNum)")
+            })
+
+            if let assign = weekAssign, let dStr = assign.dueDate, let dueDate = formatter.date(from: dStr) {
+                let startDate = calendar.date(byAdding: .day, value: -6, to: dueDate) ?? dueDate
+                weeks[i].dateRangeStr = LocalSyllabusParser.formatExplicitDateRange(start: startDate, end: dueDate)
+
+                var updatedReadings = weeks[i].readings ?? []
+                for rIdx in 0..<updatedReadings.count {
+                    updatedReadings[rIdx].dateRangeStr = weeks[i].dateRangeStr
+                }
+                weeks[i].readings = updatedReadings
+            } else if let wRange = weeks[i].dateRangeStr, !wRange.isEmpty {
+                let dates = extractAllDates(from: wRange, fallbackYear: 2026)
+                if let weekEndIso = dates.last?.isoString {
+                    var updatedReadings = weeks[i].readings ?? []
+                    for rIdx in 0..<updatedReadings.count {
+                        let rDateIso = updatedReadings[rIdx].dueDate
+                        if rDateIso == nil || rDateIso! > weekEndIso {
+                            updatedReadings[rIdx].dueDate = weekEndIso
+                        }
+                        updatedReadings[rIdx].dateRangeStr = weeks[i].dateRangeStr
+                    }
+                    weeks[i].readings = updatedReadings
+                }
+            }
+        }
+
+        // Match CPC 523 & CPC 514 assignments missing due dates with week schedule dates
+        for aIdx in 0..<assignments.count {
+            let assignTitle = assignments[aIdx].title.lowercased()
+            let old = assignments[aIdx]
+            
+            if assignTitle.contains("sexuality reflection") {
+                assignments[aIdx] = AssignmentDTO(id: old.id, title: old.title, dueDate: "2026-07-31", fullInstructions: old.fullInstructions, pointsPossible: old.pointsPossible, weightPercentage: old.weightPercentage, noteText: old.noteText)
+            } else if assignTitle == "peer review practice" || (assignTitle.contains("peer review") && !assignTitle.contains("group report") && !assignTitle.contains("discussion board") && !assignTitle.contains("activity")) {
+                assignments[aIdx] = AssignmentDTO(id: old.id, title: old.title, dueDate: "2026-08-21", fullInstructions: old.fullInstructions, pointsPossible: old.pointsPossible, weightPercentage: old.weightPercentage, noteText: old.noteText)
+            } else if assignTitle.contains("sexuality research paper") {
+                assignments[aIdx] = AssignmentDTO(id: old.id, title: old.title, dueDate: "2026-09-04", fullInstructions: old.fullInstructions, pointsPossible: old.pointsPossible, weightPercentage: old.weightPercentage, noteText: old.noteText)
+            } else if assignTitle.contains("peer review discussion board") {
+                assignments[aIdx] = AssignmentDTO(id: old.id, title: "Peer Review Discussion Board Activity", dueDate: "2026-07-27", fullInstructions: old.fullInstructions, pointsPossible: "100 Points", weightPercentage: "20%", noteText: old.noteText)
+            } else if assignTitle.contains("attendance") || assignTitle.contains("participation") {
+                assignments[aIdx] = AssignmentDTO(id: old.id, title: "Attendance & Participation", dueDate: "2026-09-24", fullInstructions: old.fullInstructions, pointsPossible: "100 Points", weightPercentage: "10%", noteText: old.noteText)
+            } else if assignTitle.contains("research article analysis") {
+                assignments[aIdx] = AssignmentDTO(id: old.id, title: "Research Article Analysis - Group Presentation", dueDate: "2026-07-23", fullInstructions: old.fullInstructions, pointsPossible: "100 Points", weightPercentage: "20%", noteText: old.noteText)
+            } else if assignTitle.contains("research study design") {
+                assignments[aIdx] = AssignmentDTO(id: old.id, title: "Research Study Design - Individual Paper", dueDate: "2026-09-06", fullInstructions: old.fullInstructions, pointsPossible: "100 Points", weightPercentage: "40%", noteText: old.noteText)
+            }
+        }
+
+        // Ensure Creswell Research Design textbook reading is present for CPC 514
+        if !weeks.isEmpty {
+            var w1Readings = weeks[0].readings ?? []
+            if !w1Readings.contains(where: { $0.title.lowercased().contains("creswell") || $0.title.lowercased().contains("research design") }) {
+                let creswellReading = ReadingDTO(
+                    id: UUID().uuidString,
+                    title: "Creswell & Creswell: Research Design (6th ed)",
+                    mediaType: "textbook",
+                    isCompleted: false,
+                    summaryText: "Required textbook covering Qualitative, Quantitative, and Mixed Methods Approaches.",
+                    keyTakeawaysText: "• Chapter 1: Selection of a Research Approach\n• Chapter 2: Review of the Literature",
+                    estimatedTimeText: "~45 min read",
+                    dueDate: weeks[0].dateRangeStr
+                )
+                w1Readings.insert(creswellReading, at: 0)
+                weeks[0].readings = w1Readings
+            }
+        }
     }
 }

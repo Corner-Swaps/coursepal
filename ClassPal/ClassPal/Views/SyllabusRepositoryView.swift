@@ -44,6 +44,72 @@ public struct PDFKitView: NSViewRepresentable {
 }
 #endif
 
+import WebKit
+
+#if os(iOS)
+public struct NativeDocViewer: UIViewRepresentable {
+    public let data: Data
+    public let fileName: String
+
+    public init(data: Data, fileName: String) {
+        self.data = data
+        self.fileName = fileName
+    }
+
+    public func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.isOpaque = false
+        webView.backgroundColor = .systemGroupedBackground
+        return webView
+    }
+
+    public func updateUIView(_ uiView: WKWebView, context: Context) {
+        guard !data.isEmpty else { return }
+        let tempDir = FileManager.default.temporaryDirectory
+        let cleanName = fileName.replacingOccurrences(of: " ", with: "_")
+        let tempUrl = tempDir.appendingPathComponent(UUID().uuidString.prefix(8) + "_" + cleanName)
+
+        do {
+            try data.write(to: tempUrl)
+            uiView.loadFileURL(tempUrl, allowingReadAccessTo: tempDir)
+        } catch {
+            let ext = (fileName as NSString).pathExtension.lowercased()
+            let mime = ext == "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            uiView.load(data, mimeType: mime, characterEncodingName: "UTF-8", baseURL: tempDir)
+        }
+    }
+}
+#elseif os(macOS)
+public struct NativeDocViewer: NSViewRepresentable {
+    public let data: Data
+    public let fileName: String
+
+    public init(data: Data, fileName: String) {
+        self.data = data
+        self.fileName = fileName
+    }
+
+    public func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        return webView
+    }
+
+    public func updateNSView(_ nsView: WKWebView, context: Context) {
+        guard !data.isEmpty else { return }
+        let tempDir = FileManager.default.temporaryDirectory
+        let cleanName = fileName.replacingOccurrences(of: " ", with: "_")
+        let tempUrl = tempDir.appendingPathComponent(UUID().uuidString.prefix(8) + "_" + cleanName)
+
+        do {
+            try data.write(to: tempUrl)
+            nsView.loadFileURL(tempUrl, allowingReadAccessTo: tempDir)
+        } catch {}
+    }
+}
+#endif
+
 public struct SyllabusRepositoryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Course.createdAt, order: .reverse) private var courses: [Course]
@@ -67,27 +133,6 @@ public struct SyllabusRepositoryView: View {
                 result.append(doc)
             }
         }
-        var seenTitles = Set<String>(result.map { $0.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
-        for sylDoc in dbSyllabi {
-            let titleKey = sylDoc.docTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            if !seenTitles.contains(titleKey) {
-                seenTitles.insert(titleKey)
-                let bytes = Double(sylDoc.rawFileData?.count ?? 0)
-                let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
-                let ext = (sylDoc.fileName ?? sylDoc.docTitle).components(separatedBy: ".").last?.uppercased() ?? "PDF"
-                let syntheticDoc = VaultDocument(
-                    title: sylDoc.docTitle,
-                    category: "Syllabus",
-                    fileSize: sizeMB,
-                    fileType: ext,
-                    courseCode: sylDoc.course?.courseCode ?? "CRS",
-                    fileContent: nil,
-                    rawFileData: sylDoc.rawFileData
-                )
-                result.append(syntheticDoc)
-            }
-        }
-
         return result
     }
 
@@ -194,6 +239,10 @@ public struct SyllabusRepositoryView: View {
 
     @State private var showingDocDetailModal: Bool = false
     @State private var showingFileImporter: Bool = false
+    @State private var selectedCourseForAddDoc: Course? = nil
+    @State private var isUploadingDocument: Bool = false
+    @State private var showingRepositoryErrorAlert: Bool = false
+    @State private var repositoryErrorMessage: String = ""
 
     public var body: some View {
         NavigationStack {
@@ -284,7 +333,15 @@ public struct SyllabusRepositoryView: View {
                                     ForEach(activeCourses) { course in
                                         CourseSyllabusCardRow(
                                             course: course,
-                                            onPreviewPDF: { previewPDFForCourse(course) },
+                                            onAddDocument: {
+                                                if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                                    repositoryErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
+                                                    showingRepositoryErrorAlert = true
+                                                } else {
+                                                    selectedCourseForAddDoc = course
+                                                    showingFileImporter = true
+                                                }
+                                            },
                                             onDeleteCourse: { deleteCourse(course) }
                                         )
                                     }
@@ -347,40 +404,94 @@ public struct SyllabusRepositoryView: View {
             .sheet(item: $selectedDocForPreview) { doc in
                 VaultDocPreviewSheet(document: doc)
             }
-            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: true) { result in
-                if case .success(let urls) = result, !urls.isEmpty {
-                    for url in urls {
-                        importPDFDocument(url)
-                    }
+            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: false) { result in
+                if case .success(let urls) = result, let singleURL = urls.first {
+                    importPDFDocument(singleURL)
                 }
+            }
+            .alert("Error", isPresented: $showingRepositoryErrorAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(repositoryErrorMessage)
             }
         }
         .dismissKeyboardOnTap()
     }
 
     private func importPDFDocument(_ url: URL) {
+        print("🔘 [UI BUTTON TAP] User tapped Import PDF in Repository. Initiating live network pipeline...")
+
+        if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            repositoryErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
+            showingRepositoryErrorAlert = true
+            return
+        }
+
+        let isAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if isAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         let fileData: Data? = try? Data(contentsOf: url)
+        let extractedText = DocumentExtractor.extractText(from: url)
 
-        guard let extractedText = DocumentExtractor.extractText(from: url), !extractedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let targetCourse = selectedCourseForAddDoc
+        let urlPathExtension = url.pathExtension
+        let urlLastPathComponent = url.lastPathComponent
 
-        let dto = LocalSyllabusParser.shared.parseText(extractedText)
-        CourseImporter.importDTO(dto, into: modelContext)
+        isUploadingDocument = true
+        Task { @MainActor in
+            defer { isUploadingDocument = false }
+            let startTime = Date()
+            do {
+                let dto: CourseDTO
+                if urlPathExtension.lowercased() == "pdf", let pData = fileData, !pData.isEmpty {
+                    print("⏳ [NETWORK START] Sending Base64 PDF (\(pData.count) bytes) directly to Gemini API...")
+                    dto = try await APIService.shared.parsePDFDocumentData(pData)
+                    let timeElapsed = String(format: "%.2f", Date().timeIntervalSince(startTime))
+                    print("✅ [NETWORK COMPLETE] Gemini API responded in \(timeElapsed) seconds.")
+                } else if let text = extractedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    print("⏳ [NETWORK START] Sending extracted syllabus text to Gemini API...")
+                    dto = try await APIService.shared.parseSyllabusText(text)
+                    let timeElapsed = String(format: "%.2f", Date().timeIntervalSince(startTime))
+                    print("✅ [NETWORK COMPLETE] Gemini API responded in \(timeElapsed) seconds.")
+                } else {
+                    repositoryErrorMessage = "Error: Unable to process document. File is empty or unreadable."
+                    showingRepositoryErrorAlert = true
+                    return
+                }
 
-        let bytes = Double(fileData?.count ?? 0)
-        let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
-        let cCode = dto.courseCode ?? ""
-        let ext = url.pathExtension.isEmpty ? "pdf" : url.pathExtension
-        let documentTitle = (!cCode.isEmpty && cCode != "CRS-101") ? "\(cCode) - \(dto.courseName).\(ext)" : url.lastPathComponent
-        let doc = VaultDocument(
-            title: documentTitle,
-            category: "Syllabus",
-            fileSize: sizeMB,
-            courseCode: cCode,
-            fileContent: extractedText,
-            rawFileData: fileData
-        )
-        modelContext.insert(doc)
-        try? modelContext.save()
+                if let target = targetCourse {
+                    CourseImporter.importDTO(dto, into: target, modelContext: modelContext)
+                } else {
+                    CourseImporter.importDTO(dto, into: modelContext)
+                }
+
+                let bytes = Double(fileData?.count ?? 0)
+                let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
+                let cCode = targetCourse?.courseCode ?? dto.courseCode ?? ""
+                let ext = urlPathExtension.isEmpty ? "pdf" : urlPathExtension
+                let documentTitle = (!cCode.isEmpty && cCode != "CRS-101") ? "\(cCode) - \(dto.courseName).\(ext)" : urlLastPathComponent
+                let doc = VaultDocument(
+                    title: documentTitle,
+                    category: "Class Material",
+                    fileSize: sizeMB,
+                    fileType: ext,
+                    courseCode: cCode,
+                    fileContent: extractedText,
+                    rawFileData: fileData
+                )
+                modelContext.insert(doc)
+                try modelContext.save()
+            } catch {
+                print("[SyllabusRepositoryView] Async document import failed: \(error)")
+                repositoryErrorMessage = "Error: Unable to process document. Please check your API key and network."
+                showingRepositoryErrorAlert = true
+            }
+            selectedCourseForAddDoc = nil
+        }
     }
 }
 
@@ -406,7 +517,7 @@ public struct SyllabusCardView: View {
             // Left Accent Border
             RoundedRectangle(cornerRadius: 3)
                 .fill(courseColor)
-                .frame(width: 4)
+                .frame(width: 4, height: 36)
 
             VStack(alignment: .leading, spacing: 10) {
                 // Header Badge
@@ -492,7 +603,17 @@ public struct VaultDocCardRow: View {
     public let onPreview: () -> Void
     public let onDelete: () -> Void
 
+    @Query private var courses: [Course]
     @State private var isExpanded: Bool = false
+
+    private var courseColor: Color {
+        if let code = document.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
+            if let matching = courses.first(where: { ($0.courseCode ?? "").lowercased() == code.lowercased() || $0.courseName.lowercased().contains(code.lowercased()) }) {
+                return CourseColorHelper.color(for: matching.hexColor)
+            }
+        }
+        return Color(red: 0.14, green: 0.44, blue: 0.96)
+    }
 
     private var displayCourseCode: String {
         guard let code = document.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty else {
@@ -535,10 +656,10 @@ public struct VaultDocCardRow: View {
         VStack(spacing: 0) {
             // MARK: - Header Bar (Matching Reading Card Section Size 1:1)
             HStack(spacing: 10) {
-                // Left Accent Color Line
+                // Left Accent Color Line (Matches Course Color, 48px height)
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(red: 0.14, green: 0.44, blue: 0.96))
-                    .frame(width: 4, height: 42)
+                    .fill(courseColor)
+                    .frame(width: 4, height: 36)
 
                 Button(action: onPreview) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -553,8 +674,12 @@ public struct VaultDocCardRow: View {
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
 
                             Text("• \(displayCourseCode)")
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                .foregroundColor(courseColor)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(courseColor.opacity(0.12))
+                                .cornerRadius(6)
 
                             Text("• \(document.fileSize)")
                                 .font(.system(size: 10.5, weight: .semibold, design: .rounded))
@@ -567,16 +692,16 @@ public struct VaultDocCardRow: View {
 
                 Spacer(minLength: 4)
 
-                // Right Side Action Buttons & Arrow
+                // Right Side Action Buttons: PDF Document, Garbage can, Chevron Dropdown
                 HStack(spacing: 6) {
                     Button(action: onPreview) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(Color(red: 0.92, green: 0.95, blue: 1.0))
+                                .fill(courseColor.opacity(0.15))
                                 .frame(width: 32, height: 32)
                             Image(systemName: "doc.fill")
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .foregroundColor(courseColor)
                         }
                     }
                     .buttonStyle(.plain)
@@ -688,44 +813,91 @@ public struct VaultDocPreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     public let document: VaultDocument
 
+    @State private var previewMode: Int = 0 // 0 = Original Document, 1 = Extracted Text
+
+    private var sanitizedTextContent: String {
+        let raw = document.fileContent ?? (document.rawFileData != nil ? DocumentExtractor.extractTextFromData(document.rawFileData!, fileName: document.title) : "")
+        let cleaned = raw?.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+                           .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression) ?? ""
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public var body: some View {
         NavigationStack {
-            Group {
-                if let rawData = document.rawFileData, !rawData.isEmpty {
-                    if document.fileType.uppercased() == "PDF" || document.title.lowercased().hasSuffix(".pdf") {
-                        PDFKitView(data: rawData)
-                    } else if let txt = String(data: rawData, encoding: .utf8), !txt.isEmpty {
-                        ScrollView {
-                            Text(txt)
-                                .font(.system(.body, design: .monospaced))
-                                .padding(18)
+            VStack(spacing: 0) {
+                // Segmented Picker for Original Document vs Extracted Text
+                Picker("Preview Mode", selection: $previewMode) {
+                    Text("Original Document").tag(0)
+                    Text("Extracted Text").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+
+                Divider()
+
+                if previewMode == 0 {
+                    // TAB 0: ORIGINAL DOCUMENT VISUAL RENDERER
+                    if let rawData = document.rawFileData, !rawData.isEmpty {
+                        let isPdf = document.fileType.uppercased() == "PDF" || document.title.lowercased().hasSuffix(".pdf")
+                        if isPdf {
+                            PDFKitView(data: rawData)
+                        } else {
+                            NativeDocViewer(data: rawData, fileName: document.title)
                         }
                     } else {
-                        PDFKitView(data: rawData)
+                        // Fallback formatted reader view if binary data missing
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                                HStack(spacing: 10) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.12))
+                                            .frame(width: 38, height: 38)
+                                        Image(systemName: "doc.text.fill")
+                                            .font(.system(size: 18, weight: .bold))
+                                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(document.title)
+                                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                        Text("\(document.fileType) Document • \(document.courseCode ?? "General")")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                    }
+                                }
+                                Divider()
+
+                                Text(sanitizedTextContent)
+                                    .font(.system(size: 15, weight: .regular))
+                                    .foregroundColor(Color(red: 0.15, green: 0.20, blue: 0.30))
+                                    .lineSpacing(6)
+                            }
+                            .padding(20)
+                        }
                     }
-                } else if let content = document.fileContent, !content.isEmpty {
+                } else {
+                    // TAB 1: EXTRACTED TEXT (SANITIZED & CLEANED)
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 16) {
                             Text(document.title)
-                                .font(.title2.bold())
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Text("\(document.category) · \(document.courseCode ?? "General")")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Divider()
-                            Text(content)
-                                .font(.body)
+
+                            let clean = sanitizedTextContent
+                            Text(clean.isEmpty ? "No extracted text available for this document." : clean)
+                                .font(.system(size: 14, weight: .regular))
+                                .foregroundColor(Color(red: 0.15, green: 0.20, blue: 0.30))
+                                .lineSpacing(6)
                         }
                         .padding(20)
                     }
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 36))
-                            .foregroundColor(.secondary)
-                        Text("No content preview available.")
-                            .font(.headline)
-                    }
-                    .padding()
                 }
             }
             .navigationTitle(document.title)
@@ -792,7 +964,7 @@ public struct SyllabusDocPreviewSheet: View {
 
 public struct CourseSyllabusCardRow: View {
     public let course: Course
-    public let onPreviewPDF: () -> Void
+    public let onAddDocument: () -> Void
     public let onDeleteCourse: () -> Void
 
     @State private var isExpanded: Bool = false
@@ -840,7 +1012,7 @@ public struct CourseSyllabusCardRow: View {
                 // Left Accent Color Line
                 RoundedRectangle(cornerRadius: 3)
                     .fill(courseColor)
-                    .frame(width: 4, height: 42)
+                    .frame(width: 4, height: 36)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(fullTitle)
@@ -868,16 +1040,16 @@ public struct CourseSyllabusCardRow: View {
 
                 Spacer(minLength: 4)
 
-                // Right Side Action Buttons & Arrow: PDF document, Garbage can, Chevron Arrow
+                // Right Side Action Buttons: Plus Document Button, Garbage can, Chevron Dropdown Arrow
                 HStack(spacing: 6) {
-                    // PDF Document Button
-                    Button(action: onPreviewPDF) {
+                    // Plus Document Button to upload document to course
+                    Button(action: onAddDocument) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(Color(red: 0.92, green: 0.95, blue: 1.0))
                                 .frame(width: 32, height: 32)
-                            Image(systemName: "doc.fill")
-                                .font(.system(size: 13, weight: .semibold))
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                         }
                     }
@@ -896,7 +1068,7 @@ public struct CourseSyllabusCardRow: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Expand / Collapse Chevron Arrow
+                    // Expand / Collapse Chevron Dropdown Arrow
                     Button(action: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                             isExpanded.toggle()
@@ -1038,7 +1210,7 @@ public struct CourseSyllabusCardRow: View {
                                             .lineLimit(nil)
                                             .multilineTextAlignment(.leading)
 
-                                        Text(WeekDateConverter.formattedDueDate(for: reading.dueDate, weekNumber: reading.week?.weekNumber ?? 1))
+                                        Text(WeekDateConverter.formattedDueDate(for: reading.dueDate, week: reading.week, weekNumber: reading.week?.weekNumber ?? 1))
                                             .font(.system(size: 10.5, weight: .medium))
                                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                     }

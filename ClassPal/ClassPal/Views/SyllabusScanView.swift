@@ -73,10 +73,10 @@ public struct SyllabusScanView: View {
             .fileImporter(
                 isPresented: $isShowingFilePicker,
                 allowedContentTypes: DocumentExtractor.supportedContentTypes,
-                allowsMultipleSelection: true
+                allowsMultipleSelection: false
             ) { result in
-                if case .success(let urls) = result, !urls.isEmpty {
-                    handlePDFUploads(urls)
+                if case .success(let urls) = result, let singleURL = urls.first {
+                    handlePDFUploads([singleURL])
                 }
             }
         }

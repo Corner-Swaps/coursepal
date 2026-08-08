@@ -158,7 +158,7 @@ public struct DocumentVaultView: View {
                                         HStack(spacing: 12) {
                                             RoundedRectangle(cornerRadius: 3)
                                                 .fill(courseColor)
-                                                .frame(width: 4, height: 44)
+                                                .frame(width: 4, height: 36)
 
                                             VStack(alignment: .leading, spacing: 3) {
                                                 Text(course.courseCode ?? "CRS 101")
@@ -289,16 +289,30 @@ public struct DocumentVaultView: View {
                                     }
 
                                     ForEach(dbVaultDocs) { doc in
+                                        let cColor: Color = {
+                                            if let code = doc.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
+                                                if let matching = courses.first(where: { ($0.courseCode ?? "").lowercased() == code.lowercased() || $0.courseName.lowercased().contains(code.lowercased()) }) {
+                                                    return CourseColorHelper.color(for: matching.hexColor)
+                                                }
+                                            }
+                                            return Color(red: 0.14, green: 0.44, blue: 0.96)
+                                        }()
+
                                         HStack(spacing: 12) {
+                                            // Left Vertical Course Color Accent Line (44px)
+                                            RoundedRectangle(cornerRadius: 3)
+                                                .fill(cColor)
+                                                .frame(width: 4, height: 36)
+
                                             Button(action: { selectedDocForPreview = doc }) {
                                                 HStack(spacing: 12) {
                                                     ZStack {
                                                         RoundedRectangle(cornerRadius: 10)
-                                                            .fill(Color(red: 0.92, green: 0.95, blue: 1.0))
+                                                            .fill(cColor.opacity(0.15))
                                                             .frame(width: 36, height: 36)
                                                         Image(systemName: "doc.fill")
                                                             .font(.system(size: 16))
-                                                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                                            .foregroundColor(cColor)
                                                     }
 
                                                     VStack(alignment: .leading, spacing: 2) {
@@ -306,9 +320,15 @@ public struct DocumentVaultView: View {
                                                             .font(.system(size: 13, weight: .bold))
                                                             .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                             .multilineTextAlignment(.leading)
-                                                        Text("\(doc.category) · \(doc.courseCode ?? "General")")
-                                                            .font(.caption)
-                                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                        HStack(spacing: 4) {
+                                                            Text(doc.category)
+                                                                .font(.caption)
+                                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                            Text("• \(doc.courseCode ?? "General")")
+                                                                .font(.caption)
+                                                                .fontWeight(.bold)
+                                                                .foregroundColor(cColor)
+                                                        }
                                                     }
                                                 }
                                             }
@@ -321,10 +341,10 @@ public struct DocumentVaultView: View {
                                             }) {
                                                 Text("View")
                                                     .font(.system(size: 11, weight: .bold))
-                                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                                    .foregroundColor(cColor)
                                                     .padding(.horizontal, 10)
                                                     .padding(.vertical, 6)
-                                                    .background(Color(red: 0.92, green: 0.95, blue: 1.0))
+                                                    .background(cColor.opacity(0.12))
                                                     .cornerRadius(10)
                                             }
                                             .buttonStyle(.plain)

@@ -1,0 +1,21 @@
+# Xcode & macOS
+.DS_Store
+DerivedData/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserdata
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.app
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Local Environment & API Keys (DO NOT COMMIT TO GITHUB)
+.env
+Secrets.xcconfig
+Config.plist
+gemini_api_key.txt

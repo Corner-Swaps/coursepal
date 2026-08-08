@@ -627,7 +627,7 @@ public struct WeeklyDashboardView: View {
                                     HStack(spacing: 8) {
                                         RoundedRectangle(cornerRadius: 3)
                                             .fill(courseColor)
-                                            .frame(width: 4, height: 28)
+                                            .frame(width: 4, height: 36)
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(courseObj?.courseCode ?? courseName)
                                                 .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -925,10 +925,10 @@ public struct WeekReadingCardView: View {
 
     public var body: some View {
         HStack(spacing: 10) {
-            // Little Vertical Course Color Line Indicator
+            // Vertical Course Color Line Indicator
             RoundedRectangle(cornerRadius: 3)
                 .fill(courseColor)
-                .frame(width: 4, height: 44)
+                .frame(width: 4, height: 36)
 
             // Content Area (Tapping opens Reading Details)
             Button(action: onInfo) {
@@ -999,7 +999,7 @@ public struct WeekReadingCardView: View {
                     // Date Display (Due date formatted: "Due [Day], [Month] [Date] · Week [WeekNumber]")
                     let readingDateText: String = {
                         let w = reading.week?.weekNumber ?? 1
-                        return WeekDateConverter.formattedDueDate(for: reading.dueDate, weekNumber: w)
+                        return WeekDateConverter.formattedDueDate(for: reading.dueDate, week: reading.week, weekNumber: w)
                     }()
 
                     Text(readingDateText)
@@ -1152,12 +1152,12 @@ public struct EditReadingSheet: View {
                                let targetWeek = course.weeks.first(where: { $0.weekNumber == newWeekNum }) {
                                 reading.week = targetWeek
                             }
-                            let calculatedDate = WeekDateConverter.date(forWeek: newWeekNum)
+                            let calculatedDate = reading.week?.computedEndDate ?? WeekDateConverter.date(forWeek: newWeekNum)
                             dueDateInput = calculatedDate
                             reading.dueDate = calculatedDate
                             let formatter = DateFormatter()
                             formatter.dateStyle = .medium
-                            reading.dateRangeStr = formatter.string(from: calculatedDate)
+                            reading.dateRangeStr = reading.week?.dateRangeStr ?? formatter.string(from: calculatedDate)
                             isSyncing = false
                         }
 
@@ -1246,7 +1246,7 @@ public struct EditReadingSheet: View {
                 selectedWeekNum = reading.week?.weekNumber ?? 1
                 videoUrlInput = reading.videoUrl ?? ""
                 dateRangeInput = reading.dateRangeStr ?? reading.week?.dateRangeStr ?? ""
-                dueDateInput = reading.dueDate ?? WeekDateConverter.date(forWeek: selectedWeekNum)
+                dueDateInput = reading.dueDate ?? (reading.week?.computedEndDate ?? WeekDateConverter.date(forWeek: selectedWeekNum))
                 chapterInput = reading.chapterText ?? ""
                 notesInput = "" // Notes are NOT pre-filled automatically
             }
