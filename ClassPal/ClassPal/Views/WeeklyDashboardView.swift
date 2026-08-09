@@ -517,26 +517,6 @@ public struct WeeklyDashboardView: View {
                                             .background(ClassPalTheme.pillBlueBg)
                                             .cornerRadius(10)
 
-                                        if let weekDateRange = sortedCourseWeeks.first(where: { $0.weekNumber == weekNum })?.dateRangeStr,
-                                           !weekDateRange.trimmingCharacters(in: .whitespaces).isEmpty {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "calendar")
-                                                    .font(.system(size: 10, weight: .bold))
-                                                    .foregroundColor(ClassPalTheme.accentBlue)
-                                                Text(weekDateRange)
-                                                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                                                    .foregroundColor(ClassPalTheme.textDark)
-                                            }
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 3.5)
-                                            .background(Color.white)
-                                            .cornerRadius(8)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
-                                            )
-                                        }
-
                                         Spacer()
 
                                         if !weekReadings.isEmpty {
@@ -930,106 +910,103 @@ public struct WeekReadingCardView: View {
                 .fill(courseColor)
                 .frame(width: 4, height: 36)
 
-            // Content Area (Tapping opens Reading Details)
-            Button(action: onInfo) {
-                VStack(alignment: .leading, spacing: 3) {
-                    // Top Line: Course Main Title Pill (Left) & Media Type Badge (Right)
-                    let rawCourseName = reading.week?.course?.courseName
-                    let rawCourseCode = reading.week?.course?.courseCode
-                    let displayCourseTitle: String = {
-                        if let code = rawCourseCode, !code.trimmingCharacters(in: .whitespaces).isEmpty, code.lowercased() != "course" {
-                            if let name = rawCourseName, !name.trimmingCharacters(in: .whitespaces).isEmpty, name.lowercased() != "course", name.lowercased() != "unassigned" {
-                                let cleanCode = code.trimmingCharacters(in: .whitespaces)
-                                let cleanName = name.trimmingCharacters(in: .whitespaces)
-                                if cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
-                                    return cleanName
-                                }
-                                return "\(cleanCode) · \(cleanName)"
+            // Content Area
+            VStack(alignment: .leading, spacing: 3) {
+                // Top Line: Course Main Title Pill (Left) & Media Type Badge (Right)
+                let rawCourseName = reading.week?.course?.courseName
+                let rawCourseCode = reading.week?.course?.courseCode
+                let displayCourseTitle: String = {
+                    if let code = rawCourseCode, !code.trimmingCharacters(in: .whitespaces).isEmpty, code.lowercased() != "course" {
+                        if let name = rawCourseName, !name.trimmingCharacters(in: .whitespaces).isEmpty, name.lowercased() != "course", name.lowercased() != "unassigned" {
+                            let cleanCode = code.trimmingCharacters(in: .whitespaces)
+                            let cleanName = name.trimmingCharacters(in: .whitespaces)
+                            if cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
+                                return cleanName
                             }
-                            return code
+                            return "\(cleanCode) · \(cleanName)"
                         }
-                        return rawCourseName ?? "COURSE"
-                    }()
+                        return code
+                    }
+                    return rawCourseName ?? "COURSE"
+                }()
 
-                    HStack(spacing: 6) {
-                        // 1. Main Course Title Pill (Left) with Course Theme Color
-                        Text(displayCourseTitle)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(courseColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(courseColor.opacity(0.15))
-                            .cornerRadius(8)
-                            .lineLimit(1)
-
-                        // 2. Media Type Badge (Video, Textbook, etc.) on the Right
-                        HStack(spacing: 3) {
-                            Image(systemName: reading.mediaType.iconName)
-                                .font(.system(size: 8.5, weight: .semibold))
-                            Text(reading.mediaType.displayName.uppercased())
-                                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                        }
-                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        .padding(.horizontal, 6)
+                HStack(spacing: 6) {
+                    // 1. Main Course Title Pill (Left) with Course Theme Color
+                    Text(displayCourseTitle)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(courseColor)
+                        .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color(red: 0.94, green: 0.95, blue: 0.97))
+                        .background(courseColor.opacity(0.15))
+                        .cornerRadius(8)
+                        .lineLimit(1)
+
+                    // 2. Media Type Badge (Video, Textbook, etc.) on the Right
+                    HStack(spacing: 3) {
+                        Image(systemName: reading.mediaType.iconName)
+                            .font(.system(size: 8.5, weight: .semibold))
+                        Text(reading.mediaType.displayName.uppercased())
+                            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(red: 0.94, green: 0.95, blue: 0.97))
+                    .cornerRadius(6)
+                }
+
+                // Reading Title (Standardized font weight and typography matching course title)
+                Text(ReadingTitleCleaner.cleanTitle(reading.title).capitalized)
+                    .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                    .foregroundColor(reading.isCompleted ? ClassPalTheme.textMuted : ClassPalTheme.textDark)
+                    .strikethrough(reading.isCompleted)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+
+                if let chapter = reading.chapterText, !chapter.trimmingCharacters(in: .whitespaces).isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "book.closed.fill")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                        Text(chapter)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundColor(Color(red: 0.25, green: 0.32, blue: 0.42))
+                    }
+                    .padding(.top, 1)
+                }
+
+                // Date Display (Due date formatted: "Due [Day], [Month] [Date] · Week [WeekNumber]")
+                let readingDateText: String = {
+                    let w = reading.week?.weekNumber ?? 1
+                    return WeekDateConverter.formattedDueDate(for: reading.dueDate, week: reading.week, weekNumber: w)
+                }()
+
+                Text(readingDateText)
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                    .padding(.top, 1)
+
+                // Real Clickable Resource Link (Only displayed if a valid URL exists)
+                if let videoUrl = reading.videoUrl, URLHelper.isValidURL(videoUrl), let url = URLHelper.formatURL(videoUrl) {
+                    Link(destination: url) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "link.circle.fill")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(url.absoluteString)
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 9.5, weight: .bold))
+                        }
+                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3.5)
+                        .background(Color(red: 0.94, green: 0.96, blue: 1.0))
                         .cornerRadius(6)
                     }
-
-                    // Reading Title (Standardized font weight and typography matching course title)
-                    Text(ReadingTitleCleaner.cleanTitle(reading.title).capitalized)
-                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
-                        .foregroundColor(reading.isCompleted ? ClassPalTheme.textMuted : ClassPalTheme.textDark)
-                        .strikethrough(reading.isCompleted)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
-
-                    if let chapter = reading.chapterText, !chapter.trimmingCharacters(in: .whitespaces).isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "book.closed.fill")
-                                .font(.system(size: 9.5, weight: .bold))
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                            Text(chapter)
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                .foregroundColor(Color(red: 0.25, green: 0.32, blue: 0.42))
-                        }
-                        .padding(.top, 1)
-                    }
-
-                    // Date Display (Due date formatted: "Due [Day], [Month] [Date] · Week [WeekNumber]")
-                    let readingDateText: String = {
-                        let w = reading.week?.weekNumber ?? 1
-                        return WeekDateConverter.formattedDueDate(for: reading.dueDate, week: reading.week, weekNumber: w)
-                    }()
-
-                    Text(readingDateText)
-                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        .padding(.top, 1)
-
-                    // Real Clickable Resource Link (Only displayed if a valid URL exists)
-                    if let videoUrl = reading.videoUrl, URLHelper.isValidURL(videoUrl), let url = URLHelper.formatURL(videoUrl) {
-                        Link(destination: url) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "link.circle.fill")
-                                    .font(.system(size: 10, weight: .bold))
-                                Text(url.absoluteString)
-                                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                                    .lineLimit(1)
-                                Image(systemName: "arrow.up.right.square")
-                                    .font(.system(size: 9.5, weight: .bold))
-                            }
-                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3.5)
-                            .background(Color(red: 0.94, green: 0.96, blue: 1.0))
-                            .cornerRadius(6)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .buttonStyle(.plain)
 
             Spacer(minLength: 4)
 
@@ -1079,6 +1056,10 @@ public struct WeekReadingCardView: View {
         .background(ClassPalTheme.cardBg)
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onInfo()
+        }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash.fill")
@@ -1189,7 +1170,9 @@ public struct EditReadingSheet: View {
                             }
                     }
 
-                    // Section 4: Media Type Picker (Textbook, Video, Podcast, Article)
+
+
+                    // Section 6: Media Type Picker (Textbook, Video, Podcast, Article)
                     Section("Media Type") {
                         Picker("Type", selection: $reading.mediaType) {
                             Text("Textbook").tag(MediaType.textbook)
@@ -1201,7 +1184,7 @@ public struct EditReadingSheet: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     }
 
-                    // Section 5: Resource Link Section
+                    // Section 7: Resource Link Section
                     Section("Resource Link") {
                         TextField("Paste video or article URL...", text: $videoUrlInput)
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -1227,7 +1210,7 @@ public struct EditReadingSheet: View {
                         }
                     }
 
-                    // Section 6: Notes Section (Double size input pill)
+                    // Section 8: Notes Section
                     Section("Notes") {
                         TextField("Enter notes...", text: $notesInput, axis: .vertical)
                             .font(.system(size: 15, weight: .semibold, design: .rounded))

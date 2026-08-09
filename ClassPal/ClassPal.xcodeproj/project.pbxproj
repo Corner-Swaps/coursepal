@@ -28,6 +28,7 @@
 		AA0000232C5F000100000001 /* Views/ShareCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000232C5F000000000001 /* Views/ShareCenterView.swift */; };
 		AA0000252C5F000100000001 /* Services/SyllabusParserTestSuite.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000252C5F000000000001 /* Services/SyllabusParserTestSuite.swift */; };
 		AA0000262C5F000100000001 /* Services/DocumentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000262C5F000000000001 /* Services/DocumentExtractor.swift */; };
+		AA0000272C5F000100000001 /* Services/SyllabusUploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000272C5F000000000001 /* Services/SyllabusUploadManager.swift */; };
 		AA0000102C5F000100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000102C5F000000000001 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -54,6 +55,7 @@
 		AA0000232C5F000000000001 /* Views/ShareCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ShareCenterView.swift; sourceTree = "<group>"; };
 		AA0000252C5F000000000001 /* Services/SyllabusParserTestSuite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SyllabusParserTestSuite.swift; sourceTree = "<group>"; };
 		AA0000262C5F000000000001 /* Services/DocumentExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DocumentExtractor.swift; sourceTree = "<group>"; };
+		AA0000272C5F000000000001 /* Services/SyllabusUploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SyllabusUploadManager.swift; sourceTree = "<group>"; };
 		AA0000102C5F000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA0000112C5F000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -101,6 +103,7 @@
 				AA0000232C5F000000000001 /* Views/ShareCenterView.swift */,
 				AA0000252C5F000000000001 /* Services/SyllabusParserTestSuite.swift */,
 				AA0000262C5F000000000001 /* Services/DocumentExtractor.swift */,
+				AA0000272C5F000000000001 /* Services/SyllabusUploadManager.swift */,
 				AA0000102C5F000000000001 /* Assets.xcassets */,
 				AA0000112C5F000000000001 /* Info.plist */,
 			);
@@ -205,6 +208,7 @@
 				AA0000232C5F000100000001 /* Views/ShareCenterView.swift in Sources */,
 				AA0000252C5F000100000001 /* Services/SyllabusParserTestSuite.swift in Sources */,
 				AA0000262C5F000100000001 /* Services/DocumentExtractor.swift in Sources */,
+				AA0000272C5F000100000001 /* Services/SyllabusUploadManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

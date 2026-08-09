@@ -13,20 +13,22 @@ public struct MainTabView: View {
     @State private var showingUploadDocModal: Bool = false
     @State private var showingAddCourseModal: Bool = false
     @State private var showingScanSheet: Bool = false
+    @State private var isGlobalProcessing: Bool = false
+    @State private var selectedCourseForAddDoc: Course? = nil
 
     public init() {}
 
     public var body: some View {
         ZStack(alignment: .bottom) {
             // Main Tab Content Area
-            Group {
+            Group { 
                 switch selectedTab {
                 case "readings":
                     WeeklyDashboardView()
                 case "assignments":
                     AssignmentsView()
                 case "syllabus", "vault":
-                    SyllabusRepositoryView(showingUploadModal: $showingUploadDocModal)
+                    SyllabusRepositoryView(showingUploadModal: $showingUploadDocModal, isGlobalProcessing: $isGlobalProcessing, selectedCourseForAddDoc: $selectedCourseForAddDoc)
                 case "share", "invite":
                     ShareCenterView()
                 default:
@@ -190,7 +192,7 @@ public struct MainTabView: View {
 
                     VStack(spacing: 0) {
                         Spacer()
-                        UploadDocModalView()
+                        UploadDocModalView(targetCourse: selectedCourseForAddDoc, onClose: { showingUploadDocModal = false })
                     }
                     .ignoresSafeArea(edges: .bottom)
                 }
@@ -525,20 +527,19 @@ public struct UploadDocModalView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Course.createdAt, order: .reverse) private var courses: [Course]
+    @Query private var vaultDocs: [VaultDocument]
 
+    public var targetCourse: Course? = nil
     public var onClose: (() -> Void)? = nil
 
-    @Query private var vaultDocs: [VaultDocument]
     @State private var showingFileImporter: Bool = false
     @State private var showingCameraScanner: Bool = false
     @State private var showingVaultSelector: Bool = false
-    @State private var pendingImportURLs: [URL] = []
-    @State private var selectedURLIDs: Set<URL> = []
-    @State private var isProcessingUpload: Bool = false
     @State private var showingUploadErrorAlert: Bool = false
     @State private var uploadErrorMessage: String = ""
 
-    public init(onClose: (() -> Void)? = nil) {
+    public init(targetCourse: Course? = nil, onClose: (() -> Void)? = nil) {
+        self.targetCourse = targetCourse
         self.onClose = onClose
     }
 
@@ -550,299 +551,145 @@ public struct UploadDocModalView: View {
                 .frame(width: 36, height: 5)
                 .padding(.top, 14)
 
-            if !pendingImportURLs.isEmpty {
-                // MARK: - Multi-PDF Selection Screen with Checkmark Selection Circles
-                VStack(spacing: 14) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Select PDFs to Import")
-                                .font(.system(size: 19, weight: .bold, design: .rounded))
-                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                            Text("\(selectedURLIDs.count) of \(pendingImportURLs.count) PDF files selected")
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        }
-                        Spacer()
-                        Button(action: {
-                            if selectedURLIDs.count == pendingImportURLs.count {
-                                selectedURLIDs.removeAll()
-                            } else {
-                                selectedURLIDs = Set(pendingImportURLs)
-                            }
-                        }) {
-                            Text(selectedURLIDs.count == pendingImportURLs.count ? "Deselect All" : "Select All")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 20)
-
-                    ScrollView {
-                        VStack(spacing: 10) {
-                            ForEach(pendingImportURLs, id: \.self) { fileUrl in
-                                let isSelected = selectedURLIDs.contains(fileUrl)
-                                HStack(spacing: 12) {
-                                    // Selection Circle Icon (Checkmark circle vs empty circle)
-                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 22, weight: .semibold))
-                                        .foregroundColor(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.70, green: 0.75, blue: 0.82))
-
-                                    // File PDF Icon & Name
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color(red: 0.92, green: 0.95, blue: 1.0))
-                                            .frame(width: 36, height: 36)
-                                        Image(systemName: "doc.fill")
-                                            .font(.system(size: 16, weight: .semibold))
-                                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                    }
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(fileUrl.lastPathComponent)
-                                            .font(.system(size: 13.5, weight: .bold))
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                            .lineLimit(1)
-                                        Text("PDF Document")
-                                            .font(.system(size: 11, weight: .medium))
-                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                    }
-                                    Spacer()
-                                }
-                                .padding(12)
-                                .background(Color.white)
-                                .cornerRadius(14)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .stroke(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: isSelected ? 1.5 : 1)
-                                )
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    if isSelected {
-                                        selectedURLIDs.remove(fileUrl)
-                                    } else {
-                                        selectedURLIDs.insert(fileUrl)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                    .frame(maxHeight: 240)
-
-                    // Action Buttons
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            pendingImportURLs.removeAll()
-                            selectedURLIDs.removeAll()
-                        }) {
-                            Text("Cancel")
-                                .font(.system(size: 14.5, weight: .semibold))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 13)
-                                .background(Color(red: 0.92, green: 0.94, blue: 0.96))
-                                .cornerRadius(14)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: {
-                            let filesToProcess = pendingImportURLs.filter { selectedURLIDs.contains($0) }
-                            pendingImportURLs.removeAll()
-                            confirmAndProcessFiles(filesToProcess)
-                        }) {
-                            HStack(spacing: 6) {
-                                if isProcessingUpload {
-                                    ProgressView()
-                                        .tint(.white)
-                                } else {
-                                    Image(systemName: "arrow.up.doc.fill")
-                                        .font(.system(size: 14, weight: .bold))
-                                    Text("Upload \(selectedURLIDs.count) PDF\(selectedURLIDs.count == 1 ? "" : "s")")
-                                        .font(.system(size: 14.5, weight: .bold))
-                                }
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                            .background(selectedURLIDs.isEmpty ? Color.gray : Color(red: 0.14, green: 0.44, blue: 0.96))
-                            .cornerRadius(14)
-                        }
-                        .disabled(selectedURLIDs.isEmpty || isProcessingUpload)
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 14)
-                }
-            } else {
-                // Header: Title & Close x Button
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Upload Document")
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                        Text("Select multiple PDF documents or scan with camera")
-                            .font(.system(size: 13, weight: .medium))
+            // Header: Concise Title (< 5 words) & Close Button
+            HStack {
+                Text("Upload Document")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                Spacer()
+                Button(action: {
+                    onClose?()
+                    dismiss()
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(Color(red: 0.93, green: 0.95, blue: 0.97))
+                            .frame(width: 30, height: 30)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                     }
-                    Spacer()
-                    Button(action: {
-                        onClose?()
-                        dismiss()
-                    }) {
-                        ZStack {
-                            Circle()
-                                .fill(Color(red: 0.93, green: 0.95, blue: 0.97))
-                                .frame(width: 30, height: 30)
-                            Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        }
-                    }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 4)
-
-                let totalCount = vaultDocs.isEmpty ? 3 : 4
-
-                VStack(spacing: 14) {
-                    // Choice 1: Select PDF / Documents (Supports Multiple Selection)
-                    Button(action: {
-                        if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            uploadErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
-                            showingUploadErrorAlert = true
-                        } else {
-                            showingFileImporter = true
-                        }
-                    }) {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                    .frame(width: 40, height: 40)
-                                Image(systemName: "doc.badge.plus")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Select Multiple PDF Files")
-                                    .font(.system(size: 14.5, weight: .bold))
-                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                Text("1 of \(totalCount) • Select 1, 2, or more PDFs simultaneously")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        }
-                        .padding(14)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.white)
-                        .cornerRadius(16)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-
-                    // Choice 2 (Only if Vault Documents exist): Choose Saved Document from Vault
-                    if !vaultDocs.isEmpty {
-                        Button(action: { showingVaultSelector = true }) {
-                            HStack(spacing: 14) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color(red: 0.58, green: 0.32, blue: 0.92))
-                                        .frame(width: 40, height: 40)
-                                    Image(systemName: "folder.fill.badge.plus")
-                                        .font(.system(size: 18, weight: .bold))
-                                        .foregroundColor(.white)
-                                }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 6) {
-                                        Text("Choose Saved Document from Vault")
-                                            .font(.system(size: 14.5, weight: .bold))
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                        Text("(\(vaultDocs.count))")
-                                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                                            .foregroundColor(Color(red: 0.58, green: 0.32, blue: 0.92))
-                                    }
-                                    Text("2 of 4 • Select from \(vaultDocs.count) saved documents in repository")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            }
-                            .padding(14)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.white)
-                            .cornerRadius(16)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
-                            )
-                            .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    // Choice 3 (or 2 if no vault docs): Scan Document with Camera
-                    let cameraChoiceNum = vaultDocs.isEmpty ? 2 : 3
-                    Button(action: { showingCameraScanner = true }) {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color(red: 0.06, green: 0.73, blue: 0.50))
-                                    .frame(width: 40, height: 40)
-                                Image(systemName: "camera.fill")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Scan with Camera")
-                                    .font(.system(size: 14.5, weight: .bold))
-                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                Text("\(cameraChoiceNum) of \(totalCount) • Snap photos of physical document or syllabus")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        }
-                        .padding(14)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.white)
-                        .cornerRadius(16)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
+                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+
+            VStack(spacing: 12) {
+                // Choice 1: Select PDF File
+                Button(action: {
+                    if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        uploadErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
+                        showingUploadErrorAlert = true
+                    } else {
+                        showingFileImporter = true
+                    }
+                }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "doc.badge.plus")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+
+                        Text("Select PDF File")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.white)
+                    .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
+                }
+                .buttonStyle(.plain)
+
+                // Choice 2 (Only if Vault Documents exist): Choose Saved Document from Vault
+                if !vaultDocs.isEmpty {
+                    Button(action: { showingVaultSelector = true }) {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color(red: 0.58, green: 0.32, blue: 0.92))
+                                    .frame(width: 40, height: 40)
+                                Image(systemName: "folder.fill.badge.plus")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+
+                            Text("Choose Saved Document from Vault")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.white)
+                        .cornerRadius(16)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Choice 3: Scan with Camera
+                Button(action: { showingCameraScanner = true }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(red: 0.06, green: 0.73, blue: 0.50))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+
+                        Text("Scan with Camera")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.white)
+                    .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity)
         .padding(.bottom, 40)
@@ -894,9 +741,9 @@ public struct UploadDocModalView: View {
         .sheet(isPresented: $showingCameraScanner) {
             SyllabusScanView()
         }
-        .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: false) { result in
-            if case .success(let urls) = result {
-                stageImportURLs(Array(urls.prefix(1)))
+        .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result, !urls.isEmpty {
+                confirmAndProcessFiles(urls)
             }
         }
         .alert("Upload Error", isPresented: $showingUploadErrorAlert) {
@@ -906,128 +753,36 @@ public struct UploadDocModalView: View {
         }
     }
 
-    private func stageImportURLs(_ urls: [URL]) {
-        guard let singleURL = urls.first else { return }
-        pendingImportURLs = [singleURL]
-        selectedURLIDs = Set([singleURL])
-    }
-
-    private func currentFormattedTimestamp() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
-        return formatter.string(from: Date())
-    }
-
     private func confirmAndProcessFiles(_ urls: [URL]) {
         guard !urls.isEmpty else {
             onClose?()
             dismiss()
             return
         }
-
-        let step1Time = Date()
-        print("⏱️ [1. START] Upload button tapped at: \(currentFormattedTimestamp())")
-
-        if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            uploadErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
-            showingUploadErrorAlert = true
-            isProcessingUpload = false
-            return
-        }
-
-        isProcessingUpload = true
-        Task { @MainActor in
-            defer { isProcessingUpload = false }
-            var processingFailed = false
-
-            for selectedUrl in urls {
-                let accessed = selectedUrl.startAccessingSecurityScopedResource()
-                defer { if accessed { selectedUrl.stopAccessingSecurityScopedResource() } }
-
-                let fileData = try? Data(contentsOf: selectedUrl)
-                let contentText: String? = DocumentExtractor.extractText(from: selectedUrl)
-                let ext = selectedUrl.pathExtension.uppercased()
-
-                let dto: CourseDTO
-                do {
-                    if ext == "PDF", let pData = fileData, !pData.isEmpty {
-                        print("⏱️ [2. HTTP POST] Dispatching URLRequest to Gemini Base64 API at: \(currentFormattedTimestamp())")
-                        dto = try await APIService.shared.parsePDFDocumentData(pData)
-                        let step3Time = Date()
-                        let elapsed = step3Time.timeIntervalSince(step1Time)
-                        print("⏱️ [3. HTTP RESPONSE] Received raw response from Gemini at: \(currentFormattedTimestamp()) (Elapsed: \(String(format: "%.3f", elapsed))s)")
-
-                        if elapsed < 3.0 {
-                            #if DEBUG
-                            fatalError("ERROR: Upload completed too fast (\(String(format: "%.3f", elapsed))s)! Network call was bypassed.")
-                            #endif
-                        }
-                    } else if let textToParse = contentText, !textToParse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        print("⏱️ [2. HTTP POST] Dispatching URLRequest to Gemini Text API at: \(currentFormattedTimestamp())")
-                        dto = try await APIService.shared.parseSyllabusText(textToParse)
-                        let step3Time = Date()
-                        let elapsed = step3Time.timeIntervalSince(step1Time)
-                        print("⏱️ [3. HTTP RESPONSE] Received raw response from Gemini at: \(currentFormattedTimestamp()) (Elapsed: \(String(format: "%.3f", elapsed))s)")
-
-                        if elapsed < 3.0 {
-                            #if DEBUG
-                            fatalError("ERROR: Upload completed too fast (\(String(format: "%.3f", elapsed))s)! Network call was bypassed.")
-                            #endif
-                        }
-                    } else {
-                        throw NSError(domain: "APIService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Error: Unable to process document. File content is empty."])
-                    }
-
-                    CourseImporter.importDTO(dto, into: modelContext)
-                    let createdCourse = courses.first(where: { $0.courseCode == dto.courseCode || $0.courseName == dto.courseName }) ?? courses.first
-
-                    let syllabusDoc = SyllabusDocument(
-                        docTitle: "\(dto.courseCode ?? "CRS"): \(dto.courseName) Syllabus",
-                        officeHoursText: nil,
-                        instructorContact: nil,
-                        gradingPolicyText: nil,
-                        fileName: selectedUrl.lastPathComponent,
-                        rawFileData: fileData
-                    )
-                    syllabusDoc.course = createdCourse
-                    modelContext.insert(syllabusDoc)
-                } catch {
-                    print("❌ [MAIN TAB UPLOAD ERROR] Live network pipeline failed: \(error.localizedDescription)")
-                    uploadErrorMessage = "Error: Unable to process document. Please check your API key and network."
-                    showingUploadErrorAlert = true
-                    processingFailed = true
-                    break
-                }
-            }
-
-            if processingFailed {
-                return
-            }
-
-            do {
-                try modelContext.save()
-                print("⏱️ [4. SWIFTDATA SAVE] Saved to database at: \(currentFormattedTimestamp())")
-                onClose?()
-                dismiss()
-            } catch {
-                print("⚠️ [DATABASE ERROR] Failed to persist data: \(error)")
-                uploadErrorMessage = "Error: Unable to save course data to database."
-                showingUploadErrorAlert = true
-            }
-        }
+        SyllabusUploadManager.shared.startUpload(urls: urls, targetCourse: targetCourse, modelContext: modelContext)
+        onClose?()
+        dismiss()
     }
 
     private func parseAndImportVaultDoc(_ doc: VaultDocument) {
-        let textContent = doc.fileContent ?? (doc.rawFileData != nil ? String(data: doc.rawFileData!, encoding: .utf8) : nil)
-        guard let textToParse = textContent, !textToParse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            onClose?()
-            dismiss()
-            return
+        if let data = doc.rawFileData, !data.isEmpty {
+            if let tempURL = try? saveTempFile(data: data, filename: doc.title) {
+                SyllabusUploadManager.shared.startUpload(urls: [tempURL], targetCourse: targetCourse, modelContext: modelContext)
+            }
+        } else if let textToParse = doc.fileContent, !textToParse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let tempURL = try? saveTempFile(data: textToParse.data(using: .utf8) ?? Data(), filename: "\(doc.title).txt") {
+                SyllabusUploadManager.shared.startUpload(urls: [tempURL], targetCourse: targetCourse, modelContext: modelContext)
+            }
         }
-        let dto = LocalSyllabusParser.shared.parseText(textToParse)
-        CourseImporter.importDTO(dto, into: modelContext)
         onClose?()
         dismiss()
+    }
+
+    private func saveTempFile(data: Data, filename: String) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent(filename)
+        try data.write(to: fileURL)
+        return fileURL
     }
 }
 
@@ -1246,17 +1001,7 @@ public struct AddCourseModalView: View {
                             HStack(spacing: 12) {
                                 ZStack {
                                     if isProcessingCourse {
-                                        Circle()
-                                            .stroke(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.2), lineWidth: 3)
-                                            .frame(width: 36, height: 36)
-                                        Circle()
-                                            .trim(from: 0, to: CGFloat(max(0.15, processingProgress)))
-                                            .stroke(Color(red: 0.14, green: 0.44, blue: 0.96), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                                            .frame(width: 36, height: 36)
-                                            .rotationEffect(.degrees(-90))
-                                        Image(systemName: "doc.fill")
-                                            .font(.system(size: 13, weight: .bold))
-                                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                        ContinuousProgressRing()
                                     } else {
                                         Circle()
                                             .fill(hasPdf ? Color(red: 0.06, green: 0.73, blue: 0.50) : Color(red: 0.14, green: 0.44, blue: 0.96))
@@ -1341,7 +1086,7 @@ public struct AddCourseModalView: View {
                                     Text("\(totalReadings) Weekly Readings Extracted")
                                         .font(.system(size: 13, weight: .bold))
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                    Text("Organized into 16 structured weeks")
+                                    Text("Required course readings & materials")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }
@@ -1527,30 +1272,45 @@ public struct AddCourseModalView: View {
             }
             .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: false) { result in
                 if case .success(let urls) = result, let selectedUrl = urls.first {
-                    attachedFileName = selectedUrl.lastPathComponent
-                    uploadedFilesList = []
-
                     let accessed = selectedUrl.startAccessingSecurityScopedResource()
                     defer { if accessed { selectedUrl.stopAccessingSecurityScopedResource() } }
 
                     let fileName = selectedUrl.lastPathComponent
                     let fileData = try? Data(contentsOf: selectedUrl)
                     let textContent = DocumentExtractor.extractText(from: selectedUrl)
+                    let normFileName = fileName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
+                    let isDuplicateInVault = vaultDocs.contains { doc in
+                        let titleNorm = doc.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        if titleNorm == normFileName { return true }
+                        if let docData = doc.rawFileData, let newFileData = fileData, !docData.isEmpty && !newFileData.isEmpty && docData == newFileData {
+                            return true
+                        }
+                        return false
+                    }
+
+                    let allCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
+                    let isDuplicateInCourses = allCourses.contains { c in
+                        c.syllabusDocs.contains { syl in
+                            let nameNorm = (syl.fileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                            return nameNorm == normFileName
+                        }
+                    }
+
+                    if isDuplicateInVault || isDuplicateInCourses {
+                        addCourseErrorMessage = "Duplicate Document: '\(fileName)' has already been uploaded."
+                        showingAddCourseAlert = true
+                        attachedFileName = nil
+                        attachedFileData = nil
+                        fileContentText = nil
+                        uploadedFilesList = []
+                        return
+                    }
+
+                    attachedFileName = fileName
                     attachedFileData = fileData
                     fileContentText = textContent
                     uploadedFilesList = [(title: fileName, data: fileData, text: textContent)]
-
-                    if let text = textContent, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        let dto = LocalSyllabusParser.shared.parseText(text)
-                        parsedPreviewDTO = dto
-                        if courseName.isEmpty && !dto.courseName.isEmpty {
-                            courseName = dto.courseName
-                        }
-                        if courseCode.isEmpty, let cCode = dto.courseCode, !cCode.isEmpty {
-                            courseCode = cCode
-                        }
-                    }
                 }
             }
             .alert("API Error", isPresented: $showingAddCourseAlert) {
@@ -1629,12 +1389,6 @@ public struct AddCourseModalView: View {
                                 if !allTexts.isEmpty {
                                     let combined = allTexts.joined(separator: "\n\n=== NEXT VAULT DOCUMENT ===\n\n")
                                     fileContentText = combined
-                                    let dto = LocalSyllabusParser.shared.parseText(combined)
-                                    parsedPreviewDTO = dto
-                                    if courseName.isEmpty { courseName = dto.courseName }
-                                    if courseCode.isEmpty, let cCode = dto.courseCode, !cCode.isEmpty {
-                                        courseCode = cCode
-                                    }
                                 }
                             }) {
                                 Text(selectedVaultDocIDs.isEmpty ? "Done" : "Attach Selected (\(selectedVaultDocIDs.count))")
@@ -1668,8 +1422,8 @@ public struct AddCourseModalView: View {
 
         Task {
             isProcessingCourse = true
-            processingProgress = 0.30
-            processingStatusText = "Connecting to Syllabus Parsing API..."
+            processingProgress = 0.0
+            processingStatusText = "Analyzing course syllabus & schedule..."
 
             let allCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
             let distinctPalette = [
@@ -1682,41 +1436,72 @@ public struct AddCourseModalView: View {
 
             let combinedText = [pastedSyllabusText, fileContentText ?? ""].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: "\n\n")
 
+            if let attName = attachedFileName, !attName.isEmpty {
+                let normAttName = attName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let isDuplicateInVault = vaultDocs.contains { doc in
+                    let titleNorm = doc.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    if titleNorm == normAttName { return true }
+                    if let docData = doc.rawFileData, let newFileData = attachedFileData, !docData.isEmpty && !newFileData.isEmpty && docData == newFileData {
+                        return true
+                    }
+                    return false
+                }
+                let isDuplicateInCourses = allCourses.contains { c in
+                    c.syllabusDocs.contains { syl in
+                        let nameNorm = (syl.fileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        return nameNorm == normAttName
+                    }
+                }
+
+                if isDuplicateInVault || isDuplicateInCourses {
+                    print("⚠️ [DUPLICATE BLOCKED] Syllabus '\(attName)' has already been uploaded.")
+                    addCourseErrorMessage = "Duplicate Document: '\(attName)' has already been uploaded."
+                    showingAddCourseAlert = true
+                    isProcessingCourse = false
+                    return
+                }
+            }
+
             let targetCourse: Course
             let startTime = Date()
 
-            if let pData = attachedFileData, !pData.isEmpty {
-                print("⏳ [NETWORK START] Sending Base64 PDF (\(pData.count) bytes) directly to Gemini API...")
-                processingProgress = 0.70
-                processingStatusText = "Extracting Real Assignments & Schedule via Gemini API..."
+            let isPdf = (attachedFileName?.lowercased().hasSuffix(".pdf") ?? false) || (attachedFileData != nil && attachedFileData!.prefix(4) == Data([0x25, 0x50, 0x44, 0x46]))
+            if isPdf, let pData = attachedFileData, !pData.isEmpty {
+                print("⏳ [NETWORK START] Processing Base64 PDF (\(pData.count) bytes)...")
+                processingStatusText = "Analyzing course syllabus & schedule..."
                 do {
                     var dto = try await APIService.shared.parsePDFDocumentData(pData)
                     let timeElapsed = String(format: "%.2f", Date().timeIntervalSince(startTime))
-                    print("✅ [NETWORK COMPLETE] Gemini API responded in \(timeElapsed) seconds.")
+                    print("✅ [NETWORK COMPLETE] Response received in \(timeElapsed) seconds.")
                     dto.courseName = name
                     dto.courseCode = code.isEmpty ? (name.isEmpty ? "CRS" : name) : code
                     CourseImporter.importDTO(dto, into: modelContext)
                 } catch {
-                    print("❌ [LIVE NETWORK ERROR] Gemini API call failed: \(error.localizedDescription)")
-                    addCourseErrorMessage = "Error: Unable to process document. Please check your API key and network."
+                    print("❌ [LIVE NETWORK ERROR] API call failed: \(error.localizedDescription)")
+                    let nsErr = error as NSError
+                    let code = nsErr.code != 0 ? nsErr.code : 500
+                    let msg = error.localizedDescription
+                    addCourseErrorMessage = msg.hasPrefix("API Error") ? msg : "API Error [\(code)]: \(msg)"
                     showingAddCourseAlert = true
                     isProcessingCourse = false
                     return
                 }
             } else if !combinedText.isEmpty {
-                print("⏳ [NETWORK START] Sending extracted syllabus text to Gemini API...")
-                processingProgress = 0.70
-                processingStatusText = "Extracting Real Assignments & Schedule via Gemini API..."
+                print("⏳ [NETWORK START] Processing extracted syllabus text...")
+                processingStatusText = "Analyzing course syllabus & schedule..."
                 do {
                     var dto = try await APIService.shared.parseSyllabusText(combinedText)
                     let timeElapsed = String(format: "%.2f", Date().timeIntervalSince(startTime))
-                    print("✅ [NETWORK COMPLETE] Gemini API responded in \(timeElapsed) seconds.")
+                    print("✅ [NETWORK COMPLETE] Response received in \(timeElapsed) seconds.")
                     dto.courseName = name
                     dto.courseCode = code.isEmpty ? (name.isEmpty ? "CRS" : name) : code
                     CourseImporter.importDTO(dto, into: modelContext)
                 } catch {
-                    print("❌ [LIVE NETWORK ERROR] Gemini API call failed: \(error.localizedDescription)")
-                    addCourseErrorMessage = "Error: Unable to process document. Please check your API key and network."
+                    print("❌ [LIVE NETWORK ERROR] API call failed: \(error.localizedDescription)")
+                    let nsErr = error as NSError
+                    let code = nsErr.code != 0 ? nsErr.code : 500
+                    let msg = error.localizedDescription
+                    addCourseErrorMessage = msg.hasPrefix("API Error") ? msg : "API Error [\(code)]: \(msg)"
                     showingAddCourseAlert = true
                     isProcessingCourse = false
                     return
@@ -1916,5 +1701,36 @@ public struct AddNewItemModalView: View {
         .background(Color(red: 0.95, green: 0.96, blue: 0.98))
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 24))
         .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+struct ContinuousProgressRing: View {
+    @State private var progress: CGFloat = 0.0
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.2), lineWidth: 3)
+                .frame(width: 36, height: 36)
+
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(
+                    Color(red: 0.14, green: 0.44, blue: 0.96),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                )
+                .frame(width: 36, height: 36)
+                .rotationEffect(.degrees(-90))
+
+            Image(systemName: "doc.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+        }
+        .onAppear {
+            progress = 0.0
+            withAnimation(.linear(duration: 3.2).repeatForever(autoreverses: false)) {
+                progress = 1.0
+            }
+        }
     }
 }

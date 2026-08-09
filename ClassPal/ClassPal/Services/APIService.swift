@@ -16,6 +16,7 @@ public struct ReadingDTO: Codable, Identifiable {
     public let videoUrl: String?
     public var dueDate: String?
     public var dateRangeStr: String?
+    public var relevantTopics: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title
@@ -27,6 +28,7 @@ public struct ReadingDTO: Codable, Identifiable {
         case videoUrl = "video_url"
         case dueDate = "due_date"
         case dateRangeStr = "date_range_str"
+        case relevantTopics = "relevant_topics"
     }
 
     public init(
@@ -120,6 +122,9 @@ public struct AssignmentDTO: Codable, Identifiable {
     public let pointsPossible: String?
     public let weightPercentage: String?
     public let noteText: String?
+    public let pointsBreakdown: String?
+    public let relevantTopics: String?
+    public let mediaUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title
@@ -128,6 +133,9 @@ public struct AssignmentDTO: Codable, Identifiable {
         case pointsPossible = "points_possible"
         case weightPercentage = "weight_percentage"
         case noteText = "note_text"
+        case pointsBreakdown = "points_breakdown"
+        case relevantTopics = "relevant_topics"
+        case mediaUrl = "media_url"
     }
 
     public init(
@@ -137,7 +145,10 @@ public struct AssignmentDTO: Codable, Identifiable {
         fullInstructions: String? = nil,
         pointsPossible: String? = nil,
         weightPercentage: String? = nil,
-        noteText: String? = nil
+        noteText: String? = nil,
+        pointsBreakdown: String? = nil,
+        relevantTopics: String? = nil,
+        mediaUrl: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -146,17 +157,23 @@ public struct AssignmentDTO: Codable, Identifiable {
         self.pointsPossible = pointsPossible
         self.weightPercentage = weightPercentage
         self.noteText = noteText
+        self.pointsBreakdown = pointsBreakdown
+        self.relevantTopics = relevantTopics
+        self.mediaUrl = mediaUrl
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = (try container.decodeIfPresent(String.self, forKey: .id)) ?? UUID().uuidString
-        self.title = (try container.decodeIfPresent(String.self, forKey: .title)) ?? "Assignment"
+        self.title = (try container.decodeIfPresent(String.self, forKey: .title)) ?? "Untitled Assignment"
         self.dueDate = try container.decodeIfPresent(String.self, forKey: .dueDate)
         self.fullInstructions = try container.decodeIfPresent(String.self, forKey: .fullInstructions)
         self.pointsPossible = try container.decodeIfPresent(String.self, forKey: .pointsPossible)
         self.weightPercentage = try container.decodeIfPresent(String.self, forKey: .weightPercentage)
         self.noteText = try container.decodeIfPresent(String.self, forKey: .noteText)
+        self.pointsBreakdown = try container.decodeIfPresent(String.self, forKey: .pointsBreakdown)
+        self.relevantTopics = try container.decodeIfPresent(String.self, forKey: .relevantTopics)
+        self.mediaUrl = try container.decodeIfPresent(String.self, forKey: .mediaUrl)
     }
 }
 
@@ -175,6 +192,7 @@ public struct ItemDTO: Codable, Identifiable {
     public let weekNumber: Int?
     public let dueDateIso: String?
     public let mediaUrl: String?
+    public let relevantTopics: String?
 
     enum CodingKeys: String, CodingKey {
         case title, category, description, points, percentage
@@ -183,6 +201,7 @@ public struct ItemDTO: Codable, Identifiable {
         case weekNumber = "week_number"
         case dueDateIso = "due_date_iso"
         case mediaUrl = "media_url"
+        case relevantTopics = "relevant_topics"
     }
 
     public init(
@@ -195,7 +214,8 @@ public struct ItemDTO: Codable, Identifiable {
         percentage: String? = nil,
         weekNumber: Int? = 1,
         dueDateIso: String? = nil,
-        mediaUrl: String? = nil
+        mediaUrl: String? = nil,
+        relevantTopics: String? = nil
     ) {
         self.title = title
         self.category = category
@@ -207,6 +227,7 @@ public struct ItemDTO: Codable, Identifiable {
         self.weekNumber = weekNumber
         self.dueDateIso = dueDateIso
         self.mediaUrl = mediaUrl
+        self.relevantTopics = relevantTopics
     }
 
     public init(from decoder: Decoder) throws {
@@ -248,6 +269,7 @@ public struct ItemDTO: Codable, Identifiable {
 
         self.dueDateIso = try container.decodeIfPresent(String.self, forKey: .dueDateIso)
         self.mediaUrl = try container.decodeIfPresent(String.self, forKey: .mediaUrl)
+        self.relevantTopics = try container.decodeIfPresent(String.self, forKey: .relevantTopics)
     }
 }
 
@@ -410,10 +432,9 @@ public final class APIService: ObservableObject {
     }
 
     public func testGeminiConnection(apiKey: String) async throws -> Bool {
-        let keyToUse = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !keyToUse.isEmpty else { return false }
+        let keyToUse = apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.bundledAPIKey : apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\(keyToUse)"
+        let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
         guard let url = URL(string: endpoint) else { return false }
 
         let payload: [String: Any] = [
@@ -431,34 +452,33 @@ public final class APIService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 10
+        request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(keyToUse, forHTTPHeaderField: "X-goog-api-key")
+        request.setValue(keyToUse, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await URLSession.shared.data(for: request)
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
     public func parsePDFDocumentData(_ pdfData: Data) async throws -> CourseDTO {
+        let startTime = Date()
         guard NetworkMonitor.shared.isOnline else {
             throw NSError(
                 domain: "APIService",
                 code: 1009,
-                userInfo: [NSLocalizedDescriptionKey: "Internet Connection Required: Please connect to the internet to upload and process new course documents."]
+                userInfo: [NSLocalizedDescriptionKey: "API Error [1009]: Internet Connection Required. Please connect to the internet to process course documents."]
             )
         }
         let keyToUse = activeAPIKey
-        if !useLocalOnlyMode, !keyToUse.isEmpty {
-            do {
-                print("[APIService] Processing Multimodal Base64 PDF with Gemini 1.5 Pro API...")
-                return try await parsePDFDataWithGemini(pdfData, apiKey: keyToUse)
-            } catch {
-                print("[APIService WARNING] Gemini Multimodal Base64 PDF call failed: \(error).")
-                throw error
-            }
+        print("[APIService] Processing Multimodal Base64 PDF with Gemini API...")
+        let dto = try await parsePDFDataWithGemini(pdfData, apiKey: keyToUse)
+        let elapsed = Date().timeIntervalSince(startTime)
+        if elapsed < 5.0 {
+            let remaining = 5.0 - elapsed
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
         }
-        throw NSError(domain: "APIService", code: 401, userInfo: [NSLocalizedDescriptionKey: "Gemini API Key required for Multimodal PDF processing."])
+        return dto
     }
 
     public static func compressPDFDataIfNeeded(_ pdfData: Data, maxSizeBytes: Int = 10 * 1024 * 1024) -> Data {
@@ -491,34 +511,46 @@ public final class APIService: ObservableObject {
             throw NSError(
                 domain: "APIService",
                 code: 1009,
-                userInfo: [NSLocalizedDescriptionKey: "Internet Connection Required: Please connect to the internet to upload and process new course documents."]
+                userInfo: [NSLocalizedDescriptionKey: "API Error [1009]: Internet Connection Required."]
             )
         }
 
         let compressedData = Self.compressPDFDataIfNeeded(pdfData)
         let base64String = compressedData.base64EncodedString()
-        let modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-        var lastError: Error = URLError(.badServerResponse)
-
-        print("📦 [NETWORK] Outgoing Payload Size: \(base64String.count) bytes")
+        let modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
 
         let prompt = """
-        You are Course Pal's Senior AI Syllabus Processor. Extract structured data from this PDF file.
+        You are Course Pal's Senior AI Syllabus Processor. Thoroughly analyze the provided PDF file and extract all structured course data with 100% precision.
 
-        DETERMINISTIC EXTRACTION RULES:
-        1. "course_code": Catalog code (e.g. "CPC 514" or "BIO 110").
-        2. "course_title": 3 to 5 words maximum.
-        3. "items": Array of all assignments and readings found in the PDF.
-           - "title": Strictly 3 to 5 words maximum.
-           - "category": "Assignment" or "Reading".
-           - "sub_type": "TEXTBOOK" | "ARTICLE" | "VIDEO" | "PODCAST" | "IN_CLASS" | "PAPER" | "PRESENTATION" | "OTHER".
-           - "description": Detailed explanation of task or null if missing.
-           - "points": Exact points possible, e.g., '100 Points Possible' or '20/100 pts'; null if missing.
-           - "points_breakdown": Detailed rubric breakdown of points possible by section if present; null if missing.
-           - "percentage": e.g., '20% of Final Grade'; null if missing.
-           - "week_number": Integer week number (1, 2, ...).
-           - "due_date_iso": ISO8601 timestamp string (YYYY-MM-DD) or null.
-           - "media_url": Direct URL if video/podcast link present; null if missing.
+        AIRTIGHT EXTRACTION RULES FOR ALL FUTURE DOCUMENTS:
+        1. "course_code": Official course catalog code (e.g. "CPC 514", "BIO 412", "LAW 702", "CS 501").
+        2. "course_title": Full official course name (3 to 5 words maximum).
+        3. "items": Array of ALL assignments, papers, exams, projects, presentations, labs, and readings found anywhere in the PDF.
+
+           FIELD-BY-FIELD INSTRUCTIONS:
+           - "title": Strictly 3 to 5 words maximum. Preserve official assignment titles verbatim from the PDF headers (e.g. "Peer Review Group Report", "Research Study Design", "Presentation Feedback").
+           - "category": Strictly "Assignment" for tasks to be graded/submitted, or "Reading" for materials to review.
+           - "sub_type":
+             * "PAPER" for essays, reports, research papers, proposals, written reflections, case studies.
+             * "PRESENTATION" for speeches, slide decks, group presentations, video recordings of presentations.
+             * "IN_CLASS" for exams, quizzes, midterm, final exam, participation, in-class activities, peer review activities.
+             * "TEXTBOOK" for textbook chapters, books, required reading assignments.
+             * "ARTICLE" for research papers, journal articles, web readings.
+             * "VIDEO" for video links, recorded lectures, or video requirements.
+             * "PODCAST" for audio recordings or podcasts.
+             * "OTHER" for miscellaneous items.
+           - "description": Comprehensive extraction of task instructions, requirements, questions to answer, submission format, length, and guidelines directly from the PDF text. Do not truncate important details!
+           - "points": Exact total points possible for the task as stated in the PDF (e.g. '100 Points', '50 Points', '25 Points'); null if missing.
+           - "points_breakdown": STRICT ASSIGNMENT-TO-TABLE BINDING:
+             Each assignment in a syllabus often has its OWN specific "Grading Criteria" / "Grade Points" table placed immediately under its description.
+             You MUST attach each grading table ONLY to the EXACT assignment header it belongs to in the PDF text.
+             Transcribe 100% of the rows of the matching table VERBATIM into 'points_breakdown', formatted as 'Criteria Title: XX Points', separated by '|'.
+             DO NOT skip any row (e.g. do not omit Participation), nor alter point numbers.
+             If no grading table/rubric exists in the PDF for an assignment, set strictly to null.
+           - "percentage": Weight percentage of final grade (e.g. '20% of Final Grade' or '10%'); null if missing.
+           - "week_number": Integer week number (1, 2, 3, ...) when the item is assigned or scheduled in the syllabus schedule.
+           - "due_date_iso": ISO8601 timestamp string (YYYY-MM-DD) if an explicit due date is specified in the text (e.g. "Sunday, Sep. 13, 2026" -> '2026-09-13'); null if missing.
+           - "media_url": Direct URL string if ANY link (http/https, YouTube link like https://youtube.com/... or https://youtu.be/..., or website link) is present in the document or item description; null if missing.
 
         Return ONLY valid JSON matching this schema.
         """
@@ -533,7 +565,7 @@ public final class APIService: ObservableObject {
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "title": ["type": "STRING", "description": "Strictly 3-5 words max"],
+                            "title": ["type": "STRING", "description": "Strictly 3 to 5 words maximum"],
                             "category": ["type": "STRING", "enum": ["Assignment", "Reading"]],
                             "sub_type": [
                                 "type": "STRING",
@@ -553,6 +585,9 @@ public final class APIService: ObservableObject {
             ],
             "required": ["course_code", "course_title", "items"]
         ]
+
+        var lastErrorMsg = ""
+        var lastStatusCode = 500
 
         for modelName in modelsToTry {
             let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(modelName):generateContent"
@@ -585,16 +620,19 @@ public final class APIService: ObservableObject {
 
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.timeoutInterval = 90
+            request.timeoutInterval = 120
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(apiKey, forHTTPHeaderField: "X-goog-api-key")
-            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+            print("📦 [NETWORK] Outgoing Payload Size: \(base64String.count) bytes targeting \(modelName)")
 
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? 0
+                lastStatusCode = httpStatus
                 let rawJSONString = String(data: data, encoding: .utf8) ?? ""
-                print("📥 [API RESPONSE] Raw JSON: \(rawJSONString)")
+                print("📥 [API RESPONSE] Model \(modelName) HTTP Status \(httpStatus). Length: \(rawJSONString.count)")
 
                 if httpStatus == 200 {
                     struct GeminiPart: Decodable { let text: String }
@@ -602,51 +640,36 @@ public final class APIService: ObservableObject {
                     struct GeminiCandidate: Decodable { let content: GeminiContent }
                     struct GeminiResponse: Decodable { let candidates: [GeminiCandidate] }
 
-                    do {
-                        let geminiResp = try JSONDecoder().decode(GeminiResponse.self, from: data)
-                        if let rawJsonText = geminiResp.candidates.first?.content.parts.first?.text {
-                            var cleanJson = rawJsonText.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if cleanJson.hasPrefix("```") {
-                                cleanJson = cleanJson.components(separatedBy: "\n").dropFirst().joined(separator: "\n")
-                                if cleanJson.hasSuffix("```") {
-                                    cleanJson = String(cleanJson.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
-                                }
-                            }
-                            if let jsonBodyData = cleanJson.data(using: .utf8) {
-                                do {
-                                    let courseDTO = try Self.decodeCourseDTO(from: jsonBodyData)
-                                    print("✅ [APIService SUCCESS] Multimodal PDF Base64 parsed via Gemini model (\(modelName))!")
-                                    return courseDTO
-                                } catch {
-                                    print("❌ [DECODING ERROR] Failed to map JSON to Swift struct: \(error.localizedDescription)")
-                                    print("❌ [DECODING DETAILS] \(error)")
-                                    lastError = error
-                                }
+                    let geminiResp = try JSONDecoder().decode(GeminiResponse.self, from: data)
+                    if let rawJsonText = geminiResp.candidates.first?.content.parts.first?.text {
+                        var cleanJson = rawJsonText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if cleanJson.hasPrefix("```") {
+                            cleanJson = cleanJson.components(separatedBy: "\n").dropFirst().joined(separator: "\n")
+                            if cleanJson.hasSuffix("```") {
+                                cleanJson = String(cleanJson.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
                             }
                         }
-                    } catch {
-                        print("❌ [DECODING ERROR] Failed to map outer Gemini response envelope: \(error.localizedDescription)")
-                        print("❌ [DECODING DETAILS] \(error)")
-                        lastError = error
+                        if let jsonBodyData = cleanJson.data(using: .utf8) {
+                            let courseDTO = try Self.decodeCourseDTO(from: jsonBodyData)
+                            print("✅ [APIService SUCCESS] Multimodal Base64 parsed strictly via Gemini model '\(modelName)'!")
+                            return courseDTO
+                        }
                     }
                 } else {
-                    print("❌ [NETWORK ERROR] Model \(modelName) returned HTTP status \(httpStatus). Raw Response: \(rawJSONString)")
-                    if httpStatus == 400 {
-                        print("❌ [NETWORK ERROR DETAILS] 400 Bad Request - Payload invalid or missing API permission.")
-                    } else if httpStatus == 429 {
-                        print("❌ [NETWORK ERROR DETAILS] 429 Rate Limit Exceeded - Gemini API rate limit reached.")
-                    }
+                    lastErrorMsg = "API Error [\(httpStatus)]: Model '\(modelName)' returned HTTP status \(httpStatus)."
+                    print("❌ [NETWORK WARNING] \(lastErrorMsg)")
+                    continue
                 }
             } catch {
-                print("❌ [NETWORK ERROR] Request failed for model \(modelName): \(error.localizedDescription)")
-                lastError = error
+                let nsErr = error as NSError
+                lastStatusCode = nsErr.code
+                lastErrorMsg = "API Error [\(nsErr.code)]: \(nsErr.localizedDescription)"
+                print("❌ [NETWORK ERROR] \(lastErrorMsg)")
+                continue
             }
         }
-        throw NSError(
-            domain: "APIService",
-            code: 500,
-            userInfo: [NSLocalizedDescriptionKey: "Error: Unable to process document. Please check your API key and network."]
-        )
+
+        throw NSError(domain: "APIService", code: lastStatusCode, userInfo: [NSLocalizedDescriptionKey: lastErrorMsg.isEmpty ? "API Error [\(lastStatusCode)]: Unable to process document via Gemini API." : lastErrorMsg])
     }
 
     public func parseSyllabusText(_ rawText: String) async throws -> CourseDTO {
@@ -659,7 +682,7 @@ public final class APIService: ObservableObject {
     }
 
     public func parseSyllabusWithGemini(_ rawText: String, apiKey: String) async throws -> CourseDTO {
-        let modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+        let modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
         var lastError: Error = URLError(.badServerResponse)
 
         print("📦 [NETWORK] Outgoing Payload Size: \(rawText.count) bytes")
@@ -685,6 +708,8 @@ public final class APIService: ObservableObject {
                - "points_possible": Total points or rubrics (e.g. "100 Points" or "50 Points").
                - "weight_percentage": Percentage of final grade (e.g. "20%" or "40%").
                - "full_instructions": Detailed description, grading criteria rubrics, submission instructions, and guidelines.
+               - "points_breakdown": STRICT ASSIGNMENT-TO-TABLE BINDING:
+                 Transcribe 100% of the rows of any grading criteria table for this assignment verbatim into 'points_breakdown', formatted as 'Criteria Title: XX Points', separated by '|' (e.g., "Analysis: 40 Points | Evidence: 30 Points | Formatting: 30 Points"). If no explicit rubric table is listed in the document for this assignment, set strictly to null.
 
             3. WEEKS & READINGS (EVERY SINGLE CHAPTER / ARTICLE / MEDIA):
                - Group into weeks (week_number 1, 2, ... 16).
@@ -729,7 +754,8 @@ public final class APIService: ObservableObject {
                   "due_date": "2026-07-23",
                   "points_possible": "100 Points",
                   "weight_percentage": "20%",
-                  "full_instructions": "Collaborate on a 45-60 minute presentation analyzing an approved article."
+                  "full_instructions": "Collaborate on a 45-60 minute presentation analyzing an approved article.",
+                  "points_breakdown": "Analysis: 40 Points | Evidence: 30 Points | Formatting: 30 Points"
                 }
               ]
             }
@@ -825,7 +851,7 @@ public final class APIService: ObservableObject {
 
     public func parseSyllabusImageWithGemini(_ imageData: Data, mimeType: String = "image/jpeg", apiKey: String) async throws -> CourseDTO {
         let base64String = imageData.base64EncodedString()
-        let modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+        let modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
         var lastError: Error = URLError(.badServerResponse)
 
         print("📦 [NETWORK] Outgoing Payload Size: \(base64String.count) bytes")

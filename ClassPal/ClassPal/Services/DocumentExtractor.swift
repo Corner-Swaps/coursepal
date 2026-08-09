@@ -174,41 +174,57 @@ public struct DocumentExtractor {
             }
         }
 
-        let xmlString: String
+        let rawXml: String
         if let xml = extractedXml {
-            xmlString = xml
+            rawXml = xml
         } else {
             guard let startRange = data.range(of: Data("<w:body".utf8)) ?? data.range(of: Data("<w:document".utf8)) else {
                 return nil
             }
             let bodyData = data.subdata(in: startRange.lowerBound..<data.count)
             guard let s = String(data: bodyData, encoding: .utf8) else { return nil }
-            xmlString = s
+            rawXml = s
         }
 
-        // Regex to extract text inside Microsoft Word <w:t> XML tags
+        // Convert Word XML structure to clean multi-line formatted text:
+        // 1. Replace cell boundaries </w:tc> with " | "
+        // 2. Replace row boundaries </w:tr> and paragraph boundaries </w:p> with "\n"
+        let processedXml = rawXml
+            .replacingOccurrences(of: "</w:tc>", with: " | ")
+            .replacingOccurrences(of: "</w:tr>", with: "\n")
+            .replacingOccurrences(of: "</w:p>", with: "\n")
+
+        // Extract text inside <w:t> tags while keeping line structure
         let pattern = #"<w:t[^>]*>(.*?)</w:t>"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
-            return nil
+            let clean = processedXml.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+            return clean.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        let nsString = xmlString as NSString
-        let maxLen = min(nsString.length, 1000000)
-        let matches = regex.matches(in: xmlString, options: [], range: NSRange(location: 0, length: maxLen))
+        let lines = processedXml.components(separatedBy: CharacterSet.newlines)
+        var lineResults: [String] = []
 
-        var words: [String] = []
-        for match in matches {
-            if match.numberOfRanges > 1 {
-                let matchedText = nsString.substring(with: match.range(at: 1))
-                let clean = sanitizeText(matchedText)
-                if !clean.isEmpty {
-                    words.append(clean)
+        for line in lines {
+            let maxLen = min((line as NSString).length, 100000)
+            let matches = regex.matches(in: line, options: [], range: NSRange(location: 0, length: maxLen))
+            var lineWords: [String] = []
+            for match in matches {
+                if match.numberOfRanges > 1 {
+                    let matchedText = (line as NSString).substring(with: match.range(at: 1))
+                    let clean = sanitizeText(matchedText)
+                    if !clean.isEmpty {
+                        lineWords.append(clean)
+                    }
                 }
+            }
+            let lineStr = lineWords.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !lineStr.isEmpty {
+                lineResults.append(lineStr)
             }
         }
 
-        let joined = words.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        return joined.isEmpty ? nil : joined
+        let result = lineResults.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.isEmpty ? nil : result
     }
 
     public static func sanitizeText(_ str: String) -> String {

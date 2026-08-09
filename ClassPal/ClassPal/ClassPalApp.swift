@@ -65,23 +65,21 @@ struct CoursePalApp: App {
 
         if CommandLine.arguments.contains("--test") {
             print("==================================================")
-            print("RUNNING 20-TEST QA PROTOCOL BATTERY...")
+            print("RUNNING 10-ROUND LIVE GEMINI QA PROTOCOL BATTERY...")
             print("==================================================")
-            let results = SyllabusParserTestSuite.shared.run20QATestSuite()
-            var passed = 0
-            for r in results {
-                let status = r.passed ? "✅ PASS" : "❌ FAIL"
-                if r.passed { passed += 1 }
-                print("Test \(r.testId) [\(status)]: \(r.testName)")
-                print("   Details: \(r.details)")
-            }
-            print("--------------------------------------------------")
-            print("RESULTS: \(passed)/\(results.count) Tests Passed (\(Int(Double(passed)/Double(results.count)*100))%)")
-            print("==================================================")
-            if passed < results.count {
-                exit(1)
-            } else {
-                exit(0)
+            Task { @MainActor in
+                let results = await SyllabusParserTestSuite.shared.run10RoundLiveGeminiQABattery()
+                var passed = 0
+                for r in results {
+                    let status = r.passed ? "✅ PASS" : "❌ FAIL"
+                    if r.passed { passed += 1 }
+                    print("Test \(r.testId) [\(status)]: \(r.testName)")
+                    print("   Details: \(r.details)")
+                }
+                print("--------------------------------------------------")
+                print("RESULTS: \(passed)/\(results.count) Tests Passed (\(Int(Double(passed)/Double(results.count)*100))%)")
+                print("==================================================")
+                exit(passed < results.count ? 1 : 0)
             }
         }
     }

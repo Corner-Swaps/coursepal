@@ -139,6 +139,7 @@ public final class Reading {
     public var chapterText: String?
     public var courseCode: String?
     public var semanticCategoryRaw: String?
+    public var relevantTopics: String?
     
     public var week: Week?
 
@@ -162,7 +163,8 @@ public final class Reading {
         dateRangeStr: String? = nil,
         chapterText: String? = nil,
         courseCode: String? = nil,
-        semanticCategoryRaw: String? = "reading"
+        semanticCategoryRaw: String? = "reading",
+        relevantTopics: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -179,6 +181,37 @@ public final class Reading {
         self.chapterText = chapterText
         self.courseCode = courseCode
         self.semanticCategoryRaw = semanticCategoryRaw
+        self.relevantTopics = relevantTopics
+    }
+
+    public var computedTopics: [String] {
+        if let explicit = relevantTopics, !explicit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return explicit.components(separatedBy: CharacterSet(charactersIn: ",|;\n"))
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+        if let takeaways = keyTakeawaysText, !takeaways.isEmpty {
+            let lines = takeaways.components(separatedBy: .newlines)
+                .map { $0.replacingOccurrences(of: "•", with: "").trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !lines.isEmpty {
+                return lines
+            }
+        }
+        if let summary = summaryText, !summary.isEmpty {
+            let sentences = summary.components(separatedBy: ".")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty && $0.count < 60 }
+            if !sentences.isEmpty {
+                return Array(sentences.prefix(3))
+            }
+        }
+        return ["\(mediaType.displayName) Core Concepts", "Required Module Material"]
+    }
+
+    public var associatedAssignments: [Assignment] {
+        guard let weekNum = week?.weekNumber, let course = week?.course else { return [] }
+        return course.assignments.filter { $0.weekNumber == weekNum && !$0.isDeleted }
     }
 }
 
@@ -201,6 +234,7 @@ public final class Assignment {
     public var semanticCategoryRaw: String?
     public var subTypeRaw: String?
     public var mediaUrl: String?
+    public var relevantTopics: String?
     
     public var course: Course?
 
@@ -221,7 +255,8 @@ public final class Assignment {
         semanticCategoryRaw: String? = "assignment",
         weightPercentage: String? = nil,
         subTypeRaw: String? = "PAPER",
-        mediaUrl: String? = nil
+        mediaUrl: String? = nil,
+        relevantTopics: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -240,6 +275,42 @@ public final class Assignment {
         self.semanticCategoryRaw = semanticCategoryRaw
         self.subTypeRaw = subTypeRaw
         self.mediaUrl = mediaUrl
+        self.relevantTopics = relevantTopics
+    }
+
+    public var computedTopics: [String] {
+        if let explicit = relevantTopics, !explicit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return explicit.components(separatedBy: CharacterSet(charactersIn: ",|;\n"))
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+        var topics: [String] = []
+        if let inst = fullInstructions, !inst.isEmpty {
+            let lines = inst.components(separatedBy: .newlines)
+            for line in lines {
+                let lower = line.lowercased()
+                if lower.contains("topic") || lower.contains("focus") || lower.contains("concept") || lower.contains("module") {
+                    let cleaned = line.replacingOccurrences(of: "•", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !cleaned.isEmpty && cleaned.count < 60 {
+                        topics.append(cleaned)
+                    }
+                }
+            }
+        }
+        if topics.isEmpty {
+            let titleWords = title.components(separatedBy: .whitespaces)
+            if titleWords.count >= 2 {
+                topics.append(titleWords.prefix(4).joined(separator: " "))
+            }
+            topics.append("\(displaySubType.capitalized) Objectives & Evaluation")
+        }
+        return Array(Set(topics))
+    }
+
+    public var associatedReadings: [Reading] {
+        guard let course = course else { return [] }
+        let targetWeek = course.weeks.first(where: { $0.weekNumber == weekNumber })
+        return targetWeek?.readings.filter { !$0.isDeleted } ?? []
     }
 
     public var displaySubType: String {
@@ -333,11 +404,37 @@ public final class VaultDocument {
 }
 
 public struct CourseImporter {
+    public static func normalizeKey(_ str: String) -> String {
+        return str.lowercased()
+            .replacingOccurrences(of: "syllabus", with: "")
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
+    }
+
+    public static func normalizeTitle(_ str: String) -> String {
+        return str.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
+    }
+
     public static func importDTO(_ dto: CourseDTO, into modelContext: ModelContext) {
-        if let code = dto.courseCode, !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let descriptor = FetchDescriptor<Course>()
-            if let existingCourses = try? modelContext.fetch(descriptor),
-               let existing = existingCourses.first(where: { $0.courseCode?.lowercased() == code.lowercased() }) {
+        let descriptor = FetchDescriptor<Course>()
+        if let existingCourses = try? modelContext.fetch(descriptor) {
+            let targetCodeKey = normalizeKey(dto.courseCode ?? "")
+            let targetNameKey = normalizeKey(dto.courseName)
+
+            if let existing = existingCourses.first(where: { course in
+                let cCodeKey = normalizeKey(course.courseCode ?? "")
+                let cNameKey = normalizeKey(course.courseName)
+                if !targetCodeKey.isEmpty && !cCodeKey.isEmpty && targetCodeKey == cCodeKey {
+                    return true
+                }
+                if !targetNameKey.isEmpty && !cNameKey.isEmpty && targetNameKey == cNameKey {
+                    return true
+                }
+                return false
+            }) {
                 importDTO(dto, into: existing, modelContext: modelContext)
                 return
             }
@@ -423,7 +520,8 @@ public struct CourseImporter {
                     let estTime = rDTO.estimatedTimeText ?? (mediaType == .video || mediaType == .podcast ? "~20–30 min" : "~40–60 min")
                     let videoUrl: String? = {
                         if let cand = rDTO.videoUrl, URLHelper.isValidURL(cand) { return cand }
-                        if let cand = rDTO.summaryText, URLHelper.isValidURL(cand) { return cand }
+                        if let cand = rDTO.summaryText, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
+                        if let extracted = URLHelper.extractFirstURL(from: rDTO.title) { return extracted }
                         return nil
                     }()
 
@@ -469,22 +567,29 @@ public struct CourseImporter {
                 let days = Calendar.current.dateComponents([.day], from: WeekDateConverter.baseTermStartDate, to: finalDueDate).day ?? 0
                 let weekNumber = max(1, min(16, (days / 7) + 1))
 
-                let assignment = Assignment(
-                    id: UUID(),
-                    title: aDTO.title,
-                    weekNumber: weekNumber,
-                    dueDate: finalDueDate,
-                    fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
-                    pointsPossible: aDTO.pointsPossible ?? "100 Points",
-                    pointsBreakdown: nil,
-                    noteText: aDTO.noteText,
-                    isCompleted: false,
-                    isDeleted: false,
-                    courseCode: newCourse.courseCode,
-                    weightPercentage: aDTO.weightPercentage,
-                    subTypeRaw: "PAPER",
-                    mediaUrl: nil
-                )
+                    let mediaUrl: String? = {
+                        if let cand = aDTO.mediaUrl, URLHelper.isValidURL(cand) { return cand }
+                        if let cand = aDTO.fullInstructions, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
+                        if let extracted = URLHelper.extractFirstURL(from: aDTO.title) { return extracted }
+                        return nil
+                    }()
+
+                    let assignment = Assignment(
+                        id: UUID(),
+                        title: aDTO.title,
+                        weekNumber: weekNumber,
+                        dueDate: finalDueDate,
+                        fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
+                        pointsPossible: aDTO.pointsPossible ?? "100 Points",
+                        pointsBreakdown: aDTO.pointsBreakdown,
+                        noteText: aDTO.noteText,
+                        isCompleted: false,
+                        isDeleted: false,
+                        courseCode: newCourse.courseCode,
+                        weightPercentage: aDTO.weightPercentage,
+                        subTypeRaw: "PAPER",
+                        mediaUrl: mediaUrl
+                    )
                 assignment.course = newCourse
                 newCourse.assignments.append(assignment)
                 modelContext.insert(assignment)
@@ -535,7 +640,9 @@ public struct CourseImporter {
             }
 
             if let readings = wDTO.readings, !readings.isEmpty {
+                let allExistingReadings = existingCourse.weeks.flatMap { $0.readings }
                 for rDTO in readings {
+                    let normTitle = rDTO.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                     let mediaType: MediaType = {
                         switch (rDTO.mediaType ?? "textbook").lowercased() {
                         case "media", "video":   return .video
@@ -550,7 +657,8 @@ public struct CourseImporter {
                     let estTime = rDTO.estimatedTimeText ?? (mediaType == .video || mediaType == .podcast ? "~20–30 min" : "~40–60 min")
                     let videoUrl: String? = {
                         if let cand = rDTO.videoUrl, URLHelper.isValidURL(cand) { return cand }
-                        if let cand = rDTO.summaryText, URLHelper.isValidURL(cand) { return cand }
+                        if let cand = rDTO.summaryText, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
+                        if let extracted = URLHelper.extractFirstURL(from: rDTO.title) { return extracted }
                         return nil
                     }()
 
@@ -559,7 +667,7 @@ public struct CourseImporter {
                         return LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026).date
                     }()
 
-                    if let existingReading = week.readings.first(where: { $0.title.lowercased() == rDTO.title.lowercased() }) {
+                    if let existingReading = allExistingReadings.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle }) {
                         existingReading.summaryText = summary
                         existingReading.keyTakeawaysText = takeaways
                         existingReading.estimatedTimeText = estTime
@@ -592,6 +700,7 @@ public struct CourseImporter {
             dfShort.dateFormat = "yyyy-MM-dd"
 
             for aDTO in assignments {
+                let normTitle = aDTO.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 var parsedDueDate: Date? = nil
                 if let dueStr = aDTO.dueDate, !dueStr.isEmpty {
                     parsedDueDate = isoFmt.date(from: dueStr) ?? dfShort.date(from: dueStr)
@@ -601,12 +710,20 @@ public struct CourseImporter {
                 let days = Calendar.current.dateComponents([.day], from: WeekDateConverter.baseTermStartDate, to: finalDueDate).day ?? 0
                 let weekNumber = max(1, min(16, (days / 7) + 1))
 
-                if let existingAssignment = existingCourse.assignments.first(where: { $0.title.lowercased() == aDTO.title.lowercased() }) {
+                if let existingAssignment = existingCourse.assignments.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle }) {
                     if let inst = aDTO.fullInstructions, !inst.isEmpty { existingAssignment.fullInstructions = inst }
                     if let pts = aDTO.pointsPossible, !pts.isEmpty { existingAssignment.pointsPossible = pts }
                     if let weight = aDTO.weightPercentage, !weight.isEmpty { existingAssignment.weightPercentage = weight }
+                    if let bd = aDTO.pointsBreakdown, !bd.isEmpty { existingAssignment.pointsBreakdown = bd }
                     if parsedDueDate != nil { existingAssignment.dueDate = finalDueDate }
                 } else {
+                    let mediaUrl: String? = {
+                        if let cand = aDTO.mediaUrl, URLHelper.isValidURL(cand) { return cand }
+                        if let cand = aDTO.fullInstructions, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
+                        if let extracted = URLHelper.extractFirstURL(from: aDTO.title) { return extracted }
+                        return nil
+                    }()
+
                     let assignment = Assignment(
                         id: UUID(),
                         title: aDTO.title,
@@ -614,14 +731,14 @@ public struct CourseImporter {
                         dueDate: finalDueDate,
                         fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
                         pointsPossible: aDTO.pointsPossible ?? "100 Points",
-                        pointsBreakdown: nil,
+                        pointsBreakdown: aDTO.pointsBreakdown,
                         noteText: nil,
                         isCompleted: false,
                         isDeleted: false,
                         courseCode: existingCourse.courseCode,
                         weightPercentage: aDTO.weightPercentage,
                         subTypeRaw: "PAPER",
-                        mediaUrl: nil
+                        mediaUrl: mediaUrl
                     )
                     assignment.course = existingCourse
                     existingCourse.assignments.append(assignment)
@@ -641,15 +758,33 @@ public struct CourseImporter {
     }
 
     private static func importItemDTOs(_ items: [ItemDTO], into course: Course, modelContext: ModelContext) {
+        let allAssignmentsInDB = (try? modelContext.fetch(FetchDescriptor<Assignment>())) ?? []
+        let courseAssignments = allAssignmentsInDB.filter { assign in
+            assign.course?.id == course.id ||
+            normalizeKey(assign.courseCode ?? "") == normalizeKey(course.courseCode ?? "") ||
+            normalizeKey(assign.course?.courseName ?? "") == normalizeKey(course.courseName)
+        }
+
+        let allReadingsInDB = (try? modelContext.fetch(FetchDescriptor<Reading>())) ?? []
+        let courseReadings = allReadingsInDB.filter { reading in
+            reading.week?.course?.id == course.id ||
+            normalizeKey(reading.courseCode ?? "") == normalizeKey(course.courseCode ?? "") ||
+            normalizeKey(reading.week?.course?.courseName ?? "") == normalizeKey(course.courseName)
+        }
+
         for item in items {
             let weekNum = item.weekNumber ?? 1
+            let normTitle = normalizeTitle(item.title)
             let parsedDueDate: Date? = {
                 guard let dStr = item.dueDateIso, !dStr.isEmpty else { return nil }
                 return LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026).date
             }()
             let isAssignment = item.category.lowercased() == "assignment" || item.category.lowercased().contains("assignment") || item.category.lowercased().contains("exam") || item.category.lowercased().contains("project")
             if isAssignment {
-                if let existing = course.assignments.first(where: { $0.title.lowercased() == item.title.lowercased() }) {
+                let existingAssign = course.assignments.first(where: { normalizeTitle($0.title) == normTitle }) ??
+                                     courseAssignments.first(where: { normalizeTitle($0.title) == normTitle })
+                if let existing = existingAssign {
+                    print("ℹ️ [RE-UPLOAD CLAUSE] Assignment '\(item.title)' already exists. Updating in place.")
                     if let desc = item.description, !desc.isEmpty { existing.fullInstructions = desc }
                     if let pts = item.points, !pts.isEmpty { existing.pointsPossible = pts }
                     if let bd = item.pointsBreakdown, !bd.isEmpty { existing.pointsBreakdown = bd }
@@ -658,6 +793,13 @@ public struct CourseImporter {
                     if let media = item.mediaUrl, !media.isEmpty { existing.mediaUrl = media }
                     if let pDate = parsedDueDate { existing.dueDate = pDate }
                 } else {
+                    let realBreakdown: String? = {
+                        if let bd = item.pointsBreakdown, !bd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            return bd
+                        }
+                        return nil
+                    }()
+
                     let assignment = Assignment(
                         id: UUID(),
                         title: item.title,
@@ -665,7 +807,7 @@ public struct CourseImporter {
                         dueDate: parsedDueDate ?? Date(),
                         fullInstructions: item.description ?? "Complete \(item.title)",
                         pointsPossible: item.points ?? "100 Points Possible",
-                        pointsBreakdown: item.pointsBreakdown,
+                        pointsBreakdown: realBreakdown,
                         noteText: nil,
                         isCompleted: false,
                         isDeleted: false,
@@ -698,11 +840,21 @@ public struct CourseImporter {
                     }
                 }()
 
-                if let existing = week.readings.first(where: { $0.title.lowercased() == item.title.lowercased() }) {
+                let existingReading = course.weeks.flatMap({ $0.readings }).first(where: { normalizeTitle($0.title) == normTitle }) ??
+                                      courseReadings.first(where: { normalizeTitle($0.title) == normTitle })
+                if let existing = existingReading {
+                    print("ℹ️ [RE-UPLOAD CLAUSE] Reading '\(item.title)' already exists. Updating in place.")
                     if let desc = item.description, !desc.isEmpty { existing.summaryText = desc }
                     if let media = item.mediaUrl, !media.isEmpty { existing.videoUrl = media }
                     if let pDate = parsedDueDate { existing.dueDate = pDate }
                 } else {
+                    let videoUrl: String? = {
+                        if let cand = item.mediaUrl, URLHelper.isValidURL(cand) { return cand }
+                        if let cand = item.description, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
+                        if let extracted = URLHelper.extractFirstURL(from: item.title) { return extracted }
+                        return nil
+                    }()
+
                     let reading = Reading(
                         id: UUID(),
                         title: item.title,
@@ -712,7 +864,7 @@ public struct CourseImporter {
                         summaryText: item.description ?? "Required reading for \(item.title).",
                         keyTakeawaysText: nil,
                         estimatedTimeText: item.subType == "VIDEO" ? "~20 min video" : "~45 min read",
-                        videoUrl: item.mediaUrl,
+                        videoUrl: videoUrl,
                         dueDate: parsedDueDate ?? week.computedEndDate,
                         dateRangeStr: week.dateRangeStr,
                         courseCode: course.courseCode
@@ -722,6 +874,33 @@ public struct CourseImporter {
                     modelContext.insert(reading)
                 }
             }
+        }
+    }
+
+    public static func defaultBreakdown(for title: String, subType: String, totalPointsStr: String?) -> String {
+        let ptsDigits = (totalPointsStr ?? "100").components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        let totalPts = Int(ptsDigits) ?? 100
+        let p1 = Int(Double(totalPts) * 0.4)
+        let p2 = Int(Double(totalPts) * 0.3)
+        let p3 = max(0, totalPts - p1 - p2)
+
+        let lowerTitle = title.lowercased()
+        let upperSub = subType.uppercased()
+
+        if upperSub == "PRESENTATION" || lowerTitle.contains("presentation") || lowerTitle.contains("speech") {
+            return "Content & Subject Knowledge: \(p1) Points | Visuals & Delivery: \(p2) Points | Q&A & Engagement: \(p3) Points"
+        } else if upperSub == "ARTICLE" || lowerTitle.contains("reading") || lowerTitle.contains("article") || lowerTitle.contains("summary") {
+            return "Core Concepts Summary: \(p1) Points | Critical Evaluation: \(p2) Points | Application & Insights: \(p3) Points"
+        } else if lowerTitle.contains("exam") || lowerTitle.contains("quiz") || lowerTitle.contains("test") || upperSub == "IN_CLASS" {
+            return "Multiple Choice & Concepts: \(p1) Points | Short Answer & Problem Solving: \(p2) Points | Accuracy & Completeness: \(p3) Points"
+        } else if lowerTitle.contains("lab") || lowerTitle.contains("experiment") || lowerTitle.contains("data") {
+            return "Procedure & Data Collection: \(p1) Points | Results & Analysis: \(p2) Points | Conclusion & Lab Report: \(p3) Points"
+        } else if upperSub == "VIDEO" || lowerTitle.contains("video") || lowerTitle.contains("podcast") {
+            return "Script & Content Depth: \(p1) Points | Audio/Visual Quality: \(p2) Points | Synthesis & Discussion: \(p3) Points"
+        } else if lowerTitle.contains("code") || lowerTitle.contains("programming") || lowerTitle.contains("software") {
+            return "Core Architecture & Logic: \(p1) Points | Code Quality & Efficiency: \(p2) Points | Testing & Documentation: \(p3) Points"
+        } else {
+            return "Research & Thesis Depth: \(p1) Points | Argument & Evidence Support: \(p2) Points | Structure & Writing Mechanics: \(p3) Points"
         }
     }
 }
@@ -811,5 +990,29 @@ public enum URLHelper {
             clean = "https://" + clean
         }
         return URL(string: clean)
+    }
+
+    public static func extractFirstURL(from text: String?) -> String? {
+        guard let text = text, !text.isEmpty else { return nil }
+
+        let youtubePattern = #"(https?://(?:www\.|m\.)?(?:youtube\.com/(?:watch\?v=|embed/|v/)|youtu\.be/)[a-zA-Z0-9_-]+[^\s]*)"#
+        if let regex = try? NSRegularExpression(pattern: youtubePattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
+            if let range = Range(match.range, in: text) {
+                let urlStr = String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: ".,);\"'<>"))
+                return urlStr
+            }
+        }
+
+        let genericPattern = #"(https?://[^\s<>"{}|\^~\[\]]+)"#
+        if let regex = try? NSRegularExpression(pattern: genericPattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
+            if let range = Range(match.range, in: text) {
+                let urlStr = String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: ".,);\"'<>"))
+                return urlStr
+            }
+        }
+
+        return nil
     }
 }

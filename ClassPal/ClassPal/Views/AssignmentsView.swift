@@ -1211,53 +1211,50 @@ public struct AssignmentCardRow: View {
                 .frame(width: 4, height: 36)
 
             // Content Area (Tapping opens Assignment Details)
-            Button(action: onEdit) {
-                VStack(alignment: .leading, spacing: 4) {
-                    let displayCourseTitle: String = {
-                        if let course = assignment.course {
-                            let code = (course.courseCode ?? "").trimmingCharacters(in: .whitespaces)
-                            let name = course.courseName.trimmingCharacters(in: .whitespaces)
-                            if !code.isEmpty && code.lowercased() != "crs" && code.lowercased() != "course" {
-                                if !name.isEmpty {
-                                    let cleanCode = code.trimmingCharacters(in: .whitespaces)
-                                    let cleanName = name.trimmingCharacters(in: .whitespaces)
-                                    if cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
-                                        return cleanName
-                                    }
-                                    return "\(cleanCode) · \(cleanName)"
+            VStack(alignment: .leading, spacing: 4) {
+                let displayCourseTitle: String = {
+                    if let course = assignment.course {
+                        let code = (course.courseCode ?? "").trimmingCharacters(in: .whitespaces)
+                        let name = course.courseName.trimmingCharacters(in: .whitespaces)
+                        if !code.isEmpty && code.lowercased() != "crs" && code.lowercased() != "course" {
+                            if !name.isEmpty {
+                                let cleanCode = code.trimmingCharacters(in: .whitespaces)
+                                let cleanName = name.trimmingCharacters(in: .whitespaces)
+                                if cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
+                                    return cleanName
                                 }
-                                return code
+                                return "\(cleanCode) · \(cleanName)"
                             }
-                            return name.isEmpty ? "COURSE" : name
+                            return code
                         }
-                        return "COURSE"
-                    }()
+                        return name.isEmpty ? "COURSE" : name
+                    }
+                    return "COURSE"
+                }()
 
-                    Text(displayCourseTitle)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundColor(courseColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(courseColor.opacity(0.15))
-                        .cornerRadius(8)
-                        .lineLimit(1)
+                Text(displayCourseTitle)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(courseColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(courseColor.opacity(0.15))
+                    .cornerRadius(8)
+                    .lineLimit(1)
 
-                    Text(assignment.title)
-                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
-                        .foregroundColor(assignment.isCompleted ? Color(red: 0.35, green: 0.42, blue: 0.52) : Color(red: 0.08, green: 0.12, blue: 0.22))
-                        .strikethrough(assignment.isCompleted)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(3)
+                Text(assignment.title)
+                    .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                    .foregroundColor(assignment.isCompleted ? Color(red: 0.35, green: 0.42, blue: 0.52) : Color(red: 0.08, green: 0.12, blue: 0.22))
+                    .strikethrough(assignment.isCompleted)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(3)
 
-                    // Date Display (Formatted identically to Readings: "Due [Day], [Month] [Date] · Week [WeekNumber]")
-                    let assignDateText = WeekDateConverter.formattedDueDate(for: assignment.dueDate, weekNumber: assignment.weekNumber)
-                    Text(assignDateText)
-                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        .padding(.top, 1)
-                }
+                // Date Display (Formatted identically to Readings: "Due [Day], [Month] [Date] · Week [WeekNumber]")
+                let assignDateText = WeekDateConverter.formattedDueDate(for: assignment.dueDate, weekNumber: assignment.weekNumber)
+                Text(assignDateText)
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                    .padding(.top, 1)
             }
-            .buttonStyle(.plain)
 
             Spacer(minLength: 4)
 
@@ -1309,6 +1306,10 @@ public struct AssignmentCardRow: View {
         .background(Color.white)
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onEdit()
+        }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash.fill")
@@ -1383,10 +1384,37 @@ public struct EditAssignmentSheet: View {
     @State private var dueDateState: Date = Date()
     @State private var pointsValueState: Int = 100
     @State private var gradeWeightPercentState: Int = 10
+    @State private var pointsBreakdownTextState: String = ""
     @State private var videoUrlTextState: String = ""
     @State private var courseNameTextState: String = ""
     @State private var customNotesState: String = ""
     @State private var isSyncing: Bool = false
+
+    private var parsedRubricItems: [(title: String, points: String)] {
+        let rawLines = pointsBreakdownTextState
+            .components(separatedBy: CharacterSet.newlines)
+            .flatMap { $0.components(separatedBy: "|") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var result: [(title: String, points: String)] = []
+        for line in rawLines {
+            if line.contains(":") {
+                let parts = line.components(separatedBy: ":")
+                let title = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                let pts = parts.dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespacesAndNewlines)
+                result.append((title: title, points: pts))
+            } else if line.contains(" - ") {
+                let parts = line.components(separatedBy: " - ")
+                let title = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                let pts = parts.dropFirst().joined(separator: " - ").trimmingCharacters(in: .whitespacesAndNewlines)
+                result.append((title: title, points: pts))
+            } else {
+                result.append((title: line, points: ""))
+            }
+        }
+        return result
+    }
 
     public var body: some View {
         NavigationStack {
@@ -1478,6 +1506,55 @@ public struct EditAssignmentSheet: View {
                         .onChange(of: gradeWeightPercentState) { _, newPct in
                             assignment.weightPercentage = "\(newPct)%"
                         }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Image(systemName: "list.bullet.clipboard.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                Text("Titles Making Up Points (Rubric Breakdown)")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            }
+
+                            if !parsedRubricItems.isEmpty {
+                                VStack(spacing: 6) {
+                                    ForEach(Array(parsedRubricItems.enumerated()), id: \.offset) { idx, item in
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+
+                                            Text(item.title)
+                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                                            Spacer()
+
+                                            if !item.points.isEmpty {
+                                                Text(item.points)
+                                                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 3)
+                                                    .background(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.12))
+                                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                                    .cornerRadius(6)
+                                            }
+                                        }
+                                        .padding(.vertical, 7)
+                                        .padding(.horizontal, 10)
+                                        .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                                        .cornerRadius(10)
+                                    }
+                                }
+                            } else {
+                                Text("No rubric breakdown extracted")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                    .padding(.vertical, 4)
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
 
                     // Section 4: Resource Link
@@ -1531,6 +1608,12 @@ public struct EditAssignmentSheet: View {
                 let rawWeight = assignment.weightPercentage ?? "\(pointsValueState / 5)%"
                 let weightDigits = rawWeight.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
                 gradeWeightPercentState = Int(weightDigits) ?? (pointsValueState / 5)
+
+                if let bd = assignment.pointsBreakdown, !bd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    pointsBreakdownTextState = bd
+                } else {
+                    pointsBreakdownTextState = ""
+                }
             }
             .navigationTitle("Details")
             #if os(iOS)

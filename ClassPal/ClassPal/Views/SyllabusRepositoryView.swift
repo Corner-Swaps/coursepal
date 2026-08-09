@@ -121,6 +121,14 @@ public struct SyllabusRepositoryView: View {
     @State private var selectedDocForPreview: VaultDocument? = nil
     @State private var selectedVaultCategory: String = "syllabi" // "syllabi" (Courses) or "documents"
     @Binding var showingUploadModal: Bool
+    @Binding var isGlobalProcessing: Bool
+    @Binding var selectedCourseForAddDoc: Course?
+
+    public init(showingUploadModal: Binding<Bool> = .constant(false), isGlobalProcessing: Binding<Bool> = .constant(false), selectedCourseForAddDoc: Binding<Course?> = .constant(nil)) {
+        self._showingUploadModal = showingUploadModal
+        self._isGlobalProcessing = isGlobalProcessing
+        self._selectedCourseForAddDoc = selectedCourseForAddDoc
+    }
 
     /// Unique deduplicated document list presented in the Documents tab
     private var unifiedVaultDocs: [VaultDocument] {
@@ -209,9 +217,6 @@ public struct SyllabusRepositoryView: View {
         }
     }
 
-    public init(showingUploadModal: Binding<Bool> = .constant(false)) {
-        self._showingUploadModal = showingUploadModal
-    }
 
     private func deleteDocument(_ doc: VaultDocument) {
         withAnimation {
@@ -239,7 +244,6 @@ public struct SyllabusRepositoryView: View {
 
     @State private var showingDocDetailModal: Bool = false
     @State private var showingFileImporter: Bool = false
-    @State private var selectedCourseForAddDoc: Course? = nil
     @State private var isUploadingDocument: Bool = false
     @State private var showingRepositoryErrorAlert: Bool = false
     @State private var repositoryErrorMessage: String = ""
@@ -260,6 +264,21 @@ public struct SyllabusRepositoryView: View {
                         }
 
                         Spacer()
+
+                        Button(action: {
+                            selectedCourseForAddDoc = nil
+                            showingUploadModal = true
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    .frame(width: 36, height: 36)
+                                Image(systemName: "plus")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 18)
@@ -293,6 +312,35 @@ public struct SyllabusRepositoryView: View {
                     .cornerRadius(18)
                     .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
                     .padding(.horizontal, 18)
+
+                    // MARK: - Loading Status Pill (Above Courses)
+                    if SyllabusUploadManager.shared.isUploading {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
+
+                            Text("Uploading syllabus document")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+
+                            Spacer()
+
+                            ProgressView(value: SyllabusUploadManager.shared.progressRatio)
+                                .frame(width: 44)
+                                .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.08))
+                        .cornerRadius(16)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.2), lineWidth: 1)
+                        )
+                        .padding(.horizontal, 18)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
 
                     // MARK: - Vault Documents Body
                     VStack(alignment: .leading, spacing: 16) {
@@ -333,13 +381,14 @@ public struct SyllabusRepositoryView: View {
                                     ForEach(activeCourses) { course in
                                         CourseSyllabusCardRow(
                                             course: course,
+                                            isUploading: SyllabusUploadManager.shared.isUploading && (selectedCourseForAddDoc?.id == course.id || selectedCourseForAddDoc == nil),
                                             onAddDocument: {
                                                 if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                                     repositoryErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
                                                     showingRepositoryErrorAlert = true
                                                 } else {
                                                     selectedCourseForAddDoc = course
-                                                    showingFileImporter = true
+                                                    showingUploadModal = true
                                                 }
                                             },
                                             onDeleteCourse: { deleteCourse(course) }
@@ -427,71 +476,9 @@ public struct SyllabusRepositoryView: View {
             return
         }
 
-        let isAccessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if isAccessing {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        let fileData: Data? = try? Data(contentsOf: url)
-        let extractedText = DocumentExtractor.extractText(from: url)
-
         let targetCourse = selectedCourseForAddDoc
-        let urlPathExtension = url.pathExtension
-        let urlLastPathComponent = url.lastPathComponent
-
-        isUploadingDocument = true
-        Task { @MainActor in
-            defer { isUploadingDocument = false }
-            let startTime = Date()
-            do {
-                let dto: CourseDTO
-                if urlPathExtension.lowercased() == "pdf", let pData = fileData, !pData.isEmpty {
-                    print("⏳ [NETWORK START] Sending Base64 PDF (\(pData.count) bytes) directly to Gemini API...")
-                    dto = try await APIService.shared.parsePDFDocumentData(pData)
-                    let timeElapsed = String(format: "%.2f", Date().timeIntervalSince(startTime))
-                    print("✅ [NETWORK COMPLETE] Gemini API responded in \(timeElapsed) seconds.")
-                } else if let text = extractedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    print("⏳ [NETWORK START] Sending extracted syllabus text to Gemini API...")
-                    dto = try await APIService.shared.parseSyllabusText(text)
-                    let timeElapsed = String(format: "%.2f", Date().timeIntervalSince(startTime))
-                    print("✅ [NETWORK COMPLETE] Gemini API responded in \(timeElapsed) seconds.")
-                } else {
-                    repositoryErrorMessage = "Error: Unable to process document. File is empty or unreadable."
-                    showingRepositoryErrorAlert = true
-                    return
-                }
-
-                if let target = targetCourse {
-                    CourseImporter.importDTO(dto, into: target, modelContext: modelContext)
-                } else {
-                    CourseImporter.importDTO(dto, into: modelContext)
-                }
-
-                let bytes = Double(fileData?.count ?? 0)
-                let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
-                let cCode = targetCourse?.courseCode ?? dto.courseCode ?? ""
-                let ext = urlPathExtension.isEmpty ? "pdf" : urlPathExtension
-                let documentTitle = (!cCode.isEmpty && cCode != "CRS-101") ? "\(cCode) - \(dto.courseName).\(ext)" : urlLastPathComponent
-                let doc = VaultDocument(
-                    title: documentTitle,
-                    category: "Class Material",
-                    fileSize: sizeMB,
-                    fileType: ext,
-                    courseCode: cCode,
-                    fileContent: extractedText,
-                    rawFileData: fileData
-                )
-                modelContext.insert(doc)
-                try modelContext.save()
-            } catch {
-                print("[SyllabusRepositoryView] Async document import failed: \(error)")
-                repositoryErrorMessage = "Error: Unable to process document. Please check your API key and network."
-                showingRepositoryErrorAlert = true
-            }
-            selectedCourseForAddDoc = nil
-        }
+        SyllabusUploadManager.shared.startUpload(urls: [url], targetCourse: targetCourse, modelContext: modelContext)
+        selectedCourseForAddDoc = nil
     }
 }
 
@@ -825,74 +812,39 @@ public struct VaultDocPreviewSheet: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Segmented Picker for Original Document vs Extracted Text
-                Picker("Preview Mode", selection: $previewMode) {
-                    Text("Original Document").tag(0)
-                    Text("Extracted Text").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Color(red: 0.96, green: 0.97, blue: 0.99))
-
-                Divider()
-
-                if previewMode == 0 {
-                    // TAB 0: ORIGINAL DOCUMENT VISUAL RENDERER
-                    if let rawData = document.rawFileData, !rawData.isEmpty {
-                        let isPdf = document.fileType.uppercased() == "PDF" || document.title.lowercased().hasSuffix(".pdf")
-                        if isPdf {
-                            PDFKitView(data: rawData)
-                        } else {
-                            NativeDocViewer(data: rawData, fileName: document.title)
-                        }
+                if let rawData = document.rawFileData, !rawData.isEmpty {
+                    let isPdf = document.fileType.uppercased() == "PDF" || document.title.lowercased().hasSuffix(".pdf")
+                    if isPdf {
+                        PDFKitView(data: rawData)
                     } else {
-                        // Fallback formatted reader view if binary data missing
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 16) {
-                                HStack(spacing: 10) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.12))
-                                            .frame(width: 38, height: 38)
-                                        Image(systemName: "doc.text.fill")
-                                            .font(.system(size: 18, weight: .bold))
-                                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                    }
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(document.title)
-                                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                        Text("\(document.fileType) Document • \(document.courseCode ?? "General")")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                    }
-                                }
-                                Divider()
-
-                                Text(sanitizedTextContent)
-                                    .font(.system(size: 15, weight: .regular))
-                                    .foregroundColor(Color(red: 0.15, green: 0.20, blue: 0.30))
-                                    .lineSpacing(6)
-                            }
-                            .padding(20)
-                        }
+                        NativeDocViewer(data: rawData, fileName: document.title)
                     }
                 } else {
-                    // TAB 1: EXTRACTED TEXT (SANITIZED & CLEANED)
+                    // Fallback formatted reader view if binary data missing
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            Text(document.title)
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                            Text("\(document.category) · \(document.courseCode ?? "General")")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                            HStack(spacing: 10) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.12))
+                                        .frame(width: 38, height: 38)
+                                    Image(systemName: "doc.text.fill")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(document.title)
+                                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                    Text("\(document.fileType) Document • \(document.courseCode ?? "General")")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                }
+                            }
                             Divider()
 
-                            let clean = sanitizedTextContent
-                            Text(clean.isEmpty ? "No extracted text available for this document." : clean)
-                                .font(.system(size: 14, weight: .regular))
+                            Text(sanitizedTextContent)
+                                .font(.system(size: 15, weight: .regular))
                                 .foregroundColor(Color(red: 0.15, green: 0.20, blue: 0.30))
                                 .lineSpacing(6)
                         }
@@ -964,6 +916,7 @@ public struct SyllabusDocPreviewSheet: View {
 
 public struct CourseSyllabusCardRow: View {
     public let course: Course
+    public var isUploading: Bool = false
     public let onAddDocument: () -> Void
     public let onDeleteCourse: () -> Void
 
@@ -1020,14 +973,10 @@ public struct CourseSyllabusCardRow: View {
                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         .lineLimit(1)
 
-                    // Stats summary row ALWAYS visible before clicking drop-down (matching style for Weeks, Readings, Assignments)
+                    // Stats summary row (Readings and Assignments)
                     let totalReadings = course.weeks.reduce(0) { $0 + $1.readings.count }
                     HStack(spacing: 4) {
-                        Text("\(course.termWeeks) Weeks")
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-
-                        Text("• \(totalReadings) Readings")
+                        Text("\(totalReadings) Readings")
                             .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
 
@@ -1048,12 +997,19 @@ public struct CourseSyllabusCardRow: View {
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(Color(red: 0.92, green: 0.95, blue: 1.0))
                                 .frame(width: 32, height: 32)
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            if isUploading {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            } else {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
                         }
                     }
                     .buttonStyle(.plain)
+                    .disabled(isUploading)
 
                     // Garbage Can Button
                     Button(action: onDeleteCourse) {
@@ -1123,7 +1079,7 @@ public struct CourseSyllabusCardRow: View {
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
-                            Text("\(course.termWeeks) Weeks • Course Dates: 7/1 - 9/24, 2026")
+                            Text("Course Schedule & Syllabus Materials")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
 

@@ -342,13 +342,118 @@ public final class SyllabusParserTestSuite {
         let passCount = results.filter { $0.passed }.count
         print("SUMMARY: \(passCount)/25 Tests Passed Successfully (\(Int(Double(passCount)/25.0*100))%)")
         print("==========================================================")
+        return results
+    }
+
+    /// Executes the 10-Round Live Gemini 1.5 Pro Autonomous Execution QA Battery
+    public func run10RoundLiveGeminiQABattery() async -> [TestResult] {
+        var results: [TestResult] = []
+        let testSyllabiDir = "/Users/slava/Downloads/Projects/ClassPal/test_syllabi"
+        let pdfNames = [
+            "Syllabus_1_CS501.pdf",
+            "Syllabus_2_BIO412.pdf",
+            "Syllabus_3_LAW702.pdf",
+            "Syllabus_4_CPC514.pdf",
+            "Syllabus_5_CPC523.pdf",
+            "Syllabus_6_ECON305.pdf",
+            "Syllabus_7_PHYS601.pdf",
+            "Syllabus_8_HIST210.pdf",
+            "Syllabus_9_ART150.pdf",
+            "Syllabus_10_PSYCH800.pdf"
+        ]
+
+        print("================================================================================")
+        print("STARTING 10-ROUND LIVE GEMINI 1.5 PRO AUTONOMOUS QA EXECUTION PROTOCOL...")
+        print("================================================================================")
+
+        for (index, pdfName) in pdfNames.enumerated() {
+            let roundNum = index + 1
+            let filePath = "\(testSyllabiDir)/\(pdfName)"
+            guard let pdfData = try? Data(contentsOf: URL(fileURLWithPath: filePath)), !pdfData.isEmpty else {
+                results.append(TestResult(testId: roundNum, testName: "Round \(roundNum): \(pdfName)", passed: false, details: "Failed to read PDF file at \(filePath)"))
+                continue
+            }
+
+            let startTime = Date()
+            print("🚀 [ROUND \(roundNum)/10] Processing Base64 PDF '\(pdfName)' (\(pdfData.count) bytes) via Gemini 1.5 Pro...")
+
+            do {
+                let dto = try await APIService.shared.parsePDFDocumentData(pdfData)
+                let elapsed = Date().timeIntervalSince(startTime)
+                let elapsedFormatted = String(format: "%.2f", elapsed)
+
+                let lockPass = elapsed >= 5.0
+                let codeStr = dto.courseCode ?? "CRS"
+                let titleStr = dto.courseName
+                let items = dto.items ?? []
+
+                var invalidTitleCount = 0
+                var invalidSubTypeCount = 0
+                var itemsSummary: [String] = []
+
+                for item in items {
+                    let wordCount = item.title.components(separatedBy: .whitespaces).filter({ !$0.isEmpty }).count
+                    if wordCount < 3 || wordCount > 5 {
+                        invalidTitleCount += 1
+                    }
+                    let validSubTypes = ["TEXTBOOK", "ARTICLE", "VIDEO", "PODCAST", "IN_CLASS", "PAPER", "PRESENTATION", "OTHER"]
+                    if let sub = item.subType, !validSubTypes.contains(sub.uppercased()) {
+                        invalidSubTypeCount += 1
+                    }
+                    let itemDesc = "   👉 [\(item.category)/\(item.subType ?? "OTHER")] '\(item.title)' | Wk \(item.weekNumber) | Due: \(item.dueDateIso ?? "N/A") | Pts: \(item.points ?? "N/A") | Rubric: \(item.pointsBreakdown ?? "None")"
+                    print(itemDesc)
+                    itemsSummary.append(itemDesc)
+                }
+
+                let titlePass = invalidTitleCount == 0 && !items.isEmpty
+                let subTypePass = invalidSubTypeCount == 0
+                let fidelityPass = items.contains(where: { $0.points != nil || $0.percentage != nil || $0.pointsBreakdown != nil })
+                let roundPassed = lockPass && titlePass && subTypePass && fidelityPass
+
+                let detailMsg = "Elapsed: \(elapsedFormatted)s | Code: '\(codeStr)' | Title: '\(titleStr)' | Items: \(items.count) | Invalid Titles: \(invalidTitleCount) | Invalid SubTypes: \(invalidSubTypeCount)"
+                print("🏁 [ROUND \(roundNum) RESULT] \(roundPassed ? "✅ PASS" : "❌ FAIL") - \(detailMsg)")
+
+                results.append(TestResult(
+                    testId: roundNum,
+                    testName: "Round \(roundNum): \(codeStr) - \(titleStr)",
+                    passed: roundPassed,
+                    details: detailMsg
+                ))
+            } catch {
+                let elapsed = Date().timeIntervalSince(startTime)
+                print("❌ [ROUND \(roundNum) ERROR] Network or parsing failure after \(String(format: "%.2f", elapsed))s: \(error.localizedDescription)")
+                results.append(TestResult(
+                    testId: roundNum,
+                    testName: "Round \(roundNum): \(pdfName)",
+                    passed: false,
+                    details: "Error: \(error.localizedDescription)"
+                ))
+            }
+            if roundNum < pdfNames.count {
+                print("⏱️ [PAUSE] Waiting 4 seconds for API rate limit pacing...")
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+            }
+        }
+
+        let passCount = results.filter { $0.passed }.count
+        print("================================================================================")
+        print("RELENTLESS QA BATTERY COMPLETE: \(passCount)/10 Rounds Passed (\(Int(Double(passCount)/10.0*100))%)")
+        print("================================================================================")
 
         return results
     }
 
-    /// Legacy method for backward compatibility
+    /// Synchronous test entry point
     @discardableResult
     public func run20QATestSuite() -> [TestResult] {
-        return run25QATestSuite()
+        let semaphore = DispatchSemaphore(value: 0)
+        var liveResults: [TestResult] = []
+        Task {
+            liveResults = await run10RoundLiveGeminiQABattery()
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return liveResults
     }
 }
+
