@@ -216,7 +216,7 @@ public struct MainTabView: View {
         .fullScreenCover(isPresented: $showingAddCourseModal) {
             AddCourseModalView(onCourseCreated: {
                 withAnimation {
-                    selectedTab = "readings"
+                    selectedTab = "syllabus"
                 }
             })
         }
@@ -224,7 +224,7 @@ public struct MainTabView: View {
         .sheet(isPresented: $showingAddCourseModal) {
             AddCourseModalView(onCourseCreated: {
                 withAnimation {
-                    selectedTab = "readings"
+                    selectedTab = "syllabus"
                 }
             })
         }
@@ -1418,152 +1418,58 @@ public struct AddCourseModalView: View {
             return
         }
 
-        print("🔘 [UI BUTTON TAP] User tapped Create Course. Initiating live network pipeline...")
+        let allCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
+        let distinctPalette = [
+            "#2563EB", "#16A34A", "#9333EA", "#EA580C", "#0D9488",
+            "#DB2777", "#4F46E5", "#D97706", "#0284C7", "#7C3AED"
+        ]
+        let usedColors = Set(allCourses.map { $0.hexColor.uppercased() })
+        let nextColor = distinctPalette.first(where: { !usedColors.contains($0.uppercased()) }) ?? distinctPalette[allCourses.count % distinctPalette.count]
+        let finalColorHex = (selectedColorHex == "#DC2626" || selectedColorHex.isEmpty) ? nextColor : selectedColorHex
 
-        Task {
-            isProcessingCourse = true
-            processingProgress = 0.0
-            processingStatusText = "Analyzing course syllabus & schedule..."
-
-            let allCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
-            let distinctPalette = [
-                "#2563EB", "#16A34A", "#9333EA", "#EA580C", "#0D9488",
-                "#DB2777", "#4F46E5", "#D97706", "#0284C7", "#7C3AED"
-            ]
-            let usedColors = Set(allCourses.map { $0.hexColor.uppercased() })
-            let nextColor = distinctPalette.first(where: { !usedColors.contains($0.uppercased()) }) ?? distinctPalette[allCourses.count % distinctPalette.count]
-            let finalColorHex = (selectedColorHex == "#DC2626" || selectedColorHex.isEmpty) ? nextColor : selectedColorHex
-
-            let combinedText = [pastedSyllabusText, fileContentText ?? ""].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: "\n\n")
-
-            if let attName = attachedFileName, !attName.isEmpty {
-                let normAttName = attName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                let isDuplicateInVault = vaultDocs.contains { doc in
-                    let titleNorm = doc.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                    if titleNorm == normAttName { return true }
-                    if let docData = doc.rawFileData, let newFileData = attachedFileData, !docData.isEmpty && !newFileData.isEmpty && docData == newFileData {
-                        return true
-                    }
-                    return false
-                }
-                let isDuplicateInCourses = allCourses.contains { c in
-                    c.syllabusDocs.contains { syl in
-                        let nameNorm = (syl.fileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                        return nameNorm == normAttName
-                    }
-                }
-
-                if isDuplicateInVault || isDuplicateInCourses {
-                    print("⚠️ [DUPLICATE BLOCKED] Syllabus '\(attName)' has already been uploaded.")
-                    addCourseErrorMessage = "Duplicate Document: '\(attName)' has already been uploaded."
-                    showingAddCourseAlert = true
-                    isProcessingCourse = false
-                    return
-                }
-            }
-
-            let targetCourse: Course
-            let startTime = Date()
-
-            let isPdf = (attachedFileName?.lowercased().hasSuffix(".pdf") ?? false) || (attachedFileData != nil && attachedFileData!.prefix(4) == Data([0x25, 0x50, 0x44, 0x46]))
-            if isPdf, let pData = attachedFileData, !pData.isEmpty {
-                print("⏳ [NETWORK START] Processing Base64 PDF (\(pData.count) bytes)...")
-                processingStatusText = "Analyzing course syllabus & schedule..."
-                do {
-                    var dto = try await APIService.shared.parsePDFDocumentData(pData)
-                    let timeElapsed = String(format: "%.2f", Date().timeIntervalSince(startTime))
-                    print("✅ [NETWORK COMPLETE] Response received in \(timeElapsed) seconds.")
-                    dto.courseName = name
-                    dto.courseCode = code.isEmpty ? (name.isEmpty ? "CRS" : name) : code
-                    CourseImporter.importDTO(dto, into: modelContext)
-                } catch {
-                    print("❌ [LIVE NETWORK ERROR] API call failed: \(error.localizedDescription)")
-                    let nsErr = error as NSError
-                    let code = nsErr.code != 0 ? nsErr.code : 500
-                    let msg = error.localizedDescription
-                    addCourseErrorMessage = msg.hasPrefix("API Error") ? msg : "API Error [\(code)]: \(msg)"
-                    showingAddCourseAlert = true
-                    isProcessingCourse = false
-                    return
-                }
-            } else if !combinedText.isEmpty {
-                print("⏳ [NETWORK START] Processing extracted syllabus text...")
-                processingStatusText = "Analyzing course syllabus & schedule..."
-                do {
-                    var dto = try await APIService.shared.parseSyllabusText(combinedText)
-                    let timeElapsed = String(format: "%.2f", Date().timeIntervalSince(startTime))
-                    print("✅ [NETWORK COMPLETE] Response received in \(timeElapsed) seconds.")
-                    dto.courseName = name
-                    dto.courseCode = code.isEmpty ? (name.isEmpty ? "CRS" : name) : code
-                    CourseImporter.importDTO(dto, into: modelContext)
-                } catch {
-                    print("❌ [LIVE NETWORK ERROR] API call failed: \(error.localizedDescription)")
-                    let nsErr = error as NSError
-                    let code = nsErr.code != 0 ? nsErr.code : 500
-                    let msg = error.localizedDescription
-                    addCourseErrorMessage = msg.hasPrefix("API Error") ? msg : "API Error [\(code)]: \(msg)"
-                    showingAddCourseAlert = true
-                    isProcessingCourse = false
-                    return
-                }
-            }
-
-            let updatedCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
-            if let created = updatedCourses.first(where: { $0.courseName == name || $0.courseCode == code }) {
-                created.hexColor = finalColorHex
-                targetCourse = created
-            } else {
-                targetCourse = Course(courseName: name, courseCode: code.isEmpty ? (name.isEmpty ? "CRS" : name) : code, hexColor: finalColorHex)
-                modelContext.insert(targetCourse)
-            }
-
-            let cleanDesc = courseDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !cleanDesc.isEmpty {
-                targetCourse.courseDescription = cleanDesc
-            }
-
-                if !uploadedFilesList.isEmpty {
-                    for (idx, file) in uploadedFilesList.enumerated() {
-                        let bytes = Double(file.data?.count ?? 0)
-                        let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.2 MB"
-                        let ext = file.title.components(separatedBy: ".").last?.uppercased() ?? "DOCUMENT"
-
-                        if idx == 0 || file.title.lowercased().contains("syllabus") {
-                            let sylDoc = SyllabusDocument(
-                                docTitle: file.title,
-                                fileName: file.title,
-                                rawFileData: file.data
-                            )
-                            sylDoc.course = targetCourse
-                            modelContext.insert(sylDoc)
-                        }
-
-                        let vDoc = VaultDocument(
-                            title: file.title,
-                            category: "Class Material",
-                            fileSize: sizeMB,
-                            fileType: ext,
-                            courseCode: code.isEmpty ? "CRS" : code,
-                            fileContent: file.text,
-                            rawFileData: file.data
-                        )
-                        modelContext.insert(vDoc)
-                    }
-                } else if let pdfName = attachedFileName {
-                    let sylDoc = SyllabusDocument(
-                        docTitle: pdfName,
-                        fileName: pdfName,
-                        rawFileData: attachedFileData
-                    )
-                    sylDoc.course = targetCourse
-                    modelContext.insert(sylDoc)
-                }
-
-                try? modelContext.save()
-                onCourseCreated?()
-                dismiss()
-            }
+        let finalCourseCode = code.isEmpty ? (name.isEmpty ? "CRS" : name) : code
+        let newCourse = Course(courseName: name, courseCode: finalCourseCode, hexColor: finalColorHex)
+        let cleanDesc = courseDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanDesc.isEmpty {
+            newCourse.courseDescription = cleanDesc
         }
+        modelContext.insert(newCourse)
+        try? modelContext.save()
+
+        // Prepare files for background upload pipeline
+        var uploadURLs: [URL] = []
+        let tempDir = FileManager.default.temporaryDirectory
+
+        if !uploadedFilesList.isEmpty {
+            for file in uploadedFilesList {
+                let fname = file.title
+                let fileURL = tempDir.appendingPathComponent(fname)
+                if let data = file.data {
+                    try? data.write(to: fileURL)
+                    uploadURLs.append(fileURL)
+                } else if let txt = file.text, let tData = txt.data(using: .utf8) {
+                    try? tData.write(to: fileURL)
+                    uploadURLs.append(fileURL)
+                }
+            }
+        } else if let pData = attachedFileData, !pData.isEmpty {
+            let fname = attachedFileName ?? "syllabus.pdf"
+            let fileURL = tempDir.appendingPathComponent(fname)
+            try? pData.write(to: fileURL)
+            uploadURLs.append(fileURL)
+        } else if !pastedSyllabusText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let fileURL = tempDir.appendingPathComponent("pasted_outline.txt")
+            try? pastedSyllabusText.data(using: .utf8)?.write(to: fileURL)
+            uploadURLs.append(fileURL)
+        }
+
+        if !uploadURLs.isEmpty {
+            SyllabusUploadManager.shared.startUpload(urls: uploadURLs, targetCourse: newCourse, modelContext: modelContext)
+        }
+
+        onCourseCreated?()
+        dismiss()
+    }
 }
 
 // MARK: - Add New Item Custom Modal Sheet (Matching localhost Screenshot 3)

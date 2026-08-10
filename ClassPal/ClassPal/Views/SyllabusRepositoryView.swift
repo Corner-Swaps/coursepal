@@ -264,21 +264,6 @@ public struct SyllabusRepositoryView: View {
                         }
 
                         Spacer()
-
-                        Button(action: {
-                            selectedCourseForAddDoc = nil
-                            showingUploadModal = true
-                        }) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                    .frame(width: 36, height: 36)
-                                Image(systemName: "plus")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-                        }
-                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 18)

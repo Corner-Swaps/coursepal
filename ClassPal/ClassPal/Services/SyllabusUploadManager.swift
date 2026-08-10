@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 @Observable
@@ -16,11 +19,35 @@ public final class SyllabusUploadManager {
     public var showingErrorAlert: Bool = false
 
     private var activeUploadTask: Task<Void, Never>? = nil
+    #if os(iOS)
+    private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
+    #endif
 
     private init() {}
 
     public func startUpload(urls: [URL], targetCourse: Course? = nil, modelContext: ModelContext, completion: (() -> Void)? = nil) {
         guard !urls.isEmpty else { return }
+
+        // Copy files locally immediately while security scope is active so processing persists when minimized
+        var stagedFileURLs: [URL] = []
+        for url in urls {
+            let securityScoped = url.startAccessingSecurityScopedResource()
+            defer {
+                if securityScoped {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            let tempDir = FileManager.default.temporaryDirectory
+            let targetTempURL = tempDir.appendingPathComponent(UUID().uuidString + "_" + url.lastPathComponent)
+            if (try? FileManager.default.copyItem(at: url, to: targetTempURL)) != nil {
+                stagedFileURLs.append(targetTempURL)
+            } else if let data = try? Data(contentsOf: url) {
+                try? data.write(to: targetTempURL)
+                stagedFileURLs.append(targetTempURL)
+            } else {
+                stagedFileURLs.append(url)
+            }
+        }
 
         // Cancel any existing background upload task gracefully
         activeUploadTask?.cancel()
@@ -31,24 +58,52 @@ public final class SyllabusUploadManager {
         statusText = "Processing \(currentFileName)..."
         errorMessage = nil
 
+        #if os(iOS)
+        if bgTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(bgTaskID)
+            bgTaskID = .invalid
+        }
+        bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "ClassPalSyllabusUpload") { [weak self] in
+            Task { @MainActor in
+                guard let self = self else { return }
+                if self.bgTaskID != .invalid {
+                    UIApplication.shared.endBackgroundTask(self.bgTaskID)
+                    self.bgTaskID = .invalid
+                }
+            }
+        }
+        #endif
+
         activeUploadTask = Task { @MainActor in
-            let totalFiles = urls.count
+            defer {
+                #if os(iOS)
+                if self.bgTaskID != .invalid {
+                    UIApplication.shared.endBackgroundTask(self.bgTaskID)
+                    self.bgTaskID = .invalid
+                }
+                #endif
+                // Cleanup temp files
+                for stagedURL in stagedFileURLs {
+                    try? FileManager.default.removeItem(at: stagedURL)
+                }
+            }
+
+            let totalFiles = stagedFileURLs.count
             var completedCount = 0
 
-            for (index, url) in urls.enumerated() {
+            for (index, url) in stagedFileURLs.enumerated() {
                 if Task.isCancelled { break }
 
                 let fileName = url.lastPathComponent
-                self.currentFileName = fileName
-                self.statusText = "Extracting data from '\(fileName)'..."
-                self.progressRatio = 0.75 + (Double(index) / Double(totalFiles)) * 0.20
-
-                let securityScoped = url.startAccessingSecurityScopedResource()
-                defer {
-                    if securityScoped {
-                        url.stopAccessingSecurityScopedResource()
-                    }
+                let cleanFileName: String
+                if let range = fileName.range(of: "_") {
+                    cleanFileName = String(fileName[range.upperBound...])
+                } else {
+                    cleanFileName = fileName
                 }
+                self.currentFileName = cleanFileName
+                self.statusText = "Extracting data from '\(cleanFileName)'..."
+                self.progressRatio = 0.75 + (Double(index) / Double(totalFiles)) * 0.20
 
                 let ext = url.pathExtension.uppercased()
                 var fileData: Data? = nil
@@ -70,8 +125,7 @@ public final class SyllabusUploadManager {
                 let dbSyllabi = (try? modelContext.fetch(fetchSyllabi)) ?? []
                 let dbCourses = (try? modelContext.fetch(fetchCourses)) ?? []
 
-                let urlLastPathComponent = url.lastPathComponent
-                let normUrlName = urlLastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let normUrlName = cleanFileName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
                 let isDuplicateInVault = dbVaultDocs.contains {
                     $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normUrlName
@@ -86,8 +140,8 @@ public final class SyllabusUploadManager {
                 }
 
                 if isDuplicateInVault || isDuplicateInSyllabi || isDuplicateInCourse {
-                    print("⚠️ [DUPLICATE BLOCKED] File '\(urlLastPathComponent)' is already uploaded.")
-                    self.errorMessage = "Duplicate Document: '\(urlLastPathComponent)' has already been uploaded."
+                    print("⚠️ [DUPLICATE BLOCKED] File '\(cleanFileName)' is already uploaded.")
+                    self.errorMessage = "Duplicate Document: '\(cleanFileName)' has already been uploaded."
                     self.showingErrorAlert = true
                     continue
                 }
@@ -116,7 +170,7 @@ public final class SyllabusUploadManager {
                     let sizeMB = bytes > 0 ? String(format: "%.1f MB", bytes / (1024.0 * 1024.0)) : "1.5 MB"
                     let cCode = targetCourse?.courseCode ?? dto.courseCode ?? ""
                     let fileExt = url.pathExtension.isEmpty ? "pdf" : url.pathExtension
-                    let documentTitle = (!cCode.isEmpty && cCode != "CRS-101") ? "\(cCode) - \(dto.courseName).\(fileExt)" : urlLastPathComponent
+                    let documentTitle = (!cCode.isEmpty && cCode != "CRS-101") ? "\(cCode) - \(dto.courseName).\(fileExt)" : cleanFileName
                     let normTitle = documentTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
                     if let existing = dbVaultDocs.first(where: {

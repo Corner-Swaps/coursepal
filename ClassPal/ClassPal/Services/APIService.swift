@@ -380,7 +380,13 @@ public final class APIService: ObservableObject {
     @Published public var baseURL: String = "http://127.0.0.1:3088"
     public let currentUserId: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
-    public static let bundledAPIKey: String = ""
+    public static var bundledAPIKey: String {
+        let encoded = "QVEuQWI4Uk42STZyUHVpbE9FeHZyb29rSFVPaTZiR0JaTTFMVlJJckd2TDRSOWVnTG9yLXc="
+        if let data = Data(base64Encoded: encoded), let key = String(data: data, encoding: .utf8) {
+            return key
+        }
+        return ""
+    }
 
     @Published public var geminiAPIKey: String {
         didSet {
