@@ -741,7 +741,7 @@ public struct UploadDocModalView: View {
         .sheet(isPresented: $showingCameraScanner) {
             SyllabusScanView()
         }
-        .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: false) { result in
             if case .success(let urls) = result, !urls.isEmpty {
                 confirmAndProcessFiles(urls)
             }
