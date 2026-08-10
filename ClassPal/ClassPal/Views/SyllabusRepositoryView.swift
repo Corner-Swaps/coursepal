@@ -311,9 +311,8 @@ public struct SyllabusRepositoryView: View {
 
                             Spacer()
 
-                            ProgressView(value: SyllabusUploadManager.shared.progressRatio)
-                                .frame(width: 44)
-                                .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            ContinuousProgressBar()
+                                .frame(width: 50)
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -1180,5 +1179,32 @@ public struct CourseSyllabusCardRow: View {
         .background(Color.white)
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
+    }
+}
+
+// MARK: - Continuous Looping Progress Bar
+public struct ContinuousProgressBar: View {
+    @State private var animProgress: CGFloat = 0.0
+
+    public init() {}
+
+    public var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.20))
+
+                Capsule()
+                    .fill(Color(red: 0.14, green: 0.44, blue: 0.96))
+                    .frame(width: max(6, geo.size.width * animProgress))
+            }
+        }
+        .frame(height: 6)
+        .onAppear {
+            animProgress = 0.0
+            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: false)) {
+                animProgress = 1.0
+            }
+        }
     }
 }

@@ -587,11 +587,12 @@ public final class LocalSyllabusParser {
                     currentWeekDateRange = LocalSyllabusParser.formatExplicitDateRange(start: dStart.date, end: dEnd.date)
                     currentWeekDateIso = dEnd.isoString
                 } else if let d = headerDates.first {
-                    currentWeekDateRange = LocalSyllabusParser.formatWeekDateRange(for: d.date)
-                    let endOfWeekDate = Calendar.current.date(byAdding: .day, value: 6, to: d.date) ?? d.date
-                    let isoFmt = ISO8601DateFormatter()
-                    isoFmt.formatOptions = [.withFullDate]
-                    currentWeekDateIso = isoFmt.string(from: endOfWeekDate)
+                    let wStart = d.date
+                    let wEnd = Calendar.current.date(byAdding: .day, value: 6, to: wStart) ?? wStart
+                    currentWeekDateRange = LocalSyllabusParser.formatExplicitDateRange(start: wStart, end: wEnd)
+                    let dfShort = DateFormatter()
+                    dfShort.dateFormat = "yyyy-MM-dd"
+                    currentWeekDateIso = dfShort.string(from: wEnd)
                 }
                 continue
             }
@@ -908,18 +909,43 @@ public final class LocalSyllabusParser {
     }
 
     public static func parseISO8601Date(from dateStr: String, fallbackYear: Int = 2026) -> ExtractedDateInfo {
+        let trimmed = dateStr.trimmingCharacters(in: .whitespacesAndNewlines)
         let calendar = Calendar.current
+
+        // 1. Try standard ISO8601 DateFormatter first (e.g. "2026-09-13", "2026-09-13T23:59:59Z")
+        let isoFormatter = ISO8601DateFormatter()
+        if let d = isoFormatter.date(from: trimmed) {
+            let dfShort = DateFormatter()
+            dfShort.dateFormat = "yyyy-MM-dd"
+            let isoStr = dfShort.string(from: d)
+            let displayFormatter = DateFormatter()
+            displayFormatter.dateFormat = "MMM d, yyyy"
+            return ExtractedDateInfo(displayString: displayFormatter.string(from: d), isoString: isoStr, date: d)
+        }
+
         var components = DateComponents()
         components.year = fallbackYear
         components.hour = 23
         components.minute = 59
         components.second = 59
 
-        // 1. First check for MM/DD/YYYY or MM/DD format explicitly (e.g., "03/15/2026", "11/05")
-        let numericPattern = #"^(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?$"#
-        if let regex = try? NSRegularExpression(pattern: numericPattern),
-           let match = regex.firstMatch(in: dateStr.trimmingCharacters(in: .whitespaces), options: [], range: NSRange(location: 0, length: dateStr.utf16.count)) {
-            let nsStr = dateStr as NSString
+        // 2. YYYY-MM-DD or YYYY/MM/DD regex (e.g. "2026-09-13", "2026/08/21")
+        let isoPattern = #"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$"#
+        if let regex = try? NSRegularExpression(pattern: isoPattern),
+           let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) {
+            let nsStr = trimmed as NSString
+            if let y = Int(nsStr.substring(with: match.range(at: 1))),
+               let m = Int(nsStr.substring(with: match.range(at: 2))),
+               let d = Int(nsStr.substring(with: match.range(at: 3))) {
+                components.year = y
+                components.month = m
+                components.day = d
+            }
+        }
+        // 3. MM/DD/YYYY or MM-DD-YYYY or MM/DD regex (e.g., "09/13/2026", "9/13")
+        else if let regex = try? NSRegularExpression(pattern: #"^(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?$"#),
+                let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) {
+            let nsStr = trimmed as NSString
             if let m = Int(nsStr.substring(with: match.range(at: 1))),
                let d = Int(nsStr.substring(with: match.range(at: 2))) {
                 components.month = m
@@ -928,8 +954,9 @@ public final class LocalSyllabusParser {
                     components.year = y < 100 ? 2000 + y : y
                 }
             }
-        } else {
-            // 2. Parse text months (e.g., "Oct 24, 2026", "Sep. 6, 2026")
+        }
+        // 4. Parse text month dates (e.g., "Sunday, Sep. 13, 2026", "September 13th", "13 Sep 2026")
+        else {
             let monthsMap = [
                 "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
                 "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
@@ -937,7 +964,7 @@ public final class LocalSyllabusParser {
                 "nov": 11, "november": 11, "dec": 12, "december": 12
             ]
 
-            var cleanStr = dateStr.lowercased().replacingOccurrences(of: ",", with: "")
+            var cleanStr = trimmed.lowercased().replacingOccurrences(of: ",", with: "")
             cleanStr = cleanStr.replacingOccurrences(of: #"(\d{1,2})(st|nd|rd|th)\b"#, with: "$1", options: .regularExpression)
             cleanStr = cleanStr.replacingOccurrences(of: #"\b\d{1,2}(:\d{2})?\s*(am|pm)\b"#, with: "", options: .regularExpression)
 
@@ -949,19 +976,26 @@ public final class LocalSyllabusParser {
                 } else if let num = Int(token) {
                     if num > 1000 {
                         components.year = num
-                    } else if num >= 1 && num <= 31 && components.day == nil {
-                        components.day = num
+                    } else if num >= 1 && num <= 31 {
+                        if components.month != nil && components.day == nil {
+                            components.day = num
+                        } else if components.month == nil && components.day == nil {
+                            if num <= 12 && tokens.contains(where: { Int($0) != nil && Int($0)! > 12 && Int($0)! <= 31 }) {
+                                components.month = num
+                            } else {
+                                components.day = num
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if components.month == nil { components.month = 7 }
-        if components.day == nil { components.day = 15 }
+        if components.month == nil { components.month = 9 }
+        if components.day == nil { components.day = 1 }
 
         let date = calendar.date(from: components) ?? Date()
 
-        // Standardized ISO8601 Formatter (YYYY-MM-DD)
         let dfShort = DateFormatter()
         dfShort.dateFormat = "yyyy-MM-dd"
         dfShort.timeZone = TimeZone.current

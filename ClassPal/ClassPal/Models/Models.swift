@@ -525,10 +525,7 @@ public struct CourseImporter {
                         return nil
                     }()
 
-                    let parsedDueDate: Date? = {
-                        guard let dStr = rDTO.dueDate, !dStr.isEmpty else { return nil }
-                        return LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026).date
-                    }()
+                    let parsedDueDate: Date? = WeekDateConverter.parseRobustDate(rDTO.dueDate)
 
                     let reading = Reading(
                         id: UUID(),
@@ -551,21 +548,15 @@ public struct CourseImporter {
         }
 
         if let assignments = dto.assignments {
-            let isoFmt = ISO8601DateFormatter()
-            let dfShort = DateFormatter()
-            dfShort.dateFormat = "yyyy-MM-dd"
-
             for aDTO in assignments {
                 if newCourse.assignments.contains(where: { $0.title.lowercased() == aDTO.title.lowercased() }) { continue }
 
-                var parsedDueDate: Date? = nil
-                if let dueStr = aDTO.dueDate, !dueStr.isEmpty {
-                    parsedDueDate = isoFmt.date(from: dueStr) ?? dfShort.date(from: dueStr)
-                }
-
-                let finalDueDate: Date = parsedDueDate ?? Date()
-                let days = Calendar.current.dateComponents([.day], from: WeekDateConverter.baseTermStartDate, to: finalDueDate).day ?? 0
-                let weekNumber = max(1, min(16, (days / 7) + 1))
+                let parsedDueDate = WeekDateConverter.parseRobustDate(aDTO.dueDate)
+                let weekNumber: Int = {
+                    if let d = parsedDueDate { return WeekDateConverter.weekNumber(for: d) }
+                    return 1
+                }()
+                let finalDueDate: Date = parsedDueDate ?? WeekDateConverter.date(forWeek: weekNumber)
 
                     let mediaUrl: String? = {
                         if let cand = aDTO.mediaUrl, URLHelper.isValidURL(cand) { return cand }
@@ -662,10 +653,7 @@ public struct CourseImporter {
                         return nil
                     }()
 
-                    let parsedDueDate: Date? = {
-                        guard let dStr = rDTO.dueDate, !dStr.isEmpty else { return nil }
-                        return LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026).date
-                    }()
+                    let parsedDueDate: Date? = WeekDateConverter.parseRobustDate(rDTO.dueDate)
 
                     if let existingReading = allExistingReadings.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle }) {
                         existingReading.summaryText = summary
@@ -695,20 +683,14 @@ public struct CourseImporter {
         }
 
         if let assignments = dto.assignments {
-            let isoFmt = ISO8601DateFormatter()
-            let dfShort = DateFormatter()
-            dfShort.dateFormat = "yyyy-MM-dd"
-
             for aDTO in assignments {
                 let normTitle = aDTO.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                var parsedDueDate: Date? = nil
-                if let dueStr = aDTO.dueDate, !dueStr.isEmpty {
-                    parsedDueDate = isoFmt.date(from: dueStr) ?? dfShort.date(from: dueStr)
-                }
-
-                let finalDueDate: Date = parsedDueDate ?? Date()
-                let days = Calendar.current.dateComponents([.day], from: WeekDateConverter.baseTermStartDate, to: finalDueDate).day ?? 0
-                let weekNumber = max(1, min(16, (days / 7) + 1))
+                let parsedDueDate = WeekDateConverter.parseRobustDate(aDTO.dueDate)
+                let weekNumber: Int = {
+                    if let d = parsedDueDate { return WeekDateConverter.weekNumber(for: d) }
+                    return 1
+                }()
+                let finalDueDate: Date = parsedDueDate ?? WeekDateConverter.date(forWeek: weekNumber)
 
                 if let existingAssignment = existingCourse.assignments.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle }) {
                     if let inst = aDTO.fullInstructions, !inst.isEmpty { existingAssignment.fullInstructions = inst }
@@ -779,6 +761,7 @@ public struct CourseImporter {
                 guard let dStr = item.dueDateIso, !dStr.isEmpty else { return nil }
                 return LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026).date
             }()
+            let finalDueDate: Date = parsedDueDate ?? WeekDateConverter.date(forWeek: weekNum)
             let isAssignment = item.category.lowercased() == "assignment" || item.category.lowercased().contains("assignment") || item.category.lowercased().contains("exam") || item.category.lowercased().contains("project")
             if isAssignment {
                 let existingAssign = course.assignments.first(where: { normalizeTitle($0.title) == normTitle }) ??
@@ -791,7 +774,7 @@ public struct CourseImporter {
                     if let weight = item.percentage, !weight.isEmpty { existing.weightPercentage = weight }
                     if let sub = item.subType, !sub.isEmpty { existing.subTypeRaw = sub }
                     if let media = item.mediaUrl, !media.isEmpty { existing.mediaUrl = media }
-                    if let pDate = parsedDueDate { existing.dueDate = pDate }
+                    if parsedDueDate != nil { existing.dueDate = finalDueDate }
                 } else {
                     let realBreakdown: String? = {
                         if let bd = item.pointsBreakdown, !bd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -804,7 +787,7 @@ public struct CourseImporter {
                         id: UUID(),
                         title: item.title,
                         weekNumber: weekNum,
-                        dueDate: parsedDueDate ?? Date(),
+                        dueDate: finalDueDate,
                         fullInstructions: item.description ?? "Complete \(item.title)",
                         pointsPossible: item.points ?? "100 Points Possible",
                         pointsBreakdown: realBreakdown,
@@ -932,33 +915,64 @@ public enum WeekDateConverter {
         return calendar.date(byAdding: .day, value: max(0, weekNumber - 1) * 7, to: startDate) ?? startDate
     }
 
+    public static func parseRobustDate(_ str: String?) -> Date? {
+        guard let s = str?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+
+        let isoFmt = ISO8601DateFormatter()
+        if let d = isoFmt.date(from: s) { return d }
+
+        let formats = [
+            "yyyy-MM-dd",
+            "MM/dd/yyyy",
+            "M/d/yyyy",
+            "yyyy/MM/dd",
+            "MMM d, yyyy",
+            "MMMM d, yyyy",
+            "EEEE, MMMM d, yyyy",
+            "E, MMM d, yyyy",
+            "MMM d",
+            "MMMM d"
+        ]
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        for fmt in formats {
+            df.dateFormat = fmt
+            if let d = df.date(from: s) {
+                if !fmt.contains("yyyy") {
+                    var comp = Calendar.current.dateComponents([.month, .day], from: d)
+                    comp.year = Calendar.current.component(.year, from: Date())
+                    return Calendar.current.date(from: comp) ?? d
+                }
+                return d
+            }
+        }
+        return nil
+    }
+
     public static func formattedDueDate(for date: Date?, week: Week? = nil, weekNumber: Int = 1) -> String {
         let weekNum = max(1, weekNumber)
         let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
 
         let targetDate: Date = {
-            let weekEndDate = week?.computedEndDate
-
             if let explicitDate = date {
-                if let wEnd = weekEndDate {
-                    if explicitDate > wEnd {
-                        return wEnd
-                    }
-                    if let dates = week?.dateRangeStr.flatMap({ LocalSyllabusParser.shared.extractAllDates(from: $0, fallbackYear: 2026) }),
-                       let wStart = dates.first?.date, explicitDate < wStart {
-                        return wEnd
-                    }
-                }
                 return explicitDate
             }
-
-            if let wEnd = weekEndDate {
-                return wEnd
+            if let weekEndDate = week?.computedEndDate {
+                return weekEndDate
             }
-
             return WeekDateConverter.date(forWeek: weekNum)
         }()
+
+        let calendar = Calendar.current
+        let itemYear = calendar.component(.year, from: targetDate)
+        let currentYear = calendar.component(.year, from: Date())
+
+        if itemYear != currentYear {
+            formatter.dateFormat = "EEEE, MMMM d, yyyy"
+        } else {
+            formatter.dateFormat = "EEEE, MMMM d"
+        }
 
         return "Due " + formatter.string(from: targetDate) + " · Week \(weekNum)"
     }

@@ -125,25 +125,12 @@ public struct AssignmentDetailView: View {
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                             }
-                            Text("Points & Grading Breakdown")
+                            Text("Points Breakdown")
                                 .font(.system(size: 17, weight: .bold, design: .rounded))
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         }
 
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Total Points Possible")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                Text(assignment.pointsPossible ?? "100 Points")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                            }
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(red: 0.95, green: 0.96, blue: 0.98))
-                            .cornerRadius(14)
-
+                        VStack(spacing: 10) {
                             if let weight = assignment.weightPercentage {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("Grade Weight")
@@ -158,11 +145,24 @@ public struct AssignmentDetailView: View {
                                 .background(Color.green.opacity(0.08))
                                 .cornerRadius(14)
                             }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Total Points Possible")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                Text(assignment.pointsPossible ?? "100 Points")
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(red: 0.95, green: 0.96, blue: 0.98))
+                            .cornerRadius(14)
                         }
 
                         if !rubricItems.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("How Points Are Made Up (Rubric Breakdown)")
+                                Text("Rubric Breakdown")
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
                                     .foregroundColor(Color(red: 0.30, green: 0.38, blue: 0.50))
 

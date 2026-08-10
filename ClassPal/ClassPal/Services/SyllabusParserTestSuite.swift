@@ -303,6 +303,10 @@ public final class SyllabusParserTestSuite {
         let pass20 = parsedDate20.isoString == "2026-09-13"
         results.append(TestResult(testId: 20, testName: "Date: 'Sunday, Sep. 13, 2026 at 11:59 PM'", passed: pass20, details: pass20 ? "Normalized to ISO8601: \(parsedDate20.isoString)" : "Failed: \(parsedDate20.isoString)"))
 
+        let parsedIsoDirect = LocalSyllabusParser.parseISO8601Date(from: "2026-09-13", fallbackYear: 2026)
+        let passIsoDirect = parsedIsoDirect.isoString == "2026-09-13"
+        results.append(TestResult(testId: 201, testName: "Date ISO Direct: '2026-09-13'", passed: passIsoDirect, details: passIsoDirect ? "Normalized: \(parsedIsoDirect.isoString)" : "Failed: \(parsedIsoDirect.isoString)"))
+
         // MARK: - CATEGORY 5: Priority Resolution, Media & Title Cleaning (Tests 21-25)
 
         // Test 21: Priority 'Watch Video Presentation 20% due July 15' -> Assignment (via 20% anchor)

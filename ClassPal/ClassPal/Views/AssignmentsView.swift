@@ -1481,8 +1481,19 @@ public struct EditAssignmentSheet: View {
                             }
                     }
 
-                    // Section 3: Points & Grade Weight (Independently Decoupled)
-                    Section("Points & Grade Weight") {
+                    // Section 3: Points Breakdown
+                    Section("Points Breakdown") {
+                        Picker("Grade Weight", selection: $gradeWeightPercentState) {
+                            ForEach(0...100, id: \.self) { pct in
+                                Text("\(pct)%").tag(pct)
+                            }
+                        }
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .pickerStyle(.menu)
+                        .onChange(of: gradeWeightPercentState) { _, newPct in
+                            assignment.weightPercentage = "\(newPct)%"
+                        }
+
                         Picker("Points Possible", selection: $pointsValueState) {
                             let defaultOpts = Array(stride(from: 0, through: 500, by: 5))
                             let opts = defaultOpts.contains(pointsValueState) ? defaultOpts : (defaultOpts + [pointsValueState]).sorted()
@@ -1496,23 +1507,12 @@ public struct EditAssignmentSheet: View {
                             assignment.pointsPossible = "\(newPts) Points"
                         }
 
-                        Picker("Grade Weight", selection: $gradeWeightPercentState) {
-                            ForEach(0...100, id: \.self) { pct in
-                                Text("\(pct)%").tag(pct)
-                            }
-                        }
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .pickerStyle(.menu)
-                        .onChange(of: gradeWeightPercentState) { _, newPct in
-                            assignment.weightPercentage = "\(newPct)%"
-                        }
-
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Image(systemName: "list.bullet.clipboard.fill")
                                     .font(.system(size: 13, weight: .bold))
                                     .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                Text("Titles Making Up Points (Rubric Breakdown)")
+                                Text("Points Breakdown")
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             }

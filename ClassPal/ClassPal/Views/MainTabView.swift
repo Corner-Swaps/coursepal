@@ -185,18 +185,21 @@ public struct MainTabView: View {
                     Color.black.opacity(0.35)
                         .ignoresSafeArea()
                         .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showingUploadDocModal = false
-                            }
+                            showingUploadDocModal = false
                         }
 
                     VStack(spacing: 0) {
                         Spacer()
-                        UploadDocModalView(targetCourse: selectedCourseForAddDoc, onClose: { showingUploadDocModal = false })
+                        UploadDocModalView(targetCourse: selectedCourseForAddDoc, onClose: {
+                            showingUploadDocModal = false
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                selectedTab = "syllabus"
+                            }
+                        })
                     }
                     .ignoresSafeArea(edges: .bottom)
                 }
-                .transition(.opacity)
+                .transition(.identity)
                 .zIndex(100)
             }
         }
@@ -759,12 +762,14 @@ public struct UploadDocModalView: View {
             dismiss()
             return
         }
-        SyllabusUploadManager.shared.startUpload(urls: urls, targetCourse: targetCourse, modelContext: modelContext)
         onClose?()
         dismiss()
+        SyllabusUploadManager.shared.startUpload(urls: urls, targetCourse: targetCourse, modelContext: modelContext)
     }
 
     private func parseAndImportVaultDoc(_ doc: VaultDocument) {
+        onClose?()
+        dismiss()
         if let data = doc.rawFileData, !data.isEmpty {
             if let tempURL = try? saveTempFile(data: data, filename: doc.title) {
                 SyllabusUploadManager.shared.startUpload(urls: [tempURL], targetCourse: targetCourse, modelContext: modelContext)
@@ -774,8 +779,6 @@ public struct UploadDocModalView: View {
                 SyllabusUploadManager.shared.startUpload(urls: [tempURL], targetCourse: targetCourse, modelContext: modelContext)
             }
         }
-        onClose?()
-        dismiss()
     }
 
     private func saveTempFile(data: Data, filename: String) throws -> URL {
