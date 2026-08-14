@@ -1,17 +1,18 @@
-# CoursePal Support & Frequently Asked Questions
+# CoursePal Support & Contact
 
-Welcome to CoursePal Support! CoursePal is an intelligent academic planner designed to help students organize their courses, assignments, and reading schedules seamlessly.
+Welcome to CoursePal Support! We are here to help you get the best experience out of CoursePal.
 
-## 📬 Contact & Help
+## 📬 Contact Support
 
-If you need assistance, have feedback, or want to report an issue with CoursePal:
+If you have any questions, feedback, or need assistance with CoursePal, please get in touch with our support team:
 
-- **Official Repository**: Visit our GitHub project page at [https://github.com/Corner-Swaps/coursepal](https://github.com/Corner-Swaps/coursepal)
+- **Email Support**: [goloubov@gmail.com](mailto:goloubov@gmail.com)
+- **Official Repository**: [https://github.com/Corner-Swaps/coursepal](https://github.com/Corner-Swaps/coursepal)
 
 ## ❓ Frequently Asked Questions (FAQ)
 
 ### How does CoursePal import my syllabus?
-CoursePal parses your syllabus PDF or text document automatically organizing your assignments, textbook readings, and weekly course schedule into an easy-to-use interactive dashboard.
+CoursePal uses intelligent document processing to parse your syllabus PDF or text document, automatically organizing your assignments, textbook readings, and weekly course schedule into an interactive dashboard.
 
 ### Is my data private?
 Yes! CoursePal stores your schedules, course details, and progress locally on your device. Your academic data is completely private to you.
