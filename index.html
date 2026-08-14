@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoursePal - App Support & Help Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0F172A;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --primary: #6366F1;
+            --primary-hover: #4F46E5;
+            --accent: #38BDF8;
+            --text-main: #F8FAFC;
+            --text-sub: #94A3B8;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(56, 189, 248, 0.15) 0px, transparent 50%);
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            padding: 2.5rem 0 1.5rem;
+        }
+
+        .app-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            color: #A5B4FC;
+            padding: 0.4rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(135deg, #FFFFFF 0%, #CBD5E1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            color: var(--text-sub);
+            font-size: 1.125rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .contact-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 1.25rem;
+            padding: 2rem;
+            margin: 2rem 0;
+            text-align: center;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .contact-card h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .contact-card p {
+            color: var(--text-sub);
+            margin-bottom: 1.5rem;
+        }
+
+        .btn-email {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+            color: #FFFFFF;
+            font-weight: 600;
+            padding: 0.875rem 2rem;
+            border-radius: 0.75rem;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-email:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 20px -3px rgba(99, 102, 241, 0.4);
+        }
+
+        .email-display {
+            display: block;
+            margin-top: 0.75rem;
+            font-size: 0.9rem;
+            color: var(--text-sub);
+            font-family: monospace;
+        }
+
+        .section {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 1.25rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .section h2 {
+            font-size: 1.35rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .faq-item {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.25rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .faq-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .faq-item h3 {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: #E2E8F0;
+            margin-bottom: 0.4rem;
+        }
+
+        .faq-item p {
+            color: var(--text-sub);
+            font-size: 0.975rem;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: var(--text-sub);
+            font-size: 0.875rem;
+            border-top: 1px solid var(--border-color);
+            margin-top: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="app-badge">📚 CoursePal Support</div>
+            <h1>How can we help you?</h1>
+            <p class="subtitle">Official Support & Help Center for CoursePal iOS Application</p>
+        </header>
+
+        <main>
+            <div class="contact-card">
+                <h2>Need Direct Support?</h2>
+                <p>Have a question, feedback, or technical issue? Our support team is here to assist you.</p>
+                <a href="mailto:goloubov@gmail.com" class="btn-email">
+                    ✉️ Email Support
+                </a>
+                <span class="email-display">goloubov@gmail.com</span>
+            </div>
+
+            <div class="section">
+                <h2>❓ Frequently Asked Questions</h2>
+                
+                <div class="faq-item">
+                    <h3>How does CoursePal import my syllabus?</h3>
+                    <p>CoursePal uses intelligent document processing to parse your syllabus PDF or text document, automatically extracting assignments, textbook readings, weekly themes, and exam dates into an organized weekly schedule.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h3>Is my course data private?</h3>
+                    <p>Yes! CoursePal stores all your course details, assignments, and reading progress locally on your device. Your data remains completely private to you.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h3>What document formats can I upload?</h3>
+                    <p>CoursePal supports standard PDF documents and plain text files containing syllabus details or course schedules.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h3>How do I edit or clean up parsed assignments?</h3>
+                    <p>Tap on any assignment or reading pill in your weekly dashboard to open its details sheet, where you can customize titles, due dates, instructions, or personal notes.</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>📱 About CoursePal</h2>
+                <p style="color: var(--text-sub);">CoursePal is designed to turn complex course syllabi into an organized, stress-free semester schedule. Built natively for iOS.</p>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 CoursePal. All rights reserved.</p>
+        </footer>
+    </div>
+</body>
+</html>
