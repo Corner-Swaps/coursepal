@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CoursePal – Support & Help Center</title>
+  <title>CoursePal – Support & Privacy Policy</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --primary: #4F46E5;
       --text-main: #111827;
       --text-muted: #4B5563;
       --border-color: #E5E7EB;
+      --link-color: #2563EB;
     }
 
     * {
@@ -52,66 +52,51 @@
       color: var(--text-muted);
     }
 
-    .contact-section {
-      margin-bottom: 48px;
+    section {
+      margin-bottom: 40px;
     }
 
-    .contact-section h2 {
+    h2 {
       font-size: 20px;
       font-weight: 600;
-      margin-bottom: 12px;
-    }
-
-    .contact-section p {
-      font-size: 15px;
-      color: var(--text-muted);
       margin-bottom: 16px;
-    }
-
-    .email-link {
-      display: inline-block;
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--primary);
-      text-decoration: none;
-      border-bottom: 2px solid var(--primary);
-      padding-bottom: 2px;
-      transition: color 0.2s ease, border-color 0.2s ease;
-    }
-
-    .email-link:hover {
-      color: #3730A3;
-      border-color: #3730A3;
-    }
-
-    .faq-section {
-      margin-bottom: 48px;
-    }
-
-    .faq-section h2 {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 24px;
-      padding-bottom: 12px;
+      color: var(--text-main);
+      padding-bottom: 8px;
       border-bottom: 1px solid var(--border-color);
     }
 
-    .faq-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 28px;
-    }
-
-    .faq-item h3 {
+    h3 {
       font-size: 16px;
       font-weight: 600;
       color: var(--text-main);
+      margin-top: 20px;
       margin-bottom: 6px;
     }
 
-    .faq-item p {
+    p {
       font-size: 15px;
       color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    ul {
+      margin-left: 20px;
+      margin-bottom: 16px;
+      color: var(--text-muted);
+      font-size: 15px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    a {
+      color: var(--link-color);
+      text-decoration: underline;
+    }
+
+    a:hover {
+      color: #1D4ED8;
     }
 
     footer {
@@ -126,41 +111,51 @@
 
   <div class="wrapper">
     <header>
-      <h1>CoursePal Support</h1>
-      <p>Official Help Center & Support Information for CoursePal for iOS.</p>
+      <h1>CoursePal</h1>
+      <p>App Information, Support & Privacy Policy</p>
     </header>
 
     <main>
-      <section class="contact-section">
-        <h2>Contact Us</h2>
-        <p>Need help with your account, have questions about syllabus parsing, or want to give feedback? Send us an email directly:</p>
-        <a href="mailto:goloubov@gmail.com" class="email-link">goloubov@gmail.com</a>
+      <section>
+        <h2>App Overview</h2>
+        <p>CoursePal is an offline-first academic course manager designed for iOS. It assists students and educators in turning unstructured course syllabi (PDFs or text documents) into structured, actionable weekly schedules, assignments, and reading lists.</p>
       </section>
 
-      <section class="faq-section">
+      <section>
+        <h2>Support & Contact</h2>
+        <p>If you need technical assistance, have questions regarding syllabus parsing, or wish to provide feedback, please contact support via email at <a href="mailto:goloubov@gmail.com">goloubov@gmail.com</a>. Inquiries are reviewed regularly, and we typically respond within 24 to 48 hours.</p>
+      </section>
+
+      <section>
         <h2>Frequently Asked Questions</h2>
         
-        <div class="faq-grid">
-          <div class="faq-item">
-            <h3>How does CoursePal import my syllabus?</h3>
-            <p>CoursePal parses your syllabus PDF or text document automatically extracting your assignments, required textbook readings, weekly themes, and exam dates into an organized schedule.</p>
-          </div>
+        <h3>How does CoursePal import my syllabus?</h3>
+        <p>CoursePal processes your syllabus PDF or text file locally on your device to extract assignments, required textbook readings, weekly themes, and exam dates into an organized dashboard.</p>
 
-          <div class="faq-item">
-            <h3>Is my course data private?</h3>
-            <p>Yes. CoursePal operates offline-first and stores all your course details, assignments, and reading progress locally on your device.</p>
-          </div>
+        <h3>Is my course data private?</h3>
+        <p>Yes. CoursePal operates offline-first and stores all your course details, assignments, and reading progress locally on your device.</p>
 
-          <div class="faq-item">
-            <h3>What file formats are supported?</h3>
-            <p>CoursePal supports PDF documents, camera document scans, and plain text files containing syllabus details.</p>
-          </div>
+        <h3>What file formats are supported?</h3>
+        <p>CoursePal supports PDF documents, camera document scans, and plain text files containing syllabus details.</p>
+      </section>
 
-          <div class="faq-item">
-            <h3>How quickly does support respond?</h3>
-            <p>We review all email inquiries regularly and typically respond within 24–48 hours.</p>
-          </div>
-        </div>
+      <section>
+        <h2>Privacy Policy</h2>
+        <p>Last updated: August 14, 2026</p>
+        
+        <p>CoursePal ("we", "our", or "us") respects your privacy. This Privacy Policy explains how information is handled when you use the CoursePal mobile application for iOS.</p>
+
+        <h3>Information Collection and Use</h3>
+        <p>CoursePal is designed as a privacy-focused, offline-first application. We do not require account creation, and we do not collect, store, or sell your personal information, course syllabi, assignments, or academic schedules on external servers.</p>
+
+        <h3>Data Storage</h3>
+        <p>All data processed by CoursePal—including uploaded syllabi, course schedules, textbook reading lists, and custom assignment notes—remains stored locally on your iOS device using encrypted local storage (SwiftData).</p>
+
+        <h3>Third-Party Services</h3>
+        <p>CoursePal does not share your personal data with third-party advertising networks or data brokers.</p>
+
+        <h3>Contact Information</h3>
+        <p>For any privacy-related questions or support requests, you can contact us at <a href="mailto:goloubov@gmail.com">goloubov@gmail.com</a>.</p>
       </section>
     </main>
 
