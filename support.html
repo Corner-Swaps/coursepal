@@ -5,21 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CoursePal – App Support & Frequently Asked Questions</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-color: #0A0A0F;
-      --card-bg: rgba(255, 255, 255, 0.05);
-      --card-border: rgba(255, 255, 255, 0.10);
-      --accent-indigo: #6366F1;
-      --accent-blue: #38BDF8;
-      --text-main: #FFFFFF;
-      --text-sub: rgba(255, 255, 255, 0.70);
+      --bg-color: #FAFAFA;
+      --card-bg: #FFFFFF;
+      --card-border: #E5E7EB;
+      --accent-color: #4F46E5;
+      --text-main: #111827;
+      --text-sub: #4B5563;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: radial-gradient(circle at 50% 20%, #121824 0%, #06060A 100%);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-color);
       color: var(--text-main);
       min-height: 100vh;
       padding: 40px 20px;
@@ -28,44 +27,32 @@
       align-items: center;
     }
     .container {
-      max-width: 680px;
+      max-width: 640px;
       width: 100%;
       background: var(--card-bg);
-      backdrop-filter: blur(20px);
       border: 1px solid var(--card-border);
-      border-radius: 24px;
+      border-radius: 16px;
       padding: 40px 32px;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
     }
     .header {
       text-align: center;
-      margin-bottom: 36px;
+      margin-bottom: 32px;
     }
     .header h1 {
-      font-size: 32px;
+      font-size: 28px;
       font-weight: 700;
-      color: var(--accent-indigo);
-      margin-bottom: 8px;
+      color: var(--text-main);
+      margin-bottom: 6px;
     }
     .header p {
       font-size: 15px;
       color: var(--text-sub);
     }
-    .section {
-      margin-bottom: 28px;
-    }
-    .section h2 {
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--accent-blue);
-      margin-bottom: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
     .contact-box {
-      background: rgba(99, 102, 241, 0.1);
-      border: 1px solid rgba(99, 102, 241, 0.25);
-      border-radius: 16px;
+      background: #F3F4F6;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
       padding: 24px;
       text-align: center;
       margin-bottom: 32px;
@@ -77,26 +64,37 @@
     }
     .btn-email {
       display: inline-block;
-      background: linear-gradient(135deg, var(--accent-indigo) 0%, #4F46E5 100%);
+      background: var(--accent-color);
       color: #FFFFFF;
       font-weight: 600;
       font-size: 15px;
-      padding: 12px 28px;
-      border-radius: 12px;
+      padding: 12px 24px;
+      border-radius: 8px;
       text-decoration: none;
-      transition: opacity 0.2s ease;
+      transition: background-color 0.2s ease;
     }
     .btn-email:hover {
-      opacity: 0.9;
+      background-color: #4338CA;
+    }
+    .section h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--accent-color);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
     .faq-item {
       margin-bottom: 20px;
+    }
+    .faq-item:last-child {
+      margin-bottom: 0;
     }
     .faq-item h3 {
       font-size: 16px;
       font-weight: 600;
       color: var(--text-main);
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
     .faq-item p {
       font-size: 14px;
@@ -106,7 +104,7 @@
     .footer {
       text-align: center;
       font-size: 13px;
-      color: rgba(255, 255, 255, 0.4);
+      color: #9CA3AF;
       margin-top: 36px;
       padding-top: 20px;
       border-top: 1px solid var(--card-border);
@@ -146,7 +144,7 @@
 
       <div class="faq-item">
         <h3>How do I contact customer support?</h3>
-        <p>You can email our support team directly at <a href="mailto:goloubov@gmail.com" style="color: var(--accent-blue);">goloubov@gmail.com</a> for any help or inquiries.</p>
+        <p>You can email our support team directly at <a href="mailto:goloubov@gmail.com" style="color: var(--accent-color);">goloubov@gmail.com</a> for any help or inquiries.</p>
       </div>
     </div>
 
