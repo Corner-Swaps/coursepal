@@ -3,154 +3,170 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CoursePal – App Support & Frequently Asked Questions</title>
+  <title>CoursePal – Support & Help Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-color: #FAFAFA;
-      --card-bg: #FFFFFF;
-      --card-border: #E5E7EB;
-      --accent-color: #4F46E5;
+      --primary: #4F46E5;
       --text-main: #111827;
-      --text-sub: #4B5563;
+      --text-muted: #4B5563;
+      --border-color: #E5E7EB;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: var(--bg-color);
+      background-color: #FFFFFF;
       color: var(--text-main);
-      min-height: 100vh;
-      padding: 40px 20px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
+      line-height: 1.6;
+      padding: 60px 24px;
     }
-    .container {
-      max-width: 640px;
-      width: 100%;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 40px 32px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+
+    .wrapper {
+      max-width: 760px;
+      margin: 0 auto;
     }
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
+
+    header {
+      margin-bottom: 40px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border-color);
     }
-    .header h1 {
-      font-size: 28px;
+
+    header h1 {
+      font-size: 32px;
       font-weight: 700;
       color: var(--text-main);
-      margin-bottom: 6px;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
     }
-    .header p {
+
+    header p {
+      font-size: 16px;
+      color: var(--text-muted);
+    }
+
+    .contact-section {
+      margin-bottom: 48px;
+    }
+
+    .contact-section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .contact-section p {
       font-size: 15px;
-      color: var(--text-sub);
-    }
-    .contact-box {
-      background: #F3F4F6;
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 24px;
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    .contact-box p {
-      color: var(--text-sub);
-      font-size: 15px;
+      color: var(--text-muted);
       margin-bottom: 16px;
     }
-    .btn-email {
+
+    .email-link {
       display: inline-block;
-      background: var(--accent-color);
-      color: #FFFFFF;
-      font-weight: 600;
-      font-size: 15px;
-      padding: 12px 24px;
-      border-radius: 8px;
-      text-decoration: none;
-      transition: background-color 0.2s ease;
-    }
-    .btn-email:hover {
-      background-color: #4338CA;
-    }
-    .section h2 {
       font-size: 16px;
       font-weight: 600;
-      color: var(--accent-color);
-      margin-bottom: 16px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      color: var(--primary);
+      text-decoration: none;
+      border-bottom: 2px solid var(--primary);
+      padding-bottom: 2px;
+      transition: color 0.2s ease, border-color 0.2s ease;
     }
-    .faq-item {
-      margin-bottom: 20px;
+
+    .email-link:hover {
+      color: #3730A3;
+      border-color: #3730A3;
     }
-    .faq-item:last-child {
-      margin-bottom: 0;
+
+    .faq-section {
+      margin-bottom: 48px;
     }
+
+    .faq-section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .faq-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
     .faq-item h3 {
       font-size: 16px;
       font-weight: 600;
       color: var(--text-main);
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
+
     .faq-item p {
-      font-size: 14px;
-      color: var(--text-sub);
-      line-height: 1.6;
+      font-size: 15px;
+      color: var(--text-muted);
     }
-    .footer {
-      text-align: center;
-      font-size: 13px;
+
+    footer {
+      padding-top: 32px;
+      border-top: 1px solid var(--border-color);
+      font-size: 14px;
       color: #9CA3AF;
-      margin-top: 36px;
-      padding-top: 20px;
-      border-top: 1px solid var(--card-border);
     }
   </style>
 </head>
 <body>
 
-  <div class="container">
-    <div class="header">
-      <h1>CoursePal</h1>
-      <p>App Support & Frequently Asked Questions</p>
-    </div>
+  <div class="wrapper">
+    <header>
+      <h1>CoursePal Support</h1>
+      <p>Official Help Center & Support Information for CoursePal for iOS.</p>
+    </header>
 
-    <div class="contact-box">
-      <p>Have questions, feedback, or need technical assistance with CoursePal?</p>
-      <a href="mailto:goloubov@gmail.com" class="btn-email">Contact Support (goloubov@gmail.com)</a>
-    </div>
+    <main>
+      <section class="contact-section">
+        <h2>Contact Us</h2>
+        <p>Need help with your account, have questions about syllabus parsing, or want to give feedback? Send us an email directly:</p>
+        <a href="mailto:goloubov@gmail.com" class="email-link">goloubov@gmail.com</a>
+      </section>
 
-    <div class="section">
-      <h2>Frequently Asked Questions</h2>
+      <section class="faq-section">
+        <h2>Frequently Asked Questions</h2>
+        
+        <div class="faq-grid">
+          <div class="faq-item">
+            <h3>How does CoursePal import my syllabus?</h3>
+            <p>CoursePal parses your syllabus PDF or text document automatically extracting your assignments, required textbook readings, weekly themes, and exam dates into an organized schedule.</p>
+          </div>
 
-      <div class="faq-item">
-        <h3>How does CoursePal import my syllabus?</h3>
-        <p>CoursePal uses intelligent document processing to parse your syllabus PDF or text document, automatically extracting assignments, textbook readings, weekly themes, and exam dates into an organized schedule.</p>
-      </div>
+          <div class="faq-item">
+            <h3>Is my course data private?</h3>
+            <p>Yes. CoursePal operates offline-first and stores all your course details, assignments, and reading progress locally on your device.</p>
+          </div>
 
-      <div class="faq-item">
-        <h3>Is my data private?</h3>
-        <p>Yes! CoursePal operates offline-first and stores all your course details, assignments, and reading progress locally on your device. Your data is private to you.</p>
-      </div>
+          <div class="faq-item">
+            <h3>What file formats are supported?</h3>
+            <p>CoursePal supports PDF documents, camera document scans, and plain text files containing syllabus details.</p>
+          </div>
 
-      <div class="faq-item">
-        <h3>What file formats are supported?</h3>
-        <p>CoursePal supports standard PDF documents, camera document scans, and plain text files containing syllabus details.</p>
-      </div>
+          <div class="faq-item">
+            <h3>How quickly does support respond?</h3>
+            <p>We review all email inquiries regularly and typically respond within 24–48 hours.</p>
+          </div>
+        </div>
+      </section>
+    </main>
 
-      <div class="faq-item">
-        <h3>How do I contact customer support?</h3>
-        <p>You can email our support team directly at <a href="mailto:goloubov@gmail.com" style="color: var(--accent-color);">goloubov@gmail.com</a> for any help or inquiries.</p>
-      </div>
-    </div>
-
-    <div class="footer">
-      &copy; 2026 CoursePal. All rights reserved.
-    </div>
+    <footer>
+      <p>&copy; 2026 CoursePal. All rights reserved.</p>
+    </footer>
   </div>
 
 </body>
