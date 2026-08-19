@@ -31,23 +31,6 @@ public struct ShareCenterView: View {
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         }
                         Spacer()
-
-                        Button(action: { showingInfoSheet = true }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "info.circle.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                Text("About")
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.white)
-                            .cornerRadius(12)
-                            .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
-                        }
-                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 18)

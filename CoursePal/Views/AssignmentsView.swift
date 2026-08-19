@@ -99,37 +99,18 @@ public struct AssignmentsView: View {
 
                         // Top Right Corner Action Icons: Filter (Left of checkmark), Done (Green Count) & Trash (Red Count)
                         HStack(spacing: 5) {
-                            // Info Button
-                            Button(action: {
-                                showingInfoSheet = true
-                            }) {
-                                Image(systemName: "info.circle")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 6)
-                                    .background(Color.white)
-                                    .cornerRadius(12)
-                                    .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
-                            }
-                            .buttonStyle(.plain)
-
+                            // Filter Pill (On the LEFT of the Checkmark)
                             Button(action: {
                                 showingCourseFilterSheet = true
                             }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "line.3.horizontal.decrease.circle.fill")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(selectedCourseFilter != nil ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
-                                    Text("Filter")
-                                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                                        .foregroundColor(selectedCourseFilter != nil ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(selectedCourseFilter != nil ? Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.15) : Color.white)
-                                .cornerRadius(12)
-                                .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
+                                Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(selectedCourseFilter != nil ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .background(selectedCourseFilter != nil ? Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.15) : Color.white)
+                                    .cornerRadius(12)
+                                    .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
                             }
                             .buttonStyle(.plain)
 

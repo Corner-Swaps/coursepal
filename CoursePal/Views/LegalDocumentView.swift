@@ -12,19 +12,19 @@ public struct LegalDocumentView: View {
         switch selectedTab {
         case "terms": return "Terms of Service"
         case "privacy": return "Privacy Policy"
-        case "version": return "Version 1.0 (Build 3)"
-        default: return "Terms of Service"
+        case "version": return "Version 1.1"
+        default: return "Legal"
         }
     }
 
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Segmented Picker with 3 tabs
-                Picker("Document", selection: $selectedTab) {
+                // Segmented Picker
+                Picker("Legal Document", selection: $selectedTab) {
                     Text("Terms").tag("terms")
                     Text("Privacy").tag("privacy")
-                    Text("Version 1.0").tag("version")
+                    Text("Version 1.1").tag("version")
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 16)
@@ -229,7 +229,7 @@ public struct LegalDocumentView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("CoursePal v1.0 (Build 3)")
+                        Text("CoursePal v1.1")
                             .font(.system(size: 20, weight: .bold, design: .rounded))
                             .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         Text("Official Production Release • August 2026")
