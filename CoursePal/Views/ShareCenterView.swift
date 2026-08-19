@@ -11,6 +11,7 @@ public struct ShareCenterView: View {
     @State private var copiedCode: String? = nil
     @State private var selectedInviteCategory: String = "share" // "share" or "join"
     @State private var foundCourseForPopup: Course? = nil
+    @State private var showingInfoSheet: Bool = false
 
     public init() {}
 
@@ -30,6 +31,23 @@ public struct ShareCenterView: View {
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         }
                         Spacer()
+
+                        Button(action: { showingInfoSheet = true }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                Text("About")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white)
+                            .cornerRadius(12)
+                            .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 18)
@@ -248,6 +266,43 @@ public struct ShareCenterView: View {
                         .padding(.horizontal, 18)
                     }
 
+                    // MARK: - About & Legal Card
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button(action: { showingInfoSheet = true }) {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.12))
+                                        .frame(width: 36, height: 36)
+                                    Image(systemName: "shield.lefthalf.filled")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("About & Legal")
+                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                    Text("Privacy policy, terms of service & support")
+                                        .font(.system(size: 11.5, weight: .medium))
+                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            }
+                            .padding(14)
+                            .background(Color.white)
+                            .cornerRadius(16)
+                            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 18)
+
                     Spacer(minLength: 120)
                 }
             }
@@ -255,6 +310,9 @@ public struct ShareCenterView: View {
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
             #endif
+            .sheet(isPresented: $showingInfoSheet) {
+                InfoCreditsSheetView()
+            }
         }
         .dismissKeyboardOnTap()
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("CoursePalOpenJoinCode"))) { notif in

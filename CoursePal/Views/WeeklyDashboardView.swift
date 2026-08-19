@@ -81,6 +81,7 @@ public struct WeeklyDashboardView: View {
     @State private var showingTrashSheet: Bool = false
     @State private var selectedCourseFilter: Course? = nil
     @State private var showingCourseFilterSheet: Bool = false
+    @State private var showingInfoSheet: Bool = false
 
     private var completedCount: Int {
         activeReadings.filter({ $0.isCompleted }).count
@@ -158,6 +159,21 @@ public struct WeeklyDashboardView: View {
                         Spacer()
 
                         HStack(spacing: 5) {
+                            // Info Button
+                            Button(action: {
+                                showingInfoSheet = true
+                            }) {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white)
+                                    .cornerRadius(12)
+                                    .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
+                            }
+                            .buttonStyle(.plain)
+
                             // Filter Pill (On the LEFT of the Checkmark)
                             Button(action: {
                                 showingCourseFilterSheet = true
@@ -900,6 +916,9 @@ public struct WeeklyDashboardView: View {
             }
             .sheet(isPresented: $showingCourseFilterSheet) {
                 CourseFilterPickerSheet(courses: courses, selectedCourse: $selectedCourseFilter)
+            }
+            .sheet(isPresented: $showingInfoSheet) {
+                InfoCreditsSheetView()
             }
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)

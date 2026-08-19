@@ -35,6 +35,8 @@
 		AA0000302C5F000100000001 /* Services/PrivacyComplianceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000302C5F000000000001 /* Services/PrivacyComplianceService.swift */; };
 		AA0000342C5F000100000001 /* Views/LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000342C5F000000000001 /* Views/LegalDocumentView.swift */; };
 		AA0000352C5F000100000001 /* Views/WelcomeTermsModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000352C5F000000000001 /* Views/WelcomeTermsModalView.swift */; };
+		AA0000362C5F000100000001 /* Views/InfoCreditsSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000362C5F000000000001 /* Views/InfoCreditsSheetView.swift */; };
+		AA0000372C5F000100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA0000372C5F000000000001 /* PrivacyInfo.xcprivacy */; };
 		AA0000102C5F000100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000102C5F000000000001 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -68,6 +70,8 @@
 		AA0000302C5F000000000001 /* Services/PrivacyComplianceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/PrivacyComplianceService.swift; sourceTree = "<group>"; };
 		AA0000342C5F000000000001 /* Views/LegalDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/LegalDocumentView.swift; sourceTree = "<group>"; };
 		AA0000352C5F000000000001 /* Views/WelcomeTermsModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/WelcomeTermsModalView.swift; sourceTree = "<group>"; };
+		AA0000362C5F000000000001 /* Views/InfoCreditsSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/InfoCreditsSheetView.swift; sourceTree = "<group>"; };
+		AA0000372C5F000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA0000102C5F000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA0000112C5F000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -122,6 +126,8 @@
 				AA0000302C5F000000000001 /* Services/PrivacyComplianceService.swift */,
 				AA0000342C5F000000000001 /* Views/LegalDocumentView.swift */,
 				AA0000352C5F000000000001 /* Views/WelcomeTermsModalView.swift */,
+				AA0000362C5F000000000001 /* Views/InfoCreditsSheetView.swift */,
+				AA0000372C5F000000000001 /* PrivacyInfo.xcprivacy */,
 				AA0000102C5F000000000001 /* Assets.xcassets */,
 				AA0000112C5F000000000001 /* Info.plist */,
 			);
@@ -194,6 +200,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0000372C5F000100000001 /* PrivacyInfo.xcprivacy in Resources */,
 				AA0000102C5F000100000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -233,6 +240,7 @@
 				AA0000302C5F000100000001 /* Services/PrivacyComplianceService.swift in Sources */,
 				AA0000342C5F000100000001 /* Views/LegalDocumentView.swift in Sources */,
 				AA0000352C5F000100000001 /* Views/WelcomeTermsModalView.swift in Sources */,
+				AA0000362C5F000100000001 /* Views/InfoCreditsSheetView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

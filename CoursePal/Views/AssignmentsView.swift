@@ -50,6 +50,7 @@ public struct AssignmentsView: View {
     @State private var showingTrashSheet: Bool = false
     @State private var selectedCourseFilter: Course? = nil
     @State private var showingCourseFilterSheet: Bool = false
+    @State private var showingInfoSheet: Bool = false
 
     private var activeAssignments: [Assignment] {
         var list = dbAssignments.filter { !$0.isDeleted }
@@ -58,10 +59,11 @@ public struct AssignmentsView: View {
         }
         if !searchQuery.isEmpty {
             let q = searchQuery.lowercased()
-            list = list.filter { assignment in
-                assignment.title.lowercased().contains(q) ||
-                (assignment.course?.courseCode?.lowercased().contains(q) ?? false) ||
-                (assignment.course?.courseName.lowercased().contains(q) ?? false)
+            list = list.filter {
+                $0.title.lowercased().contains(q) ||
+                ($0.noteText?.lowercased().contains(q) ?? false) ||
+                ($0.course?.courseName.lowercased().contains(q) ?? false) ||
+                ($0.course?.courseCode?.lowercased().contains(q) ?? false)
             }
         }
         return list
@@ -97,6 +99,21 @@ public struct AssignmentsView: View {
 
                         // Top Right Corner Action Icons: Filter (Left of checkmark), Done (Green Count) & Trash (Red Count)
                         HStack(spacing: 5) {
+                            // Info Button
+                            Button(action: {
+                                showingInfoSheet = true
+                            }) {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white)
+                                    .cornerRadius(12)
+                                    .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
+                            }
+                            .buttonStyle(.plain)
+
                             Button(action: {
                                 showingCourseFilterSheet = true
                             }) {
@@ -1145,6 +1162,9 @@ public struct AssignmentsView: View {
             }
             .sheet(isPresented: $showingCourseFilterSheet) {
                 CourseFilterPickerSheet(courses: courses, selectedCourse: $selectedCourseFilter)
+            }
+            .sheet(isPresented: $showingInfoSheet) {
+                InfoCreditsSheetView()
             }
             .onAppear {
                 sortMode = "assignments"
