@@ -3,630 +3,487 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CoursePal - Legal Center, Terms of Service, Privacy Policy & Support</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>CoursePal - Support, Terms of Service, Privacy Policy & Legal Center</title>
     <style>
         :root {
-            --bg-page: #ffffff;
-            --bg-alt: #f8fafc;
-            --bg-card: #ffffff;
-            --text-primary: #0f172a;
-            --text-secondary: #334155;
-            --text-muted: #64748b;
-            --border-color: #e2e8f0;
-            --accent: #2563eb;
-            --accent-hover: #1d4ed8;
-            --accent-light: #eff6ff;
-            --warning-border: #f59e0b;
-            --warning-bg: #fffbeb;
-            --warning-text: #92400e;
-            --danger-border: #ef4444;
-            --danger-bg: #fef2f2;
-            --danger-text: #991b1b;
-            --success-border: #10b981;
-            --success-bg: #ecfdf5;
-            --success-text: #065f46;
-            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
-            --pop-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+            --text-main: #111827;
+            --text-secondary: #374151;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
+            --border-dark: #d1d5db;
+            --link: #2563eb;
+            --link-hover: #1d4ed8;
+            --callout-bg: #f9fafb;
         }
+
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
+
         html {
             scroll-behavior: smooth;
         }
+
         body {
-            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
-            background-color: var(--bg-page);
-            color: var(--text-primary);
-            line-height: 1.8;
-            padding: 40px 20px 140px;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #ffffff;
+            color: var(--text-main);
+            line-height: 1.7;
+            padding: 60px 24px 120px;
         }
+
         .container {
-            max-width: 960px;
+            max-width: 820px;
             margin: 0 auto;
         }
-        .header {
-            text-align: center;
-            padding-bottom: 32px;
+
+        header {
             margin-bottom: 32px;
-            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
         }
-        .app-icon {
-            width: 92px;
-            height: 92px;
-            margin: 0 auto 18px;
-            border-radius: 24px;
-            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 12px 30px -6px rgba(37, 99, 235, 0.38);
-            color: white;
-            font-size: 44px;
-        }
+
         h1 {
-            font-size: 2.5rem;
-            font-weight: 800;
-            color: var(--text-primary);
-            letter-spacing: -0.03em;
-            margin-bottom: 8px;
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-main);
+            letter-spacing: -0.4px;
+            margin-bottom: 6px;
         }
+
         .tagline {
-            font-size: 1.18rem;
-            color: var(--text-secondary);
-            margin-bottom: 18px;
-        }
-        .compliance-pills {
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
-            gap: 8px;
+            font-size: 15px;
+            color: var(--text-muted);
             margin-bottom: 16px;
         }
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 5px 12px;
-            border-radius: 9999px;
-            font-size: 0.78rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            background: #f1f5f9;
-            color: #475569;
-            border: 1px solid #cbd5e1;
+
+        .meta-bar {
+            font-size: 13px;
+            color: var(--text-muted);
         }
-        .badge.accent {
-            background: #eff6ff;
-            color: #1d4ed8;
-            border-color: #bfdbfe;
-        }
-        .badge.success {
-            background: #ecfdf5;
-            color: #047857;
-            border-color: #a7f3d0;
-        }
-        .nav-bar {
+
+        nav {
             position: sticky;
-            top: 16px;
-            z-index: 100;
+            top: 0;
             background: rgba(255, 255, 255, 0.96);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
-            padding: 12px;
-            margin-bottom: 48px;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-            border: 1px solid var(--border-color);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            padding: 12px 0;
+            margin-bottom: 40px;
+            border-bottom: 1px solid var(--border);
+            z-index: 50;
         }
+
         .nav-links {
             display: flex;
-            justify-content: center;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 16px;
+            font-size: 14px;
         }
+
         .nav-links a {
-            font-size: 0.92rem;
-            font-weight: 600;
-            color: var(--accent);
+            color: var(--text-secondary);
             text-decoration: none;
-            padding: 9px 16px;
-            border-radius: 12px;
-            background: var(--bg-alt);
-            border: 1px solid var(--border-color);
-            transition: all 0.2s ease;
+            font-weight: 500;
+            transition: color 0.15s ease;
         }
+
         .nav-links a:hover {
-            background: var(--accent-light);
-            border-color: var(--accent);
-            color: var(--accent-hover);
+            color: var(--link);
+            text-decoration: underline;
         }
-        .section {
-            margin-bottom: 80px;
-            padding-bottom: 64px;
-            border-bottom: 1px solid var(--border-color);
-            scroll-margin-top: 110px;
+
+        section {
+            margin-bottom: 56px;
+            padding-bottom: 40px;
+            border-bottom: 1px solid var(--border);
+            scroll-margin-top: 60px;
         }
-        .section:last-of-type {
+
+        section:last-of-type {
             border-bottom: none;
         }
+
         h2 {
-            font-size: 1.85rem;
-            font-weight: 800;
-            color: var(--text-primary);
-            margin-bottom: 22px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            letter-spacing: -0.02em;
+            font-size: 21px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 16px;
+            letter-spacing: -0.3px;
         }
+
         h3 {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-top: 36px;
-            margin-bottom: 14px;
-            letter-spacing: -0.01em;
-        }
-        h4 {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-top: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-top: 24px;
             margin-bottom: 8px;
         }
+
+        h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+
         p {
+            font-size: 14.5px;
             color: var(--text-secondary);
-            font-size: 1.04rem;
-            margin-bottom: 18px;
+            margin-bottom: 14px;
         }
+
         ul, ol {
-            margin-left: 28px;
-            margin-bottom: 22px;
+            margin-left: 20px;
+            margin-bottom: 16px;
             color: var(--text-secondary);
-            font-size: 1.04rem;
+            font-size: 14.5px;
         }
+
         li {
-            margin-bottom: 10px;
+            margin-bottom: 6px;
         }
-        .highlight-box {
-            background-color: var(--bg-alt);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 26px;
-            margin: 26px 0;
-            box-shadow: var(--card-shadow);
-        }
-        .warning-box {
-            background-color: var(--warning-bg);
-            border: 1px solid #fef3c7;
-            border-left: 6px solid var(--warning-border);
-            border-radius: 14px;
-            padding: 24px 26px;
-            margin: 28px 0;
-            color: var(--warning-text);
-        }
-        .warning-box strong {
-            color: #78350f;
-        }
-        .danger-box {
-            background-color: var(--danger-bg);
-            border: 1px solid #fecaca;
-            border-left: 6px solid var(--danger-border);
-            border-radius: 14px;
-            padding: 24px 26px;
-            margin: 28px 0;
-            color: var(--danger-text);
-        }
-        .danger-box strong {
-            color: #7f1d1d;
-        }
-        .success-box {
-            background-color: var(--success-bg);
-            border: 1px solid #a7f3d0;
-            border-left: 6px solid var(--success-border);
-            border-radius: 14px;
-            padding: 24px 26px;
-            margin: 28px 0;
-            color: var(--success-text);
-        }
-        .success-box strong {
-            color: #064e3b;
-        }
-        .faq-card {
-            background-color: var(--bg-alt);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 22px 26px;
-            margin-bottom: 18px;
-            box-shadow: var(--card-shadow);
-        }
-        .faq-card h4 {
-            font-size: 1.12rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-top: 0;
-            margin-bottom: 10px;
-        }
-        .contact-card {
-            background: linear-gradient(180deg, #f8fafc 0%, #eff6ff 100%);
-            border: 1px solid #dbeafe;
-            border-radius: 22px;
-            padding: 40px 32px;
-            text-align: center;
-            margin-top: 40px;
-            box-shadow: var(--pop-shadow);
-        }
-        .contact-btn {
-            display: inline-block;
-            background-color: var(--accent);
-            color: white;
-            padding: 15px 36px;
-            border-radius: 14px;
-            text-decoration: none;
-            font-weight: 700;
-            font-size: 1.05rem;
-            margin-top: 20px;
-            box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
-            transition: background-color 0.2s, transform 0.1s;
-        }
-        .contact-btn:hover {
-            background-color: var(--accent-hover);
-            transform: translateY(-2px);
-        }
-        .footer {
-            text-align: center;
-            font-size: 0.95rem;
-            color: var(--text-muted);
-            padding-top: 56px;
-            border-top: 1px solid var(--border-color);
-        }
-        .legal-clause {
-            font-family: 'JetBrains Mono', monospace, -apple-system;
-            font-size: 0.88rem;
-            background: #f1f5f9;
-            padding: 14px 18px;
-            border-radius: 10px;
-            border: 1px solid #e2e8f0;
-            margin: 14px 0;
-            color: #334155;
-            line-height: 1.6;
-        }
-        .grid-2 {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 16px;
+
+        .notice-box {
+            background-color: var(--callout-bg);
+            border-left: 3px solid var(--text-main);
+            padding: 16px 20px;
             margin: 20px 0;
+            font-size: 14px;
+            color: var(--text-secondary);
         }
-        .feature-card {
-            background: var(--bg-alt);
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: 20px;
+
+        .notice-box strong {
+            color: var(--text-main);
         }
-        .feature-card h4 {
+
+        .legal-code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 13px;
+            background-color: #f3f4f6;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            margin: 14px 0;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .faq-item {
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        .faq-item:last-child {
+            border-bottom: none;
+        }
+
+        .faq-item h4 {
             margin-top: 0;
-            font-size: 1.05rem;
-            color: var(--accent);
+            margin-bottom: 6px;
+        }
+
+        .contact-block {
+            background-color: var(--callout-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 24px;
+        }
+
+        .contact-block p {
+            margin-bottom: 8px;
+        }
+
+        a {
+            color: var(--link);
+            text-decoration: underline;
+        }
+
+        a:hover {
+            color: var(--link-hover);
+        }
+
+        footer {
+            padding-top: 32px;
+            border-top: 1px solid var(--border);
+            font-size: 13px;
+            color: var(--text-muted);
+            text-align: center;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <!-- Header -->
-        <header class="header">
-            <div class="app-icon">📚</div>
+        <header>
             <h1>CoursePal Legal & Support Center</h1>
-            <p class="tagline">Comprehensive Terms of Service, Privacy Policy, Academic Disclaimers, DMCA & Support</p>
-            
-            <div class="compliance-pills">
-                <span class="badge accent">iOS 17+ Compliant</span>
-                <span class="badge success">Local-First Sandbox</span>
-                <span class="badge success">Zero Model Training Guarantee</span>
-                <span class="badge">BC PIPA & PIPEDA</span>
-                <span class="badge">GDPR & CCPA/CPRA</span>
-                <span class="badge">FERPA Aligned</span>
-                <span class="badge">DMCA Registered</span>
-            </div>
-            <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0;">Version 1.0 (Build 3) • Last Updated: August 2026 • Vancouver, British Columbia, Canada</p>
+            <p class="tagline">Official Terms of Service, Privacy Policy, Academic Disclaimers, DMCA and Support Documentation</p>
+            <p class="meta-bar">Version 1.0 (Build 3) • Effective Date: August 14, 2026 • Vancouver, British Columbia, Canada</p>
         </header>
 
-        <!-- Sticky Unified Navigation Bar -->
-        <nav class="nav-bar">
+        <!-- Navigation Bar -->
+        <nav>
             <div class="nav-links">
-                <a href="#support">💬 Support & FAQ</a>
-                <a href="#academic-notice">⚠️ Academic Notice</a>
-                <a href="#terms">⚖️ Terms of Service</a>
-                <a href="#privacy">🛡️ Privacy Policy</a>
-                <a href="#disclaimers">🏢 Non-Affiliation</a>
-                <a href="#dmca">📋 Copyright & DMCA</a>
+                <a href="#support">Support & FAQ</a>
+                <a href="#academic-notice">Academic Notice</a>
+                <a href="#terms">Terms of Service</a>
+                <a href="#privacy">Privacy Policy</a>
+                <a href="#disclaimers">Non-Affiliation</a>
+                <a href="#dmca">Copyright & DMCA</a>
             </div>
         </nav>
 
-        <!-- ================================================================= -->
-        <!-- SECTION 1: CUSTOMER SUPPORT & COMPREHENSIVE USER GUIDE            -->
-        <!-- ================================================================= -->
-        <section class="section" id="support">
-            <h2>💬 Customer Support & Comprehensive User Guide</h2>
-            <p>Welcome to the official <strong>CoursePal</strong> Support Desk. CoursePal is an auxiliary academic planner and study-tracking application designed for iOS. It transforms complex course documents (PDF syllabi, scanned physical handouts, and reading lists) into structured weekly milestones, assignment timelines, and native calendar reminders.</p>
+        <!-- SECTION 1: SUPPORT & FAQ -->
+        <section id="support">
+            <h2>Support and User Guide</h2>
+            <p>CoursePal is an auxiliary academic course management application designed for iOS. It assists students and educators in converting unstructured course syllabi (PDF documents, scanned physical handouts, or text files) into structured weekly schedules, reading milestones, and calendar alerts.</p>
 
-            <h3>Core Application Features</h3>
-            <div class="grid-2">
-                <div class="feature-card">
-                    <h4>📄 Syllabus Document Parsing</h4>
-                    <p>Extracts weekly themes, required textbook readings, homework assignments, point weights, and exam dates automatically using Apple Vision OCR and Google Gemini AI.</p>
-                </div>
-                <div class="feature-card">
-                    <h4>📅 Native iOS Calendar Sync</h4>
-                    <p>Exports scheduled milestone deadlines directly to your native Apple Calendar (EventKit) and Apple Reminders with custom alert intervals.</p>
-                </div>
-                <div class="feature-card">
-                    <h4>🔒 100% Local-First Storage</h4>
-                    <p>All student schedules, notes, and progress are stored on-device using encrypted SwiftData storage within Apple's hardware-isolated sandbox.</p>
-                </div>
-                <div class="feature-card">
-                    <h4>🤝 Peer Course Sharing</h4>
-                    <p>Allows students to generate 6-character course invite codes to share structured course schedules with classmates quickly.</p>
-                </div>
+            <h3>Core Application Architecture</h3>
+            <ul>
+                <li><strong>Syllabus Document Parsing:</strong> Processes syllabus text and document scans to identify weekly course modules, required textbook readings, assignment due dates, point weightings, and exam schedules.</li>
+                <li><strong>Native iOS Calendar Integration:</strong> Exports scheduled assignment deadlines directly to your native Apple Calendar and Reminders app.</li>
+                <li><strong>Local-First Storage:</strong> Stores course schedules, progress, and custom notes on-device using encrypted SwiftData storage within the iOS application sandbox.</li>
+                <li><strong>Course Code Sharing:</strong> Allows students to generate alphanumeric invite codes to share structured course schedules with classmates.</li>
+            </ul>
+
+            <h3>Frequently Asked Questions</h3>
+
+            <div class="faq-item">
+                <h4>How do I import a course syllabus?</h4>
+                <p>Open CoursePal and tap the + button in the navigation bar or in the Syllabus tab. You can select a digital PDF syllabus document from your iOS Files app or use your camera to photograph a physical paper handout.</p>
             </div>
 
-            <h3>Frequently Asked Questions (FAQ)</h3>
-
-            <div class="faq-card">
-                <h4>1. How do I import and scan a course syllabus?</h4>
-                <p>Open CoursePal and tap the <strong>+</strong> action button in the navigation bar or within the <strong>Syllabus</strong> tab. You can either (a) select a digital PDF syllabus document from your iOS Files app or (b) use your iPhone/iPad camera to capture high-resolution photos of a physical paper handout.</p>
+            <div class="faq-item">
+                <h4>What if my syllabus contains complex tables or non-standard date formats?</h4>
+                <p>CoursePal is designed to process diverse syllabus formats. If any parsed item requires adjustment, you can tap any week, reading, or assignment to edit the title, due date, point weight, or chapter range manually.</p>
             </div>
 
-            <div class="faq-card">
-                <h4>2. What if my syllabus contains complex multi-column tables or non-standard date formats?</h4>
-                <p>CoursePal's AI engine is trained on diverse university syllabus structures. However, complex formatting or handwritten notes may occasionally require manual adjustment. You can tap any parsed reading, assignment, or week at any time to edit the title, due date, point weight, or chapter range manually.</p>
+            <div class="faq-item">
+                <h4>Can CoursePal operate offline?</h4>
+                <p>Yes. CoursePal includes an offline parsing engine and supports full offline creation, reading tracking, assignment editing, and calendar scheduling without an active internet connection.</p>
             </div>
 
-            <div class="faq-card">
-                <h4>3. Can CoursePal operate completely offline?</h4>
-                <p>Yes. CoursePal includes a built-in offline parsing fallback and allows complete manual course creation, reading tracking, assignment editing, and calendar scheduling without an active internet connection.</p>
+            <div class="faq-item">
+                <h4>How does Apple Calendar and Reminders synchronization work?</h4>
+                <p>When you enable calendar permissions, CoursePal creates native iOS calendar events for assignment deadlines and reading targets. These synchronize across your iCloud-connected Apple devices.</p>
             </div>
 
-            <div class="faq-card">
-                <h4>4. How does Apple Calendar and Reminders export work?</h4>
-                <p>When you enable calendar permissions, CoursePal creates native iOS calendar events for your assignment deadlines and reading targets. Events update seamlessly within your native Apple Calendar app across all your iCloud-connected Apple devices.</p>
+            <div class="faq-item">
+                <h4>Is my academic data private?</h4>
+                <p>Yes. CoursePal operates under a strict Local-First model. Your private syllabus documents, student notes, and schedules remain stored on your personal device. We do not store or monetize your personal files on central servers.</p>
             </div>
 
-            <div class="faq-card">
-                <h4>5. Is my course data or personal student information private?</h4>
-                <p>Yes, absolutely. CoursePal operates under a strict Local-First privacy model. We do not store your private syllabus documents, student notes, or schedules on external commercial servers, and we never sell student data to data brokers or advertising networks.</p>
+            <div class="faq-item">
+                <h4>How do course sharing codes work?</h4>
+                <p>When a course is created, CoursePal generates a unique share code. Classmates can enter this code in the Invite tab to import the course schedule to their device.</p>
             </div>
 
-            <div class="faq-card">
-                <h4>6. How do course sharing codes work?</h4>
-                <p>When you create or parse a course, CoursePal generates an alphanumeric sharing code. Classmates can enter this code in the Invite tab to import the course schedule instantly to their device.</p>
+            <div class="faq-item">
+                <h4>How do I delete a course or erase my data?</h4>
+                <p>Deleting a course within the app immediately removes all associated records from your local database. Deleting the CoursePal application from your iOS device immediately and irrevocably erases 100% of stored data.</p>
             </div>
 
-            <div class="faq-card">
-                <h4>7. How do I delete a course or permanently erase all my data?</h4>
-                <p>You can delete any course or assignment directly within the app, which immediately purges it from your local SwiftData database. Deleting the CoursePal application from your iOS device immediately and irrevocably erases 100% of stored data.</p>
+            <div class="faq-item">
+                <h4>How do I contact support?</h4>
+                <p>For technical support, parsing inquiries, or feedback, email support directly at <a href="mailto:goloubov@gmail.com">goloubov@gmail.com</a>. Inquiries are reviewed regularly with responses provided within 24 to 48 business hours.</p>
             </div>
 
-            <div class="faq-card">
-                <h4>8. How do I contact developer support?</h4>
-                <p>If you encounter any issues with syllabus parsing, have questions about data handling, or wish to request a feature, you can contact our developer support team directly at <a href="mailto:goloubov@gmail.com" style="color: var(--accent); font-weight: 700;">goloubov@gmail.com</a>. We review all inquiries and respond within 24 to 48 business hours.</p>
-            </div>
-
-            <!-- Direct Support Card -->
-            <div class="contact-card">
-                <h3 style="margin-top: 0;">Need Direct Help or Technical Support?</h3>
-                <p>Our developer support desk is available to assist students, professors, and academic institutions with any inquiries.</p>
-                <a href="mailto:goloubov@gmail.com" class="contact-btn">Email Support Desk: goloubov@gmail.com</a>
-                <p style="margin-top: 14px; font-size: 0.88rem; color: var(--text-muted);">Direct Developer Contact: Vyacheslav Goloubov • Vancouver, BC, Canada</p>
+            <div class="contact-block">
+                <p><strong>Contact Support:</strong> <a href="mailto:goloubov@gmail.com">goloubov@gmail.com</a></p>
+                <p><strong>Developer:</strong> Vyacheslav Goloubov</p>
+                <p><strong>Location:</strong> Vancouver, British Columbia, Canada</p>
             </div>
         </section>
 
-        <!-- ================================================================= -->
-        <!-- SECTION 2: CRITICAL ACADEMIC NOTICE & DISCLAIMERS                 -->
-        <!-- ================================================================= -->
-        <section class="section" id="academic-notice">
-            <h2>⚠️ Critical Academic Notice & Disclaimers</h2>
+        <!-- SECTION 2: ACADEMIC NOTICE -->
+        <section id="academic-notice">
+            <h2>Critical Academic Notice and Verification Duty</h2>
 
-            <div class="warning-box">
-                <strong>AUTHORITATIVE SOURCE CLAUSE:</strong> CoursePal is an auxiliary organizational aid and study productivity tool. The official syllabus distributed by your instructor, academic department, university, college, school board, or educational institution, along with official university Learning Management Systems (including Canvas, Blackboard, Brightspace/D2L, Moodle, and Google Classroom) and direct instructor announcements, remain the <strong>SOLE AND FINAL AUTHORITATIVE SOURCES OF TRUTH</strong> for all assignment due dates, exam times, grading policies, room locations, and course requirements.
+            <div class="notice-box">
+                <strong>AUTHORITATIVE SOURCE CLAUSE:</strong> CoursePal is an auxiliary organizational aid. The official syllabus distributed by your instructor, academic department, university, college, or school board, along with official university Learning Management Systems (including Canvas, Blackboard, Brightspace/D2L, Moodle, and Google Classroom) and direct instructor announcements, remain the <strong>SOLE AND FINAL AUTHORITATIVE SOURCES OF TRUTH</strong> for all course deadlines, exam dates, classroom locations, and grading policies.
             </div>
 
-            <h3>1. AI & Optical Character Recognition (OCR) Limitations</h3>
-            <p>Automated syllabus parsing, optical character recognition (OCR), and artificial intelligence language models (including Google Gemini API) operate on probabilistic algorithms. You explicitly understand and agree that:</p>
+            <h3>1. AI and Optical Character Recognition (OCR) Limitations</h3>
+            <p>Automated syllabus parsing, optical character recognition (OCR), and artificial intelligence language models operate on probabilistic algorithms. You explicitly understand and agree that:</p>
             <ul>
-                <li>The AI parser may occasionally hallucinate, miss, omit, misinterpret, or misattribute assignment due dates, quiz times, chapter page numbers, weight percentages, or course codes;</li>
-                <li>Parsing errors may occur due to blurry camera scans, skewed document angles, multi-column formatting, unannounced instructor revisions, or complex grading tables;</li>
-                <li><strong>You possess an affirmative, strict, and ongoing duty to manually inspect and cross-verify all parsed assignments, exam dates, and reading lists against your official course syllabus.</strong></li>
+                <li>The parser may occasionally miss, omit, misinterpret, or misattribute assignment due dates, quiz times, chapter page numbers, weight percentages, or course codes;</li>
+                <li>Errors may occur due to blurry document scans, complex multi-column formatting, or unannounced instructor revisions;</li>
+                <li><strong>You possess an affirmative and ongoing duty to manually inspect and cross-verify all parsed assignments, exam dates, and reading lists against your official course syllabus.</strong></li>
             </ul>
 
-            <h3>2. Absolute Waiver of Academic & Educational Liability</h3>
-            <div class="danger-box">
-                <strong>EXPRESS WAIVER OF ACADEMIC DAMAGES:</strong> TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL COURSEPAL, ITS DEVELOPERS, OWNERS, CONTRIBUTORS, OR AFFILIATES BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, CONSEQUENTIAL, SPECIAL, PUNITIVE, OR EXEMPLARY DAMAGES ARISING FROM OR RELATING TO YOUR USE OF OR INABILITY TO USE THE APP. THIS INCLUDES, WITHOUT LIMITATION:
-                <ul style="margin-top: 10px; margin-bottom: 0;">
-                    <li>Missed examinations, midterms, finals, quizzes, laboratory sessions, or assignment deadlines;</li>
+            <h3>2. Waiver of Academic and Educational Liability</h3>
+            <div class="notice-box">
+                <strong>ACADEMIC DAMAGES WAIVER:</strong> TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL COURSEPAL, ITS DEVELOPERS, OR AFFILIATES BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, CONSEQUENTIAL, SPECIAL, OR PUNITIVE DAMAGES ARISING FROM OR RELATING TO YOUR USE OF THE APP. THIS INCLUDES, WITHOUT LIMITATION:
+                <ul style="margin-top: 8px; margin-bottom: 0;">
+                    <li>Missed examinations, quizzes, laboratories, or assignment deadlines;</li>
                     <li>Late submission penalties, grade reductions, failed courses, or GPA decreases;</li>
-                    <li>Loss of scholarships, bursaries, tuition assistance, or financial aid disqualification;</li>
-                    <li>Academic probation, disciplinary proceedings, academic suspension, or expulsion;</li>
+                    <li>Loss of scholarships, financial aid disqualification, academic probation, suspension, or expulsion;</li>
                     <li>Delay of graduation, loss of athletic eligibility, student visa or immigration status impacts;</li>
-                    <li>Loss of prospective employment, internship opportunities, or any other academic, institutional, disciplinary, professional, or career repercussions whatsoever.</li>
+                    <li>Any other academic, institutional, disciplinary, or professional repercussions whatsoever.</li>
                 </ul>
             </div>
         </section>
 
-        <!-- ================================================================= -->
-        <!-- SECTION 3: TERMS OF SERVICE & USER AGREEMENT                      -->
-        <!-- ================================================================= -->
-        <section class="section" id="terms">
-            <h2>⚖️ Full Terms of Service & User Agreement</h2>
-            <p><em>Last Updated: August 2026 • Effective Date: August 14, 2026</em></p>
+        <!-- SECTION 3: TERMS OF SERVICE -->
+        <section id="terms">
+            <h2>Terms of Service and User Agreement</h2>
+            <p>Please read these Terms of Service ("Terms", "Agreement") carefully before downloading, installing, accessing, or using the CoursePal mobile application ("CoursePal", "the App", "we", "our", or "us"). By accessing or using the App, you agree to be bound by these Terms. If you do not agree, do not use CoursePal.</p>
 
-            <p>Please read these Terms of Service ("Terms", "Agreement") carefully before downloading, installing, accessing, or using the CoursePal mobile application ("CoursePal", "the App", "we", "our", or "us"). By accessing or using the App, you agree to be bound by these Terms. If you do not agree to all terms, do not use CoursePal.</p>
-
-            <h3>1. Eligibility & License Grant</h3>
+            <h3>1. Eligibility and License Grant</h3>
             <p>You must be at least 13 years of age (or the applicable age of digital consent in your jurisdiction) to use CoursePal. Subject to your compliance with these Terms, we grant you a limited, non-exclusive, non-transferable, non-sublicensable, revocable license to download, install, and use CoursePal on iOS devices that you own or control, solely for your personal, non-commercial academic study and organization.</p>
 
-            <h3>2. Prohibited Conduct & Acceptable Use</h3>
+            <h3>2. Prohibited Conduct</h3>
             <p>You agree not to:</p>
             <ul>
                 <li>Use CoursePal for any unlawful, fraudulent, or unauthorized purpose;</li>
                 <li>Decompile, reverse engineer, disassemble, or attempt to derive the source code of the App;</li>
                 <li>Upload malicious files, viruses, worms, or corrupted documents;</li>
-                <li>Use automated scripts or scraping tools to access CoursePal services;</li>
-                <li>Share proprietary institutional secrets or confidential examination papers in violation of your school's academic integrity code.</li>
+                <li>Use automated scripts or scrapers to access CoursePal services;</li>
+                <li>Share proprietary institutional secrets or confidential examination papers in violation of your school's academic integrity policy.</li>
             </ul>
 
-            <h3>3. "AS-IS" and "AS-AVAILABLE" Warranty Disclaimer</h3>
-            <p>COURSEPAL IS PROVIDED ON AN <strong>"AS IS"</strong> AND <strong>"AS AVAILABLE"</strong> BASIS WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS, STATUTORY, OR IMPLIED. TO THE FULLEST EXTENT PERMISSIBLE UNDER APPLICABLE LAW, WE EXPRESSLY DISCLAIM ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR ACADEMIC PURPOSE, TITLE, NON-INFRINGEMENT, ACCURACY, AND UNINTERRUPTED OR ERROR-FREE OPERATION.</p>
+            <h3>3. "AS-IS" and "AS-AVAILABLE" Software Warranty Disclaimer</h3>
+            <p>COURSEPAL IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS, STATUTORY, OR IMPLIED. TO THE FULLEST EXTENT PERMISSIBLE UNDER APPLICABLE LAW, WE EXPRESSLY DISCLAIM ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR ACADEMIC PURPOSE, TITLE, NON-INFRINGEMENT, ACCURACY, AND UNINTERRUPTED OR ERROR-FREE OPERATION.</p>
 
-            <h3>4. Limitation of Monetary Liability & Cap</h3>
-            <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, UNDER NO CIRCUMSTANCES SHALL THE AGGREGATE MONETARY LIABILITY OF COURSEPAL, ITS DEVELOPERS, OR AFFILIATES FOR ANY AND ALL CLAIMS ARISING UNDER OR RELATING TO THIS AGREEMENT OR THE APP EXCEED THE LESSER OF (A) THE TOTAL AMOUNT ACTUALLY PAID BY YOU TO COURSEPAL IN THE TWELVE (12) MONTHS IMMEDIATELY PRECEDING THE EVENT GIVING RISE TO LIABILITY, OR (B) FIFTY CANADIAN DOLLARS ($50.00 CAD).</p>
+            <h3>4. Monetary Liability Cap</h3>
+            <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, UNDER NO CIRCUMSTANCES SHALL THE AGGREGATE MONETARY LIABILITY OF COURSEPAL, ITS DEVELOPERS, OR AFFILIATES FOR ANY AND ALL CLAIMS ARISING UNDER OR RELATING TO THIS AGREEMENT OR THE APP EXCEED THE LESSER OF (A) THE TOTAL AMOUNT ACTUALLY PAID BY YOU TO COURSEPAL IN THE TWELVE (12) MONTHS IMMEDIATELY PRECEDING THE CLAIM, OR (B) FIFTY CANADIAN DOLLARS ($50.00 CAD).</p>
 
-            <h3>5. Peer Course Sharing & Third-Party Content</h3>
-            <p>If you generate or share course invite codes with classmates, you represent and warrant that you possess all necessary rights to share such course outline information. CoursePal does not pre-screen, verify, or endorse peer-shared course data, and we assume zero responsibility for any inaccuracies, errors, or copyright infringements in shared course materials.</p>
+            <h3>5. Peer Course Sharing</h3>
+            <p>If you generate or share course invite codes with classmates, you represent and warrant that you possess all necessary rights to share such course outline information. CoursePal does not pre-screen or verify peer-shared course data and assumes zero responsibility for any inaccuracies or errors in shared materials.</p>
 
             <h3>6. Indemnification</h3>
-            <p>You agree to defend, indemnify, and hold harmless CoursePal, its creators, developers, contractors, and affiliates from and against any claims, liabilities, damages, losses, costs, expenses, or fees (including reasonable legal and attorney's fees) arising out of or relating to your violation of these Terms, your use of the App, or your infringement of any intellectual property or privacy rights of any third party.</p>
+            <p>You agree to defend, indemnify, and hold harmless CoursePal, its creators, developers, and affiliates from and against any claims, liabilities, damages, losses, costs, or expenses (including reasonable legal and attorney's fees) arising out of or relating to your violation of these Terms, your use of the App, or your infringement of any intellectual property or privacy rights.</p>
 
-            <h3>7. Mandatory Binding Individual Arbitration & Class Action Waiver</h3>
-            <div class="danger-box">
-                <strong>BINDING ARBITRATION & CLASS ACTION WAIVER:</strong> YOU AND COURSEPAL AGREE THAT ANY DISPUTE, CLAIM, OR CONTROVERSY ARISING OUT OF OR RELATING TO THESE TERMS OR THE USE OF THE APP SHALL BE SETTLED BY BINDING INDIVIDUAL ARBITRATION CONDUCTED IN VANCOUVER, BRITISH COLUMBIA, CANADA. YOU AND COURSEPAL EXPRESSLY WAIVE ANY RIGHT TO PARTICIPATE AS A PLAINTIFF OR CLASS MEMBER IN ANY CLASS ACTION, CLASS ARBITRATION, PRIVATE ATTORNEY GENERAL ACTION, OR REPRESENTATIVE PROCEEDING.
+            <h3>7. Binding Individual Arbitration and Class Action Waiver</h3>
+            <div class="notice-box">
+                <strong>ARBITRATION AND CLASS ACTION WAIVER:</strong> YOU AND COURSEPAL AGREE THAT ANY DISPUTE, CLAIM, OR CONTROVERSY ARISING OUT OF OR RELATING TO THESE TERMS OR THE USE OF THE APP SHALL BE SETTLED BY BINDING INDIVIDUAL ARBITRATION CONDUCTED IN VANCOUVER, BRITISH COLUMBIA, CANADA. YOU AND COURSEPAL EXPRESSLY WAIVE ANY RIGHT TO PARTICIPATE AS A PLAINTIFF OR CLASS MEMBER IN ANY CLASS ACTION, CLASS ARBITRATION, PRIVATE ATTORNEY GENERAL ACTION, OR REPRESENTATIVE PROCEEDING.
             </div>
 
-            <h3>8. Governing Law & Jurisdiction</h3>
-            <p>These Terms and any dispute arising out of or related to CoursePal shall be governed by and construed in accordance with the laws of the Province of British Columbia and the federal laws of Canada applicable therein, without regard to conflict of law principles.</p>
+            <h3>8. Governing Law and Jurisdiction</h3>
+            <p>These Terms and any dispute arising out of or related to CoursePal shall be governed by and construed in accordance with the laws of the Province of British Columbia and the federal laws of Canada applicable therein, without regard to conflict of law principles. Legal proceedings shall be conducted in Vancouver, British Columbia, Canada.</p>
 
-            <h3>9. Severability & Entire Agreement</h3>
-            <p>If any provision of these Terms is found to be unlawful, void, or unenforceable, that provision shall be deemed severable and shall not affect the validity and enforceability of the remaining provisions. These Terms constitute the entire agreement between you and CoursePal regarding the subject matter herein.</p>
+            <h3>9. Severability and Entire Agreement</h3>
+            <p>If any provision of these Terms is found to be unlawful or unenforceable, that provision shall be deemed severable and shall not affect the validity and enforceability of the remaining provisions. These Terms constitute the entire agreement regarding the use of CoursePal.</p>
         </section>
 
-        <!-- ================================================================= -->
-        <!-- SECTION 4: PRIVACY POLICY & DATA GOVERNANCE                       -->
-        <!-- ================================================================= -->
-        <section class="section" id="privacy">
-            <h2>🛡️ Comprehensive Privacy Policy & Data Governance</h2>
-            <p><em>Last Updated: August 2026 • Compliant with BC PIPA, PIPEDA, CCPA/CPRA, FERPA, and GDPR</em></p>
+        <!-- SECTION 4: PRIVACY POLICY -->
+        <section id="privacy">
+            <h2>Comprehensive Privacy Policy and Data Governance</h2>
+            <p>CoursePal ("we", "our", or "the App") is dedicated to protecting student and user privacy. This Privacy Policy describes how information is collected, processed, stored, and protected when you use CoursePal on iOS.</p>
 
-            <p>CoursePal ("we", "our", or "the App") is dedicated to upholding the highest standards of student, educator, and user privacy. This Privacy Policy describes how information is collected, processed, stored, and protected when you use CoursePal on iOS.</p>
-
-            <div class="success-box">
-                <strong>OUR PRIVACY PROMISES:</strong>
-                <ul style="margin-top: 8px; margin-bottom: 0;">
-                    <li><strong>100% Local-First Sandbox:</strong> Your courses, notes, homework tasks, and reading progress are stored locally on your device via SwiftData.</li>
-                    <li><strong>Zero Foundation Model Training:</strong> Your private course documents and syllabi are <strong>never</strong> used to train public or foundation AI models.</li>
-                    <li><strong>No Data Monetization:</strong> We do not sell, rent, license, or trade your student records or personal data to data brokers or advertising networks.</li>
+            <div class="notice-box">
+                <strong>PRIVACY COMMITMENTS:</strong>
+                <ul style="margin-top: 6px; margin-bottom: 0;">
+                    <li><strong>100% Local-First Sandbox:</strong> Course data, notes, assignments, and reading progress are stored locally on your device via SwiftData.</li>
+                    <li><strong>Zero Foundation Model Training:</strong> Your private course documents and syllabi are never used to train public or foundation AI models.</li>
+                    <li><strong>No Data Monetization:</strong> We do not sell, rent, license, or monetize your personal data to data brokers or advertising networks.</li>
                     <li><strong>No Tracking SDKs:</strong> Zero cross-app tracking SDKs, marketing beacons, or commercial analytics trackers.</li>
                 </ul>
             </div>
 
             <h3>1. Local-First On-Device Architecture</h3>
-            <p>CoursePal is architected from the ground up to operate on-device. When you create courses, track reading progress, add homework tasks, or write study notes, that information is stored directly in your device's local SwiftData database, protected by Apple's hardware-level AES-256 data protection. We do not operate a centralized cloud database storing your private student records.</p>
+            <p>CoursePal operates on-device. When you create courses, track reading progress, add homework tasks, or write study notes, that information is stored directly in your device's local SwiftData database, protected by Apple's hardware-level AES-256 data protection. We do not operate a centralized cloud database storing your private student records.</p>
 
-            <h3>2. AI Syllabus Processing & Zero Model Training Guarantee</h3>
+            <h3>2. AI Syllabus Processing and Zero Model Training Guarantee</h3>
             <p>When you choose to parse a syllabus document using automated AI:</p>
             <ul>
                 <li><strong>Transient Transmission:</strong> The document text or image is transmitted over encrypted HTTPS (TLS 1.3) directly to the Google Gemini API solely for real-time parsing into structured calendar milestones.</li>
-                <li><strong>Zero Model Training:</strong> Your private course syllabi, homework items, and schedules are <strong>never</strong> used to train public or foundation AI models.</li>
+                <li><strong>Zero Model Training:</strong> Your private course syllabi, homework items, and schedules are never used to train public or foundation AI models.</li>
                 <li><strong>Voluntary:</strong> Automated syllabus parsing is completely optional. You may enter and manage courses manually offline at any time.</li>
             </ul>
 
             <h3>3. iOS Device Permissions Justifications</h3>
-            <p>CoursePal may request specific iOS permissions solely to deliver user-initiated features:</p>
             <ul>
-                <li><strong>Camera Access (<code>NSCameraUsageDescription</code>):</strong> Used solely when you capture a photo of a printed paper syllabus. Images are processed in-memory.</li>
-                <li><strong>Photo Library Access (<code>NSPhotoLibraryUsageDescription</code>):</strong> Used solely when you choose to import a syllabus image from your photo album.</li>
-                <li><strong>Calendar & Reminders Access (<code>NSCalendarsUsageDescription</code> / <code>NSRemindersUsageDescription</code>):</strong> Used solely to export assignment due dates and reading targets to your native iOS Calendar and Reminders when you explicitly request calendar sync.</li>
+                <li><strong>Camera Access (NSCameraUsageDescription):</strong> Used solely when you capture a photo of a printed paper syllabus. Images are processed in-memory.</li>
+                <li><strong>Photo Library Access (NSPhotoLibraryUsageDescription):</strong> Used solely when you choose to import a syllabus image from your photo album.</li>
+                <li><strong>Calendar and Reminders Access (NSCalendarsUsageDescription / NSRemindersUsageDescription):</strong> Used solely to export assignment due dates and reading targets to your native iOS Calendar and Reminders when you explicitly request calendar sync.</li>
             </ul>
 
             <h3>4. Multi-Jurisdictional Regulatory Compliance</h3>
             <ul>
-                <li><strong>Canadian PIPEDA & British Columbia PIPA:</strong> We adhere to the 10 Fair Information Principles governing data minimization, consent, accuracy, and safeguards.</li>
-                <li><strong>California Consumer Privacy Act (CCPA / CPRA):</strong> We do not "sell" or "share" personal information. California consumers have the right to know and right to delete, which is executable on-device at any time.</li>
-                <li><strong>European Union GDPR & UK GDPR:</strong> Processing of document text for syllabus parsing is based on user consent (Article 6(1)(a)) and contract performance (Article 6(1)(b)). Users maintain full rights of access, rectification, portability, and erasure.</li>
-                <li><strong>US FERPA (Family Educational Rights and Privacy Act) & COPPA:</strong> CoursePal respects student educational records and does not create public student directories or disclose academic records to unauthorized third parties.</li>
+                <li><strong>Canadian PIPEDA and British Columbia PIPA:</strong> We adhere to the 10 Fair Information Principles governing data minimization, consent, accuracy, and safeguards.</li>
+                <li><strong>California Consumer Privacy Act (CCPA / CPRA):</strong> We do not sell or share personal information. California consumers have the right to know and delete data, executable on-device at any time.</li>
+                <li><strong>European Union GDPR and UK GDPR:</strong> Processing is based on user consent (Article 6(1)(a)) and contract performance (Article 6(1)(b)). Users maintain rights of access, rectification, portability, and erasure.</li>
+                <li><strong>US FERPA and COPPA:</strong> CoursePal respects student educational records and does not create public directories or disclose academic records to unauthorized parties.</li>
             </ul>
 
-            <h3>5. Data Retention & Right to Complete Erasure (Data Purge)</h3>
-            <p>You maintain 100% ownership and control over your academic data. Deleting a course permanently removes all associated assignments, weeks, and notes from your device. Deleting the CoursePal app from iOS immediately and irrevocably purges 100% of stored data from your device sandbox.</p>
+            <h3>5. Data Retention and Right to Erasure</h3>
+            <p>You maintain 100% ownership and control over your academic data. Deleting a course permanently removes all associated records from your device. Deleting the CoursePal app from iOS immediately and irrevocably purges 100% of stored data from your device sandbox.</p>
 
-            <h3>6. Privacy Inquiries & Data Protection Contact</h3>
-            <p>For any privacy-related questions, data access requests, or compliance inquiries, contact our Data Protection Team directly at <a href="mailto:goloubov@gmail.com" style="color: var(--accent); font-weight: 700;">goloubov@gmail.com</a>.</p>
+            <h3>6. Privacy Contact</h3>
+            <p>For privacy-related questions or data governance inquiries, contact our Data Protection Team at <a href="mailto:goloubov@gmail.com">goloubov@gmail.com</a>.</p>
         </section>
 
-        <!-- ================================================================= -->
-        <!-- SECTION 5: INSTITUTIONAL NON-AFFILIATION & SYSTEM DISCLAIMERS     -->
-        <!-- ================================================================= -->
-        <section class="section" id="disclaimers">
-            <h2>🏢 Institutional Non-Affiliation & System Disclaimers</h2>
+        <!-- SECTION 5: NON-AFFILIATION -->
+        <section id="disclaimers">
+            <h2>Institutional Non-Affiliation and System Disclaimers</h2>
 
-            <h3>1. Trademark & Non-Affiliation Disclaimer</h3>
-            <p>CoursePal is an independent productivity application developed for students, educators, and lifelong learners. CoursePal is <strong>NOT</strong> affiliated with, endorsed by, sponsored by, or associated with Canvas (Instructure, Inc.), Blackboard (Anthology Inc.), Brightspace / D2L (Desire2Learn Corporation), Moodle (Moodle Pty Ltd), Google Classroom (Google LLC), Apple Inc., Microsoft Corporation, or any college, university, school board, or educational institution worldwide. All product names, logos, brands, and registered trademarks mentioned are property of their respective owners.</p>
+            <h3>1. Trademark and Non-Affiliation Disclaimer</h3>
+            <p>CoursePal is an independent productivity application. CoursePal is NOT affiliated with, endorsed by, sponsored by, or associated with Canvas (Instructure, Inc.), Blackboard (Anthology Inc.), Brightspace / D2L (Desire2Learn Corporation), Moodle (Moodle Pty Ltd), Google Classroom (Google LLC), Apple Inc., Microsoft Corporation, or any college, university, or educational institution. All product names, logos, and registered trademarks mentioned are property of their respective owners.</p>
 
-            <h3>2. Medical & Psychological Disclaimer</h3>
-            <p>CoursePal is strictly an academic organization and time-management tool. It does not provide medical, psychiatric, psychological, or clinical diagnostic advice, assessments, or treatment plans. Any focus, sound, or productivity features are provided solely for general non-clinical study focus.</p>
+            <h3>2. Medical and Psychological Disclaimer</h3>
+            <p>CoursePal is strictly an academic organization and time-management tool. It does not provide medical, psychiatric, psychological, or clinical diagnostic advice, assessments, or treatment plans. Any focus or sound features are provided solely for general non-clinical study focus.</p>
 
-            <h3>3. Notification & Alarm Reliability Disclaimer</h3>
-            <p>While CoursePal can schedule reminders and calendar events, notifications rely on Apple iOS system scheduling, battery optimization settings, Focus modes, and device power state. CoursePal does not guarantee timely delivery or audible sounding of alarms, and users should not rely solely on software reminders for mission-critical deadlines.</p>
+            <h3>3. Notification and Alarm Reliability Disclaimer</h3>
+            <p>While CoursePal can schedule reminders and calendar events, notifications rely on Apple iOS system scheduling, battery optimization settings, Focus modes, and device power state. CoursePal does not guarantee timely delivery or audible sounding of alarms, and users should not rely solely on software reminders for critical deadlines.</p>
         </section>
 
-        <!-- ================================================================= -->
-        <!-- SECTION 6: COPYRIGHT, FAIR DEALING & DMCA NOTICE                  -->
-        <!-- ================================================================= -->
-        <section class="section" id="dmca">
-            <h2>📋 Copyright, Fair Dealing & DMCA Notice</h2>
+        <!-- SECTION 6: COPYRIGHT & DMCA -->
+        <section id="dmca">
+            <h2>Copyright, Fair Dealing and DMCA Notice</h2>
 
-            <h3>1. Academic Fair Dealing & Fair Use</h3>
-            <p>CoursePal is designed solely for your personal, non-commercial academic study and organization. Uploading course documents for personal schedule organization constitutes Fair Dealing under Canadian copyright law (<em>Copyright Act</em>, R.S.C. 1985, c. C-42, s. 29) and Fair Use under U.S. copyright law (17 U.S.C. § 107). CoursePal does not publish, distribute, or resell proprietary textbooks or institutional curriculum.</p>
+            <h3>1. Academic Fair Dealing and Fair Use</h3>
+            <p>CoursePal is designed solely for your personal, non-commercial academic study and organization. Uploading course documents for personal schedule organization constitutes Fair Dealing under Canadian copyright law (Copyright Act, R.S.C. 1985, c. C-42, s. 29) and Fair Use under U.S. copyright law (17 U.S.C. § 107). CoursePal does not publish, distribute, or resell proprietary textbooks or institutional curriculum.</p>
 
-            <h3>2. DMCA Takedown Notice & Designated Agent</h3>
+            <h3>2. DMCA Takedown Notice and Designated Agent</h3>
             <p>If you are a copyright owner or an agent thereof and believe that any content generated or shared via CoursePal infringes upon your copyrights, you may submit a formal notification pursuant to the Digital Millennium Copyright Act (17 U.S.C. § 512) or Canadian Notice and Notice regime by emailing our designated agent:</p>
             
-            <div class="legal-clause">
-                <strong>Designated Copyright Agent:</strong> Vyacheslav Goloubov (CoursePal Legal)<br>
-                <strong>Email:</strong> goloubov@gmail.com<br>
-                <strong>Subject:</strong> DMCA / Copyright Notice - CoursePal<br>
-                <strong>Address:</strong> Vancouver, British Columbia, Canada
+            <div class="legal-code">
+                Designated Copyright Agent: Vyacheslav Goloubov (CoursePal Legal)<br>
+                Email: goloubov@gmail.com<br>
+                Subject: DMCA / Copyright Notice - CoursePal<br>
+                Location: Vancouver, British Columbia, Canada
             </div>
         </section>
 
         <!-- Footer -->
-        <footer class="footer">
-            <p>© 2026 CoursePal. All rights reserved.</p>
-            <p style="margin-top: 6px; font-size: 0.88rem;">Designed with ❤️ for students, educators, and lifelong learners worldwide.</p>
+        <footer>
+            <p>&copy; 2026 CoursePal. All rights reserved.</p>
+            <p style="margin-top: 4px;">Designed for students, educators, and lifelong learners.</p>
         </footer>
     </div>
 
-    <!-- Smart Auto-Scroll Handler for Permalinks -->
+    <!-- Smooth Scroll Link Handler -->
     <script>
         window.addEventListener('DOMContentLoaded', function() {
             var path = window.location.pathname.toLowerCase();
             var hash = window.location.hash;
             if (hash) {
                 var target = document.querySelector(hash);
-                if (target) {
-                    setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 120);
-                }
+                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
             } else if (path.includes('terms')) {
                 var target = document.getElementById('terms');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 120); }
+                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
             } else if (path.includes('privacy')) {
                 var target = document.getElementById('privacy');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 120); }
+                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
             } else if (path.includes('support')) {
                 var target = document.getElementById('support');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 120); }
+                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
             } else if (path.includes('academic') || path.includes('notice')) {
                 var target = document.getElementById('academic-notice');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 120); }
+                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
             } else if (path.includes('disclaimer')) {
                 var target = document.getElementById('disclaimers');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 120); }
+                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
             } else if (path.includes('dmca') || path.includes('copyright')) {
                 var target = document.getElementById('dmca');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 120); }
+                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
             }
         });
     </script>
