@@ -47,11 +47,12 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: 20px 0;
+    margin: 0;
     background-image:
-        radial-gradient(circle at 30% 20%, rgba(59, 130, 246, 0.14), transparent 55%),
-        radial-gradient(circle at 70% 80%, rgba(139, 92, 246, 0.12), transparent 55%);
-    overflow: hidden;
+        radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.18), transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(147, 51, 234, 0.15), transparent 50%);
+    overflow-x: hidden;
 }
 
 /* ── Focus Rings (Accessibility) ─────────────────────────── */
@@ -63,17 +64,17 @@ body {
 
 button:focus:not(:focus-visible) { outline: none; }
 
-/* ── App Container / iPhone Frame ────────────────────────── */
+/* ── App Container (iPhone 17 Pro Device Frame) ──────────── */
 .app-container {
-    width: 375px;
-    height: 760px;
-    max-height: 90vh;
-    background: #ffffff;
-    border-radius: 46px;
+    width: 393px;
+    height: 852px;
+    max-height: 94vh;
+    background: #f8fafc;
+    border-radius: 54px;
     box-shadow:
-        0 0 0 10px #1e293b,
-        0 0 0 12px #0f172a,
-        0 30px 80px rgba(0, 0, 0, 0.6);
+        0 0 0 3px #334155,
+        0 0 0 5px #0f172a,
+        0 30px 90px rgba(0, 0, 0, 0.65);
     overflow: hidden;
     position: relative;
     display: flex;
@@ -81,10 +82,10 @@ button:focus:not(:focus-visible) { outline: none; }
     flex-shrink: 0;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 450px) {
     body {
         padding: 0;
-        background: #ffffff;
+        background: #f8fafc;
         background-image: none;
     }
     .app-container {
@@ -94,58 +95,60 @@ button:focus:not(:focus-visible) { outline: none; }
         border-radius: 0;
         box-shadow: none;
     }
-    .dynamic-island { display: none; }
+    .dynamic-island { display: none !important; }
 }
 
-/* ── Dynamic Island ──────────────────────────────────────── */
+/* ── Dynamic Island (iPhone 17 Pro Notch) ───────────────── */
 .dynamic-island {
     position: absolute;
     top: 10px;
     left: 50%;
     transform: translateX(-50%);
-    width: 110px;
-    height: 28px;
+    width: 124px;
+    height: 35px;
     background-color: #000000;
-    border-radius: 18px;
-    z-index: 120;
+    border-radius: 20px;
+    z-index: 200;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    padding-right: 10px;
+    justify-content: space-between;
+    padding: 0 14px;
     pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .dynamic-camera {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
-    background: #111827;
-    border: 1px solid #1f2937;
+    background: #0f172a;
+    border: 1.5px solid #1e293b;
 }
 
 /* ── Status Bar ──────────────────────────────────────────── */
 .mobile-top-bar {
-    padding: 14px 22px 6px 22px;
+    padding: 16px 28px 8px 30px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #ffffff;
-    z-index: 10;
+    background: #f8fafc;
+    z-index: 150;
     flex-shrink: 0;
 }
 
 .top-time {
     font-family: var(--font-heading);
-    font-weight: 700;
-    font-size: 0.92rem;
+    font-weight: 800;
+    font-size: 0.95rem;
     color: var(--text-dark);
 }
 
 .top-icons {
     display: flex;
+    align-items: center;
     gap: 6px;
     color: var(--text-dark);
-    font-size: 0.75rem;
+    font-size: 0.85rem;
 }
 
 /* ── Stream Container ────────────────────────────────────── */
@@ -804,7 +807,7 @@ button:focus:not(:focus-visible) { outline: none; }
     align-items: center;
     justify-content: center;
     z-index: 300;
-    border-radius: 46px;
+    border-radius: 0;
     animation: overlayFadeIn 0.2s ease;
 }
 
@@ -815,13 +818,13 @@ button:focus:not(:focus-visible) { outline: none; }
 
 .modal-card {
     background: #ffffff;
-    border-radius: 24px;
-    width: 88%;
-    max-width: 320px;
-    max-height: 80vh;
-    padding: 20px;
+    border-radius: 28px;
+    width: 92%;
+    max-width: 480px;
+    max-height: 85vh;
+    padding: 22px;
     box-sizing: border-box;
-    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
     overflow-y: auto;
     animation: modalSlideUp 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -1076,3 +1079,594 @@ button:focus:not(:focus-visible) { outline: none; }
     text-overflow: ellipsis;
     line-height: 1.35;
 }
+
+/* ── Xcode App UI Alignment Extensions ──────────────────── */
+.header-action-pills-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.pill-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    transition: all var(--transition-fast);
+}
+
+.pill-action-btn:hover { background: #f1f5f9; }
+.pill-action-btn.active { background: rgba(37, 99, 235, 0.15); color: #2563eb; border-color: rgba(37, 99, 235, 0.3); }
+
+.pill-action-btn.pill-done { color: #059669; }
+.pill-action-btn.pill-done.active { background: rgba(5, 150, 105, 0.15); border-color: rgba(5, 150, 105, 0.3); }
+
+.pill-action-btn.pill-trash { color: #dc2626; }
+.pill-action-btn.pill-trash.active { background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.3); }
+
+/* ── Weekly Reading Tracker Hero Card ────────────────────── */
+.weekly-tracker-hero-card {
+    background: #ffffff;
+    border-radius: 24px;
+    padding: 16px;
+    margin-bottom: 14px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+}
+
+.weekly-tracker-title {
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin-bottom: 12px;
+}
+
+.week-cards-scroll-container {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: none;
+}
+.week-cards-scroll-container::-webkit-scrollbar { display: none; }
+
+.week-card-pill {
+    width: 86px;
+    height: 136px;
+    flex-shrink: 0;
+    background: #f8fafc;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 8px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.week-card-pill:hover { transform: translateY(-2px); border-color: var(--accent-blue); }
+.week-card-pill.selected {
+    background: #eff6ff;
+    border: 2px solid #2563eb;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.18);
+}
+
+.week-card-top-label {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.week-card-pill.selected .week-card-top-label { color: #2563eb; }
+
+.week-card-circle {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-dark);
+}
+.week-card-circle.circle-icon {
+    border-radius: 18px;
+}
+.week-card-pill.selected .week-card-circle {
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color: #ffffff;
+}
+.week-card-circle.circle-done {
+    background: linear-gradient(135deg, #059669, #10b981);
+    color: #ffffff;
+}
+
+.week-card-bottom-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.week-card-pill.selected .week-card-bottom-label { color: #2563eb; }
+
+/* ── Readings Progress Box ───────────────────────────────── */
+.readings-progress-box {
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 14px;
+    margin-bottom: 14px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+}
+
+.progress-box-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.progress-box-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+.progress-box-label .text-green { color: #059669; }
+
+.progress-box-pct {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--text-dark);
+}
+
+.progress-bar-track {
+    width: 100%;
+    height: 8px;
+    background: #f1f5f9;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2563eb, #3b82f6);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+}
+
+/* ── Active Filter Banner ────────────────────────────────── */
+.active-filter-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border-color);
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+.filter-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #2563eb;
+    display: inline-block;
+    margin-right: 6px;
+}
+.filter-clear-icon {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+.filter-clear-icon:hover { color: #dc2626; }
+
+/* ── Details Sheet Modal ─────────────────────────────────── */
+.modal-details-sheet {
+    max-width: 440px;
+    width: 90%;
+    border-radius: 28px;
+    padding: 20px;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.details-sheet-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 10px;
+}
+
+.details-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.details-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.details-input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    background: #f8fafc;
+}
+.details-input:focus {
+    background: #ffffff;
+    border-color: #2563eb;
+}
+
+.details-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.details-textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.topics-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.topic-item-card {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.topic-item-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: var(--text-muted);
+}
+.topic-item-header i { color: #2563eb; }
+.topic-item-text {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+.details-save-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 14px;
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    font-weight: 700;
+    font-size: 0.88rem;
+    cursor: pointer;
+    margin-top: 6px;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    transition: all var(--transition-fast);
+}
+
+/* ── Segmented Category Bar (Matching Xcode 1:1) ─────────── */
+.segmented-category-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    background: #ffffff;
+    padding: 6px;
+    border-radius: 18px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    margin-bottom: 16px;
+}
+
+.segmented-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 14px;
+    background: transparent;
+    border: 1px solid transparent;
+    font-family: var(--font-heading);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.segmented-tile:hover {
+    background: #f8fafc;
+}
+
+.segmented-tile.active {
+    background: #ffffff;
+    color: var(--text-dark);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border-color: var(--border-color);
+}
+
+.segmented-tile .text-blue { color: #2563eb; }
+.segmented-tile .text-purple { color: #7c3aed; }
+
+.details-save-btn:hover { background: #1d4ed8; }
+
+/* ── Xcode AddTaskModalView Matching Styles ───────────────── */
+.modal-nav-btn {
+    background: transparent;
+    border: none;
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #2563eb;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+.modal-nav-btn:hover { opacity: 0.8; }
+.modal-nav-btn.save-btn {
+    font-weight: 800;
+}
+
+.details-group-box {
+    background: #f8fafc;
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.details-group-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+}
+
+.details-field-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.details-row-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+.details-select-inline, .details-input-inline {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    outline: none;
+}
+.details-select-inline:focus, .details-input-inline:focus {
+    border-color: #2563eb;
+}
+
+/* ── Bottom Sheet Card ────────────────────────────────────── */
+.bottom-sheet-card {
+    border-radius: 28px 28px 0 0;
+    max-width: 500px;
+    width: 100%;
+    margin-top: auto;
+    position: relative;
+    padding: 16px 20px 24px;
+}
+
+.sheet-drag-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: #cbd5e1;
+    margin: 0 auto 12px;
+}
+
+/* ── Modal Nav Pill Buttons (Screenshot 3) ────────────────── */
+.modal-nav-pill-btn {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+.modal-nav-pill-btn.save-pill-btn {
+    color: #2563eb;
+    font-weight: 800;
+}
+
+/* ── Form Section Groups ─────────────────────────────────── */
+.form-group-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+.section-gray-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.section-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.pill-white-input {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 24px;
+    padding: 12px 18px;
+    font-family: var(--font-body);
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    outline: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    width: 100%;
+}
+.pill-white-input::placeholder { color: #94a3b8; }
+
+/* ── Color Picker Card (12 Options) ─────────────────────── */
+.color-picker-card {
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    justify-items: center;
+    align-items: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    border: 1px solid var(--border-color);
+}
+.color-dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 0.75rem;
+    transition: transform 0.15s ease;
+}
+.color-dot:hover { transform: scale(1.15); }
+.color-dot.active {
+    box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px #ef4444;
+}
+
+/* ── AI Callout Cards ────────────────────────────────────── */
+.ai-callout-card {
+    border-radius: 18px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.ai-callout-card.callout-blue {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+}
+.ai-callout-card.callout-amber {
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+}
+.callout-icon { font-size: 1.1rem; margin-top: 1px; }
+.callout-content strong {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--text-dark);
+    margin-bottom: 2px;
+}
+.callout-content p {
+    font-size: 0.72rem;
+    color: #475569;
+    line-height: 1.35;
+    margin: 0;
+}
+
+/* ── White Button Cards & Badge Tags ────────────────────── */
+.badge-tag-coral {
+    background: #ffedd5;
+    color: #c2410c;
+    font-size: 0.65rem;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 10px;
+    letter-spacing: 0.03em;
+}
+.white-button-card {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    transition: all 0.15s ease;
+}
+.white-button-card:hover { background: #f8fafc; border-color: #cbd5e1; }
+.btn-card-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 0.95rem;
+}
+.btn-card-icon.bg-blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.btn-card-icon.bg-purple { background: linear-gradient(135deg, #a855f7, #7c3aed); }
+.pill-purple-sm {
+    background: #f3e8ff;
+    color: #7e22ce;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 12px;
+}
+
+
+

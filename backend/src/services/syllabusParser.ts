@@ -6,7 +6,14 @@ import { z } from 'zod';
 
 export const ReadingSchema = z.object({
   title: z.string(),
-  mediaType: z.enum(['textbook', 'article', 'video', 'podcast', 'other']).default('textbook')
+  mediaType: z.enum(['textbook', 'article', 'video', 'podcast', 'other']).default('textbook'),
+  chapterText: z.string().optional(),
+  pagesText: z.string().optional(),
+  relevantTopics: z.string().optional(),
+  summaryText: z.string().optional(),
+  keyTakeaways: z.string().optional(),
+  estimatedTime: z.string().optional(),
+  mediaUrl: z.string().optional()
 });
 
 export const WeekSchema = z.object({
@@ -21,6 +28,7 @@ export const AssignmentSchema = z.object({
   dueDate: z.string().optional(),
   fullInstructions: z.string().optional(),
   pointsPossible: z.string().optional(), // Point System e.g. "100 Points"
+  pointsBreakdown: z.string().optional(),
   weightPercentage: z.string().optional() // Percentage System e.g. "20%"
 });
 
@@ -121,55 +129,70 @@ export async function parseSyllabusDocument(
   mimeType?: string,
   rawText?: string
 ): Promise<ParsedSyllabus> {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.VISION_API_KEY;
+  let apiKey = process.env.GEMINI_API_KEY || process.env.VISION_API_KEY;
+  if (!apiKey) {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const keyPath = path.resolve(__dirname, '../../../ClassPal/gemini_api_key.txt');
+      if (fs.existsSync(keyPath)) {
+        apiKey = fs.readFileSync(keyPath, 'utf8').trim();
+      }
+    } catch {}
+  }
 
   if (apiKey) {
     try {
-      const openai = new OpenAI({ apiKey });
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        { role: 'system', content: SYSTEM_PROMPT }
-      ];
+      const textContent = rawText || (fileBuffer ? fileBuffer.toString('utf-8') : '');
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
 
-      if (fileBuffer && mimeType?.startsWith('image/')) {
-        const base64Image = fileBuffer.toString('base64');
-        messages.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Parse this scanned syllabus page into structured course weeks, readings, and assignments JSON.' },
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${base64Image}` }
-            }
-          ]
+      const payload: any = {
+        contents: [
+          {
+            parts: fileBuffer && mimeType?.startsWith('image/') ? [
+              { text: 'Parse this scanned syllabus page into structured course weeks, readings, and assignments JSON.' },
+              { inlineData: { mimeType, data: fileBuffer.toString('base64') } }
+            ] : [
+              { text: `Parse the following syllabus text into structured JSON:\n\n${textContent}` }
+            ]
+          }
+        ],
+        systemInstruction: {
+          parts: [{ text: SYSTEM_PROMPT }]
+        },
+        generationConfig: {
+          temperature: 0.0,
+          responseMimeType: 'application/json'
+        }
+      };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json() as any;
+        const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        let cleanJson = rawJsonText.trim();
+        if (cleanJson.startsWith('```')) {
+          cleanJson = cleanJson.split('\n').slice(1).join('\n');
+          if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3).trim();
+        }
+        const parsed = JSON.parse(cleanJson);
+        const validated = ParsedSyllabusSchema.parse(parsed);
+
+        validated.weeks.forEach(w => {
+          w.readings.forEach(r => {
+            r.title = formatReadingTitle5to6Words(r.title);
+          });
         });
-      } else {
-        const textContent = rawText || (fileBuffer ? fileBuffer.toString('utf-8') : '');
-        messages.push({
-          role: 'user',
-          content: `Parse the following syllabus text:\n\n${textContent}`
-        });
+
+        return validated;
       }
-
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages,
-        response_format: { type: 'json_object' }
-      });
-
-      const content = response.choices[0]?.message?.content || '{}';
-      const parsed = JSON.parse(content);
-      const validated = ParsedSyllabusSchema.parse(parsed);
-
-      // Post-process to guarantee reading titles are 5-6 words
-      validated.weeks.forEach(w => {
-        w.readings.forEach(r => {
-          r.title = formatReadingTitle5to6Words(r.title);
-        });
-      });
-
-      return validated;
     } catch (err: any) {
-      console.warn(`[Vision AI Error] Falling back to intelligent heuristic parser: ${err.message}`);
+      console.warn(`[Gemini 1.5 Pro Error] Falling back to intelligent heuristic parser: ${err.message}`);
     }
   }
 

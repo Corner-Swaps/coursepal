@@ -1,4 +1,4 @@
-// ClassPal Web Application — Complete v3.0 (100/100 Polish)
+// CoursePal Web Application — Complete v3.0 (100/100 Polish)
 
 const monthsArray = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const weekDaysList = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -157,10 +157,29 @@ function handleFileSelected(file, dropText) {
 
 // ── Event Listeners ──────────────────────────────────────────
 function initEventListeners() {
+    initSegmentedTabListeners();
+
     // Add (+) Button
     document.getElementById('btn-menu-add-item')?.addEventListener('click', () => {
         populateCourseDropdowns();
         document.getElementById('modal-add-choice').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-task-kind-assignment')?.addEventListener('click', () => {
+        document.getElementById('task-kind-hidden').value = 'assignment';
+        document.getElementById('btn-task-kind-assignment')?.classList.add('active');
+        document.getElementById('btn-task-kind-reading')?.classList.remove('active');
+        document.getElementById('task-title-input').placeholder = "Assignment Title (e.g. Research Study Design)";
+        document.getElementById('task-section-assignment-fields')?.classList.remove('hidden');
+        document.getElementById('task-section-reading-fields')?.classList.add('hidden');
+    });
+    document.getElementById('btn-task-kind-reading')?.addEventListener('click', () => {
+        document.getElementById('task-kind-hidden').value = 'reading';
+        document.getElementById('btn-task-kind-reading')?.classList.add('active');
+        document.getElementById('btn-task-kind-assignment')?.classList.remove('active');
+        document.getElementById('task-title-input').placeholder = "Reading Title (e.g. Chapter 1 Sexuality)";
+        document.getElementById('task-section-reading-fields')?.classList.remove('hidden');
+        document.getElementById('task-section-assignment-fields')?.classList.add('hidden');
     });
 
     // Modal close buttons
@@ -191,6 +210,26 @@ function initEventListeners() {
         document.getElementById('modal-add-choice').classList.add('hidden');
         document.getElementById('modal-add-course-form').classList.remove('hidden');
     });
+
+    // Color dot picker listeners
+    document.querySelectorAll('.color-dot').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.color-dot').forEach(b => {
+                b.classList.remove('active');
+                b.innerHTML = '';
+            });
+            const target = e.currentTarget;
+            target.classList.add('active');
+            target.innerHTML = '<i class="fa-solid fa-check"></i>';
+            const color = target.getAttribute('data-color');
+            if (document.getElementById('new-course-color-input')) {
+                document.getElementById('new-course-color-input').value = color;
+            }
+        });
+    });
+
+    // Submit Task
+    document.getElementById('btn-submit-new-task')?.addEventListener('click', submitNewTask);
 
     // Create course file upload & camera scan
     const courseFileInput = document.getElementById('course-doc-file-input');
@@ -289,30 +328,20 @@ function initEventListeners() {
 function populateCourseDropdowns() {
     const select = document.getElementById('task-course-select');
     if (!select) return;
+    if (!state.courses || state.courses.length === 0) {
+        state.courses = [{
+            id: 'c_default',
+            code: 'CPC 514',
+            name: 'Family Systems Theory',
+            hex: '#2563eb',
+            instructor: 'Dr. Gehart',
+            officeHours: 'Mon/Wed 2:00 PM',
+            codeShare: 'CPC514-849'
+        }];
+    }
     select.innerHTML = state.courses.map(c =>
         `<option value="${c.id}">${c.code} — ${c.name}</option>`
     ).join('');
-}
-
-// ── Sort UI ──────────────────────────────────────────────────
-function updateSortButtonsUI() {
-    const btns = {
-        date:          document.getElementById('sort-by-date'),
-        course:        document.getElementById('sort-by-course'),
-        selected_date: document.getElementById('sort-by-calendar-date'),
-    };
-    Object.entries(btns).forEach(([key, btn]) => {
-        if (!btn) return;
-        const isActive = state.activeSort === key;
-        btn.classList.toggle('active', isActive);
-        btn.setAttribute('aria-pressed', String(isActive));
-    });
-}
-
-// ── Calendar Header ──────────────────────────────────────────
-function updateCalendarHeader() {
-    const label = document.getElementById('hero-month-label');
-    if (label) label.innerText = `${monthsArray[state.currentMonthIdx]} ${state.currentYear}`;
 }
 
 // ── Form Submissions ─────────────────────────────────────────
@@ -323,31 +352,60 @@ function submitNewTask() {
 
     if (!title) {
         titleInput?.classList.add('error');
-        errorMsg?.classList.add('visible');
+        errorMsg?.classList.remove('hidden');
         return;
     }
     titleInput?.classList.remove('error');
-    errorMsg?.classList.remove('visible');
+    errorMsg?.classList.add('hidden');
 
-    const kind     = document.getElementById('task-kind-select').value;
-    const courseId = document.getElementById('task-course-select').value || state.courses[0].id;
-    const weekNum  = parseInt(document.getElementById('task-week-input').value) || 1;
-    const dueDate  = document.getElementById('task-duedate-input').value.trim() || 'TBD';
-    const points   = document.getElementById('task-points-input').value.trim() || '100 pts';
+    const kind     = document.getElementById('task-kind-hidden')?.value || 'assignment';
+    const courseId = document.getElementById('task-course-select')?.value || state.courses[0].id;
+    const weekNum  = parseInt(document.getElementById('task-week-select')?.value) || 1;
+    const dueDate  = document.getElementById('task-duedate-input')?.value || '';
+    const points   = document.getElementById('task-points-select')?.value || '100 Points';
+    const weight   = document.getElementById('task-weight-select')?.value || '10%';
+    const mediaType = document.getElementById('task-mediatype-select')?.value || 'textbook';
+    const linkUrl  = document.getElementById('task-link-input')?.value.trim() || '';
+    const notes    = document.getElementById('task-notes-input')?.value.trim() || '';
 
     if (kind === 'assignment') {
-        state.assignments.unshift({ id:`a_${Date.now()}`, courseId, weekNum, title, dueDate, points, isCompleted:false, attachment:null });
+        state.assignments.unshift({
+            id: `a_${Date.now()}`,
+            courseId,
+            weekNum,
+            title,
+            dueDate: dueDate || `Week ${weekNum}`,
+            points,
+            weightPercentage: weight,
+            description: notes || `Assignment instructions for ${title}`,
+            isCompleted: false,
+            isDeleted: false
+        });
         renderAssignments();
-        showToast(`Assignment added!`, 'success');
+        showToast(`Assignment "${title}" added!`, 'success');
     } else {
-        state.readings.unshift({ id:`r_${Date.now()}`, courseId, weekNum, title, mediaType:'Textbook', timeStr:'~30 min read', isCompleted:false, isDeleted:false, summary:`Researched summary for '${title}'.`, takeaways:'• Key concept 1\n• Review course materials' });
+        state.readings.unshift({
+            id: `r_${Date.now()}`,
+            courseId,
+            weekNum,
+            title,
+            mediaType,
+            dueDateIso: dueDate,
+            summary: notes || `Overview for ${title}`,
+            takeaways: `• Key concept 1\n• Review material`,
+            videoUrl: linkUrl,
+            notes: notes,
+            isCompleted: false,
+            isDeleted: false
+        });
         renderWeekFilterBar();
         renderReadings();
-        showToast(`Reading added!`, 'success');
+        showToast(`Reading "${title}" added!`, 'success');
     }
 
     document.getElementById('modal-add-task-form').classList.add('hidden');
     titleInput.value = '';
+    if (document.getElementById('task-notes-input')) document.getElementById('task-notes-input').value = '';
     renderMiniMonthGrid();
     saveState();
 }
@@ -369,137 +427,90 @@ function submitNewDoc() {
 let courseFileAttachedContent = null;
 
 function submitNewCourse() {
-    const codeInput = document.getElementById('new-course-code-input');
+    const nameInput = document.getElementById('new-course-name-input');
+    const descInput = document.getElementById('new-course-code-input');
     const codeErr   = document.getElementById('course-code-error');
-    const code      = codeInput?.value.trim();
 
-    if (!code) {
-        codeInput?.classList.add('error');
-        codeErr?.classList.add('visible');
-        return;
-    }
-    codeInput?.classList.remove('error');
-    codeErr?.classList.remove('visible');
+    const name = nameInput?.value.trim() || 'New Course';
+    const desc = descInput?.value.trim() || '';
+    const code = name.length > 8 ? name.substring(0, 7).toUpperCase() : name.toUpperCase();
 
-    const name      = document.getElementById('new-course-name-input').value.trim() || 'New Course';
-    const hexColor  = document.getElementById('new-course-color-input')?.value || '#8B5CF6';
+    const hexColor = document.getElementById('new-course-color-input')?.value || '#2563EB';
     const shareCode = `${code.replace(/\s+/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
 
-    const newCourse = { id:`c_${Date.now()}`, code, name, hex:hexColor, codeShare:shareCode };
+    const newCourse = { id:`c_${Date.now()}`, code, name, description: desc, hex:hexColor, codeShare:shareCode };
     state.courses.push(newCourse);
 
-    // If pasted syllabus text or attached file content present, generate readings/assignments
-    const pastedText = document.getElementById('new-course-syllabus-text')?.value.trim() || '';
-    const fullText = (pastedText + '\n' + (courseFileAttachedContent || '')).trim();
-
-    if (fullText) {
-        const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
-        lines.forEach((line, idx) => {
-            const lower = line.toLowerCase();
-            // Skip administrative boilerplate
-            if (lower.includes('office hours') || lower.includes('email:') || lower.includes('grading policy') || lower.includes('disability')) return;
-
-            if (lower.includes('assignment') || lower.includes('homework') || lower.includes('essay') || lower.includes('project') || lower.includes('exam') || lower.includes('due ') || lower.includes('problem set') || lower.includes('pset')) {
-                let cleanTitle = line.replace(/^(?:assignments?|homework|pset|project)\s*[\:\-\s]*/i, '').trim();
-                if (cleanTitle.length > 55) cleanTitle = cleanTitle.substring(0, 52) + '...';
-                if (!cleanTitle) cleanTitle = `Assignment ${idx + 1}`;
-
-                const dateMatch = line.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}\b/i);
-                const dueDate = dateMatch ? dateMatch[0] : `Aug ${Math.min(28, 10 + (idx % 14))}, 2026`;
-
-                state.assignments.unshift({
-                    id: `a_${Date.now()}_${idx}`,
-                    courseId: newCourse.id,
-                    weekNum: (idx % 16) + 1,
-                    title: cleanTitle,
-                    dueDate: dueDate,
-                    points: '100 pts',
-                    isCompleted: false,
-                    attachment: null
-                });
-            } else if (lower.includes('ch.') || lower.includes('chapter') || lower.includes('sec.') || lower.includes('section') || lower.includes('read ') || lower.includes('reading') || lower.includes('pages') || lower.includes('pp.') || lower.includes('paper') || lower.includes('article') || lower.includes('textbook') || lower.includes('video') || lower.includes('lab ')) {
-
-                let mediaType = 'Textbook';
-                let estTime = '~40 min read';
-                if (lower.includes('video') || lower.includes('watch') || lower.includes('youtube')) {
-                    mediaType = 'Video';
-                    estTime = '~45 min watch';
-                } else if (lower.includes('podcast') || lower.includes('listen')) {
-                    mediaType = 'Podcast';
-                    estTime = '~30 min listen';
-                } else if (lower.includes('article') || lower.includes('paper') || lower.includes('pdf') || lower.includes('journal')) {
-                    mediaType = 'Article';
-                    estTime = '~25 min read';
-                } else if (lower.includes('lab') || lower.includes('experiment') || lower.includes('pset')) {
-                    mediaType = 'Lab';
-                    estTime = '~60 min lab';
-                }
-
-                // Extract page range e.g. pp. 45-80
-                const pageMatch = line.match(/\b(?:pp?|pages?)\.?\s*(\d+)(?:\s*[-–—]\s*(\d+))?\b/i);
-                let pageCoverage = 'Assigned Chapter/Section';
-                if (pageMatch) {
-                    const startP = parseInt(pageMatch[1]);
-                    const endP = pageMatch[2] ? parseInt(pageMatch[2]) : startP;
-                    const pCount = (endP - startP) + 1;
-                    pageCoverage = `pp. ${startP}–${endP} (${pCount} pages)`;
-                    if (mediaType === 'Textbook') estTime = `~${Math.max(20, pCount * 2)} min read`;
-                    else if (mediaType === 'Article') estTime = `~${Math.max(15, pCount * 3)} min read`;
-                }
-
-                let cleanTitle = line.replace(/^(?:readings?|read|required|optional)\s*[\:\-\s]*/i, '').trim();
-                if (cleanTitle.length > 55) cleanTitle = cleanTitle.substring(0, 52) + '...';
-                if (!cleanTitle) cleanTitle = `Chapter ${idx + 1}`;
-
-                state.readings.unshift({
-                    id: `r_${Date.now()}_${idx}`,
-                    courseId: newCourse.id,
-                    weekNum: (idx % 16) + 1,
-                    title: cleanTitle,
-                    mediaType: mediaType,
-                    timeStr: estTime,
-                    isCompleted: false,
-                    isDeleted: false,
-                    summary: `Intelligent ${mediaType} outline for '${cleanTitle}' in ${name}. Covers core lecture principles, study notes, and exercises.`,
-                    takeaways: `• Subject: ${cleanTitle}\n• Format: ${mediaType}\n• Source Coverage: ${pageCoverage}\n• Course: ${name}`
-                });
-            }
-        });
-    }
-
-    courseFileAttachedContent = null;
-    if (document.getElementById('new-course-syllabus-text')) document.getElementById('new-course-syllabus-text').value = '';
-    if (document.getElementById('course-pdf-status')) document.getElementById('course-pdf-status').innerText = 'Attach PDF';
-
-    populateCourseDropdowns();
     document.getElementById('modal-add-course-form').classList.add('hidden');
-    codeInput.value = '';
-    const nameInput = document.getElementById('new-course-name-input');
     if (nameInput) nameInput.value = '';
-    renderReadings();
-    renderAssignments();
-    showToast(`Course ${code} created!`, 'success');
+    if (descInput) descInput.value = '';
+    renderSyllabi();
+    populateCourseDropdowns();
+    showToast(`Course "${name}" created!`, 'success');
     saveState();
 }
-
 // ── Week Filter ──────────────────────────────────────────────
 function renderWeekFilterBar() {
-    const bar = document.getElementById('week-filter-bar');
-    if (!bar) return;
-    let html = `<button class="week-chip ${state.selectedWeekFilter===0?'active':''}" onclick="selectWeekFilter(0)" aria-pressed="${state.selectedWeekFilter===0}">All</button>`;
+    const row = document.getElementById('week-filter-cards-row');
+    if (!row) return;
+
+    const activeReadings = state.readings.filter(r => !r.isDeleted);
+    const totalCount = activeReadings.length;
+
+    // 1. ALL Card (width 86, height 136)
+    let html = `
+        <div class="week-card-pill ${state.selectedWeekFilter === 0 ? 'selected' : ''}" onclick="selectWeekFilter(0)" role="button">
+            <span class="week-card-top-label">ALL</span>
+            <div class="week-card-circle circle-icon">
+                <i class="fa-solid fa-book"></i>
+            </div>
+            <span class="week-card-bottom-label">${totalCount} Total</span>
+        </div>
+    `;
+
+    // 2. Week 1..16 Cards
     for (let w = 1; w <= 16; w++) {
-        html += `<button class="week-chip ${state.selectedWeekFilter===w?'active':''}" onclick="selectWeekFilter(${w})" aria-pressed="${state.selectedWeekFilter===w}">Wk ${w}</button>`;
+        const isSelected = state.selectedWeekFilter === w;
+        const weekReadings = activeReadings.filter(r => r.weekNum === w);
+        const uncompleted = weekReadings.filter(r => !r.isCompleted);
+        const isDone = weekReadings.length > 0 && uncompleted.length === 0;
+        const count = uncompleted.length;
+
+        html += `
+            <div class="week-card-pill ${isSelected ? 'selected' : ''}" onclick="selectWeekFilter(${w})" role="button">
+                <span class="week-card-top-label">Week ${w}</span>
+                <div class="week-card-circle ${isDone ? 'circle-done' : ''}">
+                    ${isDone ? '<i class="fa-solid fa-check"></i>' : count}
+                </div>
+                <span class="week-card-bottom-label">Items</span>
+            </div>
+        `;
     }
-    bar.innerHTML = html;
+    row.innerHTML = html;
 }
 
 function updateReadingsHeader() {
-    const titleEl    = document.getElementById('readings-dynamic-title');
-    const subtitleEl = document.getElementById('readings-count-label');
-    const active     = state.readings.filter(r => !r.isDeleted);
-    const filtered   = state.selectedWeekFilter === 0 ? active : active.filter(r => r.weekNum === state.selectedWeekFilter);
-    if (titleEl)    titleEl.textContent    = state.selectedWeekFilter === 0 ? 'All Weeks' : `Week ${state.selectedWeekFilter}`;
-    if (subtitleEl) subtitleEl.textContent = `${filtered.length} reading${filtered.length !== 1 ? 's' : ''} scheduled`;
+    const activeReadings = state.readings.filter(r => !r.isDeleted);
+    const remainingCount = activeReadings.filter(r => !r.isCompleted).length;
+    const completedCount = activeReadings.filter(r => r.isCompleted).length;
+    const deletedCount = state.readings.filter(r => r.isDeleted).length + state.assignments.filter(a => a.isDeleted).length;
+
+    const countLabel = document.getElementById('readings-count-label');
+    if (countLabel) countLabel.innerText = `${remainingCount} reading${remainingCount === 1 ? '' : 's'} remaining`;
+
+    const doneText = document.getElementById('done-count-text');
+    if (doneText) doneText.innerText = completedCount;
+
+    const trashText = document.getElementById('trash-count-text');
+    if (trashText) trashText.innerText = deletedCount;
+
+    // Progress Bar
+    const total = activeReadings.length;
+    const pct = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+    const pctEl = document.getElementById('readings-progress-pct');
+    const barEl = document.getElementById('readings-progress-bar');
+    if (pctEl) pctEl.innerText = `${pct}%`;
+    if (barEl) barEl.style.width = `${pct}%`;
 }
 
 function selectWeekFilter(weekNum) {
@@ -512,85 +523,75 @@ function selectWeekFilter(weekNum) {
 
 // ── Progress Bar ─────────────────────────────────────────────
 function updateReadingsProgressBar() {
-    const active    = state.readings.filter(r => !r.isDeleted);
-    const total     = active.length;
-    const completed = active.filter(r => r.isCompleted).length;
-    const percent   = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-    const label = document.getElementById('progress-text-label');
-    const tag   = document.getElementById('progress-percent-tag');
-    const fill  = document.getElementById('readings-progress-fill');
-    const track = document.getElementById('progress-track-aria');
-
-    if (label) label.innerText = `${completed} of ${total} readings completed`;
-    if (tag)   tag.innerText   = `${percent}%`;
-    if (fill)  fill.style.width = `${percent}%`;
-    if (track) track.setAttribute('aria-valuenow', percent);
+    updateReadingsHeader();
 }
 
 // ── Section Header Helper ────────────────────────────────────
 function makeSectionHeader(leftText, rightText, onDelete) {
     const h = document.createElement('div');
-    h.style.cssText = `display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; padding:8px 12px; background:#fff; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,0.04);`;
+    h.style.cssText = `display:flex; align-items:center; justify-content:space-between; margin-top:14px; margin-bottom:8px; padding:0 4px;`;
     h.innerHTML = `
-        <span style="font-family:var(--font-heading); font-weight:700; font-size:0.8rem; color:var(--text-dark);">${leftText}</span>
-        <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:0.7rem; font-weight:600; color:var(--text-muted);">${rightText}</span>
-            ${onDelete ? `
-                <button onclick="${onDelete}" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:4px 10px; border-radius:12px; font-size:0.7rem; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px;" title="Move Section to Trash">
-                    <i class="fa-solid fa-trash-can" style="font-size:0.65rem;"></i> Move to Trash
-                </button>
-            ` : ''}
-        </div>
+        <span class="pill-blue-tag">${leftText}</span>
+        ${onDelete ? `
+            <button onclick="${onDelete}" class="pill-delete-week-btn">
+                <i class="fa-solid fa-trash-can"></i> Delete Week
+            </button>
+        ` : ''}
     `;
     return h;
 }
 
 // ── Reading Card Helper ──────────────────────────────────────
-// ── Reading Card Helper ──────────────────────────────────────
 function makeReadingCard(r) {
-    const course = state.courses.find(c => c.id === r.courseId) || state.courses[0];
+    const course = state.courses.find(c => c.id === r.courseId) || state.courses[0] || { code: 'CPC 514', name: 'Family Systems Theory', hex: '#2563eb' };
     const card = document.createElement('div');
     card.className = `reference-event-card ${r.isCompleted ? 'completed' : ''}`;
-    card.style.cssText = `display:flex; align-items:stretch; justify-content:space-between; padding:0; margin-bottom:10px; background:#fff; border-radius:16px; box-shadow:var(--shadow-card); overflow:hidden; min-height:64px; border:1px solid var(--border-color);`;
+    card.style.cssText = `display:flex; align-items:stretch; justify-content:space-between; padding:12px; margin-bottom:10px; background:#fff; border-radius:18px; box-shadow:0 2px 10px rgba(0,0,0,0.03); overflow:hidden; border:1px solid var(--border-color); position:relative;`;
     card.setAttribute('role', 'article');
-    card.setAttribute('aria-label', `${r.title}, ${r.isCompleted ? 'completed' : 'not completed'}`);
+
+    const mediaTag = (r.mediaType || 'textbook').toUpperCase();
+    const mediaIcon = mediaTag.includes('VIDEO') ? 'fa-video' : (mediaTag.includes('PODCAST') ? 'fa-podcast' : 'fa-book');
 
     card.innerHTML = `
-        <!-- Thick Left Line -->
-        <div style="width:14px; background:${course.hex}; flex-shrink:0;"></div>
+        <!-- Left Color Accent Bar -->
+        <div style="width:4px; height:24px; background:${course.hex || '#2563eb'}; border-radius:2px; margin-top:2px; flex-shrink:0;"></div>
 
-        <!-- Content -->
-        <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; padding:12px 10px;">
-            <div style="display:flex; align-items:center; gap:6px;">
-                <span class="course-badge-btn" onclick="openCourseDetail('${course.id}')" style="font-size:0.65rem; font-weight:800; color:${course.hex}; background:${hexToRgba(course.hex, 0.12)}; padding:2px 6px; border-radius:6px; cursor:pointer;" role="button" aria-label="Open ${course.code} course detail">
-                    ${course.code} <i class="fa-solid fa-chevron-right" style="font-size:0.55rem;" aria-hidden="true"></i>
+        <!-- Content Area -->
+        <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; padding-left:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span onclick="openCourseDetail('${course.id}')" style="font-size:0.75rem; font-weight:800; color:#2563eb; cursor:pointer;">
+                    ${course.name || course.code}
                 </span>
-                <span style="font-size:0.65rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;">${r.mediaType}</span>
+                <span class="media-type-badge">
+                    <i class="fa-solid ${mediaIcon}"></i> ${mediaTag}
+                </span>
             </div>
-            <span class="card-title" onclick="openReadingInfo('${r.id}')" style="font-family:var(--font-heading); font-size:0.88rem; font-weight:700; color:var(--text-dark); cursor:pointer; ${r.isCompleted ? 'text-decoration:line-through; opacity:0.6;' : ''}">${escapeHtml(r.title)}</span>
+
+            <span onclick="openReadingInfo('${r.id}')" style="font-family:var(--font-heading); font-size:0.9rem; font-weight:700; color:var(--text-dark); cursor:pointer; line-height:1.3; ${r.isCompleted ? 'text-decoration:line-through; opacity:0.6;' : ''}">
+                ${escapeHtml(r.title)}
+            </span>
+
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+                Due ${r.dueDateIso || 'Thursday, September 10'} · Week ${r.weekNum || 1}
+            </div>
         </div>
 
-        <!-- Right Side Action Line Bars -->
-        <div style="display:flex; align-items:stretch; flex-shrink:0;">
-            <!-- Checkmark Bar -->
-            <div onclick="toggleReading('${r.id}')" style="width:44px; display:flex; align-items:center; justify-content:center; background:${r.isCompleted ? hexToRgba('#2563eb', 0.12) : '#f1f5f9'}; cursor:pointer; border-left:1px solid var(--border-color);" role="checkbox" aria-checked="${r.isCompleted}">
-                <div class="circle-check ${r.isCompleted ? 'checked' : ''}" style="margin:0;">
-                    ${r.isCompleted ? '<i class="fa-solid fa-check" style="font-size:0.5rem;" aria-hidden="true"></i>' : ''}
-                </div>
-            </div>
-            <!-- Trashcan Bar -->
-            <div onclick="deleteReading('${r.id}')" style="width:44px; display:flex; align-items:center; justify-content:center; background:rgba(220, 38, 38, 0.1); color:#dc2626; cursor:pointer; border-left:1px solid var(--border-color);" title="Delete">
-                <i class="fa-solid fa-trash-can" style="font-size:0.9rem;" aria-hidden="true"></i>
-            </div>
+        <!-- Action Icons (Circle Toggle Checkmark + Red Trash Icon) -->
+        <div style="display:flex; align-items:center; gap:10px; padding-left:8px;">
+            <button onclick="toggleReadingCompleted('${r.id}')" class="circle-check-btn ${r.isCompleted ? 'checked' : ''}" aria-label="Toggle completion"></button>
+            <button onclick="deleteReadingItem('${r.id}')" style="background:transparent; border:none; color:#ef4444; font-size:0.95rem; cursor:pointer; padding:4px;" title="Delete reading">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
         </div>
     `;
     return card;
 }
 
+
+
 // ── Assignment Card Helper ───────────────────────────────────
 function makeAssignmentCard(a) {
-    const course = state.courses.find(c => c.id === a.courseId) || state.courses[0];
+    const course = state.courses.find(c => c.id === a.courseId) || state.courses[0] || { code: 'COURSE', hex: '#2563eb' };
     const card = document.createElement('div');
     card.className = `reference-event-card ${a.isCompleted ? 'completed' : ''}`;
     card.style.cssText = `display:flex; align-items:stretch; justify-content:space-between; padding:0; margin-bottom:10px; background:#fff; border-radius:16px; box-shadow:var(--shadow-card); overflow:hidden; min-height:64px; border:1px solid var(--border-color);`;
@@ -607,11 +608,10 @@ function makeAssignmentCard(a) {
                 <span class="course-badge-btn" onclick="openCourseDetail('${course.id}')" style="font-size:0.65rem; font-weight:800; color:${course.hex}; background:${hexToRgba(course.hex, 0.12)}; padding:2px 6px; border-radius:6px; cursor:pointer;" role="button">
                     ${course.code} <i class="fa-solid fa-chevron-right" style="font-size:0.55rem;" aria-hidden="true"></i>
                 </span>
-                <span style="font-size:0.68rem; font-weight:700; color:${course.hex};">Week ${a.weekNum}</span>
+                <span style="font-size:0.68rem; font-weight:700; color:${course.hex};">Week ${a.weekNum || 1}</span>
             </div>
             <span class="card-title" onclick="openEditAssignment('${a.id}')" style="font-family:var(--font-heading); font-size:0.88rem; font-weight:700; color:var(--text-dark); cursor:pointer; ${a.isCompleted ? 'text-decoration:line-through; opacity:0.6;' : ''}">${escapeHtml(a.title)}</span>
-            <span style="font-size:0.72rem; color:var(--text-muted);"><i class="fa-solid fa-calendar" aria-hidden="true"></i> Due ${a.dueDate} · ${a.points}</span>
-            ${a.attachment ? `<span style="font-size:0.68rem; color:${course.hex}; font-weight:600; cursor:pointer;" onclick="openDocViewerByTitle('${a.attachment}')"><i class="fa-solid fa-paperclip" aria-hidden="true"></i> ${a.attachment}</span>` : ''}
+            <span style="font-size:0.72rem; color:var(--text-muted);"><i class="fa-solid fa-calendar" aria-hidden="true"></i> Due ${a.dueDate || 'Week ' + (a.weekNum || 1)} · ${a.points || '100 Points'}</span>
         </div>
 
         <!-- Right Side Action Line Bars -->
@@ -647,18 +647,28 @@ function makeEmptyState(icon, title, sub, btnLabel, btnAction) {
 // ── Render Readings ──────────────────────────────────────────
 function renderReadings() {
     try {
-        updateReadingsProgressBar();
+        updateReadingsHeader();
         const container = document.getElementById('readings-container');
         if (!container) return;
         container.innerHTML = '';
 
         const query   = (state._readingsQuery || '').toLowerCase();
         const active  = state.readings.filter(r => !r.isDeleted);
-        const grouped = {};
 
-        active.forEach(r => {
-            if (state.selectedWeekFilter !== 0 && r.weekNum !== state.selectedWeekFilter) return;
-            if (query && !r.title.toLowerCase().includes(query) && !r.mediaType.toLowerCase().includes(query)) return;
+        let filtered = active;
+        if (state.selectedWeekFilter !== 0) {
+            filtered = filtered.filter(r => r.weekNum === state.selectedWeekFilter);
+        }
+        if (state.selectedCourseFilter) {
+            filtered = filtered.filter(r => r.courseId === state.selectedCourseFilter);
+        }
+        if (query) {
+            filtered = filtered.filter(r => r.title.toLowerCase().includes(query) || (r.mediaType && r.mediaType.toLowerCase().includes(query)));
+        }
+
+        // Group by week
+        const grouped = {};
+        filtered.forEach(r => {
             if (!grouped[r.weekNum]) grouped[r.weekNum] = [];
             grouped[r.weekNum].push(r);
         });
@@ -770,104 +780,197 @@ function renderAssignments() {
     }
 }
 
-// ── Render Syllabi ───────────────────────────────────────────
+// ── Syllabus & Share Segmented Tab States ──────────────────────
+let syllabusSubTab = 'courses';
+let shareSubTab    = 'share';
+
+function initSegmentedTabListeners() {
+    document.getElementById('tile-syllabus-courses')?.addEventListener('click', () => {
+        syllabusSubTab = 'courses';
+        document.getElementById('tile-syllabus-courses')?.classList.add('active');
+        document.getElementById('tile-syllabus-docs')?.classList.remove('active');
+        renderSyllabi();
+    });
+    document.getElementById('tile-syllabus-docs')?.addEventListener('click', () => {
+        syllabusSubTab = 'docs';
+        document.getElementById('tile-syllabus-docs')?.classList.add('active');
+        document.getElementById('tile-syllabus-courses')?.classList.remove('active');
+        renderSyllabi();
+    });
+    document.getElementById('tile-share-codes')?.addEventListener('click', () => {
+        shareSubTab = 'share';
+        document.getElementById('tile-share-codes')?.classList.add('active');
+        document.getElementById('tile-share-join')?.classList.remove('active');
+        renderVault();
+    });
+    document.getElementById('tile-share-join')?.addEventListener('click', () => {
+        shareSubTab = 'join';
+        document.getElementById('tile-share-join')?.classList.add('active');
+        document.getElementById('tile-share-codes')?.classList.remove('active');
+        renderVault();
+    });
+}
+
+// ── Render Syllabi (Tab 3 - Matching SyllabusRepositoryView 1:1) ───────────
 function renderSyllabi() {
     const container = document.getElementById('syllabi-container');
     if (!container) return;
     container.innerHTML = '';
 
-    const countLabel = document.getElementById('syllabus-count-label');
-    if (countLabel) countLabel.textContent = `${state.syllabi.length} course${state.syllabi.length !== 1 ? 's' : ''}`;
+    const coursesCount = state.courses.length;
+    const docsCount = state.vaultDocs.length + state.syllabi.length;
 
-    if (state.syllabi.length === 0) {
-        container.appendChild(makeEmptyState('fa-solid fa-file-lines', 'No syllabi yet', 'Upload a course syllabus to get started.', '', ''));
-        return;
+    // Subtitle & Tile Counters
+    const sub = document.getElementById('syllabus-count-subtitle');
+    if (sub) sub.innerText = `${docsCount} document${docsCount === 1 ? '' : 's'} stored in syllabus`;
+
+    const labelCourses = document.getElementById('label-syllabus-courses-count');
+    if (labelCourses) labelCourses.innerText = `Courses (${coursesCount})`;
+
+    const labelDocs = document.getElementById('label-syllabus-docs-count');
+    if (labelDocs) labelDocs.innerText = `Documents (${docsCount})`;
+
+    if (syllabusSubTab === 'courses') {
+        // COURSES TAB
+        if (coursesCount === 0) {
+            container.appendChild(makeEmptyState('fa-solid fa-book-bookmark', 'No Courses Created', 'Uploaded syllabi will automatically create and name your courses here.', 'Upload Syllabus', `document.getElementById('btn-menu-add-item').click()`));
+            return;
+        }
+
+        state.courses.forEach(course => {
+            const card = document.createElement('div');
+            card.style.cssText = `background:#fff; border-radius:18px; padding:16px; margin-bottom:12px; border:1px solid var(--border-color); box-shadow:var(--shadow-card); position:relative; overflow:hidden;`;
+
+            card.innerHTML = `
+                <div style="position:absolute; top:0; bottom:0; left:0; width:4px; background:${course.hex};"></div>
+                <div style="padding-left:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <div>
+                            <span class="course-code-tag" style="color:${course.hex}; background:${hexToRgba(course.hex, 0.12)};">${course.code}</span>
+                            <h3 style="font-family:var(--font-heading); font-size:1rem; font-weight:800; color:var(--text-dark); margin-top:4px;">${escapeHtml(course.name)}</h3>
+                        </div>
+                        <button onclick="deleteCourse('${course.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 10px; border-radius:10px; font-size:0.72rem; font-weight:700; cursor:pointer;" title="Delete Course">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+
+                    <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:4px;"><i class="fa-solid fa-user-tie"></i> <strong>Instructor:</strong> ${escapeHtml(course.instructor || 'Dr. Professor')}</div>
+                    <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:12px;"><i class="fa-solid fa-clock"></i> <strong>Office Hours:</strong> ${escapeHtml(course.officeHours || 'Mon/Wed 2:00 PM')}</div>
+
+                    <button onclick="openDocViewerByTitle('${course.code}: ${escapeHtml(course.name)} Syllabus.pdf')" style="background:${course.hex}; color:#ffffff; border:none; padding:8px 14px; border-radius:12px; font-size:0.78rem; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px ${hexToRgba(course.hex, 0.3)};">
+                        <i class="fa-solid fa-file-pdf"></i> View PDF Syllabus
+                    </button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+
+    } else {
+        // DOCUMENTS TAB
+        const allDocs = [...state.vaultDocs];
+        if (allDocs.length === 0) {
+            container.appendChild(makeEmptyState('fa-solid fa-file-lines', 'No Documents Found', 'Upload course documents or syllabi to store them in your repository.', 'Upload Syllabus', `document.getElementById('btn-menu-add-item').click()`));
+            return;
+        }
+
+        allDocs.forEach(doc => {
+            const course = state.courses.find(c => c.id === doc.courseId) || state.courses[0] || { code: 'CRS', hex: '#2563eb' };
+            const card = document.createElement('div');
+            card.style.cssText = `background:#fff; border-radius:16px; padding:14px; margin-bottom:10px; border:1px solid var(--border-color); box-shadow:var(--shadow-card); position:relative; overflow:hidden;`;
+            card.innerHTML = `
+                <div style="position:absolute; top:0; bottom:0; left:0; width:4px; background:${course.hex};"></div>
+                <div style="padding-left:8px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+                            <span class="course-code-tag" style="color:${course.hex}; background:${hexToRgba(course.hex, 0.12)};">${doc.category || 'SYLLABUS'}</span>
+                            <span style="font-size:0.68rem; font-weight:700; color:var(--text-muted);">${doc.fileSize || '1.2 MB'}</span>
+                        </div>
+                        <div style="font-family:var(--font-heading); font-size:0.88rem; font-weight:700; color:var(--text-dark);">${escapeHtml(doc.title)}</div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <button onclick="openDocViewer('${doc.id}')" style="background:var(--accent-blue-subtle); color:var(--accent-blue); border:none; padding:7px 10px; border-radius:10px; font-size:0.72rem; font-weight:700; cursor:pointer;">
+                            Preview
+                        </button>
+                        <button onclick="deleteDoc('${doc.id}')" style="background:rgba(220, 38, 38, 0.1); color:#dc2626; border:none; padding:7px 10px; border-radius:10px; font-size:0.72rem; font-weight:700; cursor:pointer;">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
     }
-
-    state.syllabi.forEach(s => {
-        const course = state.courses.find(c => c.id === s.courseId) || state.courses[0];
-        const card = document.createElement('div');
-        card.style.cssText = `background:#fff; border-radius:18px; padding:16px; margin-bottom:12px; border:1px solid var(--border-color); box-shadow:var(--shadow-card); border-left:4px solid ${course.hex};`;
-        card.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span class="course-badge-btn" onclick="openCourseDetail('${course.id}')" style="font-size:0.72rem; font-weight:800; color:${course.hex}; background:${hexToRgba(course.hex,0.12)}; padding:3px 8px; border-radius:8px; cursor:pointer;" role="button" aria-label="Open ${course.code}">
-                    ${course.code} — ${course.name} <i class="fa-solid fa-chevron-right" style="font-size:0.55rem;" aria-hidden="true"></i>
-                </span>
-            </div>
-            <div style="font-size:0.8rem; color:var(--text-dark); margin-bottom:4px;"><strong>Instructor:</strong> ${escapeHtml(s.instructor)}</div>
-            <div style="font-size:0.8rem; color:var(--text-dark); margin-bottom:4px;"><strong>Office Hours:</strong> ${escapeHtml(s.officeHours)}</div>
-            <div style="font-size:0.8rem; color:var(--text-dark); margin-bottom:10px;"><strong>Grading:</strong> ${escapeHtml(s.grading)}</div>
-            <button onclick="openDocViewerBySyllabus('${s.id}')" style="background:var(--accent-blue-subtle); color:var(--accent-blue); border:none; padding:8px 12px; border-radius:12px; font-size:0.75rem; font-weight:700; cursor:pointer;" aria-label="View ${s.fileName}">
-                <i class="fa-solid fa-file-pdf" aria-hidden="true"></i> View ${escapeHtml(s.fileName)}
-            </button>
-        `;
-        container.appendChild(card);
-    });
 }
 
-// ── Render Share Center (Tab 4) ─────────────────────────────────────────────
+// ── Render Share Center (Tab 4 - Matching ShareCenterView 1:1) ─────────────
 function renderVault() {
     const container = document.getElementById('vault-container');
     if (!container) return;
     container.innerHTML = '';
 
-    const countLabel = document.getElementById('vault-count-label');
-    if (countLabel) countLabel.textContent = `${state.courses.length} course${state.courses.length !== 1 ? 's' : ''} ready to share`;
+    const coursesCount = state.courses.length;
 
-    // Section 1: Course Syllabi & Schedules
-    const sec1 = document.createElement('div');
-    sec1.style.marginBottom = '20px';
-    sec1.innerHTML = `<div style="font-size:0.75rem; font-weight:800; color:var(--text-muted); text-transform:uppercase; margin-bottom:10px; letter-spacing:0.5px;">Course Syllabi & Schedules (${state.courses.length})</div>`;
+    // Subtitle & Tile Counters
+    const sub = document.getElementById('vault-count-subtitle');
+    if (sub) sub.innerText = `Share your courses or join someone else's`;
 
-    if (state.courses.length === 0) {
-        sec1.appendChild(makeEmptyState('fa-solid fa-arrow-up-from-bracket', 'No courses to share', 'Create a course or upload a syllabus to start sharing.', 'Add Course', `document.getElementById('btn-menu-add-item').click()`));
-    } else {
+    const labelCodes = document.getElementById('label-share-codes-count');
+    if (labelCodes) labelCodes.innerText = `Share Codes (${coursesCount})`;
+
+    if (shareSubTab === 'share') {
+        // SHARE CODES TAB
+        if (coursesCount === 0) {
+            container.appendChild(makeEmptyState('fa-solid fa-qrcode', 'No Course Codes Available', 'Upload a syllabus to get started — your course sharing codes will appear here.', 'Upload Syllabus', `document.getElementById('btn-menu-add-item').click()`));
+            return;
+        }
+
         state.courses.forEach(course => {
+            const shareCode = `${course.code}-849`;
             const card = document.createElement('div');
-            card.style.cssText = `background:#fff; border-radius:16px; padding:12px 14px; margin-bottom:10px; border:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; box-shadow:var(--shadow-card); border-left:14px solid ${course.hex};`;
-            const shareText = `📚 ClassPal Syllabus:\nCourse: ${course.code} - ${course.name}\nJoin Code: ${course.code}-849\nShared via ClassPal.`;
+            card.style.cssText = `background:#fff; border-radius:16px; padding:14px; margin-bottom:12px; border:1px solid var(--border-color); box-shadow:var(--shadow-card); position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between;`;
             card.innerHTML = `
-                <div style="min-width:0; flex:1; margin-right:10px;">
-                    <span style="font-family:var(--font-heading); font-size:0.9rem; font-weight:800; color:var(--text-dark); display:block;">${course.code}</span>
+                <div style="position:absolute; top:0; bottom:0; left:0; width:4px; background:${course.hex};"></div>
+                <div style="padding-left:8px; min-width:0; flex:1; margin-right:10px;">
+                    <span style="font-family:var(--font-heading); font-size:0.95rem; font-weight:800; color:var(--text-dark); display:block;">${course.code}</span>
                     <span style="font-size:0.75rem; color:var(--text-muted); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(course.name)}</span>
                 </div>
-                <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-                    <button onclick="navigator.clipboard.writeText('${course.code}-849'); showToast('Join Code Copied!', 'success');" style="background:var(--accent-blue-subtle); color:var(--accent-blue); border:none; padding:7px 10px; border-radius:10px; font-size:0.72rem; font-weight:700; cursor:pointer;" title="Copy Code">
-                        <i class="fa-solid fa-copy"></i> Copy Code
-                    </button>
-                    <button onclick="if(navigator.share){navigator.share({title:'ClassPal Syllabus', text:'${escapeHtml(shareText)}'})}else{navigator.clipboard.writeText('${escapeHtml(shareText)}'); showToast('Syllabus Link Copied!', 'success');}" style="background:var(--accent-blue); color:#fff; border:none; padding:7px 12px; border-radius:10px; font-size:0.72rem; font-weight:700; cursor:pointer; box-shadow:0 2px 6px rgba(37,99,235,0.25);" title="Share Syllabus">
-                        <i class="fa-solid fa-square-share-nodes"></i> Share
-                    </button>
-                </div>
-            `;
-            sec1.appendChild(card);
-        });
-    }
-    container.appendChild(sec1);
-
-    // Section 2: Shared Documents
-    if (state.vaultDocs.length > 0) {
-        const sec2 = document.createElement('div');
-        sec2.style.marginBottom = '20px';
-        sec2.innerHTML = `<div style="font-size:0.75rem; font-weight:800; color:var(--text-muted); text-transform:uppercase; margin-bottom:10px; letter-spacing:0.5px;">Class Documents (${state.vaultDocs.length})</div>`;
-        state.vaultDocs.forEach(v => {
-            const course = state.courses.find(c => c.id === v.courseId) || state.courses[0];
-            const card = document.createElement('div');
-            card.style.cssText = `background:#fff; border-radius:16px; padding:12px 14px; margin-bottom:10px; border:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; box-shadow:var(--shadow-card); border-left:14px solid ${course.hex};`;
-            card.innerHTML = `
-                <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
-                    <div style="min-width:0;">
-                        <span style="font-family:var(--font-heading); font-size:0.85rem; font-weight:700; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(v.title)}</span>
-                        <span style="font-size:0.7rem; color:var(--text-muted);">${v.category} · ${course.code}</span>
+                <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                    <div style="background:#f8fafc; border:1px solid var(--border-color); padding:6px 12px; border-radius:10px; font-family:monospace; font-weight:800; font-size:0.85rem; color:${course.hex};">
+                        ${shareCode}
                     </div>
+                    <button onclick="navigator.clipboard.writeText('${shareCode}'); showToast('Code Copied!', 'success');" style="background:${hexToRgba(course.hex, 0.12)}; color:${course.hex}; border:none; padding:8px 10px; border-radius:10px; font-size:0.78rem; font-weight:700; cursor:pointer;" title="Copy Code">
+                        <i class="fa-solid fa-copy"></i>
+                    </button>
+                    <button onclick="if(navigator.share){navigator.share({title:'CoursePal Course Code', text:'Join my class ${course.code} on CoursePal using code: ${shareCode}'})}else{navigator.clipboard.writeText('Join my class ${course.code} using code: ${shareCode}'); showToast('Share link copied!', 'success');}" style="background:${course.hex}; color:#ffffff; border:none; padding:8px 12px; border-radius:10px; font-size:0.78rem; font-weight:700; cursor:pointer;" title="Share">
+                        <i class="fa-solid fa-arrow-up-from-bracket"></i>
+                    </button>
                 </div>
-                <button onclick="if(navigator.share){navigator.share({title:'${escapeHtml(v.title)}', text:'Class Document: ${escapeHtml(v.title)}\nCourse: ${course.code}'})}else{navigator.clipboard.writeText('Class Document: ${escapeHtml(v.title)}'); showToast('Link Copied!', 'success');}" style="background:var(--accent-blue-subtle); color:var(--accent-blue); border:none; padding:7px 12px; border-radius:10px; font-size:0.72rem; font-weight:700; cursor:pointer;" title="Share Document">
-                    <i class="fa-solid fa-square-share-nodes"></i> Share
-                </button>
             `;
-            sec2.appendChild(card);
+            container.appendChild(card);
         });
-        container.appendChild(sec2);
+
+    } else {
+        // JOIN COURSE TAB
+        const joinCard = document.createElement('div');
+        joinCard.style.cssText = `background:#fff; border-radius:20px; padding:20px; border:1px solid var(--border-color); box-shadow:var(--shadow-card); text-align:center;`;
+        joinCard.innerHTML = `
+            <div style="width:56px; height:56px; border-radius:18px; background:rgba(124, 58, 237, 0.12); color:#7c3aed; display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:1.4rem;">
+                <i class="fa-solid fa-download"></i>
+            </div>
+            <h3 style="font-family:var(--font-heading); font-weight:800; font-size:1.1rem; color:var(--text-dark); margin-bottom:6px;">Join Course via Code</h3>
+            <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:16px;">Enter a course sharing code provided by a classmate or professor.</p>
+
+            <div style="display:flex; gap:8px; margin-bottom:12px;">
+                <input type="text" id="join-code-input" placeholder="e.g. CPC514-849" style="flex:1; padding:10px 14px; border-radius:12px; border:1px solid var(--border-color); font-family:monospace; font-weight:700; font-size:0.9rem; text-transform:uppercase;">
+                <button onclick="const code = document.getElementById('join-code-input').value; if(code){ showToast('✅ Joined course ' + code + '!', 'success'); } else { showToast('Please enter a course code', 'error'); }" style="background:#7c3aed; color:#fff; border:none; padding:10px 16px; border-radius:12px; font-family:var(--font-heading); font-weight:700; font-size:0.85rem; cursor:pointer;">
+                    Join
+                </button>
+            </div>
+            <button onclick="showToast('📷 QR Scanner Ready — align camera with course code!', 'info')" style="background:#f8fafc; border:1px solid var(--border-color); color:var(--text-dark); padding:10px; width:100%; border-radius:12px; font-size:0.78rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                <i class="fa-solid fa-qrcode"></i> Scan QR Code
+            </button>
+        `;
+        container.appendChild(joinCard);
     }
 }
 
@@ -876,6 +979,7 @@ function toggleReading(id) {
     const r = state.readings.find(item => item.id === id);
     if (r) { r.isCompleted = !r.isCompleted; renderReadings(); saveState(); }
 }
+function toggleReadingCompleted(id) { toggleReading(id); }
 
 function toggleAssignment(id) {
     const a = state.assignments.find(item => item.id === id);
@@ -886,6 +990,7 @@ function deleteReading(id) {
     const r = state.readings.find(item => item.id === id);
     if (r) { r.isDeleted = true; renderReadings(); showToast('Moved to Trash', 'info'); saveState(); }
 }
+function deleteReadingItem(id) { deleteReading(id); }
 
 function deleteWeekReadings(weekNum) {
     state.readings.forEach(r => { if (r.weekNum === weekNum) r.isDeleted = true; });
@@ -1024,17 +1129,66 @@ function openCourseDetail(courseId) {
     document.getElementById('modal-course-detail').classList.remove('hidden');
 }
 
-// ── Reading Info ─────────────────────────────────────────────
+// ── Reading Info Details Sheet ───────────────────────────────
+let currentEditingReadingId = null;
+
 function openReadingInfo(readingId) {
     const r = state.readings.find(item => item.id === readingId);
     if (!r) return;
-    const course = state.courses.find(c => c.id === r.courseId) || state.courses[0];
-    document.getElementById('info-course-badge').innerText     = course.code;
-    document.getElementById('info-reading-title').innerText    = r.title;
-    document.getElementById('info-reading-summary').innerText  = r.summary;
-    document.getElementById('info-reading-takeaways').innerText = r.takeaways;
+    currentEditingReadingId = readingId;
+    const course = state.courses.find(c => c.id === r.courseId) || state.courses[0] || { code: 'COURSE' };
+
+    document.getElementById('info-course-badge').innerText = course.code;
+    document.getElementById('details-title-input').value = r.title || '';
+    document.getElementById('details-date-input').value = r.dueDateIso || '';
+    document.getElementById('details-week-str-input').value = `Week ${r.weekNum || 1}`;
+    document.getElementById('details-chapter-input').value = `${r.chapterText || ''} ${r.pagesText ? '· ' + r.pagesText : ''}`.trim();
+
+    // Topics Section (Read-only Document Topics)
+    const topicsContainer = document.getElementById('details-topics-list');
+    if (topicsContainer) {
+        topicsContainer.innerHTML = '';
+        const topics = r.topics || (r.relevantTopics ? r.relevantTopics.split(/[,|\n]/) : []);
+        if (topics.length > 0) {
+            topics.forEach((tStr, idx) => {
+                const clean = tStr.trim();
+                if (!clean) return;
+                const card = document.createElement('div');
+                card.className = 'topic-item-card';
+                card.innerHTML = `
+                    <div class="topic-item-header"><i class="fa-solid fa-book-bookmark"></i> TOPIC ${idx + 1}</div>
+                    <div class="topic-item-text">${escapeHtml(clean)}</div>
+                `;
+                topicsContainer.appendChild(card);
+            });
+        } else {
+            topicsContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted); padding:4px;">No topics specified in document</div>';
+        }
+    }
+
+    document.getElementById('details-media-type-select').value = r.mediaType || 'textbook';
+    document.getElementById('details-link-input').value = r.videoUrl || '';
+    document.getElementById('details-notes-input').value = r.notes || ''; // Clean & empty by default
+
     document.getElementById('modal-reading-info').classList.remove('hidden');
 }
+
+// Save Details Button listener
+document.getElementById('btn-save-reading-details')?.addEventListener('click', () => {
+    if (!currentEditingReadingId) return;
+    const r = state.readings.find(item => item.id === currentEditingReadingId);
+    if (r) {
+        r.title = document.getElementById('details-title-input').value.trim() || r.title;
+        r.dueDateIso = document.getElementById('details-date-input').value;
+        r.mediaType = document.getElementById('details-media-type-select').value;
+        r.videoUrl = document.getElementById('details-link-input').value;
+        r.notes = document.getElementById('details-notes-input').value;
+        saveState();
+        renderReadings();
+        showToast('Reading details saved!', 'success');
+    }
+    document.getElementById('modal-reading-info').classList.add('hidden');
+});
 
 // ── Doc Viewers ──────────────────────────────────────────────
 function openDocViewer(docId) {

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="ClassPal — Your academic syllabus tracker. Manage weekly readings, assignments, and course materials in one place.">
+    <meta name="description" content="CoursePal — Your academic syllabus tracker. Manage weekly readings, assignments, and course materials in one place.">
     <meta name="theme-color" content="#3b82f6">
-    <title>ClassPal — Academic Tracking Application</title>
+    <title>CoursePal — Academic Tracking Application</title>
     <!-- Preload critical fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,7 +19,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app-container" role="main" aria-label="ClassPal App">
+    <div class="app-container" role="main" aria-label="CoursePal App">
         <!-- Dynamic Island -->
         <div class="dynamic-island" aria-hidden="true">
             <div class="dynamic-camera"></div>
@@ -40,28 +40,34 @@
 
             <!-- TAB 1: READINGS -->
             <section id="tab-readings" class="tab-page active" role="tabpanel" aria-label="Readings">
-
                 <!-- Page Header -->
                 <div class="readings-page-header">
                     <div class="readings-header-left">
-                        <h1 class="readings-page-title" id="readings-dynamic-title">All Weeks</h1>
-                        <span class="readings-page-subtitle" id="readings-count-label" aria-live="polite">0 readings scheduled</span>
+                        <h1 class="readings-page-title">Readings</h1>
+                        <span class="readings-page-subtitle" id="readings-count-label" aria-live="polite">0 readings remaining</span>
+                    </div>
+                    <div class="header-action-pills-row">
+                        <button class="pill-action-btn" id="btn-filter-course" aria-label="Filter by course">
+                            <i class="fa-solid fa-circle-nodes"></i>
+                            <span id="filter-course-text">Filter</span>
+                        </button>
+                        <button class="pill-action-btn pill-done" id="btn-filter-done" aria-label="View completed readings">
+                            <i class="fa-solid fa-circle-check"></i>
+                            <span id="done-count-text">0</span>
+                        </button>
+                        <button class="pill-action-btn pill-trash" id="btn-filter-trash" aria-label="View deleted readings">
+                            <i class="fa-regular fa-trash-can"></i>
+                            <span id="trash-count-text">0</span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Week Filter Quick Row -->
-                <div class="week-filter-scroll-row" id="week-filter-bar" role="group" aria-label="Filter by week"></div>
-
-                <!-- Share & Trash Full-Width Button Row (matching native iOS layout) -->
-                <div class="action-buttons-row">
-                    <button class="action-btn share-btn" id="btn-share-schedule" aria-label="Share schedule">
-                        <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
-                        <span>Share Schedule</span>
-                    </button>
-                    <button class="action-btn trash-btn" id="btn-open-trash" aria-label="Open trash folder">
-                        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
-                        <span>Trash</span>
-                    </button>
+                <!-- 1. Weekly Reading Tracker Card Box (Matching Xcode Layout) -->
+                <div class="weekly-tracker-hero-card">
+                    <div class="weekly-tracker-title">Weekly Reading Tracker</div>
+                    <div class="week-cards-scroll-container" id="week-filter-cards-row" role="group" aria-label="Filter by week">
+                        <!-- Rendered dynamically by JS (ALL + Week 1..16 cards) -->
+                    </div>
                 </div>
 
                 <!-- Search Bar -->
@@ -75,9 +81,37 @@
                         aria-label="Search readings"
                         autocomplete="off"
                     >
+                    <button class="search-clear-btn hidden" id="btn-clear-readings-search" aria-label="Clear search">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </button>
                 </div>
 
-                <!-- Readings Cards List -->
+                <!-- Readings Progress Bar Box -->
+                <div class="readings-progress-box" id="readings-progress-card">
+                    <div class="progress-box-top">
+                        <div class="progress-box-label">
+                            <i class="fa-solid fa-circle-check text-green"></i>
+                            <span>Readings Progress</span>
+                        </div>
+                        <span class="progress-box-pct" id="readings-progress-pct">0%</span>
+                    </div>
+                    <div class="progress-bar-track">
+                        <div class="progress-bar-fill" id="readings-progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Active Filter Banner (if course filter selected) -->
+                <div class="active-filter-banner hidden" id="active-course-filter-banner">
+                    <div class="filter-banner-text">
+                        <span class="filter-dot"></span>
+                        <span id="active-filter-text">Filtered by: CPC 514</span>
+                    </div>
+                    <button class="filter-clear-icon" id="btn-clear-course-filter" aria-label="Clear filter">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </button>
+                </div>
+
+                <!-- Readings Cards List Grouped by Week -->
                 <div id="readings-container" aria-live="polite" aria-label="Readings list"></div>
             </section>
 
@@ -90,10 +124,18 @@
                         <h1 class="readings-page-title">Assignments</h1>
                         <span class="readings-page-subtitle" id="assignments-count-label" aria-live="polite">0 due this term</span>
                     </div>
-                    <div class="readings-header-actions">
-                        <button class="readings-icon-action share-action" id="btn-share-assignments" aria-label="Share assignments">
-                            <i class="fa-solid fa-square-share-nodes" aria-hidden="true"></i>
-                            <span>Share</span>
+                    <div class="header-action-pills-row">
+                        <button class="pill-action-btn" id="btn-filter-course-assignments" aria-label="Filter by course">
+                            <i class="fa-solid fa-circle-nodes"></i>
+                            <span id="filter-course-assignments-text">Filter</span>
+                        </button>
+                        <button class="pill-action-btn pill-done" id="btn-filter-done-assignments" aria-label="View completed assignments">
+                            <i class="fa-solid fa-circle-check"></i>
+                            <span id="done-count-assignments-text">0</span>
+                        </button>
+                        <button class="pill-action-btn pill-trash" id="btn-filter-trash-assignments" aria-label="View deleted assignments">
+                            <i class="fa-regular fa-trash-can"></i>
+                            <span id="trash-count-assignments-text">0</span>
                         </button>
                     </div>
                 </div>
@@ -152,20 +194,46 @@
                 <div class="readings-page-header">
                     <div class="readings-header-left">
                         <h1 class="readings-page-title">Syllabus</h1>
-                        <span class="readings-page-subtitle" id="syllabus-count-label" aria-live="polite">0 courses</span>
+                        <span class="readings-page-subtitle" id="syllabus-count-subtitle" aria-live="polite">0 documents stored in syllabus</span>
                     </div>
                 </div>
+
+                <!-- Category Filter Bar (Matching SyllabusRepositoryView 1:1) -->
+                <div class="segmented-category-bar">
+                    <button class="segmented-tile active" id="tile-syllabus-courses">
+                        <i class="fa-solid fa-book-bookmark text-blue"></i>
+                        <span id="label-syllabus-courses-count">Courses (0)</span>
+                    </button>
+                    <button class="segmented-tile" id="tile-syllabus-docs">
+                        <i class="fa-solid fa-file-lines text-purple"></i>
+                        <span id="label-syllabus-docs-count">Documents (0)</span>
+                    </button>
+                </div>
+
                 <div id="syllabi-container" aria-live="polite" aria-label="Syllabi list"></div>
             </section>
 
-            <!-- TAB 4: SHARE -->
+            <!-- TAB 4: SHARE / INVITE -->
             <section id="tab-vault" class="tab-page" role="tabpanel" aria-label="Share Center">
                 <div class="readings-page-header">
                     <div class="readings-header-left">
-                        <h1 class="readings-page-title">Share</h1>
-                        <span class="readings-page-subtitle" id="vault-count-label" aria-live="polite">Share your course syllabi, schedules, and materials</span>
+                        <h1 class="readings-page-title">Invite</h1>
+                        <span class="readings-page-subtitle" id="vault-count-subtitle" aria-live="polite">Share your courses or join someone else's</span>
                     </div>
                 </div>
+
+                <!-- Category Filter Bar (Matching ShareCenterView 1:1) -->
+                <div class="segmented-category-bar">
+                    <button class="segmented-tile active" id="tile-share-codes">
+                        <i class="fa-solid fa-qrcode text-blue"></i>
+                        <span id="label-share-codes-count">Share Codes (0)</span>
+                    </button>
+                    <button class="segmented-tile" id="tile-share-join">
+                        <i class="fa-solid fa-download text-purple"></i>
+                        <span>Join Course</span>
+                    </button>
+                </div>
+
                 <div id="vault-container" aria-live="polite" aria-label="Share center items"></div>
             </section>
         </main>
@@ -198,49 +266,105 @@
                 <span>Share</span>
             </button>
         </nav>
-    </div>
 
-    <!-- MODAL: ADD CHOICE -->
+        <!-- MODAL: ADD CHOICE (100% Matching Screenshot 2) -->
     <div class="modal-overlay hidden" id="modal-add-choice" role="dialog" aria-modal="true" aria-labelledby="modal-add-choice-title">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3 id="modal-add-choice-title">Add New Item</h3>
+        <div class="modal-card bottom-sheet-card">
+            <div class="sheet-drag-handle"></div>
+            <div class="modal-header" style="margin-bottom:14px;">
+                <div>
+                    <h3 id="modal-add-choice-title" style="font-size:1.15rem; font-weight:800; margin:0;">Add New Item</h3>
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">Select what you would like to add</div>
+                </div>
                 <button class="close-btn" id="btn-close-choice" aria-label="Close">&times;</button>
             </div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-                <button class="menu-choice-btn" id="choice-add-task">
-                    <div class="choice-icon-bubble bg-blue"><i class="fa-solid fa-plus" aria-hidden="true"></i></div>
-                    <div style="text-align:left;">
-                        <strong>Add Assignment or Task</strong>
-                        <div style="font-size:0.75rem; color:var(--text-muted);">Add homework, reading, or lab item</div>
-                    </div>
-                </button>
+            <div style="display:flex; flex-direction:column; gap:10px;">
                 <button class="menu-choice-btn" id="choice-add-course">
                     <div class="choice-icon-bubble bg-purple"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i></div>
-                    <div style="text-align:left;">
-                        <strong>Create New Course</strong>
+                    <div style="text-align:left; flex:1;">
+                        <strong style="font-size:0.9rem; color:var(--text-dark);">Create New Course</strong>
                         <div style="font-size:0.75rem; color:var(--text-muted);">Create course with brand color &amp; syllabus</div>
                     </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#94a3b8; font-size:0.8rem;"></i>
+                </button>
+
+                <button class="menu-choice-btn" id="choice-add-task">
+                    <div class="choice-icon-bubble bg-blue"><i class="fa-solid fa-plus" aria-hidden="true"></i></div>
+                    <div style="text-align:left; flex:1;">
+                        <strong style="font-size:0.9rem; color:var(--text-dark);">Add Reading or Assignment</strong>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Add homework, reading, or lab item</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#94a3b8; font-size:0.8rem;"></i>
                 </button>
             </div>
         </div>
     </div>
+    </div>
 
-    <!-- MODAL: READING INFO -->
+    <!-- MODAL: READING DETAILS (100% Matching Xcode Details Sheet) -->
     <div class="modal-overlay hidden" id="modal-reading-info" role="dialog" aria-modal="true" aria-labelledby="info-reading-title">
-        <div class="modal-card">
+        <div class="modal-card modal-details-sheet">
             <div class="modal-header">
-                <div>
-                    <span class="course-code-tag" id="info-course-badge">CS 202</span>
-                    <h3 id="info-reading-title" style="margin-top:6px;">Reading Title</h3>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="course-code-tag" id="info-course-badge">CPC 514</span>
+                    <h3 id="info-reading-title">Details</h3>
                 </div>
                 <button class="close-btn" id="btn-close-reading-info" aria-label="Close">&times;</button>
             </div>
-            <div style="margin-top:10px;">
-                <h4 style="font-size:0.85rem; font-weight:700; color:var(--text-dark);">Summary</h4>
-                <p id="info-reading-summary" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px; line-height:1.5;"></p>
-                <h4 style="font-size:0.85rem; font-weight:700; color:var(--text-dark); margin-top:14px;">Key Takeaways</h4>
-                <p id="info-reading-takeaways" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px; line-height:1.5; white-space:pre-line;"></p>
+            <div class="details-sheet-body">
+                <!-- Section 1: Title & Course -->
+                <div class="details-section">
+                    <label class="details-label">Title</label>
+                    <input type="text" class="details-input" id="details-title-input">
+                </div>
+
+                <!-- Section 2: Date & Due Date -->
+                <div class="details-section">
+                    <label class="details-label">Due Date &amp; Week</label>
+                    <div class="details-two-col">
+                        <input type="date" class="details-input" id="details-date-input">
+                        <input type="text" class="details-input" id="details-week-str-input" placeholder="Week 1">
+                    </div>
+                </div>
+
+                <!-- Section 3: Chapter & Pages -->
+                <div class="details-section">
+                    <label class="details-label">Chapter &amp; Pages</label>
+                    <input type="text" class="details-input" id="details-chapter-input" placeholder="e.g. Chapter 1 · pp. 14-38">
+                </div>
+
+                <!-- Section 4: Topics Section (Read-only Document Topics) -->
+                <div class="details-section">
+                    <label class="details-label">Topics</label>
+                    <div class="topics-list-container" id="details-topics-list">
+                        <!-- Rendered by JS -->
+                    </div>
+                </div>
+
+                <!-- Section 5: Media Type Picker -->
+                <div class="details-section">
+                    <label class="details-label">Media Type</label>
+                    <select class="details-input" id="details-media-type-select">
+                        <option value="textbook">Textbook</option>
+                        <option value="video">Video</option>
+                        <option value="podcast">Podcast</option>
+                        <option value="article">Article</option>
+                    </select>
+                </div>
+
+                <!-- Section 6: Resource Link -->
+                <div class="details-section">
+                    <label class="details-label">Resource Link</label>
+                    <input type="url" class="details-input" id="details-link-input" placeholder="Paste video or article URL...">
+                </div>
+
+                <!-- Section 7: Notes (Clean & empty by default) -->
+                <div class="details-section">
+                    <label class="details-label">Notes</label>
+                    <textarea class="details-input details-textarea" id="details-notes-input" placeholder="Enter notes..."></textarea>
+                </div>
+
+                <button class="details-save-btn" id="btn-save-reading-details">Save Changes</button>
             </div>
         </div>
     </div>
@@ -268,24 +392,126 @@
         </div>
     </div>
 
-    <!-- MODAL: ADD TASK FORM -->
+    <!-- MODAL: ADD TASK FORM (100% Matching Xcode AddTaskModalView 1:1) -->
     <div class="modal-overlay hidden" id="modal-add-task-form" role="dialog" aria-modal="true" aria-labelledby="modal-add-task-title">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3 id="modal-add-task-title">Add Item or Assignment</h3>
-                <button class="close-btn" id="btn-close-task-form" aria-label="Close">&times;</button>
+        <div class="modal-card modal-details-sheet">
+            <div class="modal-header" style="align-items:center;">
+                <button class="modal-nav-btn" id="btn-close-task-form" aria-label="Cancel">Cancel</button>
+                <h3 id="modal-add-task-title" style="margin:0; font-size:1.05rem; font-weight:700;">Details</h3>
+                <button class="modal-nav-btn save-btn" id="btn-submit-new-task">Save</button>
             </div>
-            <input type="text" id="task-title-input" class="modal-input" placeholder="Item Title (e.g. Problem Set #5)" autocomplete="off" aria-label="Item title">
-            <div class="input-error-msg" id="task-title-error">Please enter a title.</div>
-            <select id="task-kind-select" class="modal-input" aria-label="Item type">
-                <option value="assignment">Assignment / Homework</option>
-                <option value="reading">Weekly Reading</option>
-            </select>
-            <select id="task-course-select" class="modal-input" aria-label="Course"></select>
-            <input type="number" id="task-week-input" class="modal-input" placeholder="Week Number (1–16)" min="1" max="16" value="1" aria-label="Week number">
-            <input type="text" id="task-duedate-input" class="modal-input" placeholder="Due Date (e.g. Aug 25, 2026)" autocomplete="off" aria-label="Due date">
-            <input type="text" id="task-points-input" class="modal-input" placeholder="Points (e.g. 100 pts)" autocomplete="off" aria-label="Points">
-            <button class="btn-coral" id="btn-submit-new-task">Save Item</button>
+
+            <div class="details-sheet-body">
+                <!-- Section 1: Item Type & Primary Title -->
+                <div class="details-group-box">
+                    <div class="segmented-category-bar" style="margin-bottom:6px;">
+                        <button class="segmented-tile active" id="btn-task-kind-assignment" type="button">
+                            <span>Assignment</span>
+                        </button>
+                        <button class="segmented-tile" id="btn-task-kind-reading" type="button">
+                            <span>Reading</span>
+                        </button>
+                    </div>
+                    <input type="hidden" id="task-kind-hidden" value="assignment">
+
+                    <input type="text" id="task-title-input" class="details-input" placeholder="Assignment Title (e.g. Research Study Design)" autocomplete="off">
+                    <div class="input-error-msg hidden" id="task-title-error">Please enter a title.</div>
+
+                    <div class="details-field-row" style="margin-top:4px;">
+                        <label class="details-row-label">Course Name</label>
+                        <select id="task-course-select" class="details-select-inline"></select>
+                    </div>
+                </div>
+
+                <!-- Section 2: Schedule -->
+                <div class="details-group-box">
+                    <div class="details-group-title">Schedule</div>
+
+                    <div class="details-field-row">
+                        <label class="details-row-label">Week</label>
+                        <select id="task-week-select" class="details-select-inline">
+                            <option value="1">Week 1</option>
+                            <option value="2">Week 2</option>
+                            <option value="3">Week 3</option>
+                            <option value="4">Week 4</option>
+                            <option value="5">Week 5</option>
+                            <option value="6">Week 6</option>
+                            <option value="7">Week 7</option>
+                            <option value="8">Week 8</option>
+                            <option value="9">Week 9</option>
+                            <option value="10">Week 10</option>
+                            <option value="11">Week 11</option>
+                            <option value="12">Week 12</option>
+                            <option value="13">Week 13</option>
+                            <option value="14">Week 14</option>
+                            <option value="15">Week 15</option>
+                            <option value="16">Week 16</option>
+                        </select>
+                    </div>
+
+                    <div class="details-field-row">
+                        <label class="details-row-label">Due Date</label>
+                        <input type="date" id="task-duedate-input" class="details-input-inline">
+                    </div>
+                </div>
+
+                <!-- Section 3: Assignment Fields (Points & Grade Weight) -->
+                <div class="details-group-box" id="task-section-assignment-fields">
+                    <div class="details-group-title">Points &amp; Grade Weight</div>
+
+                    <div class="details-field-row">
+                        <label class="details-row-label">Points Possible</label>
+                        <select id="task-points-select" class="details-select-inline">
+                            <option value="10 Points">10 Points</option>
+                            <option value="20 Points">20 Points</option>
+                            <option value="50 Points">50 Points</option>
+                            <option value="100 Points" selected>100 Points</option>
+                            <option value="150 Points">150 Points</option>
+                            <option value="200 Points">200 Points</option>
+                            <option value="500 Points">500 Points</option>
+                        </select>
+                    </div>
+
+                    <div class="details-field-row">
+                        <label class="details-row-label">Grade Weight</label>
+                        <select id="task-weight-select" class="details-select-inline">
+                            <option value="5%">5%</option>
+                            <option value="10%" selected>10%</option>
+                            <option value="15%">15%</option>
+                            <option value="20%">20%</option>
+                            <option value="25%">25%</option>
+                            <option value="30%">30%</option>
+                            <option value="40%">40%</option>
+                            <option value="50%">50%</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Section 3 Alt: Reading Fields (Media & Link) -->
+                <div class="details-group-box hidden" id="task-section-reading-fields">
+                    <div class="details-group-title">Media &amp; Link</div>
+
+                    <div class="details-field-row">
+                        <label class="details-row-label">Media Type</label>
+                        <select id="task-mediatype-select" class="details-select-inline">
+                            <option value="textbook">Textbook</option>
+                            <option value="video">Video</option>
+                            <option value="podcast">Podcast</option>
+                            <option value="article">Article / Paper</option>
+                        </select>
+                    </div>
+
+                    <div class="details-field-row">
+                        <input type="url" id="task-link-input" class="details-input" placeholder="Paste video or article URL (optional)...">
+                    </div>
+                </div>
+
+                <!-- Section 4: Notes -->
+                <div class="details-group-box">
+                    <div class="details-group-title">Notes</div>
+                    <textarea id="task-notes-input" class="details-input details-textarea" placeholder="Instructions &amp; Notes..."></textarea>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -362,44 +588,94 @@
         </div>
     </div>
 
-    <!-- MODAL: CREATE COURSE -->
+    <!-- MODAL: CREATE COURSE (100% Matching Screenshot 3) -->
     <div class="modal-overlay hidden" id="modal-add-course-form" role="dialog" aria-modal="true" aria-labelledby="modal-create-course-title">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3 id="modal-create-course-title">Create New Course</h3>
-                <button class="close-btn" id="btn-close-course-form" aria-label="Close">&times;</button>
-            </div>
-            <input type="text" id="new-course-code-input" class="modal-input" placeholder="Course Code (e.g. PHYS 150)" autocomplete="off" aria-label="Course code">
-            <div class="input-error-msg" id="course-code-error">Please enter a course code.</div>
-            <input type="text" id="new-course-name-input" class="modal-input" placeholder="Course Name" autocomplete="off" aria-label="Course name">
-            
-            <label style="font-size:0.75rem; font-weight:700; color:var(--text-muted); margin-top:6px; display:block;">Course Brand Color</label>
-            <select id="new-course-color-input" class="modal-input" aria-label="Course color theme">
-                <option value="#2563EB">Blue Theme</option>
-                <option value="#DC2626">Red Theme</option>
-                <option value="#D97706">Amber Theme</option>
-                <option value="#059669">Green Theme</option>
-                <option value="#8B5CF6">Purple Theme</option>
-                <option value="#EC4899">Pink Theme</option>
-                <option value="#06B6D4">Teal Theme</option>
-                <option value="#4F46E5">Indigo Theme</option>
-            </select>
-
-            <label style="font-size:0.75rem; font-weight:700; color:var(--text-muted); margin-top:8px; display:block;">Syllabus &amp; Course Materials</label>
-            <div style="display:flex; gap:6px; margin-bottom:8px;">
-                <input type="file" id="course-doc-file-input" class="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
-                <button class="menu-choice-btn" id="btn-course-upload-pdf" type="button" style="padding:8px 10px; font-size:0.75rem;">
-                    <i class="fa-solid fa-file-arrow-up" style="color:var(--accent-blue);"></i> <span id="course-pdf-status">Attach PDF</span>
-                </button>
-                <button class="menu-choice-btn" id="btn-course-scan-camera" type="button" style="padding:8px 10px; font-size:0.75rem;">
-                    <i class="fa-solid fa-camera" style="color:var(--accent-green);"></i> <span>Scan Camera</span>
-                </button>
+        <div class="modal-card modal-details-sheet" style="background:#f1f5f9;">
+            <div class="modal-header" style="align-items:center;">
+                <button class="modal-nav-pill-btn" id="btn-close-course-form">Cancel</button>
+                <h3 id="modal-create-course-title" style="margin:0; font-size:1.05rem; font-weight:800; color:var(--text-dark);">Create New Course</h3>
+                <button class="modal-nav-pill-btn save-pill-btn" id="btn-submit-new-course">Save</button>
             </div>
 
-            <label style="font-size:0.75rem; font-weight:700; color:var(--text-muted); display:block;">Copy &amp; Paste Syllabus Section</label>
-            <textarea id="new-course-syllabus-text" class="modal-input" placeholder="Copy &amp; paste course schedule or syllabus text here..." style="min-height:70px; resize:vertical; font-family:var(--font-body); font-size:0.78rem; margin-bottom:10px;"></textarea>
+            <div class="details-sheet-body">
+                <!-- Course Name Input -->
+                <div class="form-group-section">
+                    <label class="section-gray-label">Course Name</label>
+                    <input type="text" id="new-course-name-input" class="pill-white-input" placeholder="Course Name" autocomplete="off">
+                    <div class="input-error-msg hidden" id="course-code-error">Please enter a course code/name.</div>
+                </div>
 
-            <button class="btn-coral" id="btn-submit-new-course">Create Course</button>
+                <!-- Course Description Input -->
+                <div class="form-group-section">
+                    <label class="section-gray-label">Course Description</label>
+                    <input type="text" id="new-course-code-input" class="pill-white-input" placeholder="Course Description" autocomplete="off">
+                </div>
+
+                <!-- Course Brand Color Picker (12 Options) -->
+                <div class="form-group-section">
+                    <label class="section-gray-label">Course Brand Color (12 Options)</label>
+                    <div class="color-picker-card">
+                        <button class="color-dot active" data-color="#2563EB" style="background:#2563EB;" type="button"><i class="fa-solid fa-check"></i></button>
+                        <button class="color-dot" data-color="#8B5CF6" style="background:#8B5CF6;" type="button"></button>
+                        <button class="color-dot" data-color="#059669" style="background:#059669;" type="button"></button>
+                        <button class="color-dot" data-color="#EA580C" style="background:#EA580C;" type="button"></button>
+                        <button class="color-dot" data-color="#D946EF" style="background:#D946EF;" type="button"></button>
+                        <button class="color-dot" data-color="#0D9488" style="background:#0D9488;" type="button"></button>
+                        <button class="color-dot" data-color="#D97706" style="background:#D97706;" type="button"></button>
+                        <button class="color-dot" data-color="#3B82F6" style="background:#3B82F6;" type="button"></button>
+                        <button class="color-dot" data-color="#DC2626" style="background:#DC2626;" type="button"></button>
+                        <button class="color-dot" data-color="#E11D48" style="background:#E11D48;" type="button"></button>
+                        <button class="color-dot" data-color="#06B6D4" style="background:#06B6D4;" type="button"></button>
+                        <button class="color-dot" data-color="#7C3AED" style="background:#7C3AED;" type="button"></button>
+                    </div>
+                    <input type="hidden" id="new-course-color-input" value="#2563EB">
+                </div>
+
+                <!-- AI Callout Banners -->
+                <div class="ai-callout-card callout-blue">
+                    <div class="callout-icon">✨</div>
+                    <div class="callout-content">
+                        <strong>Upload One Course at a Time</strong>
+                        <p>AI analysis takes 1–2 minutes. You can safely exit or minimize the app while it runs in the background.</p>
+                    </div>
+                </div>
+
+                <div class="ai-callout-card callout-amber">
+                    <div class="callout-icon">🧡</div>
+                    <div class="callout-content">
+                        <strong>Double-Check Your Syllabus</strong>
+                        <p>Please check your original PDF to verify all dates, readings, and assignments imported accurately.</p>
+                    </div>
+                </div>
+
+                <!-- Upload Class Material -->
+                <div class="form-group-section">
+                    <div class="section-label-row">
+                        <label class="section-gray-label">Upload Class Material</label>
+                        <span class="badge-tag-coral">CHOOSE 1 OF 4</span>
+                    </div>
+                    <button class="white-button-card" id="btn-course-upload-pdf" type="button">
+                        <div class="btn-card-icon bg-blue"><i class="fa-solid fa-file-arrow-up"></i></div>
+                        <span style="font-weight:700; color:var(--text-dark);" id="course-pdf-status">Upload Class Material</span>
+                    </button>
+                    <input type="file" id="course-doc-file-input" class="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
+                </div>
+
+                <!-- Choose Vault Document -->
+                <div class="form-group-section">
+                    <div class="section-label-row">
+                        <label class="section-gray-label">Choose Vault Document (1)</label>
+                        <span class="badge-tag-coral">CHOOSE 1 OF 4</span>
+                    </div>
+                    <button class="white-button-card" id="btn-choose-vault-doc" type="button">
+                        <div class="btn-card-icon bg-purple"><i class="fa-solid fa-folder"></i></div>
+                        <div style="text-align:left; flex:1;">
+                            <div style="font-weight:700; color:var(--text-dark);">Choose Saved Document from Vault</div>
+                        </div>
+                        <span class="pill-purple-sm">(1 Saved)</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
