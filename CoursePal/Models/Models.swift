@@ -709,33 +709,26 @@ public struct CourseImporter {
             sharingCode: dto.sharingCode
         )
 
+        for w in 1...max(16, dto.termWeeks ?? 16) {
+            let week = Week(id: UUID(), weekNumber: w, theme: "Week \(w) Schedule")
+            week.course = newCourse
+            newCourse.weeks.append(week)
+            modelContext.insert(week)
+        }
+
         if let items = dto.items, !items.isEmpty {
             importItemDTOs(items, into: newCourse, modelContext: modelContext)
         }
 
-        var weeksToImport = dto.weeks ?? []
-        if weeksToImport.isEmpty {
-            weeksToImport = (1...16).map { w in
-                WeekDTO(id: "week-\(w)", weekNumber: w, startDate: nil, theme: "Week \(w) Schedule", readings: [])
-            }
-        }
-
+        let weeksToImport = dto.weeks ?? []
         for wDTO in weeksToImport {
-            let weekId: UUID
-            if let parsed = UUID(uuidString: wDTO.id) {
-                weekId = parsed
-            } else {
-                let seed = (stableId.uuidString + "week\(wDTO.weekNumber)").data(using: .utf8) ?? Data()
-                var d = [UInt8](repeating: 0, count: 16)
-                seed.withUnsafeBytes { ptr in ptr.enumerated().forEach { i, b in d[i % 16] ^= b } }
-                d[6] = (d[6] & 0x0F) | 0x40; d[8] = (d[8] & 0x3F) | 0x80
-                weekId = UUID(uuid: (d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7],d[8],d[9],d[10],d[11],d[12],d[13],d[14],d[15]))
-            }
-
             let week: Week
             if let existingWeek = newCourse.weeks.first(where: { $0.weekNumber == wDTO.weekNumber }) {
                 week = existingWeek
+                if let theme = wDTO.theme, !theme.isEmpty { week.theme = theme }
+                if let dateRange = wDTO.dateRangeStr, !dateRange.isEmpty { week.dateRangeStr = dateRange }
             } else {
+                let weekId = UUID(uuidString: wDTO.id) ?? UUID()
                 week = Week(id: weekId, weekNumber: wDTO.weekNumber, theme: wDTO.theme, dateRangeStr: wDTO.dateRangeStr)
                 week.course = newCourse
                 newCourse.weeks.append(week)
@@ -977,36 +970,18 @@ public struct CourseImporter {
         let isPlaceholderName = existingCourse.courseName.isEmpty ||
                                 existingCourse.courseName.lowercased() == "new course" ||
                                 existingCourse.courseName.lowercased() == "course" ||
-                                isGenericKey(normalizeKey(existingCourse.courseName)) ||
-                                existingCourse.courseName.lowercased().contains("syllabus")
+                                existingCourse.courseName.lowercased() == "syllabus course"
+
+        // ONLY update courseName if the existing course has an empty/placeholder name!
+        // Never overwrite a user's custom assigned course name!
+        if isPlaceholderName && !cleanName.isEmpty {
+            existingCourse.courseName = cleanName
+        }
 
         let isPlaceholderCode = (existingCourse.courseCode ?? "").isEmpty ||
                                 existingCourse.courseCode?.uppercased() == "CRS" ||
                                 isGenericKey(normalizeKey(existingCourse.courseCode ?? ""))
-
-        // If this is a temporary placeholder course, check if a real existing course with this code/name is already in DB to avoid duplicates
-        if isPlaceholderName || isPlaceholderCode {
-            let targetCodeKey = normalizeKey(dto.courseCode ?? "")
-            let targetNameKey = normalizeKey(dto.courseName)
-            let allCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
-            if let realCourse = allCourses.first(where: { c in
-                c.id != existingCourse.id && !c.isDeleted &&
-                ((!isGenericKey(normalizeKey(c.courseCode ?? "")) && !targetCodeKey.isEmpty && normalizeKey(c.courseCode ?? "") == targetCodeKey) ||
-                 (!isGenericKey(normalizeKey(c.courseName)) && !targetNameKey.isEmpty && normalizeKey(c.courseName) == targetNameKey))
-            }) {
-                print("ℹ️ [COURSE MERGE] Found existing course '\(realCourse.courseName)' (\(realCourse.courseCode ?? "")). Merging into existing course and deleting temporary placeholder.")
-                let result = importDTO(dto, into: realCourse, modelContext: modelContext)
-                modelContext.delete(existingCourse)
-                try? modelContext.save()
-                return result
-            }
-        }
-
-        if !cleanName.isEmpty && (isPlaceholderName || cleanName.count > existingCourse.courseName.count || isGenericKey(normalizeKey(existingCourse.courseName))) {
-            existingCourse.courseName = cleanName
-        }
-
-        if let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty, cleanCode.uppercased() != "CRS" {
+        if isPlaceholderCode, let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty, cleanCode.uppercased() != "CRS" {
             existingCourse.courseCode = cleanCode
         }
 
@@ -1184,24 +1159,18 @@ public struct CourseImporter {
     }
 
     private static func importItemDTOs(_ items: [ItemDTO], into course: Course, modelContext: ModelContext, sourceDocumentName: String? = nil, docColorHex: String? = nil) {
-        let courseCodeKey = normalizeKey(course.courseCode ?? "")
-        let courseNameKey = normalizeKey(course.courseName)
-        let isGenericCode = isGenericKey(courseCodeKey) || courseCodeKey.isEmpty
-        let isGenericName = isGenericKey(courseNameKey) || courseNameKey.isEmpty
-
-        let allAssignmentsInDB = (try? modelContext.fetch(FetchDescriptor<Assignment>())) ?? []
-        let courseAssignments = allAssignmentsInDB.filter { assign in
-            assign.course?.id == course.id ||
-            (!isGenericCode && normalizeKey(assign.courseCode ?? "") == courseCodeKey) ||
-            (!isGenericName && normalizeKey(assign.course?.courseName ?? "") == courseNameKey)
+        // Ensure weeks 1..16 exist on course
+        for w in 1...max(16, course.termWeeks) {
+            if !course.weeks.contains(where: { $0.weekNumber == w }) {
+                let week = Week(id: UUID(), weekNumber: w, theme: "Week \(w) Schedule")
+                week.course = course
+                course.weeks.append(week)
+                modelContext.insert(week)
+            }
         }
 
-        let allReadingsInDB = (try? modelContext.fetch(FetchDescriptor<Reading>())) ?? []
-        let courseReadings = allReadingsInDB.filter { reading in
-            reading.week?.course?.id == course.id ||
-            (!isGenericCode && normalizeKey(reading.courseCode ?? "") == courseCodeKey) ||
-            (!isGenericName && normalizeKey(reading.week?.course?.courseName ?? "") == courseNameKey)
-        }
+        let courseAssignments = course.assignments
+        let courseReadings = course.weeks.flatMap { $0.readings }
 
         for item in items {
             let weekNum = item.weekNumber ?? 1

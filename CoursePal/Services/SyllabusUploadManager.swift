@@ -383,10 +383,14 @@ public final class SyllabusUploadManager {
 
                 try modelContext.save()
                 completedCount += 1
-                self.lastImportedCourseName = dto.courseName
+                let finalName = targetCourse?.courseName ?? dto.courseName
+                let finalCode = (targetCourse?.courseCode?.isEmpty == false) ? (targetCourse?.courseCode ?? "") : (dto.courseCode ?? "Course")
+                self.lastImportedCourseName = finalName
                 let itemCount = (dto.items?.count ?? 0) + (dto.assignments?.count ?? 0) + (dto.weeks?.reduce(0) { $0 + ($1.readings?.count ?? 0) } ?? 0)
-                self.successMessage = "Success! Extracted '\(dto.courseName)' (\(dto.courseCode ?? "Course")) with \(itemCount) items!"
-                self.showingSuccessAlert = true
+                self.successMessage = "Success! Extracted '\(finalName)' (\(finalCode)) with \(itemCount) items!"
+                if self.pendingJobQueue.isEmpty {
+                    self.showingSuccessAlert = true
+                }
             } catch {
                 print("❌ [BACKGROUND UPLOAD ERROR] \(error.localizedDescription)")
                 self.errorMessage = error.localizedDescription

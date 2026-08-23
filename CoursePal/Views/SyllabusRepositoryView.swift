@@ -995,12 +995,8 @@ public struct CourseSyllabusCardRow: View {
     }
 
     private var fullTitle: String {
-        let cleanCode = (course.courseCode ?? "").trimmingCharacters(in: .whitespaces)
         let cleanName = displayCourseName.trimmingCharacters(in: .whitespaces)
-        if cleanCode.isEmpty || cleanCode.lowercased() == cleanName.lowercased() || cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
-            return cleanName.isEmpty ? "Course" : cleanName
-        }
-        return "\(cleanCode.uppercased()) · \(cleanName)"
+        return cleanName.isEmpty ? "Course" : cleanName
     }
 
     public var body: some View {
@@ -1017,6 +1013,13 @@ public struct CourseSyllabusCardRow: View {
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         .lineLimit(1)
+
+                    if let desc = course.courseDescription, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(desc.trimmingCharacters(in: .whitespacesAndNewlines))
+                            .font(.system(size: 11.5, weight: .regular))
+                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                            .lineLimit(2)
+                    }
 
                     // Stats summary row (Readings and Assignments)
                     let totalReadings = course.weeks.reduce(0) { $0 + $1.readings.count }
@@ -1168,12 +1171,17 @@ public struct CourseSyllabusCardRow: View {
                             // Section 1: Course Title & Code
                             HStack(alignment: .center, spacing: 8) {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("COURSE TITLE & CODE")
+                                    Text("COURSE TITLE")
                                         .font(.system(size: 9.5, weight: .bold))
                                         .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                    Text(fullTitle)
+                                    Text(course.courseName)
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                    if let desc = course.courseDescription, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        Text(desc.trimmingCharacters(in: .whitespacesAndNewlines))
+                                            .font(.system(size: 11, weight: .regular))
+                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                    }
                                 }
                                 Spacer()
                                 Button(action: onEditCourse) {

@@ -718,31 +718,31 @@ public struct AssignmentsView: View {
                                 // ── COLLAPSIBLE COURSE ACCORDION ──────────────────────
                                 let groupedByCourse = Dictionary(
                                     grouping: activeAssignments,
-                                    by: { $0.course?.courseCode ?? "Unassigned" }
+                                    by: { $0.course?.courseName ?? "Unassigned" }
                                 )
-                                let courseOrder = courses.map { $0.courseCode ?? "" } + ["Unassigned"]
-                                let sortedCourseCodes = groupedByCourse.keys.sorted {
+                                let courseOrder = courses.map { $0.courseName } + ["Unassigned"]
+                                let sortedCourseNames = groupedByCourse.keys.sorted {
                                     let iA = courseOrder.firstIndex(of: $0) ?? 999
                                     let iB = courseOrder.firstIndex(of: $1) ?? 999
                                     return iA < iB
                                 }
 
-                                ForEach(sortedCourseCodes, id: \.self) { courseCode in
-                                    let courseAssigns = (groupedByCourse[courseCode] ?? []).sorted {
+                                ForEach(sortedCourseNames, id: \.self) { cName in
+                                    let courseAssigns = (groupedByCourse[cName] ?? []).sorted {
                                         ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture)
                                     }
-                                    let courseObj = courses.first(where: { ($0.courseCode ?? "") == courseCode })
+                                    let courseObj = courses.first(where: { $0.courseName == cName })
                                     let courseColor = CourseColorHelper.color(for: courseObj?.hexColor ?? "#2563EB")
-                                    let isExpanded = expandedCourseCodes.contains(courseCode)
+                                    let isExpanded = expandedCourseCodes.contains(cName)
 
                                     VStack(alignment: .leading, spacing: 0) {
                                         // ── Course Header (always visible, tap to expand) ──
                                         Button(action: {
                                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                                if expandedCourseCodes.contains(courseCode) {
-                                                    expandedCourseCodes.remove(courseCode)
+                                                if expandedCourseCodes.contains(cName) {
+                                                    expandedCourseCodes.remove(cName)
                                                 } else {
-                                                    expandedCourseCodes.insert(courseCode)
+                                                    expandedCourseCodes.insert(cName)
                                                 }
                                             }
                                         }) {
@@ -752,18 +752,7 @@ public struct AssignmentsView: View {
                                                     .fill(courseColor)
                                                     .frame(width: 4, height: 36)
 
-                                                // Course identity (Guaranteed no duplicates: e.g. "Human Sexuality" or "BIO 110 · Cellular Biology")
-                                                let fullTitle: String = {
-                                                    guard let c = courseObj else { return courseCode }
-                                                    let cleanCode = (c.courseCode ?? "").trimmingCharacters(in: .whitespaces)
-                                                    let cleanName = c.courseName.trimmingCharacters(in: .whitespaces)
-                                                    if cleanCode.isEmpty || cleanCode.lowercased() == cleanName.lowercased() || cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
-                                                        return cleanName.isEmpty ? courseCode : cleanName
-                                                    }
-                                                    return "\(cleanCode) · \(cleanName)"
-                                                }()
-
-                                                Text(fullTitle)
+                                                Text(cName)
                                                     .font(.system(size: 14, weight: .bold, design: .rounded))
                                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                     .lineLimit(1)
@@ -1013,7 +1002,7 @@ public struct AssignmentsView: View {
                                                     Text(assignment.title)
                                                         .font(.system(size: 14, weight: .bold))
                                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                                    Text("Assignment · \(assignment.course?.courseCode ?? "CRS") · Week \(assignment.weekNumber)")
+                                                    Text("Assignment · \(assignment.course?.courseName ?? "Course") · Week \(assignment.weekNumber)")
                                                         .font(.caption)
                                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                 }
@@ -1059,7 +1048,7 @@ public struct AssignmentsView: View {
                                                     Text(reading.title)
                                                         .font(.system(size: 14, weight: .bold))
                                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                                    Text("Reading · \(reading.week?.course?.courseCode ?? "CRS") · Week \(reading.week?.weekNumber ?? 1)")
+                                                    Text("Reading · \(reading.week?.course?.courseName ?? "Course") · Week \(reading.week?.weekNumber ?? 1)")
                                                         .font(.caption)
                                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                 }
@@ -1283,19 +1272,7 @@ public struct AssignmentCardRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 let displayCourseTitle: String = {
                     if let course = assignment.course {
-                        let code = (course.courseCode ?? "").trimmingCharacters(in: .whitespaces)
                         let name = course.courseName.trimmingCharacters(in: .whitespaces)
-                        if !code.isEmpty && code.lowercased() != "crs" && code.lowercased() != "course" {
-                            if !name.isEmpty {
-                                let cleanCode = code.trimmingCharacters(in: .whitespaces)
-                                let cleanName = name.trimmingCharacters(in: .whitespaces)
-                                if cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
-                                    return cleanName
-                                }
-                                return "\(cleanCode) · \(cleanName)"
-                            }
-                            return code
-                        }
                         return name.isEmpty ? "COURSE" : name
                     }
                     return "COURSE"

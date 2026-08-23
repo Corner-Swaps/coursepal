@@ -1520,14 +1520,14 @@ public struct AddCourseModalView: View {
             let usedColors = Set(allCourses.map { $0.hexColor.uppercased() })
             let nextColor = distinctPalette.first(where: { !usedColors.contains($0.uppercased()) }) ?? distinctPalette[allCourses.count % distinctPalette.count]
             let finalColorHex = (finalColor == "#DC2626" || finalColor.isEmpty) ? nextColor : finalColor
-            let finalCourseCode = code.isEmpty ? (name.isEmpty ? "CRS" : name) : code
+            let finalCourseCode = code.isEmpty ? (name.isEmpty ? "" : "") : code
 
             if filesToUpload.count > 1 && courseName.trimmingCharacters(in: .whitespaces).isEmpty {
-                // User uploaded multiple syllabus files without a single course name: create a course per file concurrently!
+                // User uploaded multiple syllabus files without a single course name: create a course per file sequentially!
                 for file in filesToUpload {
                     let fname = file.title
                     let cleanCourseName = fname.replacingOccurrences(of: #"\.[^.]+$"#, with: "", options: .regularExpression).replacingOccurrences(of: "_", with: " ").capitalized
-                    let c = Course(courseName: cleanCourseName, courseCode: "CRS", hexColor: CourseImporter.getUniqueColor(usedColors: usedColors))
+                    let c = Course(courseName: cleanCourseName, courseCode: "", hexColor: CourseImporter.getUniqueColor(usedColors: usedColors))
                     modelContext.insert(c)
                     try? modelContext.save()
 

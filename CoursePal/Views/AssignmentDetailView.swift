@@ -24,7 +24,7 @@ public struct AssignmentDetailView: View {
     }
 
     private var courseCodeStr: String {
-        assignment.course?.courseCode ?? assignment.courseCode ?? "CRS"
+        assignment.course?.courseName ?? "Course"
     }
 
     private var courseTitleStr: String {

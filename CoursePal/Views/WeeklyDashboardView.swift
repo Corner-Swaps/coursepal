@@ -675,12 +675,15 @@ public struct WeeklyDashboardView: View {
                                             .fill(courseColor)
                                             .frame(width: 4, height: 36)
                                         VStack(alignment: .leading, spacing: 1) {
-                                            Text(courseObj?.courseCode ?? courseName)
-                                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                                .foregroundColor(courseColor)
                                             Text(courseName)
-                                                .font(.system(size: 10.5, weight: .medium))
-                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                            if let desc = courseObj?.courseDescription, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                                Text(desc.trimmingCharacters(in: .whitespacesAndNewlines))
+                                                    .font(.system(size: 10.5, weight: .medium))
+                                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                                    .lineLimit(1)
+                                            }
                                         }
                                         Spacer()
                                         Text("\(courseReadings.count) reading\(courseReadings.count == 1 ? "" : "s")")
@@ -835,7 +838,7 @@ public struct WeeklyDashboardView: View {
                                                         .font(.system(size: 14, weight: .bold))
                                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                         .lineLimit(2)
-                                                    Text("Reading • \(reading.week?.course?.courseCode ?? "Course") • Week \(reading.week?.weekNumber ?? 1)")
+                                                    Text("Reading • \(reading.week?.course?.courseName ?? "Course") • Week \(reading.week?.weekNumber ?? 1)")
                                                         .font(.caption)
                                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                 }
@@ -894,7 +897,7 @@ public struct WeeklyDashboardView: View {
                                                         .font(.system(size: 14, weight: .bold))
                                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                         .lineLimit(2)
-                                                    Text("Assignment • \(assignment.course?.courseCode ?? "Course") • Week \(assignment.weekNumber)")
+                                                    Text("Assignment • \(assignment.course?.courseName ?? "Course") • Week \(assignment.weekNumber)")
                                                         .font(.caption)
                                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                 }
@@ -1061,21 +1064,12 @@ public struct WeekReadingCardView: View {
             // Content Area
             VStack(alignment: .leading, spacing: 3) {
                 // Top Line: Course Main Title Pill (Left) & Media Type Badge (Right)
-                let rawCourseName = reading.week?.course?.courseName
-                let rawCourseCode = reading.week?.course?.courseCode
                 let displayCourseTitle: String = {
-                    if let code = rawCourseCode, !code.trimmingCharacters(in: .whitespaces).isEmpty, code.lowercased() != "course" {
-                        if let name = rawCourseName, !name.trimmingCharacters(in: .whitespaces).isEmpty, name.lowercased() != "course", name.lowercased() != "unassigned" {
-                            let cleanCode = code.trimmingCharacters(in: .whitespaces)
-                            let cleanName = name.trimmingCharacters(in: .whitespaces)
-                            if cleanName.lowercased().hasPrefix(cleanCode.lowercased()) {
-                                return cleanName
-                            }
-                            return "\(cleanCode) · \(cleanName)"
-                        }
-                        return code
+                    if let course = reading.week?.course {
+                        let name = course.courseName.trimmingCharacters(in: .whitespaces)
+                        return name.isEmpty ? "COURSE" : name
                     }
-                    return rawCourseName ?? "COURSE"
+                    return "COURSE"
                 }()
 
                 HStack(spacing: 6) {
@@ -1571,7 +1565,7 @@ public struct UnifiedCompletedFolderSheet: View {
                                                     .strikethrough()
 
                                                 HStack(spacing: 6) {
-                                                    Text(reading.week?.course?.courseCode ?? "Course")
+                                                    Text(reading.week?.course?.courseName ?? "Course")
                                                         .font(.caption)
                                                         .fontWeight(.bold)
                                                         .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
@@ -1620,7 +1614,7 @@ public struct UnifiedCompletedFolderSheet: View {
                                                     .strikethrough()
 
                                                 HStack(spacing: 6) {
-                                                    Text(assignment.course?.courseCode ?? "Course")
+                                                    Text(assignment.course?.courseName ?? "Course")
                                                         .font(.caption)
                                                         .fontWeight(.bold)
                                                         .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
@@ -1792,7 +1786,7 @@ public struct UnifiedTrashFolderSheet: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(reading.title)
                                             .font(.system(size: 14, weight: .bold))
-                                        Text("\(reading.week?.course?.courseCode ?? "Course") · Week \(reading.week?.weekNumber ?? 1)")
+                                        Text("\(reading.week?.course?.courseName ?? "Course") · Week \(reading.week?.weekNumber ?? 1)")
                                             .font(.caption)
                                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                     }
@@ -1833,7 +1827,7 @@ public struct UnifiedTrashFolderSheet: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(assignment.title)
                                             .font(.system(size: 14, weight: .bold))
-                                        Text("\(assignment.course?.courseCode ?? "Course") · Week \(assignment.weekNumber)")
+                                        Text("\(assignment.course?.courseName ?? "Course") · Week \(assignment.weekNumber)")
                                             .font(.caption)
                                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                     }
