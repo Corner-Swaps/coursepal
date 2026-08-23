@@ -51,6 +51,7 @@ public struct AssignmentsView: View {
     @State private var selectedCourseFilter: Course? = nil
     @State private var showingCourseFilterSheet: Bool = false
     @State private var showingInfoSheet: Bool = false
+    @State private var showingEmptyTrashConfirmation: Bool = false
 
     private var activeAssignments: [Assignment] {
         var list = dbAssignments.filter { !$0.isDeleted }
@@ -958,11 +959,7 @@ public struct AssignmentsView: View {
                                 VStack(alignment: .leading, spacing: 10) {
                                     if totalDeleted > 0 {
                                         Button(action: {
-                                            withAnimation {
-                                                for a in deletedAssignments { modelContext.delete(a) }
-                                                for r in deletedReadings { modelContext.delete(r) }
-                                                try? modelContext.save()
-                                            }
+                                            showingEmptyTrashConfirmation = true
                                         }) {
                                             HStack(spacing: 8) {
                                                 Spacer()
@@ -1146,6 +1143,19 @@ public struct AssignmentsView: View {
             }
             .sheet(isPresented: $showingInfoSheet) {
                 InfoCreditsSheetView()
+            }
+            .alert("Empty Trash?", isPresented: $showingEmptyTrashConfirmation) {
+                Button("Empty Trash", role: .destructive) {
+                    withAnimation {
+                        for a in deletedAssignments { modelContext.delete(a) }
+                        for r in deletedReadings { modelContext.delete(r) }
+                        try? modelContext.save()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                let total = deletedAssignments.count + deletedReadings.count
+                Text("Are you sure you want to permanently delete all \(total) items in the trash? This action cannot be undone.")
             }
             .onAppear {
                 sortMode = "assignments"

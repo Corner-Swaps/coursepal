@@ -82,6 +82,7 @@ public struct WeeklyDashboardView: View {
     @State private var selectedCourseFilter: Course? = nil
     @State private var showingCourseFilterSheet: Bool = false
     @State private var showingInfoSheet: Bool = false
+    @State private var showingEmptyTrashConfirmation: Bool = false
 
     private var completedCount: Int {
         activeReadings.filter({ $0.isCompleted }).count
@@ -767,21 +768,18 @@ public struct WeeklyDashboardView: View {
                         }
                         .padding(.horizontal, 18)
                     } else if sortMode == "trash" {
-                        // ── INLINE TRASH BIN ──────────────────
-                        VStack(alignment: .leading, spacing: 10) {
-                            if !deletedReadings.isEmpty || !deletedAssignments.isEmpty {
+                        // ── INLINE TRASH BIN (Readings & Assignments) ──────────────────
+                        let totalDeleted = deletedReadings.count + deletedAssignments.count
+                        VStack(alignment: .leading, spacing: 14) {
+                            if totalDeleted > 0 {
                                 Button(action: {
-                                    withAnimation {
-                                        for r in deletedReadings { modelContext.delete(r) }
-                                        for a in deletedAssignments { modelContext.delete(a) }
-                                        try? modelContext.save()
-                                    }
+                                    showingEmptyTrashConfirmation = true
                                 }) {
                                     HStack(spacing: 8) {
                                         Spacer()
                                         Image(systemName: "trash.fill")
                                             .font(.system(size: 13, weight: .bold))
-                                        Text("Empty Trash")
+                                        Text("Empty Trash (\(totalDeleted))")
                                             .font(.system(size: 13, weight: .bold))
                                         Spacer()
                                     }
@@ -793,10 +791,10 @@ public struct WeeklyDashboardView: View {
                                     .shadow(color: Color.red.opacity(0.2), radius: 6, x: 0, y: 3)
                                 }
                                 .buttonStyle(.plain)
-                                .padding(.bottom, 6)
+                                .padding(.bottom, 4)
                             }
 
-                            if deletedReadings.isEmpty {
+                            if totalDeleted == 0 {
                                 VStack(spacing: 10) {
                                     ZStack {
                                         Circle()
@@ -809,7 +807,7 @@ public struct WeeklyDashboardView: View {
                                     Text("Trash is Empty")
                                         .font(.system(size: 15, weight: .bold, design: .rounded))
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                    Text("Deleted readings will be stored here for easy recovery.")
+                                    Text("Items moved to trash will appear here for review and recovery.")
                                         .font(.system(size: 12))
                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                 }
@@ -822,51 +820,121 @@ public struct WeeklyDashboardView: View {
                                         .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
                                 )
                             } else {
-                                ForEach(deletedReadings) { reading in
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(reading.title)
-                                                .font(.system(size: 14, weight: .bold))
-                                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                            Text("\(reading.week?.course?.courseCode ?? "CRS") · Week \(reading.week?.weekNumber ?? 1)")
-                                                .font(.caption)
-                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                        }
+                                // Deleted Readings List
+                                if !deletedReadings.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("DELETED READINGS (\(deletedReadings.count))")
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                            .padding(.leading, 4)
 
-                                        Spacer()
+                                        ForEach(deletedReadings) { reading in
+                                            HStack(spacing: 10) {
+                                                VStack(alignment: .leading, spacing: 3) {
+                                                    Text(reading.title)
+                                                        .font(.system(size: 14, weight: .bold))
+                                                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                                        .lineLimit(2)
+                                                    Text("Reading • \(reading.week?.course?.courseCode ?? "Course") • Week \(reading.week?.weekNumber ?? 1)")
+                                                        .font(.caption)
+                                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                }
 
-                                        Button(action: {
-                                            withAnimation {
-                                                reading.isDeleted = false
-                                                try? modelContext.save()
+                                                Spacer()
+
+                                                Button(action: {
+                                                    withAnimation {
+                                                        reading.isDeleted = false
+                                                        try? modelContext.save()
+                                                    }
+                                                }) {
+                                                    Text("Restore")
+                                                        .font(.system(size: 11.5, weight: .bold))
+                                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                                        .padding(.horizontal, 10)
+                                                        .padding(.vertical, 5)
+                                                        .background(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.1))
+                                                        .cornerRadius(8)
+                                                }
+                                                .buttonStyle(.plain)
+
+                                                Button(action: {
+                                                    withAnimation {
+                                                        modelContext.delete(reading)
+                                                        try? modelContext.save()
+                                                    }
+                                                }) {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .font(.system(size: 16))
+                                                        .foregroundColor(Color.red.opacity(0.8))
+                                                }
+                                                .buttonStyle(.plain)
                                             }
-                                        }) {
-                                            Text("Restore")
-                                                .font(.system(size: 11, weight: .bold))
-                                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 5)
-                                                .background(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.1))
-                                                .cornerRadius(8)
+                                            .padding(12)
+                                            .background(Color.white)
+                                            .cornerRadius(14)
+                                            .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
                                         }
-                                        .buttonStyle(.plain)
-
-                                        Button(action: {
-                                            withAnimation {
-                                                modelContext.delete(reading)
-                                                try? modelContext.save()
-                                            }
-                                        }) {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .font(.system(size: 16))
-                                                .foregroundColor(Color.red.opacity(0.8))
-                                        }
-                                        .buttonStyle(.plain)
                                     }
-                                    .padding(12)
-                                    .background(Color.white)
-                                    .cornerRadius(14)
-                                    .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+                                }
+
+                                // Deleted Assignments List
+                                if !deletedAssignments.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("DELETED ASSIGNMENTS (\(deletedAssignments.count))")
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                            .padding(.leading, 4)
+                                            .padding(.top, 6)
+
+                                        ForEach(deletedAssignments) { assignment in
+                                            HStack(spacing: 10) {
+                                                VStack(alignment: .leading, spacing: 3) {
+                                                    Text(assignment.title)
+                                                        .font(.system(size: 14, weight: .bold))
+                                                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                                        .lineLimit(2)
+                                                    Text("Assignment • \(assignment.course?.courseCode ?? "Course") • Week \(assignment.weekNumber)")
+                                                        .font(.caption)
+                                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                }
+
+                                                Spacer()
+
+                                                Button(action: {
+                                                    withAnimation {
+                                                        assignment.isDeleted = false
+                                                        try? modelContext.save()
+                                                    }
+                                                }) {
+                                                    Text("Restore")
+                                                        .font(.system(size: 11.5, weight: .bold))
+                                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                                        .padding(.horizontal, 10)
+                                                        .padding(.vertical, 5)
+                                                        .background(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.1))
+                                                        .cornerRadius(8)
+                                                }
+                                                .buttonStyle(.plain)
+
+                                                Button(action: {
+                                                    withAnimation {
+                                                        modelContext.delete(assignment)
+                                                        try? modelContext.save()
+                                                    }
+                                                }) {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .font(.system(size: 16))
+                                                        .foregroundColor(Color.red.opacity(0.8))
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                            .padding(12)
+                                            .background(Color.white)
+                                            .cornerRadius(14)
+                                            .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -878,6 +946,18 @@ public struct WeeklyDashboardView: View {
             }
             .scrollDismissesKeyboard(.immediately)
             .background(CoursePalTheme.bgCanvas)
+            .alert("Empty Trash?", isPresented: $showingEmptyTrashConfirmation) {
+                Button("Empty Trash", role: .destructive) {
+                    withAnimation {
+                        for r in deletedReadings { modelContext.delete(r) }
+                        for a in deletedAssignments { modelContext.delete(a) }
+                        try? modelContext.save()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to permanently delete all \(deletedReadings.count + deletedAssignments.count) items in the trash? This action cannot be undone.")
+            }
             .sheet(isPresented: $showingScanSheet) {
                 SyllabusScanView()
             }

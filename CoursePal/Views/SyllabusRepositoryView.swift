@@ -129,6 +129,10 @@ public struct SyllabusRepositoryView: View {
     @State private var showingAddTaskModal: Bool = false
     @State private var courseForCameraScan: Course? = nil
     @State private var showingCameraScanSheet: Bool = false
+    @State private var coursePendingDeletion: Course? = nil
+    @State private var showingDeleteCourseConfirm: Bool = false
+    @State private var docPendingDeletion: VaultDocument? = nil
+    @State private var showingDeleteDocConfirm: Bool = false
     @Binding var showingUploadModal: Bool
     @Binding var isGlobalProcessing: Bool
     @Binding var selectedCourseForAddDoc: Course?
@@ -416,7 +420,10 @@ public struct SyllabusRepositoryView: View {
                                                     showingAddTaskModal = true
                                                 }
                                             },
-                                            onDeleteCourse: { deleteCourse(course) },
+                                            onDeleteCourse: {
+                                                coursePendingDeletion = course
+                                                showingDeleteCourseConfirm = true
+                                            },
                                             onEditCourse: { editingCourse = course },
                                             onEditFaculty: { editingFaculty = course },
                                             onEditAssignment: { assign in editingAssignment = assign },
@@ -463,7 +470,10 @@ public struct SyllabusRepositoryView: View {
                                         VaultDocCardRow(
                                             document: doc,
                                             onPreview: { selectedDocForPreview = doc },
-                                            onDelete: { deleteDocument(doc) }
+                                            onDelete: {
+                                                docPendingDeletion = doc
+                                                showingDeleteDocConfirm = true
+                                            }
                                         )
                                     }
                                 }
@@ -516,6 +526,43 @@ public struct SyllabusRepositoryView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(repositoryErrorMessage)
+            }
+            .alert("Delete Course?", isPresented: $showingDeleteCourseConfirm) {
+                Button("Delete Course", role: .destructive) {
+                    if let c = coursePendingDeletion {
+                        deleteCourse(c)
+                        coursePendingDeletion = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    coursePendingDeletion = nil
+                }
+            } message: {
+                if let c = coursePendingDeletion {
+                    let readingCount = c.weeks.reduce(0) { $0 + $1.readings.count }
+                    let assignmentCount = c.assignments.count
+                    let docCount = c.syllabusDocs.count
+                    Text("Are you sure you want to delete '\(c.courseName)'? This will remove its \(readingCount) readings, \(assignmentCount) assignments, and \(docCount) attached documents.")
+                } else {
+                    Text("Are you sure you want to delete this course?")
+                }
+            }
+            .alert("Delete Document?", isPresented: $showingDeleteDocConfirm) {
+                Button("Delete Document", role: .destructive) {
+                    if let d = docPendingDeletion {
+                        deleteDocument(d)
+                        docPendingDeletion = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    docPendingDeletion = nil
+                }
+            } message: {
+                if let d = docPendingDeletion {
+                    Text("Are you sure you want to permanently delete '\(d.title)' from your stored documents?")
+                } else {
+                    Text("Are you sure you want to delete this document?")
+                }
             }
             .onChange(of: SyllabusUploadManager.shared.isUploading) { oldValue, newValue in
                 if !newValue {
