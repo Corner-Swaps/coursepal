@@ -623,11 +623,13 @@ public final class APIService: ObservableObject {
         guard let pdfContext = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return pdfData }
         
         for i in 1...min(pageCount, 50) {
-            guard let page = pdfDoc.page(at: i) else { continue }
-            var pageBox = page.getBoxRect(.mediaBox)
-            pdfContext.beginPage(mediaBox: &pageBox)
-            pdfContext.drawPDFPage(page)
-            pdfContext.endPage()
+            autoreleasepool {
+                guard let page = pdfDoc.page(at: i) else { return }
+                var pageBox = page.getBoxRect(.mediaBox)
+                pdfContext.beginPage(mediaBox: &pageBox)
+                pdfContext.drawPDFPage(page)
+                pdfContext.endPage()
+            }
         }
         pdfContext.closePDF()
         return mutableData.count > 0 ? (mutableData as Data) : pdfData

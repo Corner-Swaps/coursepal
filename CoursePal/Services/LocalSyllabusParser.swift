@@ -37,6 +37,37 @@ public final class LocalSyllabusParser {
     public static let shared = LocalSyllabusParser()
     private init() {}
 
+    // MARK: - Precompiled Static Regex Cache
+    private static let pointsRegex = try? NSRegularExpression(
+        pattern: #"\b(\d{1,4})\s*(pts|points|pt|%|percent)"#,
+        options: [.caseInsensitive]
+    )
+    private static let percentRegex = try? NSRegularExpression(pattern: #"\b(\d{1,3})%"#, options: [])
+    private static let assignmentNumRegex = try? NSRegularExpression(pattern: #"(?i)\(?assignment\s*\d{1,2}\)?"#, options: [])
+    private static let ptsMatchesRegex = try? NSRegularExpression(pattern: #"\b(\d{1,4})\s*(pts|points|pt\b)"#, options: [.caseInsensitive])
+    private static let explicitAssignNumRegex = try? NSRegularExpression(pattern: #"(?i)\(?assignment\s*(\d{1,2})\)?"#)
+    private static let weekHeaderRegexes: [NSRegularExpression] = [
+        #"(?i)^\s*week\s*(\d{1,2})\b"#,
+        #"(?i)^\s*module\s*(\d{1,2})\b"#,
+        #"(?i)^\s*unit\s*(\d{1,2})\b"#,
+        #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b"#,
+        #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"#
+    ].compactMap { try? NSRegularExpression(pattern: $0, options: []) }
+    private static let citationRegexPattern = #"(?i)([A-Za-z]+(?:\s+[A-Za-z]+)?\s*\(?\s*(?:chapters?|ch\.?|chap\.?)\s*[\d,\s&\-–and]+\)?|(?:chapters?|ch\.?|chap\.?)\s*[\d,\s&\-–and]+)"#
+    private static let citationRegex = try? NSRegularExpression(pattern: citationRegexPattern, options: [])
+    private static let chapterRegex = try? NSRegularExpression(pattern: #"(?i)\b(chapters?|ch\.?|chap\.?)\s*(\d+([-\s&,]+\d+)?)\b"#, options: [])
+    private static let pagesRegex = try? NSRegularExpression(pattern: #"(?i)\b(pages?|pp?\.?)\s*(\d+([-\s&,]+\d+)?)\b"#, options: [])
+    private static let dateExtractionRegexes: [NSRegularExpression] = [
+        #"(?i)\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b"#,
+        #"\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b"#,
+        #"\b(\d{1,2})[-/](\d{1,2})\b"#
+    ].compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+    private static let dayNameRegex = try? NSRegularExpression(pattern: #"(?i)\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b"#, options: [])
+    private static let isoDateRegex = try? NSRegularExpression(pattern: #"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$"#, options: [])
+    private static let slashDateRegex = try? NSRegularExpression(pattern: #"^(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?$"#, options: [])
+    private static let standaloneCodeRegex = try? NSRegularExpression(pattern: #"\b([A-Z]{2,6}\s*\d{3,4}[A-Z]?)\b"#, options: [])
+    private static let codeWithTitleRegex = try? NSRegularExpression(pattern: #"([A-Z]{2,6}\s*\d{3,4}[A-Z]?)\s*[:\-–—]?\s*(.+)"#, options: [])
+
     // MARK: - Vision OCR with Spatial Column Clustering
     #if canImport(UIKit)
     public func extractTextFromImage(_ image: UIImage) async throws -> String {
@@ -297,11 +328,6 @@ public final class LocalSyllabusParser {
         var lastMatchedIndex: Int? = nil
         var inPolicySection = false
 
-        let pointsRegex = try? NSRegularExpression(
-            pattern: #"\b(\d{1,4})\s*(pts|points|pt|%|percent)"#,
-            options: [.caseInsensitive]
-        )
-
         let instructionPrefixes = [
             "this paper", "the video", "the deadline", "each week", "in small groups",
             "beginning in", "prepare an", "write an", "following our", "by the end",
@@ -380,11 +406,11 @@ public final class LocalSyllabusParser {
 
             let nsLine = line as NSString
             let range = NSRange(location: 0, length: nsLine.length)
-            let matches = pointsRegex?.matches(in: line, options: [], range: range) ?? []
+            let matches = Self.pointsRegex?.matches(in: line, options: [], range: range) ?? []
 
             // Check explicit assignment indicators: percentage e.g. "20%", "(assignment 1)", "assignment 1", or header table
-            let percentMatches = (try? NSRegularExpression(pattern: #"\b(\d{1,3})%"#, options: []))?.matches(in: line, options: [], range: range) ?? []
-            let numMatches = (try? NSRegularExpression(pattern: #"(?i)\(?assignment\s*\d{1,2}\)?"#, options: []))?.matches(in: line, options: [], range: range) ?? []
+            let percentMatches = Self.percentRegex?.matches(in: line, options: [], range: range) ?? []
+            let numMatches = Self.assignmentNumRegex?.matches(in: line, options: [], range: range) ?? []
             let isAssignHeaderLine = !percentMatches.isEmpty || !numMatches.isEmpty || lower.hasPrefix("overview of required assignments")
 
             let isAssignKeyword = lower.contains("assignment") || lower.contains("paper") || lower.contains("report") || lower.contains("presentation") || lower.contains("project") || lower.contains("attendance")
@@ -393,7 +419,7 @@ public final class LocalSyllabusParser {
                 var weightStr: String? = nil
                 var pointsStr = "100 Points"
 
-                let ptsMatches = (try? NSRegularExpression(pattern: #"\b(\d{1,4})\s*(pts|points|pt\b)"#, options: [.caseInsensitive]))?.matches(in: line, options: [], range: range) ?? []
+                let ptsMatches = Self.ptsMatchesRegex?.matches(in: line, options: [], range: range) ?? []
 
                 if !percentMatches.isEmpty {
                     weightStr = nsLine.substring(with: percentMatches.first!.range)
@@ -430,9 +456,7 @@ public final class LocalSyllabusParser {
 
                     // Check explicit assignment number tag e.g. (assignment 4) or (4)
                     var matchedIdx: Int? = nil
-                    let numPattern = #"(?i)\(?assignment\s*(\d{1,2})\)?"#
-                    if let regex = try? NSRegularExpression(pattern: numPattern),
-                       let match = regex.firstMatch(in: line, options: [], range: range),
+                    if let match = Self.explicitAssignNumRegex?.firstMatch(in: line, options: [], range: range),
                        let numRange = Range(match.range(at: 1), in: line),
                        let num = Int(line[numRange]), num >= 1 && num <= results.count {
                         matchedIdx = num - 1
@@ -494,14 +518,6 @@ public final class LocalSyllabusParser {
         var currentWeekDateIso: String? = nil
         var inPolicySection = false
 
-        let weekHeaderPatterns = [
-            #"(?i)^\s*week\s*(\d{1,2})\b"#,
-            #"(?i)^\s*module\s*(\d{1,2})\b"#,
-            #"(?i)^\s*unit\s*(\d{1,2})\b"#,
-            #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b"#,
-            #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"#
-        ]
-
         let policySectionHeaders = [
             "course policies", "late assignments", "university policies", "non-discrimination",
             "religious accommodations", "academic integrity", "ai use policy", "support services",
@@ -541,9 +557,8 @@ public final class LocalSyllabusParser {
             let range = NSRange(location: 0, length: nsLine.length)
 
             var foundWeekNum: Int? = nil
-            for pattern in weekHeaderPatterns {
-                if let regex = try? NSRegularExpression(pattern: pattern, options: []),
-                   let match = regex.firstMatch(in: line, options: [], range: range) {
+            for regex in Self.weekHeaderRegexes {
+                if let match = regex.firstMatch(in: line, options: [], range: range) {
                     if let wRange = Range(match.range(at: 1), in: line), let wNum = Int(line[wRange]) {
                         foundWeekNum = wNum
                         break
@@ -642,9 +657,8 @@ public final class LocalSyllabusParser {
             // ── STEP 4: Detect whether this line contains a book/media citation ──
             // A citation is: AuthorName (Chapters X-Y), Chapter N, ch. N, watch/listen/podcast/URL
             // Pattern: optional Author + optional paren + chapter/ch keyword + numbers + optional close paren
-            let citationRegex = #"(?i)([A-Za-z]+(?:\s+[A-Za-z]+)?\s*\(?\s*(?:chapters?|ch\.?|chap\.?)\s*[\d,\s&\-–and]+\)?|(?:chapters?|ch\.?|chap\.?)\s*[\d,\s&\-–and]+)"#
             let isBookCitation =
-                workLine.range(of: citationRegex, options: .regularExpression) != nil ||
+                (Self.citationRegex?.firstMatch(in: workLine, options: [], range: NSRange(location: 0, length: workLine.utf16.count)) != nil) ||
                 lower.contains("gehart") || lower.contains("nichols") || lower.contains("davis") ||
                 lower.contains("isbn:") || lower.contains("(6th ed)") || lower.contains("7th canadian") ||
                 cleanLower.hasPrefix("read:") || cleanLower.hasPrefix("watch:") ||
@@ -675,9 +689,8 @@ public final class LocalSyllabusParser {
                 } else {
                     exactTitle = "Web Resource"
                 }
-            } else if let regex = try? NSRegularExpression(pattern: citationRegex),
-                      let match = regex.firstMatch(in: workLine, options: [],
-                                                   range: NSRange(location: 0, length: workLine.utf16.count)),
+            } else if let match = Self.citationRegex?.firstMatch(in: workLine, options: [],
+                                                               range: NSRange(location: 0, length: workLine.utf16.count)),
                       let matchRange = Range(match.range, in: workLine) {
                 // Pull the matched citation verbatim, then trim bullets/spaces
                 exactTitle = String(workLine[matchRange])
@@ -866,15 +879,13 @@ public final class LocalSyllabusParser {
         var chapter: String? = nil
         var pages: String? = nil
 
-        let chapterRegex = try? NSRegularExpression(pattern: #"(?i)\b(chapters?|ch\.?|chap\.?)\s*(\d+([-\s&,]+\d+)?)\b"#, options: [])
-        if let match = chapterRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
+        if let match = Self.chapterRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
             if let range = Range(match.range, in: text) {
                 chapter = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines).capitalized
             }
         }
 
-        let pagesRegex = try? NSRegularExpression(pattern: #"(?i)\b(pages?|pp?\.?)\s*(\d+([-\s&,]+\d+)?)\b"#, options: [])
-        if let match = pagesRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
+        if let match = Self.pagesRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
             if let range = Range(match.range, in: text) {
                 pages = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
             }
@@ -906,14 +917,7 @@ public final class LocalSyllabusParser {
     public func extractAllDates(from text: String, fallbackYear: Int = 2026) -> [ExtractedDateInfo] {
         var results: [ExtractedDateInfo] = []
 
-        let patterns = [
-            #"(?i)\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b"#,
-            #"\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b"#,
-            #"\b(\d{1,2})[-/](\d{1,2})\b"#
-        ]
-
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+        for regex in Self.dateExtractionRegexes {
             let nsText = text as NSString
             let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
 
@@ -967,9 +971,7 @@ public final class LocalSyllabusParser {
     }
 
     public static func extractDayName(from text: String) -> String? {
-        let pattern = #"(?i)\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b"#
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let match = regex.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
+        if let match = Self.dayNameRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
             let nsStr = text as NSString
             let matchedDay = nsStr.substring(with: match.range).lowercased()
             switch matchedDay {
@@ -1013,9 +1015,7 @@ public final class LocalSyllabusParser {
         var foundExplicitDate = false
 
         // 2. YYYY-MM-DD or YYYY/MM/DD regex (e.g. "2026-09-13", "2026/08/21")
-        let isoPattern = #"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$"#
-        if let regex = try? NSRegularExpression(pattern: isoPattern),
-           let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) {
+        if let match = Self.isoDateRegex?.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) {
             let nsStr = trimmed as NSString
             if let y = Int(nsStr.substring(with: match.range(at: 1))),
                let m = Int(nsStr.substring(with: match.range(at: 2))),
@@ -1028,8 +1028,7 @@ public final class LocalSyllabusParser {
             }
         }
         // 3. MM/DD/YYYY or MM-DD-YYYY or MM/DD regex (e.g., "09/13/2026", "9/13")
-        else if let regex = try? NSRegularExpression(pattern: #"^(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?$"#),
-                let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) {
+        else if let match = Self.slashDateRegex?.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) {
             let nsStr = trimmed as NSString
             if let m = Int(nsStr.substring(with: match.range(at: 1))),
                let d = Int(nsStr.substring(with: match.range(at: 3).location != NSNotFound ? match.range(at: 2) : match.range(at: 2))),
@@ -1110,9 +1109,6 @@ public final class LocalSyllabusParser {
     private func extractCourseIdentity(from lines: [String]) -> (code: String, name: String) {
         let cleanLines = lines.prefix(40).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
 
-        let standaloneCodeRegex = try? NSRegularExpression(pattern: #"\b([A-Z]{2,6}\s*\d{3,4}[A-Z]?)\b"#, options: [])
-        let codeWithTitleRegex = try? NSRegularExpression(pattern: #"([A-Z]{2,6}\s*\d{3,4}[A-Z]?)\s*[:\-–—]?\s*(.+)"#, options: [])
-
         var foundCode: String? = nil
         var foundName: String? = nil
 
@@ -1121,7 +1117,7 @@ public final class LocalSyllabusParser {
             let range = NSRange(location: 0, length: nsLine.length)
 
             // Stage 1: Line with Code + Title e.g. "CPC 514: Research Methods and Statistics"
-            if let match = codeWithTitleRegex?.firstMatch(in: line, options: [], range: range) {
+            if let match = Self.codeWithTitleRegex?.firstMatch(in: line, options: [], range: range) {
                 if let cRange = Range(match.range(at: 1), in: line) {
                     let rawCode = String(line[cRange]).trimmingCharacters(in: .whitespaces).uppercased()
                     let normalizedCode = rawCode.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
@@ -1142,7 +1138,7 @@ public final class LocalSyllabusParser {
             }
 
             // Stage 2: Standalone Code e.g. "CPC 514" on line by itself
-            if foundCode == nil, let match = standaloneCodeRegex?.firstMatch(in: line, options: [], range: range) {
+            if foundCode == nil, let match = Self.standaloneCodeRegex?.firstMatch(in: line, options: [], range: range) {
                 let rawCode = nsLine.substring(with: match.range).trimmingCharacters(in: .whitespaces).uppercased()
                 let normalizedCode = rawCode.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
                 foundCode = normalizedCode

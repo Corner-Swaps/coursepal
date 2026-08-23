@@ -10,6 +10,8 @@ public struct SyllabusScanView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
+    public var targetCourse: Course? = nil
+
     @State private var isShowingScanner: Bool = false
     @State private var isShowingFilePicker: Bool = false
     @State private var rawSyllabusText: String = ""
@@ -18,7 +20,9 @@ public struct SyllabusScanView: View {
     @State private var isShowingReviewSheet: Bool = false
     @State private var errorMessage: String? = nil
 
-    public init() {}
+    public init(targetCourse: Course? = nil) {
+        self.targetCourse = targetCourse
+    }
 
     public var body: some View {
         #if os(iOS)
@@ -73,10 +77,10 @@ public struct SyllabusScanView: View {
             .fileImporter(
                 isPresented: $isShowingFilePicker,
                 allowedContentTypes: DocumentExtractor.supportedContentTypes,
-                allowsMultipleSelection: false
+                allowsMultipleSelection: true
             ) { result in
-                if case .success(let urls) = result, let singleURL = urls.first {
-                    handlePDFUploads([singleURL])
+                if case .success(let urls) = result, !urls.isEmpty {
+                    handlePDFUploads(urls)
                 }
             }
         }
@@ -179,9 +183,13 @@ public struct SyllabusScanView: View {
     @Query(sort: \Course.createdAt, order: .reverse) private var courses: [Course]
 
     private func importCourseToSwiftData(_ dto: CourseDTO) {
-        CourseImporter.importDTO(dto, into: modelContext)
+        let importedCourse: Course
+        if let target = targetCourse {
+            importedCourse = CourseImporter.importDTO(dto, into: target, modelContext: modelContext)
+        } else {
+            importedCourse = CourseImporter.importDTO(dto, into: modelContext)
+        }
 
-        let createdCourse = courses.first(where: { $0.courseCode == dto.courseCode || $0.courseName == dto.courseName }) ?? courses.first
         let rawData = rawSyllabusText.data(using: .utf8)
         let docTitle = "\(dto.courseCode ?? "Course")_Syllabus"
         let syllabusDoc = SyllabusDocument(
@@ -193,7 +201,7 @@ public struct SyllabusScanView: View {
             rawFileData: rawData,
             uploadedAt: Date()
         )
-        syllabusDoc.course = createdCourse
+        syllabusDoc.course = importedCourse
         modelContext.insert(syllabusDoc)
 
         try? modelContext.save()

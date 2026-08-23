@@ -1,9 +1,6 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
 
-import OpenAI from 'openai';
-import { z } from 'zod';
-
 export const ReadingSchema = z.object({
   title: z.string(),
   mediaType: z.enum(['textbook', 'article', 'video', 'podcast', 'other']).default('textbook'),

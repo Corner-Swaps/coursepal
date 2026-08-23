@@ -256,8 +256,15 @@ public struct MainTabView: View {
             }
         }
         .onAppear {
-            sanitizeDatabase()
+            sanitizeDatabaseIfNeeded()
         }
+    }
+
+    private func sanitizeDatabaseIfNeeded() {
+        let migrationKey = "hasSanitizedDatabase_v3"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+        UserDefaults.standard.set(true, forKey: migrationKey)
+        sanitizeDatabase()
     }
 
     private func sanitizeDatabase() {
@@ -319,6 +326,9 @@ public struct AddTaskModalView: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Course.createdAt, order: .reverse) private var courses: [Course]
 
+    public var initialCourse: Course? = nil
+    public var initialCategory: Int = 0
+
     @State private var taskTitle: String = ""
     @State private var itemCategory: Int = 0 // 0: Assignment, 1: Reading
     @State private var selectedCourse: Course? = nil
@@ -330,6 +340,11 @@ public struct AddTaskModalView: View {
     @State private var notesText: String = ""
     @State private var videoUrlText: String = ""
     @State private var isSyncing: Bool = false
+
+    public init(initialCourse: Course? = nil, initialCategory: Int = 0) {
+        self.initialCourse = initialCourse
+        self.initialCategory = initialCategory
+    }
 
     public var body: some View {
         NavigationStack {
@@ -450,9 +465,12 @@ public struct AddTaskModalView: View {
             .background(Color(red: 0.95, green: 0.96, blue: 0.98))
             .scrollDismissesKeyboard(.immediately)
             .onAppear {
-                if selectedCourse == nil {
+                if let initC = initialCourse {
+                    selectedCourse = initC
+                } else if selectedCourse == nil {
                     selectedCourse = courses.first
                 }
+                itemCategory = initialCategory
             }
             .navigationTitle("Details")
             #if os(iOS)
@@ -527,7 +545,8 @@ public struct AddTaskModalView: View {
                 keyTakeawaysText: "• Review \(title)",
                 estimatedTimeText: mediaType == .video ? "~20–30 min" : "~40–60 min",
                 videoUrl: validUrl,
-                dueDate: dueDate
+                dueDate: dueDate,
+                courseCode: activeCourse.courseCode
             )
             newReading.week = targetWeek
             targetWeek.readings.append(newReading)
@@ -541,9 +560,11 @@ public struct AddTaskModalView: View {
                 pointsPossible: "\(pointsPossibleVal) Points",
                 noteText: cleanNotes.isEmpty ? nil : cleanNotes,
                 isCompleted: false,
+                courseCode: activeCourse.courseCode,
                 weightPercentage: "\(gradeWeightPercent)%"
             )
             newAssignment.course = activeCourse
+            activeCourse.assignments.append(newAssignment)
             modelContext.insert(newAssignment)
         }
 
@@ -768,9 +789,9 @@ public struct UploadDocModalView: View {
             }
         }
         .sheet(isPresented: $showingCameraScanner) {
-            SyllabusScanView()
+            SyllabusScanView(targetCourse: targetCourse)
         }
-        .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: true) { result in
             if case .success(let urls) = result, !urls.isEmpty {
                 confirmAndProcessFiles(urls)
             }
@@ -832,7 +853,7 @@ public struct MultiDocumentPicker: UIViewControllerRepresentable {
     public func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let types: [UTType] = [.pdf, .plainText]
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
         picker.delegate = context.coordinator
         return picker
@@ -1335,29 +1356,36 @@ public struct AddCourseModalView: View {
                     .disabled(!canSave)
                 }
             }
-            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: false) { result in
-                if case .success(let urls) = result, let selectedUrl = urls.first {
-                    let accessed = selectedUrl.startAccessingSecurityScopedResource()
+            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: true) { result in
+                if case .success(let urls) = result, !urls.isEmpty {
+                    var newFiles: [(title: String, data: Data?, text: String?)] = []
+                    var allNames: [String] = []
+                    for selectedUrl in urls {
+                        let accessed = selectedUrl.startAccessingSecurityScopedResource()
 
-                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_" + selectedUrl.lastPathComponent)
-                    var fileData: Data? = nil
-                    if let d = try? Data(contentsOf: selectedUrl), !d.isEmpty {
-                        fileData = d
-                        try? d.write(to: tempURL)
-                    } else {
-                        _ = try? FileManager.default.copyItem(at: selectedUrl, to: tempURL)
-                        fileData = try? Data(contentsOf: tempURL)
+                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_" + selectedUrl.lastPathComponent)
+                        var fileData: Data? = nil
+                        if let d = try? Data(contentsOf: selectedUrl), !d.isEmpty {
+                            fileData = d
+                            try? d.write(to: tempURL)
+                        } else {
+                            _ = try? FileManager.default.copyItem(at: selectedUrl, to: tempURL)
+                            fileData = try? Data(contentsOf: tempURL)
+                        }
+
+                        if accessed { selectedUrl.stopAccessingSecurityScopedResource() }
+
+                        let fileName = selectedUrl.lastPathComponent
+                        let textContent = DocumentExtractor.extractText(from: tempURL) ?? DocumentExtractor.extractText(from: selectedUrl)
+
+                        newFiles.append((title: fileName, data: fileData, text: textContent))
+                        allNames.append(fileName)
                     }
 
-                    if accessed { selectedUrl.stopAccessingSecurityScopedResource() }
-
-                    let fileName = selectedUrl.lastPathComponent
-                    let textContent = DocumentExtractor.extractText(from: tempURL) ?? DocumentExtractor.extractText(from: selectedUrl)
-
-                    attachedFileName = fileName
-                    attachedFileData = fileData
-                    fileContentText = textContent
-                    uploadedFilesList = [(title: fileName, data: fileData, text: textContent)]
+                    attachedFileName = allNames.joined(separator: ", ")
+                    attachedFileData = newFiles.first?.data
+                    fileContentText = newFiles.compactMap { $0.text }.joined(separator: "\n\n")
+                    uploadedFilesList = newFiles
                 }
             }
             .alert("API Error", isPresented: $showingAddCourseAlert) {
@@ -1494,46 +1522,65 @@ public struct AddCourseModalView: View {
             let finalColorHex = (finalColor == "#DC2626" || finalColor.isEmpty) ? nextColor : finalColor
             let finalCourseCode = code.isEmpty ? (name.isEmpty ? "CRS" : name) : code
 
-            let newCourse = Course(courseName: name, courseCode: finalCourseCode, hexColor: finalColorHex)
-            let cleanDesc = desc.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !cleanDesc.isEmpty {
-                newCourse.courseDescription = cleanDesc
-            }
-            modelContext.insert(newCourse)
-            try? modelContext.save()
-
-            var uploadURLs: [URL] = []
-
-            if !filesToUpload.isEmpty {
+            if filesToUpload.count > 1 && courseName.trimmingCharacters(in: .whitespaces).isEmpty {
+                // User uploaded multiple syllabus files without a single course name: create a course per file concurrently!
                 for file in filesToUpload {
                     let fname = file.title
+                    let cleanCourseName = fname.replacingOccurrences(of: #"\.[^.]+$"#, with: "", options: .regularExpression).replacingOccurrences(of: "_", with: " ").capitalized
+                    let c = Course(courseName: cleanCourseName, courseCode: "CRS", hexColor: CourseImporter.getUniqueColor(usedColors: usedColors))
+                    modelContext.insert(c)
+                    try? modelContext.save()
+
                     if let data = file.data {
-                        let stagedURL = PersistentFileStager.stage(data: data, filename: fname)
-                        uploadURLs.append(stagedURL)
+                        let staged = PersistentFileStager.stage(data: data, filename: fname)
+                        SyllabusUploadManager.shared.startUpload(urls: [staged], targetCourse: c, modelContext: modelContext)
                     } else if let txt = file.text, let tData = txt.data(using: .utf8) {
-                        let stagedURL = PersistentFileStager.stage(data: tData, filename: fname)
+                        let staged = PersistentFileStager.stage(data: tData, filename: fname)
+                        SyllabusUploadManager.shared.startUpload(urls: [staged], targetCourse: c, modelContext: modelContext)
+                    }
+                }
+            } else {
+                let newCourse = Course(courseName: name, courseCode: finalCourseCode, hexColor: finalColorHex)
+                let cleanDesc = desc.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cleanDesc.isEmpty {
+                    newCourse.courseDescription = cleanDesc
+                }
+                modelContext.insert(newCourse)
+                try? modelContext.save()
+
+                var uploadURLs: [URL] = []
+
+                if !filesToUpload.isEmpty {
+                    for file in filesToUpload {
+                        let fname = file.title
+                        if let data = file.data {
+                            let stagedURL = PersistentFileStager.stage(data: data, filename: fname)
+                            uploadURLs.append(stagedURL)
+                        } else if let txt = file.text, let tData = txt.data(using: .utf8) {
+                            let stagedURL = PersistentFileStager.stage(data: tData, filename: fname)
+                            uploadURLs.append(stagedURL)
+                        }
+                    }
+                } else if let pData = pData, !pData.isEmpty {
+                    let fname = fName ?? "syllabus.pdf"
+                    let stagedURL = PersistentFileStager.stage(data: pData, filename: fname)
+                    uploadURLs.append(stagedURL)
+                } else if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if let tData = pastedText.data(using: .utf8) {
+                        let stagedURL = PersistentFileStager.stage(data: tData, filename: "pasted_outline.txt")
                         uploadURLs.append(stagedURL)
                     }
                 }
-            } else if let pData = pData, !pData.isEmpty {
-                let fname = fName ?? "syllabus.pdf"
-                let stagedURL = PersistentFileStager.stage(data: pData, filename: fname)
-                uploadURLs.append(stagedURL)
-            } else if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                if let tData = pastedText.data(using: .utf8) {
-                    let stagedURL = PersistentFileStager.stage(data: tData, filename: "pasted_outline.txt")
-                    uploadURLs.append(stagedURL)
-                }
-            }
 
-            if !uploadURLs.isEmpty {
-                SyllabusUploadManager.shared.startUpload(urls: uploadURLs, targetCourse: newCourse, modelContext: modelContext)
-            } else {
-                let fname = fName ?? "\(newCourse.courseCode ?? "Course")_Syllabus.txt"
-                let textToWrite = pastedText.isEmpty ? "Syllabus Course Materials for \(newCourse.courseName)" : pastedText
-                if let tData = textToWrite.data(using: .utf8) {
-                    let stagedURL = PersistentFileStager.stage(data: tData, filename: fname)
-                    SyllabusUploadManager.shared.startUpload(urls: [stagedURL], targetCourse: newCourse, modelContext: modelContext)
+                if !uploadURLs.isEmpty {
+                    SyllabusUploadManager.shared.startUpload(urls: uploadURLs, targetCourse: newCourse, modelContext: modelContext)
+                } else {
+                    let fname = fName ?? "\(newCourse.courseCode ?? "Course")_Syllabus.txt"
+                    let textToWrite = pastedText.isEmpty ? "Syllabus Course Materials for \(newCourse.courseName)" : pastedText
+                    if let tData = textToWrite.data(using: .utf8) {
+                        let stagedURL = PersistentFileStager.stage(data: tData, filename: fname)
+                        SyllabusUploadManager.shared.startUpload(urls: [stagedURL], targetCourse: newCourse, modelContext: modelContext)
+                    }
                 }
             }
         }

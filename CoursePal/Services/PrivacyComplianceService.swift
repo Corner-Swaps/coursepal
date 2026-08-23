@@ -5,17 +5,22 @@ import UniformTypeIdentifiers
 
 // MARK: - 1. Document Security & MIME/Size Validator (10MB Limit)
 public struct DocumentSecurityValidator {
-    public static let maxFileSizeBytes: Int64 = 10 * 1024 * 1024 // 10 MB limit
+    public static let maxFileSizeBytes: Int64 = 25 * 1024 * 1024 // 25 MB limit
     public static let allowedMimeTypes: [String] = [
         "application/pdf",
         "image/jpeg",
         "image/png",
         "image/heic",
-        "image/webp"
+        "image/webp",
+        "text/plain",
+        "text/markdown",
+        "text/rtf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ]
 
     public static func validate(data: Data, utType: UTType?) throws {
-        // 1. Size Validation (10MB Max)
+        // 1. Size Validation (25MB Max)
         if Int64(data.count) > maxFileSizeBytes {
             let sizeMB = Double(data.count) / (1024.0 * 1024.0)
             throw DocumentValidationError.fileTooLarge(sizeMB: sizeMB)
@@ -25,8 +30,17 @@ public struct DocumentSecurityValidator {
         if let utType = utType {
             let isPdf = utType.conforms(to: .pdf)
             let isImage = utType.conforms(to: .image)
-            if !isPdf && !isImage {
-                throw DocumentValidationError.unsupportedMimeType(mime: utType.preferredMIMEType ?? utType.identifier)
+            let isText = utType.conforms(to: .plainText) || utType.conforms(to: .text)
+            let isDocx = utType.conforms(to: .compositeContent) ||
+                         utType.identifier.contains("word") ||
+                         utType.identifier.contains("document") ||
+                         utType.identifier.contains("openxml") ||
+                         utType.identifier.contains("msword")
+            if !isPdf && !isImage && !isText && !isDocx {
+                // If it's general data or item, allow if not empty
+                if !utType.conforms(to: .item) {
+                    throw DocumentValidationError.unsupportedMimeType(mime: utType.preferredMIMEType ?? utType.identifier)
+                }
             }
         }
     }
@@ -39,9 +53,9 @@ public enum DocumentValidationError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .fileTooLarge(let sizeMB):
-            return String(format: "File exceeds 10MB limit (%.1f MB). Please upload a smaller document.", sizeMB)
+            return String(format: "File exceeds 25MB limit (%.1f MB). Please upload a smaller document.", sizeMB)
         case .unsupportedMimeType(let mime):
-            return "Unsupported file type (\(mime)). Only PDF, JPEG, PNG, and HEIC files are accepted."
+            return "Unsupported file type (\(mime)). Only PDF, Word DOCX, text, and image files are accepted."
         }
     }
 }

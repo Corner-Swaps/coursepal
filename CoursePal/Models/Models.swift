@@ -977,17 +977,17 @@ public struct CourseImporter {
         let isPlaceholderName = existingCourse.courseName.isEmpty ||
                                 existingCourse.courseName.lowercased() == "new course" ||
                                 existingCourse.courseName.lowercased() == "course" ||
-                                isGenericKey(normalizeKey(existingCourse.courseName))
+                                isGenericKey(normalizeKey(existingCourse.courseName)) ||
+                                existingCourse.courseName.lowercased().contains("syllabus")
 
-        // Preserve user-given course title: Only override if the existing course name is an un-edited placeholder
-        if isPlaceholderName && !cleanName.isEmpty {
+        if !cleanName.isEmpty && (isPlaceholderName || cleanName.count > existingCourse.courseName.count || isGenericKey(normalizeKey(existingCourse.courseName))) {
             existingCourse.courseName = cleanName
         }
 
         let isPlaceholderCode = (existingCourse.courseCode ?? "").isEmpty ||
                                 existingCourse.courseCode?.uppercased() == "CRS" ||
                                 isGenericKey(normalizeKey(existingCourse.courseCode ?? ""))
-        if isPlaceholderCode, let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty {
+        if let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty, cleanCode.uppercased() != "CRS" {
             existingCourse.courseCode = cleanCode
         }
 
@@ -1029,7 +1029,7 @@ public struct CourseImporter {
         modelContext.insert(newSyllabusDoc)
 
         if let items = dto.items, !items.isEmpty {
-            importItemDTOs(items, into: existingCourse, modelContext: modelContext)
+            importItemDTOs(items, into: existingCourse, modelContext: modelContext, sourceDocumentName: newDocTitle, docColorHex: newDocColor)
         }
 
         let weeksToImport = dto.weeks ?? []
@@ -1164,7 +1164,7 @@ public struct CourseImporter {
         return existingCourse
     }
 
-    private static func importItemDTOs(_ items: [ItemDTO], into course: Course, modelContext: ModelContext) {
+    private static func importItemDTOs(_ items: [ItemDTO], into course: Course, modelContext: ModelContext, sourceDocumentName: String? = nil, docColorHex: String? = nil) {
         let allAssignmentsInDB = (try? modelContext.fetch(FetchDescriptor<Assignment>())) ?? []
         let courseAssignments = allAssignmentsInDB.filter { assign in
             assign.course?.id == course.id ||
@@ -1203,7 +1203,20 @@ public struct CourseImporter {
                 return nil
             }()
 
-            let isAssignment = item.category.lowercased() == "assignment" || item.category.lowercased().contains("assignment") || item.category.lowercased().contains("exam") || item.category.lowercased().contains("project")
+            let catLower = item.category.lowercased()
+            let isAssignment = catLower == "assignment" ||
+                               catLower.contains("assign") ||
+                               catLower.contains("exam") ||
+                               catLower.contains("project") ||
+                               catLower.contains("quiz") ||
+                               catLower.contains("paper") ||
+                               catLower.contains("lab") ||
+                               catLower.contains("homework") ||
+                               catLower.contains("deliverable") ||
+                               catLower.contains("presentation") ||
+                               catLower.contains("test") ||
+                               catLower.contains("midterm") ||
+                               catLower.contains("final")
             if isAssignment {
                 let existingAssign = course.assignments.first(where: { normalizeTitle($0.title) == normTitle }) ??
                                      courseAssignments.first(where: { normalizeTitle($0.title) == normTitle })
@@ -1216,6 +1229,8 @@ public struct CourseImporter {
                     if let sub = item.subType, !sub.isEmpty { existing.subTypeRaw = sub }
                     if let media = item.mediaUrl, !media.isEmpty { existing.mediaUrl = media }
                     if parsedDueDate != nil { existing.dueDate = parsedDueDate }
+                    if let sName = sourceDocumentName { existing.sourceDocumentName = sName }
+                    if let dColor = docColorHex { existing.docColorHex = dColor }
                     existing.noteText = nil
                 } else {
                     let realBreakdown: String? = sanitizePointsBreakdown(item.pointsBreakdown)
@@ -1244,7 +1259,9 @@ public struct CourseImporter {
                         courseCode: course.courseCode,
                         weightPercentage: item.percentage ?? "10%",
                         subTypeRaw: item.subType ?? "PAPER",
-                        mediaUrl: item.mediaUrl
+                        mediaUrl: item.mediaUrl,
+                        sourceDocumentName: sourceDocumentName,
+                        docColorHex: docColorHex
                     )
                     assignment.course = course
                     course.assignments.append(assignment)
@@ -1309,6 +1326,8 @@ public struct CourseImporter {
                     if let pDate = parsedDueDate { existing.dueDate = pDate }
                     if let ch = finalChapter { existing.chapterText = ch }
                     if let pg = finalPages { existing.pagesText = pg }
+                    if let sName = sourceDocumentName { existing.sourceDocumentName = sName }
+                    if let dColor = docColorHex { existing.docColorHex = dColor }
                 } else {
                     let videoUrl: String? = {
                         if let cand = item.mediaUrl, URLHelper.isValidURL(cand) { return cand }
@@ -1333,7 +1352,9 @@ public struct CourseImporter {
                         chapterText: finalChapter,
                         pagesText: finalPages,
                         courseCode: course.courseCode,
-                        relevantTopics: item.relevantTopics
+                        relevantTopics: item.relevantTopics,
+                        sourceDocumentName: sourceDocumentName,
+                        docColorHex: docColorHex
                     )
                     reading.week = week
                     week.readings.append(reading)

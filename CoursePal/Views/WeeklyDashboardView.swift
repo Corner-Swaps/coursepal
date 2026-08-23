@@ -125,10 +125,16 @@ public struct WeeklyDashboardView: View {
 
     // Week numbers ordered strictly by their earliest calendar date (e.g. Sept 5 before Sept 20)
     private var courseWeekNumbers: [Int] {
-        let uniqueWeeks = Array(Set(sortedCourseWeeks.map { $0.weekNumber }))
+        var earliestDateForWeek: [Int: Date] = [:]
+        for week in sortedCourseWeeks {
+            if earliestDateForWeek[week.weekNumber] == nil {
+                earliestDateForWeek[week.weekNumber] = week.computedStartDate
+            }
+        }
+        let uniqueWeeks = Array(earliestDateForWeek.keys)
         return uniqueWeeks.sorted { w1, w2 in
-            let date1 = sortedCourseWeeks.first(where: { $0.weekNumber == w1 })?.computedStartDate ?? WeekDateConverter.date(forWeek: w1)
-            let date2 = sortedCourseWeeks.first(where: { $0.weekNumber == w2 })?.computedStartDate ?? WeekDateConverter.date(forWeek: w2)
+            let date1 = earliestDateForWeek[w1] ?? WeekDateConverter.date(forWeek: w1)
+            let date2 = earliestDateForWeek[w2] ?? WeekDateConverter.date(forWeek: w2)
             if date1 != date2 {
                 return date1 < date2
             }

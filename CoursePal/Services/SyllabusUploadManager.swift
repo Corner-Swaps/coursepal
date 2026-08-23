@@ -21,6 +21,9 @@ public struct PersistentFileStager {
     }
 
     public static func stage(url: URL) -> URL {
+        if url.path.hasPrefix(stagedDirectory.path) {
+            return url
+        }
         let securityScoped = url.startAccessingSecurityScopedResource()
         defer { if securityScoped { url.stopAccessingSecurityScopedResource() } }
 
@@ -60,11 +63,8 @@ public final class SyllabusUploadManager {
     public var successMessage: String? = nil
     public var showingSuccessAlert: Bool = false
 
-    private var uploadQueue: [UploadJob] = []
-    private var currentJob: UploadJob? = nil
-    private var isQueueProcessing: Bool = false
-    private var activeQueueTask: Task<Void, Never>? = nil
-    private var activeJobTask: Task<Void, Never>? = nil
+    private var activeJobTasks: [UUID: Task<Void, Never>] = [:]
+    private var jobCourseMap: [UUID: UUID] = [:] // Job ID -> Course ID
 
     #if os(iOS)
     private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -86,119 +86,97 @@ public final class SyllabusUploadManager {
         #endif
     }
 
-    private init() {}
-
-    public func cancelUpload(forCourseId courseId: UUID) {
-        uploadQueue.removeAll { $0.targetCourse?.id == courseId }
-        uploadingCourseIds.remove(courseId)
-
-        if currentJob?.targetCourse?.id == courseId {
-            activeJobTask?.cancel()
-            currentJob = nil
-            statusText = "Upload cancelled for course."
-        }
-
-        if uploadQueue.isEmpty && currentJob == nil {
-            isUploading = false
-            isQueueProcessing = false
-            progressRatio = 0.0
-            uploadingCourseIds.removeAll()
-            #if os(iOS)
-            if bgTaskID != .invalid {
-                UIApplication.shared.endBackgroundTask(bgTaskID)
-                bgTaskID = .invalid
-            }
-            #endif
-        }
-    }
-
-    public func cancelAllUploads() {
-        uploadQueue.removeAll()
-        uploadingCourseIds.removeAll()
-        activeJobTask?.cancel()
-        activeQueueTask?.cancel()
-        currentJob = nil
-        isUploading = false
-        progressRatio = 0.0
-        statusText = "Upload cancelled."
+    private func endBackgroundTaskIfNeeded() {
         #if os(iOS)
-        if bgTaskID != .invalid {
+        if activeJobTasks.isEmpty && uploadingCourseIds.isEmpty && bgTaskID != .invalid {
             UIApplication.shared.endBackgroundTask(bgTaskID)
             bgTaskID = .invalid
         }
         #endif
     }
 
+    private init() {}
+
+    public func cancelUpload(forCourseId courseId: UUID) {
+        uploadingCourseIds.remove(courseId)
+
+        for (jobId, cId) in jobCourseMap where cId == courseId {
+            activeJobTasks[jobId]?.cancel()
+            activeJobTasks.removeValue(forKey: jobId)
+            jobCourseMap.removeValue(forKey: jobId)
+        }
+
+        if uploadingCourseIds.isEmpty && activeJobTasks.isEmpty {
+            isUploading = false
+            progressRatio = 0.0
+            statusText = "Upload cancelled."
+            endBackgroundTaskIfNeeded()
+        }
+    }
+
+    public func cancelAllUploads() {
+        for task in activeJobTasks.values {
+            task.cancel()
+        }
+        activeJobTasks.removeAll()
+        jobCourseMap.removeAll()
+        uploadingCourseIds.removeAll()
+        isUploading = false
+        progressRatio = 0.0
+        statusText = "Upload cancelled."
+        endBackgroundTaskIfNeeded()
+    }
+
     public func startUpload(urls: [URL], targetCourse: Course? = nil, modelContext: ModelContext, completion: (() -> Void)? = nil) {
         guard !urls.isEmpty else { return }
         ensureBackgroundTask()
 
-        var stagedFileURLs: [URL] = []
-        for url in urls {
-            stagedFileURLs.append(PersistentFileStager.stage(url: url))
-        }
+        if let existingTarget = targetCourse {
+            // Adding one or multiple documents to an existing course
+            var stagedFileURLs: [URL] = []
+            for url in urls {
+                stagedFileURLs.append(PersistentFileStager.stage(url: url))
+            }
 
-        var courseForJob = targetCourse
-        if courseForJob == nil, let firstURL = stagedFileURLs.first {
-            let rawFileName = firstURL.lastPathComponent.replacingOccurrences(of: #"^[0-9A-FA-F\-]{36}_"#, with: "", options: .regularExpression)
-            let fileName = rawFileName.replacingOccurrences(of: #"\.[^.]+$"#, with: "", options: .regularExpression)
-            let cleanTitle = fileName.isEmpty ? "New Course" : fileName.replacingOccurrences(of: "_", with: " ").capitalized
+            let job = UploadJob(urls: stagedFileURLs, targetCourse: existingTarget, completion: completion)
+            uploadingCourseIds.insert(existingTarget.id)
+            jobCourseMap[job.id] = existingTarget.id
+            isUploading = true
 
-            let allCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
-            let distinctPalette = [
-                "#2563EB", "#16A34A", "#9333EA", "#EA580C", "#0D9488",
-                "#DB2777", "#4F46E5", "#D97706", "#0284C7", "#7C3AED"
-            ]
-            let usedColors = Set(allCourses.map { $0.hexColor.uppercased() })
-            let nextColor = distinctPalette.first(where: { !usedColors.contains($0.uppercased()) }) ?? distinctPalette[allCourses.count % distinctPalette.count]
+            let task = Task { @MainActor in
+                await self.executeJob(job, modelContext: modelContext)
+            }
+            activeJobTasks[job.id] = task
+        } else {
+            // Adding one or multiple new course syllabi concurrently!
+            for url in urls {
+                let stagedURL = PersistentFileStager.stage(url: url)
+                let rawFileName = stagedURL.lastPathComponent.replacingOccurrences(of: #"^[0-9A-FA-F\-]{36}_"#, with: "", options: .regularExpression)
+                let fileName = rawFileName.replacingOccurrences(of: #"\.[^.]+$"#, with: "", options: .regularExpression)
+                let cleanTitle = fileName.isEmpty ? "New Course" : fileName.replacingOccurrences(of: "_", with: " ").capitalized
 
-            let placeholder = Course(courseName: cleanTitle, courseCode: "CRS", hexColor: nextColor)
-            modelContext.insert(placeholder)
-            try? modelContext.save()
-            courseForJob = placeholder
-        }
+                let allCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
+                let distinctPalette = [
+                    "#2563EB", "#16A34A", "#9333EA", "#EA580C", "#0D9488",
+                    "#DB2777", "#4F46E5", "#D97706", "#0284C7", "#7C3AED"
+                ]
+                let usedColors = Set(allCourses.map { $0.hexColor.uppercased() })
+                let nextColor = distinctPalette.first(where: { !usedColors.contains($0.uppercased()) }) ?? distinctPalette[allCourses.count % distinctPalette.count]
 
-        let job = UploadJob(urls: stagedFileURLs, targetCourse: courseForJob, completion: completion)
-        uploadQueue.append(job)
+                let placeholder = Course(courseName: cleanTitle, courseCode: "CRS", hexColor: nextColor)
+                modelContext.insert(placeholder)
+                try? modelContext.save()
 
-        if let cid = courseForJob?.id {
-            uploadingCourseIds.insert(cid)
-        }
+                let job = UploadJob(urls: [stagedURL], targetCourse: placeholder, completion: completion)
+                uploadingCourseIds.insert(placeholder.id)
+                jobCourseMap[job.id] = placeholder.id
+                isUploading = true
 
-        isUploading = true
-        processQueueIfNeeded(modelContext: modelContext)
-    }
-
-    private func processQueueIfNeeded(modelContext: ModelContext) {
-        guard !isQueueProcessing, !uploadQueue.isEmpty else { return }
-        isQueueProcessing = true
-        ensureBackgroundTask()
-
-        activeQueueTask = Task { @MainActor in
-            while !self.uploadQueue.isEmpty {
-                self.ensureBackgroundTask()
-                let currentJob = self.uploadQueue.removeFirst()
-                self.currentJob = currentJob
-
-                let jobTask = Task { @MainActor in
-                    await self.executeJob(currentJob, modelContext: modelContext)
+                let task = Task { @MainActor in
+                    await self.executeJob(job, modelContext: modelContext)
                 }
-                self.activeJobTask = jobTask
-                await jobTask.value
-                self.activeJobTask = nil
-                self.currentJob = nil
+                activeJobTasks[job.id] = task
             }
-
-            self.isQueueProcessing = false
-            self.isUploading = false
-            self.uploadingCourseIds.removeAll()
-
-            #if os(iOS)
-            if self.bgTaskID != .invalid {
-                UIApplication.shared.endBackgroundTask(self.bgTaskID)
-                self.bgTaskID = .invalid
-            }
-            #endif
         }
     }
 
@@ -208,9 +186,15 @@ public final class SyllabusUploadManager {
         let completion = job.completion
 
         defer {
-            self.currentJob = nil
+            self.activeJobTasks.removeValue(forKey: job.id)
+            self.jobCourseMap.removeValue(forKey: job.id)
             if let cid = targetCourse?.id {
                 self.uploadingCourseIds.remove(cid)
+            }
+            if self.uploadingCourseIds.isEmpty && self.activeJobTasks.isEmpty {
+                self.isUploading = false
+                self.progressRatio = 0.0
+                self.endBackgroundTaskIfNeeded()
             }
             // Cleanup temp files
             for stagedURL in stagedFileURLs {

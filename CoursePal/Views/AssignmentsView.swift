@@ -1200,18 +1200,24 @@ public struct AssignmentsView: View {
         return "Homework & Coursework"
     }
 
-    private func hasAssignmentOnDate(_ date: Date) -> Bool {
-        activeAssignments.contains { assign in
-            let due = dueDateForAssignment(assign)
-            return Calendar.current.isDate(due, inSameDayAs: date)
+    private var assignmentsByDay: [Date: [Assignment]] {
+        var dict: [Date: [Assignment]] = [:]
+        let cal = Calendar.current
+        for assign in activeAssignments {
+            let start = cal.startOfDay(for: dueDateForAssignment(assign))
+            dict[start, default: []].append(assign)
         }
+        return dict
+    }
+
+    private func hasAssignmentOnDate(_ date: Date) -> Bool {
+        let dayKey = Calendar.current.startOfDay(for: date)
+        return !(assignmentsByDay[dayKey]?.isEmpty ?? true)
     }
 
     private func courseColorsForDate(_ date: Date) -> [Color] {
-        let matching = activeAssignments.filter { assign in
-            let due = dueDateForAssignment(assign)
-            return Calendar.current.isDate(due, inSameDayAs: date)
-        }
+        let dayKey = Calendar.current.startOfDay(for: date)
+        let matching = assignmentsByDay[dayKey] ?? []
         let colors = Array(Set(matching.map { CourseColorHelper.color(for: $0.course?.hexColor ?? "#2563EB") }))
         return colors.isEmpty ? [Color(red: 0.14, green: 0.44, blue: 0.96)] : Array(colors.prefix(3))
     }
@@ -1444,13 +1450,14 @@ public struct EditAssignmentSheet: View {
     @State private var customNotesState: String = ""
     @State private var isSyncing: Bool = false
 
+    private static let rubricDelimiterRegex = try? NSRegularExpression(pattern: #"(?:\r?\n|\||;|\s*,\s*(?=[A-Za-z0-9\s]+[:\-–]|\d+\s*(?:pts|points|%)))"#)
+
     private var parsedRubricItems: [(title: String, points: String)] {
         let rawText = pointsBreakdownTextState
         guard !rawText.isEmpty else { return [] }
         
-        let delimiterPattern = #"(?:\r?\n|\||;|\s*,\s*(?=[A-Za-z0-9\s]+[:\-–]|\d+\s*(?:pts|points|%)))"#
         let rawSegments: [String]
-        if let regex = try? NSRegularExpression(pattern: delimiterPattern) {
+        if let regex = Self.rubricDelimiterRegex {
             let nsString = rawText as NSString
             let matches = regex.matches(in: rawText, range: NSRange(location: 0, length: nsString.length))
             var segments: [String] = []

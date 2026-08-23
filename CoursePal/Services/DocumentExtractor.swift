@@ -11,6 +11,10 @@ import AppKit
 
 public struct DocumentExtractor {
 
+    // MARK: - Precompiled Static Regex Cache
+    private static let asciiFilterRegex = try? NSRegularExpression(pattern: #"[A-Za-z0-9\s.,\-\(\)':"'\?]{6,}"#)
+    private static let wtTagRegex = try? NSRegularExpression(pattern: #"<w:t[^>]*>(.*?)</w:t>"#, options: [.dotMatchesLineSeparators])
+
     public static var supportedContentTypes: [UTType] {
         var types: [UTType] = [.pdf, .plainText, .image, .jpeg, .png, .heic]
         if let docxType = UTType(filenameExtension: "docx") {
@@ -41,22 +45,22 @@ public struct DocumentExtractor {
         // 2. PDF Document
         if ext == "pdf" {
             if let pdfDoc = PDFDocument(url: url) {
-                var pages: [String] = []
+                var extracted = ""
                 for i in 0..<pdfDoc.pageCount {
-                    if let page = pdfDoc.page(at: i), let pStr = page.string, !pStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        pages.append(pStr)
+                    if let page = pdfDoc.page(at: i), let pageContent = page.string {
+                        extracted += pageContent + "\n"
                     }
                 }
-                let fullPdfText = pages.joined(separator: "\n\n")
-                if !fullPdfText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    return fullPdfText
+                let clean = sanitizeText(extracted)
+                if !clean.isEmpty {
+                    return clean
                 }
             }
         }
 
-        // 3. DOCX / DOC Files (Microsoft Word)
+        // 3. Word DOCX Document
         if ext == "docx" || ext == "doc" {
-            let docxType = NSAttributedString.DocumentType(rawValue: "org.openxmlformats.wordprocessingml.document")
+            let docxType = UTType(filenameExtension: "docx")?.identifier ?? "org.openxmlformats.wordprocessingml.document"
             let docxOptions: [NSAttributedString.DocumentReadingOptionKey: Any] = [.documentType: docxType]
 
             if let attrStr = try? NSAttributedString(url: url, options: docxOptions, documentAttributes: nil) {
@@ -79,7 +83,7 @@ public struct DocumentExtractor {
 
                 // Fallback scan for printable ASCII sentences in compressed stream
                 if let asciiStr = String(data: data, encoding: .ascii) {
-                    let matches = (try? NSRegularExpression(pattern: #"[A-Za-z0-9\s.,\-\(\)':"'\?]{6,}"#))?.matches(in: asciiStr, range: NSRange(location: 0, length: asciiStr.utf16.count)) ?? []
+                    let matches = Self.asciiFilterRegex?.matches(in: asciiStr, range: NSRange(location: 0, length: asciiStr.utf16.count)) ?? []
                     let words = matches.compactMap { m -> String? in
                         let s = (asciiStr as NSString).substring(with: m.range).trimmingCharacters(in: .whitespacesAndNewlines)
                         return s.count >= 4 && isReadableEnglishText(s) ? s : nil
@@ -168,7 +172,7 @@ public struct DocumentExtractor {
                         if extractedXml != nil { break }
                     }
                 }
-                offset += 30 + fileNameLen + extraLen + max(0, compressedSize)
+                offset += max(1, 30 + fileNameLen + extraLen + max(0, compressedSize))
             } else {
                 offset += 1
             }
@@ -195,8 +199,7 @@ public struct DocumentExtractor {
             .replacingOccurrences(of: "</w:p>", with: "\n")
 
         // Extract text inside <w:t> tags while keeping line structure
-        let pattern = #"<w:t[^>]*>(.*?)</w:t>"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
+        guard let regex = Self.wtTagRegex else {
             let clean = processedXml.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
             return clean.trimmingCharacters(in: .whitespacesAndNewlines)
         }

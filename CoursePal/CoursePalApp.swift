@@ -89,8 +89,7 @@ struct CoursePalApp: App {
             print("==================================================")
             print("RUNNING 10-ROUND LIVE GEMINI QA PROTOCOL BATTERY...")
             print("==================================================")
-            let sema = DispatchSemaphore(value: 0)
-            Task { @MainActor in
+            Task.detached {
                 let results = await SyllabusParserTestSuite.shared.run10RoundLiveGeminiQABattery()
                 var passed = 0
                 for r in results {
@@ -102,10 +101,8 @@ struct CoursePalApp: App {
                 print("--------------------------------------------------")
                 print("RESULTS: \(passed)/\(results.count) Tests Passed (\(Int(Double(passed)/Double(results.count)*100))%)")
                 print("==================================================")
-                sema.signal()
                 exit(passed < results.count ? 1 : 0)
             }
-            sema.wait()
         }
 
         // Run database history cleanup to purge placeholder faculty & clean prior chapter titles

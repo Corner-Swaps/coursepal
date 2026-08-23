@@ -35,12 +35,13 @@ public struct AssignmentDetailView: View {
         CourseColorHelper.color(for: assignment.course?.hexColor ?? "#2563EB")
     }
 
+    private static let rubricDelimiterRegex = try? NSRegularExpression(pattern: #"(?:\r?\n|\||;|\s*,\s*(?=[A-Za-z0-9\s]+[:\-–]|\d+\s*(?:pts|points|%)))"#)
+
     private var rubricItems: [(title: String, points: String)] {
         guard let breakdown = assignment.pointsBreakdown, !breakdown.isEmpty else { return [] }
         
-        let delimiterPattern = #"(?:\r?\n|\||;|\s*,\s*(?=[A-Za-z0-9\s]+[:\-–]|\d+\s*(?:pts|points|%)))"#
         let rawSegments: [String]
-        if let regex = try? NSRegularExpression(pattern: delimiterPattern) {
+        if let regex = Self.rubricDelimiterRegex {
             let nsString = breakdown as NSString
             let matches = regex.matches(in: breakdown, range: NSRange(location: 0, length: nsString.length))
             var segments: [String] = []

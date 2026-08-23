@@ -124,6 +124,11 @@ public struct SyllabusRepositoryView: View {
     @State private var editingFaculty: Course? = nil
     @State private var editingAssignment: Assignment? = nil
     @State private var editingReading: Reading? = nil
+    @State private var courseForAddingTask: Course? = nil
+    @State private var addingTaskCategory: Int = 0 // 0: Assignment, 1: Reading
+    @State private var showingAddTaskModal: Bool = false
+    @State private var courseForCameraScan: Course? = nil
+    @State private var showingCameraScanSheet: Bool = false
     @Binding var showingUploadModal: Bool
     @Binding var isGlobalProcessing: Bool
     @Binding var selectedCourseForAddDoc: Course?
@@ -376,17 +381,39 @@ public struct SyllabusRepositoryView: View {
                                 .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
                             } else {
                                 VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(activeCourses) { course in
-                                        CourseSyllabusCardRow(
+                                     ForEach(activeCourses) { course in
+                                         CourseSyllabusCardRow(
                                             course: course,
                                             isUploading: SyllabusUploadManager.shared.isUploading && SyllabusUploadManager.shared.uploadingCourseIds.contains(course.id),
-                                            onAddDocument: {
+                                             onAddDocument: {
                                                 if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                                     repositoryErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
                                                     showingRepositoryErrorAlert = true
                                                 } else {
                                                     selectedCourseForAddDoc = course
-                                                    showingUploadModal = true
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                                        showingFileImporter = true
+                                                    }
+                                                }
+                                            },
+                                            onScanDocument: {
+                                                courseForCameraScan = course
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                                    showingCameraScanSheet = true
+                                                }
+                                            },
+                                            onAddAssignment: {
+                                                courseForAddingTask = course
+                                                addingTaskCategory = 0
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                                    showingAddTaskModal = true
+                                                }
+                                            },
+                                            onAddReading: {
+                                                courseForAddingTask = course
+                                                addingTaskCategory = 1
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                                    showingAddTaskModal = true
                                                 }
                                             },
                                             onDeleteCourse: { deleteCourse(course) },
@@ -467,10 +494,22 @@ public struct SyllabusRepositoryView: View {
             .sheet(item: $editingReading) { r in
                 EditReadingModalView(reading: r)
             }
+            .sheet(isPresented: $showingAddTaskModal) {
+                AddTaskModalView(initialCourse: courseForAddingTask, initialCategory: addingTaskCategory)
+            }
+            #if os(iOS)
+            .fullScreenCover(isPresented: $showingCameraScanSheet) {
+                SyllabusScanView(targetCourse: courseForCameraScan)
+            }
+            #else
+            .sheet(isPresented: $showingCameraScanSheet) {
+                SyllabusScanView(targetCourse: courseForCameraScan)
+            }
+            #endif
 
-            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: false) { result in
-                if case .success(let urls) = result, let singleURL = urls.first {
-                    importPDFDocuments([singleURL])
+            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: DocumentExtractor.supportedContentTypes, allowsMultipleSelection: true) { result in
+                if case .success(let urls) = result, !urls.isEmpty {
+                    importPDFDocuments(urls)
                 }
             }
             .alert("Error", isPresented: $showingRepositoryErrorAlert) {
@@ -870,6 +909,9 @@ public struct CourseSyllabusCardRow: View {
     public let course: Course
     public var isUploading: Bool = false
     public let onAddDocument: () -> Void
+    public let onScanDocument: () -> Void
+    public let onAddAssignment: () -> Void
+    public let onAddReading: () -> Void
     public let onDeleteCourse: () -> Void
     public let onEditCourse: () -> Void
     public let onEditFaculty: () -> Void
@@ -914,11 +956,6 @@ public struct CourseSyllabusCardRow: View {
         return "\(cleanCode.uppercased()) · \(cleanName)"
     }
 
-    private func attachedDocColor(doc: SyllabusDocument, index: Int, course: Course) -> Color {
-        let docHex = CourseImporter.getDistinctVaultDocColor(docIndex: index, courseHex: course.hexColor)
-        return CourseColorHelper.color(for: docHex)
-    }
-
     public var body: some View {
         VStack(spacing: 0) {
             // MARK: - Header Bar (Matching Readings Section Card Size 1:1)
@@ -950,7 +987,7 @@ public struct CourseSyllabusCardRow: View {
 
                 Spacer(minLength: 4)
 
-                // Right Side Action Buttons: Plus Document Button, Garbage can, Chevron Dropdown Arrow
+                // Right Side Action Buttons: Plus Document/Item Menu, Trash, Chevron
                 HStack(spacing: 6) {
                     if isUploading {
                         ProgressView()
@@ -958,7 +995,20 @@ public struct CourseSyllabusCardRow: View {
                             .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
                             .frame(width: 32, height: 32)
                     } else {
-                        Button(action: onAddDocument) {
+                        Menu {
+                            Button(action: onAddDocument) {
+                                Label("Upload Material / Syllabus", systemImage: "doc.badge.plus")
+                            }
+                            Button(action: onScanDocument) {
+                                Label("Scan with Camera", systemImage: "camera.fill")
+                            }
+                            Button(action: onAddAssignment) {
+                                Label("Add Assignment", systemImage: "checklist")
+                            }
+                            Button(action: onAddReading) {
+                                Label("Add Reading", systemImage: "book.fill")
+                            }
+                        } label: {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 8)
                                     .fill(Color(red: 0.92, green: 0.95, blue: 1.0))
@@ -968,7 +1018,6 @@ public struct CourseSyllabusCardRow: View {
                                     .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                             }
                         }
-                        .buttonStyle(.plain)
                     }
 
                     // Garbage Can Button
@@ -981,7 +1030,7 @@ public struct CourseSyllabusCardRow: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Expand / Collapse Chevron Dropdown Arrow (Thin Circle Line Weight)
+                    // Expand / Collapse Chevron Dropdown Arrow
                     Button(action: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                             isExpanded.toggle()
@@ -1008,13 +1057,37 @@ public struct CourseSyllabusCardRow: View {
                 Divider()
                     .padding(.horizontal, 14)
 
-                VStack(alignment: .leading, spacing: 12) {
-                    if !course.syllabusDocs.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 14) {
+                    // ATTACHED DOCUMENTS SECTION
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
                             Text("ATTACHED DOCUMENTS (\(course.syllabusDocs.count))")
                                 .font(.system(size: 10.5, weight: .bold))
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            Spacer()
+                            Button(action: onAddDocument) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text("Add Document")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
+                            .buttonStyle(.plain)
+                        }
 
+                        if course.syllabusDocs.isEmpty {
+                            HStack {
+                                Text("No documents attached yet.")
+                                    .font(.system(size: 11.5))
+                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                Spacer()
+                            }
+                            .padding(8)
+                            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                            .cornerRadius(8)
+                        } else {
                             ForEach(course.syllabusDocs, id: \.id) { doc in
                                 HStack(spacing: 6) {
                                     Image(systemName: "doc.fill")
@@ -1118,13 +1191,36 @@ public struct CourseSyllabusCardRow: View {
                         )
                     }
 
-                    // Assignments list inside course with Edit Button
-                    if !course.assignments.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                    // Assignments list inside course with Add & Edit Buttons
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
                             Text("ASSIGNMENTS (\(course.assignments.count))")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            Spacer()
+                            Button(action: onAddAssignment) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text("Add Assignment")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
+                            .buttonStyle(.plain)
+                        }
 
+                        if course.assignments.isEmpty {
+                            HStack {
+                                Text("No assignments in this course yet.")
+                                    .font(.system(size: 11.5))
+                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                Spacer()
+                            }
+                            .padding(8)
+                            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                            .cornerRadius(8)
+                        } else {
                             ForEach(course.assignments.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) })) { assign in
                                 let assignDocColor = CourseColorHelper.color(for: assign.sourceDocumentHexColor)
                                 HStack(spacing: 8) {
@@ -1166,14 +1262,37 @@ public struct CourseSyllabusCardRow: View {
                         }
                     }
 
-                    // Readings list inside course with Edit Button
+                    // Readings list inside course with Add & Edit Buttons
                     let allReadingsForCourse = course.weeks.flatMap { $0.readings }
-                    if !allReadingsForCourse.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
                             Text("READINGS (\(allReadingsForCourse.count))")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            Spacer()
+                            Button(action: onAddReading) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text("Add Reading")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
+                            .buttonStyle(.plain)
+                        }
 
+                        if allReadingsForCourse.isEmpty {
+                            HStack {
+                                Text("No readings in this course yet.")
+                                    .font(.system(size: 11.5))
+                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                Spacer()
+                            }
+                            .padding(8)
+                            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                            .cornerRadius(8)
+                        } else {
                             ForEach(allReadingsForCourse, id: \.id) { reading in
                                 let readingDocColor = CourseColorHelper.color(for: reading.sourceDocumentHexColor)
                                 HStack(spacing: 8) {
