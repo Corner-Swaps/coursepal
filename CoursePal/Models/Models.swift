@@ -980,13 +980,32 @@ public struct CourseImporter {
                                 isGenericKey(normalizeKey(existingCourse.courseName)) ||
                                 existingCourse.courseName.lowercased().contains("syllabus")
 
+        let isPlaceholderCode = (existingCourse.courseCode ?? "").isEmpty ||
+                                existingCourse.courseCode?.uppercased() == "CRS" ||
+                                isGenericKey(normalizeKey(existingCourse.courseCode ?? ""))
+
+        // If this is a temporary placeholder course, check if a real existing course with this code/name is already in DB to avoid duplicates
+        if isPlaceholderName || isPlaceholderCode {
+            let targetCodeKey = normalizeKey(dto.courseCode ?? "")
+            let targetNameKey = normalizeKey(dto.courseName)
+            let allCourses = (try? modelContext.fetch(FetchDescriptor<Course>())) ?? []
+            if let realCourse = allCourses.first(where: { c in
+                c.id != existingCourse.id && !c.isDeleted &&
+                ((!isGenericKey(normalizeKey(c.courseCode ?? "")) && !targetCodeKey.isEmpty && normalizeKey(c.courseCode ?? "") == targetCodeKey) ||
+                 (!isGenericKey(normalizeKey(c.courseName)) && !targetNameKey.isEmpty && normalizeKey(c.courseName) == targetNameKey))
+            }) {
+                print("ℹ️ [COURSE MERGE] Found existing course '\(realCourse.courseName)' (\(realCourse.courseCode ?? "")). Merging into existing course and deleting temporary placeholder.")
+                let result = importDTO(dto, into: realCourse, modelContext: modelContext)
+                modelContext.delete(existingCourse)
+                try? modelContext.save()
+                return result
+            }
+        }
+
         if !cleanName.isEmpty && (isPlaceholderName || cleanName.count > existingCourse.courseName.count || isGenericKey(normalizeKey(existingCourse.courseName))) {
             existingCourse.courseName = cleanName
         }
 
-        let isPlaceholderCode = (existingCourse.courseCode ?? "").isEmpty ||
-                                existingCourse.courseCode?.uppercased() == "CRS" ||
-                                isGenericKey(normalizeKey(existingCourse.courseCode ?? ""))
         if let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty, cleanCode.uppercased() != "CRS" {
             existingCourse.courseCode = cleanCode
         }
@@ -1165,18 +1184,23 @@ public struct CourseImporter {
     }
 
     private static func importItemDTOs(_ items: [ItemDTO], into course: Course, modelContext: ModelContext, sourceDocumentName: String? = nil, docColorHex: String? = nil) {
+        let courseCodeKey = normalizeKey(course.courseCode ?? "")
+        let courseNameKey = normalizeKey(course.courseName)
+        let isGenericCode = isGenericKey(courseCodeKey) || courseCodeKey.isEmpty
+        let isGenericName = isGenericKey(courseNameKey) || courseNameKey.isEmpty
+
         let allAssignmentsInDB = (try? modelContext.fetch(FetchDescriptor<Assignment>())) ?? []
         let courseAssignments = allAssignmentsInDB.filter { assign in
             assign.course?.id == course.id ||
-            normalizeKey(assign.courseCode ?? "") == normalizeKey(course.courseCode ?? "") ||
-            normalizeKey(assign.course?.courseName ?? "") == normalizeKey(course.courseName)
+            (!isGenericCode && normalizeKey(assign.courseCode ?? "") == courseCodeKey) ||
+            (!isGenericName && normalizeKey(assign.course?.courseName ?? "") == courseNameKey)
         }
 
         let allReadingsInDB = (try? modelContext.fetch(FetchDescriptor<Reading>())) ?? []
         let courseReadings = allReadingsInDB.filter { reading in
             reading.week?.course?.id == course.id ||
-            normalizeKey(reading.courseCode ?? "") == normalizeKey(course.courseCode ?? "") ||
-            normalizeKey(reading.week?.course?.courseName ?? "") == normalizeKey(course.courseName)
+            (!isGenericCode && normalizeKey(reading.courseCode ?? "") == courseCodeKey) ||
+            (!isGenericName && normalizeKey(reading.week?.course?.courseName ?? "") == courseNameKey)
         }
 
         for item in items {

@@ -63,8 +63,9 @@ public final class SyllabusUploadManager {
     public var successMessage: String? = nil
     public var showingSuccessAlert: Bool = false
 
-    private var activeJobTasks: [UUID: Task<Void, Never>] = [:]
-    private var jobCourseMap: [UUID: UUID] = [:] // Job ID -> Course ID
+    private var pendingJobQueue: [UploadJob] = []
+    private var currentRunningTask: Task<Void, Never>? = nil
+    private var currentJob: UploadJob? = nil
 
     #if os(iOS)
     private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -88,7 +89,7 @@ public final class SyllabusUploadManager {
 
     private func endBackgroundTaskIfNeeded() {
         #if os(iOS)
-        if activeJobTasks.isEmpty && uploadingCourseIds.isEmpty && bgTaskID != .invalid {
+        if pendingJobQueue.isEmpty && currentRunningTask == nil && uploadingCourseIds.isEmpty && bgTaskID != .invalid {
             UIApplication.shared.endBackgroundTask(bgTaskID)
             bgTaskID = .invalid
         }
@@ -99,14 +100,15 @@ public final class SyllabusUploadManager {
 
     public func cancelUpload(forCourseId courseId: UUID) {
         uploadingCourseIds.remove(courseId)
+        pendingJobQueue.removeAll(where: { $0.targetCourse?.id == courseId })
 
-        for (jobId, cId) in jobCourseMap where cId == courseId {
-            activeJobTasks[jobId]?.cancel()
-            activeJobTasks.removeValue(forKey: jobId)
-            jobCourseMap.removeValue(forKey: jobId)
+        if currentJob?.targetCourse?.id == courseId {
+            currentRunningTask?.cancel()
+            currentRunningTask = nil
+            currentJob = nil
         }
 
-        if uploadingCourseIds.isEmpty && activeJobTasks.isEmpty {
+        if uploadingCourseIds.isEmpty && pendingJobQueue.isEmpty && currentRunningTask == nil {
             isUploading = false
             progressRatio = 0.0
             statusText = "Upload cancelled."
@@ -115,11 +117,10 @@ public final class SyllabusUploadManager {
     }
 
     public func cancelAllUploads() {
-        for task in activeJobTasks.values {
-            task.cancel()
-        }
-        activeJobTasks.removeAll()
-        jobCourseMap.removeAll()
+        pendingJobQueue.removeAll()
+        currentRunningTask?.cancel()
+        currentRunningTask = nil
+        currentJob = nil
         uploadingCourseIds.removeAll()
         isUploading = false
         progressRatio = 0.0
@@ -140,15 +141,11 @@ public final class SyllabusUploadManager {
 
             let job = UploadJob(urls: stagedFileURLs, targetCourse: existingTarget, completion: completion)
             uploadingCourseIds.insert(existingTarget.id)
-            jobCourseMap[job.id] = existingTarget.id
+            pendingJobQueue.append(job)
             isUploading = true
-
-            let task = Task { @MainActor in
-                await self.executeJob(job, modelContext: modelContext)
-            }
-            activeJobTasks[job.id] = task
+            processQueue(modelContext: modelContext)
         } else {
-            // Adding one or multiple new course syllabi concurrently!
+            // Adding one or multiple new course syllabi sequentially
             for url in urls {
                 let stagedURL = PersistentFileStager.stage(url: url)
                 let rawFileName = stagedURL.lastPathComponent.replacingOccurrences(of: #"^[0-9A-FA-F\-]{36}_"#, with: "", options: .regularExpression)
@@ -163,20 +160,40 @@ public final class SyllabusUploadManager {
                 let usedColors = Set(allCourses.map { $0.hexColor.uppercased() })
                 let nextColor = distinctPalette.first(where: { !usedColors.contains($0.uppercased()) }) ?? distinctPalette[allCourses.count % distinctPalette.count]
 
-                let placeholder = Course(courseName: cleanTitle, courseCode: "CRS", hexColor: nextColor)
+                let placeholder = Course(courseName: cleanTitle, courseCode: "", hexColor: nextColor)
                 modelContext.insert(placeholder)
                 try? modelContext.save()
 
                 let job = UploadJob(urls: [stagedURL], targetCourse: placeholder, completion: completion)
                 uploadingCourseIds.insert(placeholder.id)
-                jobCourseMap[job.id] = placeholder.id
+                pendingJobQueue.append(job)
                 isUploading = true
-
-                let task = Task { @MainActor in
-                    await self.executeJob(job, modelContext: modelContext)
-                }
-                activeJobTasks[job.id] = task
             }
+            processQueue(modelContext: modelContext)
+        }
+    }
+
+    private func processQueue(modelContext: ModelContext) {
+        guard currentRunningTask == nil else { return }
+
+        guard !pendingJobQueue.isEmpty else {
+            if uploadingCourseIds.isEmpty {
+                isUploading = false
+                progressRatio = 0.0
+                endBackgroundTaskIfNeeded()
+            }
+            return
+        }
+
+        let nextJob = pendingJobQueue.removeFirst()
+        currentJob = nextJob
+        isUploading = true
+
+        currentRunningTask = Task { @MainActor in
+            await self.executeJob(nextJob, modelContext: modelContext)
+            self.currentRunningTask = nil
+            self.currentJob = nil
+            self.processQueue(modelContext: modelContext)
         }
     }
 
@@ -186,12 +203,10 @@ public final class SyllabusUploadManager {
         let completion = job.completion
 
         defer {
-            self.activeJobTasks.removeValue(forKey: job.id)
-            self.jobCourseMap.removeValue(forKey: job.id)
             if let cid = targetCourse?.id {
                 self.uploadingCourseIds.remove(cid)
             }
-            if self.uploadingCourseIds.isEmpty && self.activeJobTasks.isEmpty {
+            if self.uploadingCourseIds.isEmpty && self.pendingJobQueue.isEmpty {
                 self.isUploading = false
                 self.progressRatio = 0.0
                 self.endBackgroundTaskIfNeeded()
