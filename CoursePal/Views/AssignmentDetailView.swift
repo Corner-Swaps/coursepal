@@ -137,8 +137,13 @@ public struct AssignmentDetailView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "calendar.badge.clock")
                         .font(.system(size: 12, weight: .bold))
-                    Text("Due: \(WeekDateConverter.formattedDueDate(for: assignment.dueDate, weekNumber: assignment.weekNumber))")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                    if let due = assignment.dueDate {
+                        Text("Due: \(WeekDateConverter.formattedDueDate(for: due, weekNumber: assignment.weekNumber))")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    } else {
+                        Text("Date: Unknown · Week \(assignment.weekNumber)")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -197,31 +202,40 @@ public struct AssignmentDetailView: View {
                                     guard !isSyncing else { return }
                                     isSyncing = true
                                     assignment.weekNumber = newW
-                                    let calcDate = WeekDateConverter.date(forWeek: newW)
-                                    dueDateState = calcDate
-                                    assignment.dueDate = calcDate
+                                    if assignment.dueDate != nil {
+                                        let calcDate = WeekDateConverter.date(forWeek: newW)
+                                        dueDateState = calcDate
+                                        assignment.dueDate = calcDate
+                                    }
                                     isSyncing = false
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // Due Date Picker
+                            // Due Date / Date Range
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Due Date & Time")
+                                Text("Date Range")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                DatePicker("", selection: $dueDateState, displayedComponents: [.date, .hourAndMinute])
-                                    .labelsHidden()
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    .onChange(of: dueDateState) { _, newDate in
-                                        guard !isSyncing else { return }
-                                        isSyncing = true
-                                        assignment.dueDate = newDate
-                                        let calcWeek = WeekDateConverter.weekNumber(for: newDate)
-                                        selectedWeekNum = calcWeek
-                                        assignment.weekNumber = calcWeek
-                                        isSyncing = false
-                                    }
+                                if assignment.dueDate != nil {
+                                    DatePicker("", selection: $dueDateState, displayedComponents: [.date, .hourAndMinute])
+                                        .labelsHidden()
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                        .onChange(of: dueDateState) { _, newDate in
+                                            guard !isSyncing else { return }
+                                            isSyncing = true
+                                            assignment.dueDate = newDate
+                                            let calcWeek = WeekDateConverter.weekNumber(for: newDate)
+                                            selectedWeekNum = calcWeek
+                                            assignment.weekNumber = calcWeek
+                                            isSyncing = false
+                                        }
+                                } else {
+                                    Text("Unknown")
+                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                        .padding(.vertical, 6)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }

@@ -314,14 +314,17 @@ public struct SyllabusRepositoryView: View {
 
                     // MARK: - Loading Status Pill (Above Courses)
                     if SyllabusUploadManager.shared.isUploading {
+                        let activeCount = SyllabusUploadManager.shared.uploadingCourseIds.count
+                        let titleText = activeCount > 1 ? "Processing \(activeCount) courses..." : (SyllabusUploadManager.shared.statusText.isEmpty ? "Uploading syllabus document" : SyllabusUploadManager.shared.statusText)
                         HStack(spacing: 10) {
                             ProgressView()
                                 .controlSize(.small)
                                 .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
 
-                            Text("Uploading syllabus document")
+                            Text(titleText)
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .lineLimit(1)
 
                             Spacer()
 
@@ -387,8 +390,7 @@ public struct SyllabusRepositoryView: View {
                                 VStack(alignment: .leading, spacing: 10) {
                                      ForEach(activeCourses) { course in
                                          CourseSyllabusCardRow(
-                                            course: course,
-                                            isUploading: SyllabusUploadManager.shared.isUploading && SyllabusUploadManager.shared.uploadingCourseIds.contains(course.id),
+                                             course: course,
                                              onAddDocument: {
                                                 if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                                     repositoryErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
@@ -954,7 +956,6 @@ public struct SyllabusDocPreviewSheet: View {
 
 public struct CourseSyllabusCardRow: View {
     public let course: Course
-    public var isUploading: Bool = false
     public let onAddDocument: () -> Void
     public let onScanDocument: () -> Void
     public let onAddAssignment: () -> Void
@@ -966,6 +967,14 @@ public struct CourseSyllabusCardRow: View {
     public let onEditReading: (Reading) -> Void
 
     @State private var isExpanded: Bool = false
+
+    private var isUploading: Bool {
+        SyllabusUploadManager.shared.isUploading && SyllabusUploadManager.shared.uploadingCourseIds.contains(course.id)
+    }
+
+    private var uploadStatus: String {
+        SyllabusUploadManager.shared.status(for: course.id) ?? "Analyzing syllabus..."
+    }
 
     private var courseColor: Color {
         CourseColorHelper.color(for: course.hexColor)
@@ -1021,18 +1030,30 @@ public struct CourseSyllabusCardRow: View {
                             .lineLimit(2)
                     }
 
-                    // Stats summary row (Readings and Assignments)
-                    let totalReadings = course.weeks.reduce(0) { $0 + $1.readings.count }
-                    HStack(spacing: 4) {
-                        Text("\(totalReadings) Readings")
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                    if isUploading {
+                        HStack(spacing: 5) {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            Text(uploadStatus)
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .lineLimit(1)
+                        }
+                    } else {
+                        // Stats summary row (Readings and Assignments)
+                        let totalReadings = course.weeks.reduce(0) { $0 + $1.readings.count }
+                        HStack(spacing: 4) {
+                            Text("\(totalReadings) Readings")
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
 
-                        Text("• \(course.assignments.count) Assignments")
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            Text("• \(course.assignments.count) Assignments")
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                        }
+                        .lineLimit(1)
                     }
-                    .lineLimit(1)
                 }
 
                 Spacer(minLength: 4)

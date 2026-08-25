@@ -897,7 +897,7 @@ public final class APIService: ObservableObject {
            - key_takeaways: 1-2 bullet points with core concepts ("• Concept 1\n• Concept 2").
            - estimated_time: Time estimate (e.g. "~45 min read", "~20 min video").
            - media_url: Direct link to article, video, or podcast if found in document.
-           - due_date_iso: Scheduled date in YYYY-MM-DD format.
+           - due_date_iso: Scheduled date in YYYY-MM-DD format if explicitly stated. If the date is not explicitly mentioned in the syllabus, leave due_date_iso null or empty (""). DO NOT invent or fabricate dates.
            - week_number: Chronological week number (1..16). If weeks are not explicitly labeled, map dates chronologically.
 
         3. ASSIGNMENTS (category = "Assignment"):
@@ -906,7 +906,7 @@ public final class APIService: ObservableObject {
            - points: Exact points possible (e.g. "100 Points").
            - points_breakdown: Rubric breakdown by criterion if present (e.g. "Analysis: 40 pts, Methodology: 40 pts, Style: 20 pts").
            - percentage: Grade weight percentage (e.g. "20%" or "40%").
-           - due_date_iso: Exact due date in YYYY-MM-DD format verbatim from schedule.
+           - due_date_iso: Exact due date in YYYY-MM-DD format verbatim from schedule. If no exact due date is given in the document, leave due_date_iso null or empty (""). DO NOT guess or invent placeholder dates.
            - week_number: Chronological week number (1..16) when the assignment is due.
         """
 

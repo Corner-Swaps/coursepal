@@ -51,6 +51,12 @@ public final class SyllabusUploadManager {
 
     public var isUploading: Bool = false
     public var uploadingCourseIds: Set<UUID> = []
+    public var courseUploadStatuses: [UUID: String] = [:]
+
+    public func status(for courseId: UUID) -> String? {
+        courseUploadStatuses[courseId]
+    }
+
     public var targetCourseId: UUID? {
         uploadingCourseIds.first
     }
@@ -100,6 +106,7 @@ public final class SyllabusUploadManager {
 
     public func cancelUpload(forCourseId courseId: UUID) {
         uploadingCourseIds.remove(courseId)
+        courseUploadStatuses.removeValue(forKey: courseId)
         pendingJobQueue.removeAll(where: { $0.targetCourse?.id == courseId })
 
         if currentJob?.targetCourse?.id == courseId {
@@ -122,6 +129,7 @@ public final class SyllabusUploadManager {
         currentRunningTask = nil
         currentJob = nil
         uploadingCourseIds.removeAll()
+        courseUploadStatuses.removeAll()
         isUploading = false
         progressRatio = 0.0
         statusText = "Upload cancelled."
@@ -141,6 +149,11 @@ public final class SyllabusUploadManager {
 
             let job = UploadJob(urls: stagedFileURLs, targetCourse: existingTarget, completion: completion)
             uploadingCourseIds.insert(existingTarget.id)
+            if currentRunningTask != nil {
+                courseUploadStatuses[existingTarget.id] = "Queued — waiting to process..."
+            } else {
+                courseUploadStatuses[existingTarget.id] = "Analyzing syllabus..."
+            }
             pendingJobQueue.append(job)
             isUploading = true
             processQueue(modelContext: modelContext)
@@ -166,6 +179,11 @@ public final class SyllabusUploadManager {
 
                 let job = UploadJob(urls: [stagedURL], targetCourse: placeholder, completion: completion)
                 uploadingCourseIds.insert(placeholder.id)
+                if currentRunningTask != nil {
+                    courseUploadStatuses[placeholder.id] = "Queued — waiting to process..."
+                } else {
+                    courseUploadStatuses[placeholder.id] = "Analyzing syllabus..."
+                }
                 pendingJobQueue.append(job)
                 isUploading = true
             }
@@ -187,6 +205,9 @@ public final class SyllabusUploadManager {
 
         let nextJob = pendingJobQueue.removeFirst()
         currentJob = nextJob
+        if let cid = nextJob.targetCourse?.id {
+            courseUploadStatuses[cid] = "Analyzing syllabus..."
+        }
         isUploading = true
 
         currentRunningTask = Task { @MainActor in
@@ -205,6 +226,7 @@ public final class SyllabusUploadManager {
         defer {
             if let cid = targetCourse?.id {
                 self.uploadingCourseIds.remove(cid)
+                self.courseUploadStatuses.removeValue(forKey: cid)
             }
             if self.uploadingCourseIds.isEmpty && self.pendingJobQueue.isEmpty {
                 self.isUploading = false
@@ -230,8 +252,9 @@ public final class SyllabusUploadManager {
             } else {
                 cleanFileName = fileName
             }
+            let courseTitle = targetCourse?.courseName ?? cleanFileName
             self.currentFileName = cleanFileName
-            self.statusText = "Extracting data from '\(cleanFileName)'..."
+            self.statusText = "Processing '\(courseTitle)'..."
             self.progressRatio = 0.75 + (Double(index) / Double(totalFiles)) * 0.20
 
             let ext = url.pathExtension.uppercased()
@@ -280,9 +303,13 @@ public final class SyllabusUploadManager {
 
             var parsedDTO: CourseDTO? = nil
 
+            if let cid = targetCourse?.id {
+                self.courseUploadStatuses[cid] = "Analyzing syllabus..."
+            }
+
             // 1. Smart Text-First Route: If clean native text was extracted, parse directly (10x faster & token-efficient)
             if let text = extractedText, text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 150 {
-                self.statusText = "Analyzing syllabus text with Gemini AI..."
+                self.statusText = "Analyzing syllabus text..."
                 print("⚡️ [UPLOAD] Fast text-first route for: \(cleanFileName) (\(text.count) chars)")
                 do {
                     let textDTO = try await APIService.shared.parseSyllabusText(text)
@@ -298,7 +325,10 @@ public final class SyllabusUploadManager {
             // 2. Multimodal Vision Route: If text was sparse/empty or text parse yielded no items, parse via Base64 PDF
             let hasItems = (parsedDTO?.items?.count ?? 0) > 0 || (parsedDTO?.weeks?.flatMap { $0.readings ?? [] }.count ?? 0) > 0
             if !hasItems, ext == "PDF", let pData = fileData, !pData.isEmpty {
-                self.statusText = "Analyzing syllabus with Gemini Multimodal AI..."
+                self.statusText = "Analyzing syllabus document..."
+                if let cid = targetCourse?.id {
+                    self.courseUploadStatuses[cid] = "Extracting course schedule & readings..."
+                }
                 print("🤖 [UPLOAD] Attempting Gemini Multimodal parse for PDF: \(cleanFileName)")
                 do {
                     parsedDTO = try await APIService.shared.parsePDFDocumentData(pData)
@@ -311,7 +341,10 @@ public final class SyllabusUploadManager {
             // 3. Fallback to LocalSyllabusParser if AI parsing failed or yielded no items
             let finalHasItems = (parsedDTO?.items?.count ?? 0) > 0 || (parsedDTO?.weeks?.flatMap { $0.readings ?? [] }.count ?? 0) > 0
             if !finalHasItems {
-                self.statusText = "Processing syllabus with local parser..."
+                self.statusText = "Processing syllabus schedule..."
+                if let cid = targetCourse?.id {
+                    self.courseUploadStatuses[cid] = "Processing syllabus schedule..."
+                }
                 print("📋 [UPLOAD] Using LOCAL parser fallback for: \(cleanFileName)")
                 var textToParse: String = extractedText ?? ""
                 if textToParse.isEmpty, let pData = fileData, !pData.isEmpty {
@@ -338,6 +371,10 @@ public final class SyllabusUploadManager {
                     assignments: []
                 )
             }()
+
+            if let cid = targetCourse?.id {
+                self.courseUploadStatuses[cid] = "Building weekly schedule..."
+            }
 
             do {
                 let importedCourse: Course
@@ -384,10 +421,9 @@ public final class SyllabusUploadManager {
                 try modelContext.save()
                 completedCount += 1
                 let finalName = targetCourse?.courseName ?? dto.courseName
-                let finalCode = (targetCourse?.courseCode?.isEmpty == false) ? (targetCourse?.courseCode ?? "") : (dto.courseCode ?? "Course")
                 self.lastImportedCourseName = finalName
                 let itemCount = (dto.items?.count ?? 0) + (dto.assignments?.count ?? 0) + (dto.weeks?.reduce(0) { $0 + ($1.readings?.count ?? 0) } ?? 0)
-                self.successMessage = "Success! Extracted '\(finalName)' (\(finalCode)) with \(itemCount) items!"
+                self.successMessage = "Success! Extracted '\(finalName)' with \(itemCount) items!"
                 if self.pendingJobQueue.isEmpty {
                     self.showingSuccessAlert = true
                 }

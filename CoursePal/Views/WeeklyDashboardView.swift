@@ -1262,32 +1262,37 @@ public struct EditReadingSheet: View {
                                let targetWeek = course.weeks.first(where: { $0.weekNumber == newWeekNum }) {
                                 reading.week = targetWeek
                             }
-                            let calculatedDate = reading.week?.computedStartDate ?? WeekDateConverter.date(forWeek: newWeekNum)
-                            dueDateInput = calculatedDate
-                            reading.dueDate = calculatedDate
-                            let formatter = DateFormatter()
-                            formatter.dateStyle = .medium
-                            reading.dateRangeStr = reading.week?.dateRangeStr ?? formatter.string(from: calculatedDate)
+                            if reading.dueDate != nil {
+                                let calculatedDate = reading.week?.computedStartDate ?? WeekDateConverter.date(forWeek: newWeekNum)
+                                dueDateInput = calculatedDate
+                                reading.dueDate = calculatedDate
+                            }
                             isSyncing = false
                         }
 
-                        DatePicker("Date Range", selection: $dueDateInput, displayedComponents: [.date])
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .onChange(of: dueDateInput) { _, newDate in
-                                guard !isSyncing else { return }
-                                isSyncing = true
-                                reading.dueDate = newDate
-                                let formatter = DateFormatter()
-                                formatter.dateStyle = .medium
-                                reading.dateRangeStr = formatter.string(from: newDate)
-                                let calculatedWeek = WeekDateConverter.weekNumber(for: newDate)
-                                selectedWeekNum = calculatedWeek
-                                if let course = reading.week?.course,
-                                   let targetWeek = course.weeks.first(where: { $0.weekNumber == calculatedWeek }) {
-                                    reading.week = targetWeek
+                        HStack {
+                            Text("Date Range")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            Spacer()
+                            let displayRange: String = {
+                                if let range = reading.dateRangeStr, !range.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    return range
                                 }
-                                isSyncing = false
-                            }
+                                if let due = reading.dueDate {
+                                    let formatter = DateFormatter()
+                                    formatter.dateStyle = .medium
+                                    return formatter.string(from: due)
+                                }
+                                if let wRange = reading.week?.dateRangeStr, !wRange.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    return wRange
+                                }
+                                return "Unknown"
+                            }()
+                            Text(displayRange)
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundColor(displayRange == "Unknown" ? Color(red: 0.45, green: 0.52, blue: 0.62) : Color(red: 0.08, green: 0.12, blue: 0.22))
+                        }
                     }
 
                     // Section 3: Dedicated Chapter & Pages Section

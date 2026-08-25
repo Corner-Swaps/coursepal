@@ -1104,14 +1104,13 @@ public struct CourseImporter {
                     if let d = parsedDueDate { return WeekDateConverter.weekNumber(for: d) }
                     return 1
                 }()
-                let finalDueDate: Date = parsedDueDate ?? WeekDateConverter.date(forWeek: weekNumber)
 
                 if let existingAssignment = existingCourse.assignments.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle }) {
                     if let inst = aDTO.fullInstructions, !inst.isEmpty { existingAssignment.fullInstructions = inst }
                     if let pts = aDTO.pointsPossible, !pts.isEmpty { existingAssignment.pointsPossible = pts }
                     if let weight = aDTO.weightPercentage, !weight.isEmpty { existingAssignment.weightPercentage = weight }
                     if let bd = sanitizePointsBreakdown(aDTO.pointsBreakdown), !bd.isEmpty { existingAssignment.pointsBreakdown = bd }
-                    if parsedDueDate != nil { existingAssignment.dueDate = finalDueDate }
+                    if parsedDueDate != nil { existingAssignment.dueDate = parsedDueDate }
                     existingAssignment.noteText = nil
                 } else {
                     let mediaUrl: String? = {
@@ -1126,7 +1125,7 @@ public struct CourseImporter {
                         id: UUID(),
                         title: cleanTitle,
                         weekNumber: weekNumber,
-                        dueDate: finalDueDate,
+                        dueDate: parsedDueDate,
                         fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
                         pointsPossible: aDTO.pointsPossible ?? "100 Points",
                         pointsBreakdown: sanitizePointsBreakdown(aDTO.pointsBreakdown),
@@ -1307,7 +1306,10 @@ public struct CourseImporter {
                     if let pDate = parsedDueDate {
                         return WeekDateConverter.formattedDueDate(for: pDate, week: week, weekNumber: weekNum)
                     }
-                    return week.dateRangeStr
+                    if let wRange = week.dateRangeStr?.trimmingCharacters(in: .whitespacesAndNewlines), !wRange.isEmpty, wRange.lowercased() != "unknown" {
+                        return wRange
+                    }
+                    return "Unknown"
                 }()
 
                 let existingReading = course.weeks.flatMap({ $0.readings }).first(where: { normalizeTitle($0.title) == normTitle }) ??
@@ -1439,7 +1441,10 @@ public enum WeekDateConverter {
     public static func formattedDueDate(for date: Date?, week: Week? = nil, weekNumber: Int = 1) -> String {
         let weekNum = max(1, weekNumber)
         guard let explicitDate = date else {
-            return "Week \(weekNum)"
+            if let wRange = week?.dateRangeStr?.trimmingCharacters(in: .whitespacesAndNewlines), !wRange.isEmpty, wRange.lowercased() != "unknown" {
+                return "\(wRange) · Week \(weekNum)"
+            }
+            return "Unknown · Week \(weekNum)"
         }
 
         let formatter = DateFormatter()

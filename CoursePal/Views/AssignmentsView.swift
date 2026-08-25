@@ -1532,23 +1532,29 @@ public struct EditAssignmentSheet: View {
                             guard !isSyncing else { return }
                             isSyncing = true
                             assignment.weekNumber = newW
-                            let calculatedDate = WeekDateConverter.date(forWeek: newW)
-                            dueDateState = calculatedDate
-                            assignment.dueDate = calculatedDate
+                            if assignment.dueDate != nil {
+                                let calculatedDate = WeekDateConverter.date(forWeek: newW)
+                                dueDateState = calculatedDate
+                                assignment.dueDate = calculatedDate
+                            }
                             isSyncing = false
                         }
 
-                        DatePicker("Due Date", selection: $dueDateState, displayedComponents: [.date, .hourAndMinute])
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .onChange(of: dueDateState) { _, newDate in
-                                guard !isSyncing else { return }
-                                isSyncing = true
-                                assignment.dueDate = newDate
-                                let calculatedWeek = WeekDateConverter.weekNumber(for: newDate)
-                                weekNumberState = calculatedWeek
-                                assignment.weekNumber = calculatedWeek
-                                isSyncing = false
+                        HStack {
+                            Text("Date Range")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            Spacer()
+                            if let due = assignment.dueDate {
+                                Text(WeekDateConverter.formattedDueDate(for: due, weekNumber: weekNumberState))
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            } else {
+                                Text("Unknown")
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                             }
+                        }
                     }
 
                     // Section 3: Points Breakdown
