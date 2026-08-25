@@ -107,6 +107,7 @@ struct CoursePalApp: App {
 
         // Run database history cleanup to purge placeholder faculty & clean prior chapter titles
         Task { @MainActor in
+            _ = SyllabusParserTestSuite.shared.verifyCourseSharingPipeline()
             let container = CoursePalApp.sharedModelContainer
             let context = container.mainContext
             let coursesDesc = FetchDescriptor<Course>()

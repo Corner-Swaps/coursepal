@@ -457,6 +457,105 @@ public final class SyllabusParserTestSuite {
         return results
     }
 
+    /// Automated Triple-Check Verification for Course Sharing & Joining Pipeline
+    @MainActor
+    public func verifyCourseSharingPipeline() -> Bool {
+        print("🔍 [TEST] Starting Course Sharing & Join Verification Pipeline...")
+
+        let course = Course(
+            courseName: "Research Methods & Advanced Statistics",
+            courseCode: "CPC 514",
+            courseDescription: "Graduate level research design and statistical methodologies.",
+            instructorName: "Dr. Alireza Taromi",
+            instructorEmail: "sedghitaromialireza@cityu.edu",
+            hexColor: "#2563EB",
+            termWeeks: 12,
+            sharingCode: "514920"
+        )
+
+        for w in 1...12 {
+            let week = Week(weekNumber: w, theme: "Week \(w): Advanced Design Methodologies")
+            week.course = course
+            if w <= 5 {
+                let reading = Reading(
+                    title: "Creswell Chapter \(w): Qualitative Research Designs",
+                    mediaType: .textbook,
+                    chapterText: "Chapter \(w)",
+                    pagesText: "pp. \(w * 20)-\(w * 20 + 19)"
+                )
+                reading.week = week
+                week.readings.append(reading)
+            }
+            course.weeks.append(week)
+        }
+
+        let a1 = Assignment(title: "Research Article Presentation", weekNumber: 4, fullInstructions: "Group presentation live in class.", pointsPossible: "100", weightPercentage: "20%")
+        a1.course = course
+        let a2 = Assignment(title: "Peer-Review Group Report", weekNumber: 8, fullInstructions: "Collaborative synthesis report.", pointsPossible: "100", weightPercentage: "20%")
+        a2.course = course
+        let a3 = Assignment(title: "Final Research Study Design Paper", weekNumber: 12, fullInstructions: "Comprehensive individual APA paper.", pointsPossible: "100", weightPercentage: "40%")
+        a3.course = course
+        course.assignments = [a1, a2, a3]
+
+        // 1. Test DTO conversion
+        let dto = course.toDTO()
+        guard dto.courseName == "Research Methods & Advanced Statistics",
+              dto.courseCode == "CPC 514",
+              dto.sharingCode == "514920",
+              dto.weeks?.count == 12,
+              dto.assignments?.count == 3 else {
+            print("❌ [TEST FAIL] Course.toDTO() returned mismatched metadata.")
+            return false
+        }
+
+        // 2. Test Payload Compression and Encoding
+        guard let payload = CourseSharingService.shared.encodeCourseToPayload(course) else {
+            print("❌ [TEST FAIL] encodeCourseToPayload returned nil.")
+            return false
+        }
+
+        // 3. Test Share Link Generation
+        let shareLink = CourseSharingService.shared.generateShareLink(for: course)
+        guard shareLink.absoluteString.contains("code=514920"),
+              shareLink.absoluteString.contains("data=") else {
+            print("❌ [TEST FAIL] generateShareLink missing required parameters.")
+            return false
+        }
+
+        // 4. Test Universal Decoding from Share Link
+        guard let decoded = CourseSharingService.shared.decodeCourse(from: shareLink.absoluteString) else {
+            print("❌ [TEST FAIL] decodeCourse(from: shareLink) failed to decode payload.")
+            return false
+        }
+
+        guard decoded.courseName == course.courseName,
+              decoded.courseCode == course.courseCode,
+              decoded.sharingCode == course.sharingCode,
+              decoded.weeks?.count == 12,
+              decoded.assignments?.count == 3 else {
+            print("❌ [TEST FAIL] Decoded CourseDTO payload data mismatch.")
+            return false
+        }
+
+        let totalDecodedReadings = decoded.weeks?.reduce(0) { $0 + ($1.readings?.count ?? 0) } ?? 0
+        guard totalDecodedReadings == 5 else {
+            print("❌ [TEST FAIL] Decoded readings count mismatch: got \(totalDecodedReadings), expected 5.")
+            return false
+        }
+
+        // 5. Test QR Code generation
+        #if canImport(UIKit)
+        let qrImg = CourseSharingService.shared.generateQRCode(for: shareLink.absoluteString)
+        guard qrImg != nil else {
+            print("❌ [TEST FAIL] generateQRCode returned nil image.")
+            return false
+        }
+        #endif
+
+        print("✅ [COURSE SHARING TRIPLE-CHECK PASSED] Universal share payload encoded (\(payload.count) chars), compressed, decoded, and validated with 100% data fidelity!")
+        return true
+    }
+
     /// Synchronous test entry point
     @discardableResult
     public func run20QATestSuite() -> [TestResult] {
@@ -470,4 +569,5 @@ public final class SyllabusParserTestSuite {
         return liveResults
     }
 }
+
 

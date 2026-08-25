@@ -247,11 +247,17 @@ public struct MainTabView: View {
         #endif
         .dismissKeyboardOnTap()
         .onOpenURL { url in
-            let code = ShareCenterView.extractCourseCode(from: url.absoluteString)
-            if !code.isEmpty {
-                selectedTab = "invite"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    NotificationCenter.default.post(name: NSNotification.Name("CoursePalOpenJoinCode"), object: code)
+            if let decodedDTO = CourseSharingService.shared.decodeCourse(from: url.absoluteString) {
+                _ = CourseImporter.importDTO(decodedDTO, into: modelContext, forceNewCourse: true)
+                try? modelContext.save()
+                selectedTab = "vault"
+            } else {
+                let code = ShareCenterView.extractCourseCode(from: url.absoluteString)
+                if !code.isEmpty {
+                    selectedTab = "invite"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        NotificationCenter.default.post(name: NSNotification.Name("CoursePalOpenJoinCode"), object: code)
+                    }
                 }
             }
         }

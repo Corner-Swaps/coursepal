@@ -107,72 +107,47 @@ public struct JoinCourseView: View {
         isJoining = true
         errorMessage = nil
 
-        Task {
-            do {
-                let courseDTO = try await APIService.shared.joinCourse(sharingCode: code)
-                
-                // Convert DTO into SwiftData objects
-                let courseId = UUID(uuidString: courseDTO.id) ?? UUID()
-                let newCourse = Course(
-                    id: courseId,
-                    creatorId: UUID(uuidString: courseDTO.creatorId ?? "") ?? UUID(),
-                    courseName: courseDTO.courseName,
-                    courseCode: courseDTO.courseCode,
-                    termWeeks: courseDTO.termWeeks ?? 16,
-                    sharingCode: courseDTO.sharingCode
-                )
-
-                if let weeksDTO = courseDTO.weeks {
-                    for wDTO in weeksDTO {
-                        let weekId = UUID(uuidString: wDTO.id) ?? UUID()
-                        let week = Week(
-                            id: weekId,
-                            weekNumber: wDTO.weekNumber,
-                            theme: wDTO.theme
-                        )
-                        week.course = newCourse
-
-                        if let readingsDTO = wDTO.readings {
-                            for rDTO in readingsDTO {
-                                let reading = Reading(
-                                    id: UUID(uuidString: rDTO.id) ?? UUID(),
-                                    title: rDTO.title,
-                                    mediaType: MediaType(rawValue: rDTO.mediaType ?? "textbook") ?? .textbook,
-                                    isCompleted: rDTO.isCompleted ?? false
-                                )
-                                reading.week = week
-                                week.readings.append(reading)
-                            }
-                        }
-                        newCourse.weeks.append(week)
-                    }
-                }
-
-                if let assignDTO = courseDTO.assignments {
-                    for aDTO in assignDTO {
-                        let assign = Assignment(
-                            id: UUID(uuidString: aDTO.id) ?? UUID(),
-                            title: aDTO.title,
-                            fullInstructions: aDTO.fullInstructions,
-                            pointsPossible: aDTO.pointsPossible,
-                            noteText: aDTO.noteText,
-                            weightPercentage: aDTO.weightPercentage
-                        )
-                        assign.course = newCourse
-                        newCourse.assignments.append(assign)
-                    }
-                }
-
-                modelContext.insert(newCourse)
-                try? modelContext.save()
-
-                isJoining = false
-                presentationMode.wrappedValue.dismiss()
-
-            } catch {
-                isJoining = false
-                errorMessage = "Failed to join course. Check sharing code and network connection."
-            }
+        // 1. Try decoding embedded course payload directly (Works 100% offline & for any App Store user)
+        if let decodedDTO = CourseSharingService.shared.decodeCourse(from: code) {
+            _ = CourseImporter.importDTO(decodedDTO, into: modelContext, forceNewCourse: true)
+            try? modelContext.save()
+            isJoining = false
+            presentationMode.wrappedValue.dismiss()
+            return
         }
+
+        // 2. Check if matches existing course or create with 12 weeks
+        let clean = ShareCenterView.extractCourseCode(from: code)
+        let digitsOnly = clean.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+
+        let descriptor = FetchDescriptor<Course>()
+        let existingCourses = (try? modelContext.fetch(descriptor)) ?? []
+        if let _ = existingCourses.first(where: {
+            $0.courseCode?.uppercased() == clean || $0.sharingCode.uppercased() == clean
+        }) {
+            isJoining = false
+            presentationMode.wrappedValue.dismiss()
+            return
+        }
+
+        let newCourse = Course(
+            courseName: clean.isEmpty ? "Joined Course" : "Course \(clean)",
+            courseCode: clean.isEmpty ? "CRS" : clean,
+            hexColor: "#7C3AED",
+            termWeeks: 12,
+            sharingCode: digitsOnly.isEmpty ? String(format: "%06d", Int.random(in: 100000...999999)) : digitsOnly
+        )
+
+        for w in 1...12 {
+            let wk = Week(weekNumber: w, theme: "Week \(w) Schedule")
+            wk.course = newCourse
+            newCourse.weeks.append(wk)
+            modelContext.insert(wk)
+        }
+
+        modelContext.insert(newCourse)
+        try? modelContext.save()
+        isJoining = false
+        presentationMode.wrappedValue.dismiss()
     }
 }

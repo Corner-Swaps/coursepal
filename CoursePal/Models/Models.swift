@@ -61,6 +61,83 @@ public final class Course {
         self.isDeleted = isDeleted
         self.createdAt = createdAt
     }
+
+    public func toDTO() -> CourseDTO {
+        var weeksDTO: [WeekDTO] = []
+        for w in weeks.sorted(by: { $0.weekNumber < $1.weekNumber }) {
+            var readingsDTO: [ReadingDTO] = []
+            for r in w.readings where !r.isDeleted {
+                let dueStr: String?
+                if let d = r.dueDate {
+                    dueStr = ISO8601DateFormatter().string(from: d)
+                } else {
+                    dueStr = nil
+                }
+                readingsDTO.append(ReadingDTO(
+                    id: r.id.uuidString,
+                    title: r.title,
+                    mediaType: r.mediaTypeRaw,
+                    isCompleted: r.isCompleted,
+                    summaryText: r.summaryText,
+                    keyTakeawaysText: r.keyTakeawaysText,
+                    estimatedTimeText: r.estimatedTimeText,
+                    videoUrl: r.videoUrl,
+                    dueDate: dueStr,
+                    dateRangeStr: r.dateRangeStr,
+                    relevantTopics: r.relevantTopics,
+                    chapterText: r.chapterText,
+                    pagesText: r.pagesText
+                ))
+            }
+            weeksDTO.append(WeekDTO(
+                id: w.id.uuidString,
+                weekNumber: w.weekNumber,
+                startDate: nil,
+                theme: w.theme,
+                dateRangeStr: w.dateRangeStr,
+                readings: readingsDTO
+            ))
+        }
+
+        var assignmentsDTO: [AssignmentDTO] = []
+        for a in assignments where !a.isDeleted {
+            let dueStr: String?
+            if let d = a.dueDate {
+                dueStr = ISO8601DateFormatter().string(from: d)
+            } else {
+                dueStr = nil
+            }
+            assignmentsDTO.append(AssignmentDTO(
+                id: a.id.uuidString,
+                title: a.title,
+                dueDate: dueStr,
+                fullInstructions: a.fullInstructions,
+                pointsPossible: a.pointsPossible,
+                weightPercentage: a.weightPercentage,
+                noteText: a.noteText,
+                pointsBreakdown: a.pointsBreakdown,
+                relevantTopics: a.relevantTopics,
+                mediaUrl: a.mediaUrl
+            ))
+        }
+
+        return CourseDTO(
+            id: id.uuidString,
+            creatorId: creatorId.uuidString,
+            courseName: courseName,
+            courseCode: courseCode,
+            courseDescription: courseDescription,
+            instructorName: instructorName,
+            instructorEmail: instructorEmail,
+            officeHours: nil,
+            termWeeks: termWeeks,
+            sharingCode: sharingCode,
+            weeks: weeksDTO,
+            assignments: assignmentsDTO,
+            items: nil,
+            dataExtractionStats: nil
+        )
+    }
 }
 
 @Model

@@ -11,6 +11,7 @@ public struct ShareCenterView: View {
     @State private var copiedCode: String? = nil
     @State private var selectedInviteCategory: String = "share" // "share" or "join"
     @State private var foundCourseForPopup: Course? = nil
+    @State private var showingQRCodeForCourse: Course? = nil
     @State private var showingInfoSheet: Bool = false
 
     public init() {}
@@ -124,7 +125,7 @@ public struct ShareCenterView: View {
 
                                             Spacer(minLength: 4)
 
-                                            // Sharing code pill + copy + native share button (Matching pill styling & heights)
+                                            // Sharing code pill + QR + copy + native share button (Matching pill styling & heights)
                                             HStack(spacing: 6) {
                                                 HStack(spacing: 5) {
                                                     Text(course.sharingCode.isEmpty ? "—" : course.sharingCode)
@@ -137,7 +138,7 @@ public struct ShareCenterView: View {
                                                         #endif
                                                         withAnimation { copiedCode = course.sharingCode }
                                                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                                                            withAnimation { copiedCode = nil }
+                                                             withAnimation { copiedCode = nil }
                                                         }
                                                     }) {
                                                         let isCopied = (copiedCode == course.sharingCode)
@@ -152,9 +153,23 @@ public struct ShareCenterView: View {
                                                 .background(codeColor.opacity(0.10))
                                                 .cornerRadius(8)
 
+                                                // QR Code Button
                                                 Button(action: {
-                                                    let code = course.sharingCode.isEmpty ? (course.courseCode ?? "CRS") : course.sharingCode
-                                                    let shareMsg = "Join my course '\(course.courseName)' on CoursePal!\n\nCourse Code: \(code)\nTap to Join: https://classpal.app/join?code=\(code)"
+                                                    showingQRCodeForCourse = course
+                                                }) {
+                                                    Image(systemName: "qrcode")
+                                                        .font(.system(size: 12, weight: .bold))
+                                                        .foregroundColor(codeColor)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 6)
+                                                        .background(codeColor.opacity(0.12))
+                                                        .cornerRadius(8)
+                                                }
+                                                .buttonStyle(.plain)
+
+                                                // Native iOS Share Button
+                                                Button(action: {
+                                                    let shareMsg = CourseSharingService.shared.generateShareMessage(for: course)
                                                     #if canImport(UIKit)
                                                     let avc = UIActivityViewController(activityItems: [shareMsg], applicationActivities: nil)
                                                     if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -377,12 +392,69 @@ public struct ShareCenterView: View {
                 }
                 .padding(24)
                 .navigationTitle("Join Course Preview")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { foundCourseForPopup = nil }
+                    }
+                }
+            }
+        }
+        .sheet(item: $showingQRCodeForCourse) { course in
+            NavigationStack {
+                VStack(spacing: 24) {
+                    VStack(spacing: 8) {
+                        Text(course.courseName)
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            .multilineTextAlignment(.center)
+
+                        Text("Share Code: \(course.sharingCode)")
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundColor(CourseColorHelper.color(for: course.hexColor))
+                    }
+                    .padding(.top, 16)
+
+                    #if canImport(UIKit)
+                    let shareUrl = CourseSharingService.shared.generateShareLink(for: course).absoluteString
+                    if let qrImage = CourseSharingService.shared.generateQRCode(for: shareUrl) {
+                        Image(uiImage: qrImage)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 230, height: 230)
+                            .padding(16)
+                            .background(Color.white)
+                            .cornerRadius(20)
+                            .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
+                    }
+                    #endif
+
+                    Text("Classmates can scan this QR code with their iPhone camera to instantly enroll in this course with all readings and assignments.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+
+                    Button("Close") {
+                        showingQRCodeForCourse = nil
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 12)
+                    .background(Color(red: 0.94, green: 0.95, blue: 0.98))
+                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                    .cornerRadius(12)
+
+                    Spacer()
+                }
+                .padding(20)
+                .navigationTitle("Course QR Code")
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
                 #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { foundCourseForPopup = nil }
+                        Button("Done") { showingQRCodeForCourse = nil }
                     }
                 }
             }
@@ -423,13 +495,27 @@ public struct ShareCenterView: View {
     }
 
     private func importSharedCourse() {
-        let clean = Self.extractCourseCode(from: inputCode)
-        let digitsOnly = clean.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-
-        guard !clean.isEmpty else {
-            showNotice("Please enter a valid course code or 6-digit share code.", success: false)
+        let rawInput = inputCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawInput.isEmpty else {
+            showNotice("Please enter a valid course code or share link.", success: false)
             return
         }
+
+        // 1. Try decoding embedded course payload directly (Works 100% offline & for any App Store user)
+        if let decodedDTO = CourseSharingService.shared.decodeCourse(from: rawInput) {
+            let importedCourse = CourseImporter.importDTO(decodedDTO, into: modelContext, forceNewCourse: true)
+            try? modelContext.save()
+            foundCourseForPopup = importedCourse
+            inputCode = ""
+            let totalR = importedCourse.weeks.reduce(0) { $0 + $1.readings.count }
+            let totalA = importedCourse.assignments.count
+            showNotice("Successfully joined '\(importedCourse.courseName)' (\(totalR) readings, \(totalA) assignments)!", success: true)
+            return
+        }
+
+        // 2. Check if this code matches an existing course
+        let clean = Self.extractCourseCode(from: rawInput)
+        let digitsOnly = clean.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
 
         let existingCourse = courses.first(where: {
             let scDigits = $0.sharingCode.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
@@ -439,31 +525,34 @@ public struct ShareCenterView: View {
                    (!digitsOnly.isEmpty && (scDigits == digitsOnly || ccDigits == digitsOnly))
         })
 
-        let targetCourse: Course
         if let existing = existingCourse {
-            targetCourse = existing
-        } else {
-            let newCourse = Course(
-                courseName: "Shared Course (\(clean))",
-                courseCode: clean,
-                hexColor: "#7C3AED",
-                termWeeks: 12,
-                sharingCode: digitsOnly.isEmpty ? String(format: "%06d", Int.random(in: 100000...999999)) : digitsOnly
-            )
-
-            for w in 1...12 {
-                let wk = Week(weekNumber: w, theme: "Week \(w) Schedule")
-                wk.course = newCourse
-                newCourse.weeks.append(wk)
-            }
-
-            modelContext.insert(newCourse)
-            try? modelContext.save()
-            targetCourse = newCourse
+            foundCourseForPopup = existing
+            inputCode = ""
+            showNotice("Enrolled in '\(existing.courseName)'!", success: true)
+            return
         }
 
-        foundCourseForPopup = targetCourse
+        // 3. Fallback: create fresh 12-week schedule container for manual or upcoming sync
+        let newCourse = Course(
+            courseName: clean.isEmpty ? "Joined Course" : "Course \(clean)",
+            courseCode: clean.isEmpty ? "CRS" : clean,
+            hexColor: "#7C3AED",
+            termWeeks: 12,
+            sharingCode: digitsOnly.isEmpty ? String(format: "%06d", Int.random(in: 100000...999999)) : digitsOnly
+        )
+
+        for w in 1...12 {
+            let wk = Week(weekNumber: w, theme: "Week \(w) Schedule")
+            wk.course = newCourse
+            newCourse.weeks.append(wk)
+            modelContext.insert(wk)
+        }
+
+        modelContext.insert(newCourse)
+        try? modelContext.save()
+        foundCourseForPopup = newCourse
         inputCode = ""
+        showNotice("Enrolled in '\(newCourse.courseName)'! You can upload course materials anytime.", success: true)
     }
 
     private func showNotice(_ text: String, success: Bool) {
