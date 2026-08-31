@@ -90,10 +90,10 @@ public struct AssignmentsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Assignments")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .font(.cpPageTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Text("\(activeAssignments.count) assignments this term")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.cpDescriptionMedium)
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         }
                         Spacer()
@@ -125,7 +125,7 @@ public struct AssignmentsView: View {
                                         .font(.system(size: 15, weight: .bold))
                                         .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                     Text("\(completedAssignments.count)")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .font(.cpDescriptionBold)
                                         .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                 }
                                 .padding(.horizontal, 9)
@@ -146,7 +146,7 @@ public struct AssignmentsView: View {
                                         .font(.system(size: 14, weight: .regular))
                                         .foregroundColor(Color(red: 0.85, green: 0.25, blue: 0.20))
                                     Text("\(deletedAssignments.count + deletedReadings.count)")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .font(.cpDescriptionBold)
                                         .foregroundColor(Color(red: 0.85, green: 0.25, blue: 0.20))
                                 }
                                 .padding(.horizontal, 9)
@@ -179,7 +179,7 @@ public struct AssignmentsView: View {
                             Spacer()
 
                             Text(monthYearString(for: selectedDate))
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .font(.cpItemTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
                             Spacer()
@@ -294,6 +294,7 @@ public struct AssignmentsView: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                         TextField("Search assignments...", text: $searchQuery)
+                            .font(.cpDescription)
                             .autocorrectionDisabled()
                             .onSubmit {
                                 #if os(iOS)
@@ -321,10 +322,11 @@ public struct AssignmentsView: View {
 
                     // MARK: - Assignments Progress Bar Box (Persistent directly under Search Bar, matching Readings style 1:1)
                     let totalAssignsCount = activeAssignments.count
-                    let completedAssignsCount = activeAssignments.filter({ $0.isCompleted }).count
-                    let assignProgressPct = totalAssignsCount > 0 ? Int((Double(completedAssignsCount) / Double(totalAssignsCount)) * 100) : 0
+                    let completedAssignsCount = activeAssignments.filter({ !$0.isCompleted }).count
+                    let assignProgressPct = totalAssignsCount > 0 ? Int((Double(totalAssignsCount - completedAssignsCount) / Double(totalAssignsCount)) * 100) : 0
+                    let actualDoneCount = totalAssignsCount - completedAssignsCount
 
-                    if totalAssignsCount > 0 && completedAssignsCount == totalAssignsCount {
+                    if totalAssignsCount > 0 && completedAssignsCount == 0 {
                         // Dedicated Celebration Card overtaking standard progress bar when 100% complete
                         HStack(spacing: 12) {
                             ZStack {
@@ -338,18 +340,18 @@ public struct AssignmentsView: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Congratulations! 🎉")
-                                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                                    .font(.cpItemTitle)
                                     .foregroundColor(Color(red: 0.05, green: 0.55, blue: 0.35))
 
                                 Text("You finished all assignments!")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .font(.cpDescriptionMedium)
                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                             }
 
                             Spacer()
 
                             Text("100%")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .font(.cpDescriptionBold)
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
@@ -368,9 +370,9 @@ public struct AssignmentsView: View {
                     } else {
                         VStack(spacing: 8) {
                             HStack {
-                                HStack(spacing: 6) {
+                                HStack(spacing: 5) {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.system(size: 12, weight: .bold))
                                         .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                     Text("Assignments Progress")
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -382,13 +384,13 @@ public struct AssignmentsView: View {
                                         sortMode = "completed"
                                     }
                                 }) {
-                                    Text("\(completedAssignsCount) of \(totalAssignsCount) Done (\(assignProgressPct)%)")
+                                    Text("\(actualDoneCount) of \(totalAssignsCount) Done (\(assignProgressPct)%)")
                                         .font(.system(size: 11, weight: .bold, design: .rounded))
                                         .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 2.5)
                                         .background(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.12))
-                                        .cornerRadius(12)
+                                        .cornerRadius(10)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -401,7 +403,7 @@ public struct AssignmentsView: View {
 
                                     RoundedRectangle(cornerRadius: 6)
                                         .fill(LinearGradient(colors: [Color(red: 0.05, green: 0.65, blue: 0.40), Color(red: 0.10, green: 0.75, blue: 0.45)], startPoint: .leading, endPoint: .trailing))
-                                        .frame(width: geo.size.width * CGFloat(totalAssignsCount > 0 ? Double(completedAssignsCount) / Double(totalAssignsCount) : 0), height: 7)
+                                        .frame(width: geo.size.width * CGFloat(totalAssignsCount > 0 ? Double(actualDoneCount) / Double(totalAssignsCount) : 0), height: 7)
                                 }
                             }
                             .frame(height: 7)
@@ -420,7 +422,7 @@ public struct AssignmentsView: View {
                                 .fill(CourseColorHelper.color(for: course.hexColor))
                                 .frame(width: 8, height: 8)
                             Text("Filtered by: \(course.courseCode ?? "CRS") · \(course.courseName)")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.cpDescriptionBold)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Spacer()
                             Button(action: {
@@ -456,10 +458,10 @@ public struct AssignmentsView: View {
                             }
 
                             Text(searchQuery.isEmpty ? "No assignments yet" : "No results found")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.cpItemTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Text(searchQuery.isEmpty ? "Add assignments manually or parse a syllabus to populate them automatically." : "Nothing matches \"\(searchQuery)\".")
-                                .font(.system(size: 12.5))
+                                .font(.cpDescription)
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: 240)
@@ -505,7 +507,7 @@ public struct AssignmentsView: View {
                                 if completedList.isEmpty {
                                     VStack(spacing: 8) {
                                         Text("No completed assignments yet")
-                                            .font(.system(size: 13.5, weight: .medium))
+                                            .font(.cpDescription)
                                             .foregroundColor(.gray)
                                     }
                                     .padding(16)
@@ -798,8 +800,8 @@ public struct AssignmentsView: View {
                                                     }
                                                 }
 
-                                                // 2. COURSE OUTLINE (SECOND - ONLY IF RELEVANT WITH CUSTOM THEMES)
                                                 let outlineWeeks = (courseObj?.weeks ?? []).filter { week in
+                                                    guard week.weekNumber > 0 else { return false }
                                                     if let theme = week.theme, !theme.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !theme.lowercased().hasPrefix("week ") {
                                                         return true
                                                     }
@@ -807,14 +809,13 @@ public struct AssignmentsView: View {
                                                 }.sorted(by: { $0.weekNumber < $1.weekNumber })
 
                                                 if !outlineWeeks.isEmpty {
-                                                    VStack(alignment: .leading, spacing: 8) {
-                                                        HStack(spacing: 6) {
-                                                            Image(systemName: "list.bullet.rectangle.portrait.fill")
-                                                                .font(.system(size: 11, weight: .bold))
-                                                                .foregroundColor(courseColor)
-                                                            Text("COURSE OUTLINE")
-                                                                .font(.system(size: 11, weight: .bold))
+                                                    VStack(alignment: .leading, spacing: 6) {
+                                                        HStack {
+                                                            Text("Course Outline")
+                                                                .font(.system(size: 11, weight: .bold, design: .rounded))
                                                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                                .textCase(.uppercase)
+                                                            Spacer()
                                                         }
 
                                                         VStack(alignment: .leading, spacing: 6) {
@@ -829,48 +830,44 @@ public struct AssignmentsView: View {
                                                                             .font(.system(size: 13.5, weight: .bold, design: .rounded))
                                                                             .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                                             .lineLimit(2)
-                                                                        Text("Week \(week.weekNumber)")
-                                                                            .font(.system(size: 11, weight: .semibold))
-                                                                            .foregroundColor(courseColor)
+                                                                        if week.weekNumber > 0 {
+                                                                            Text("Week \(week.weekNumber)")
+                                                                                .font(.system(size: 11, weight: .semibold))
+                                                                                .foregroundColor(courseColor)
+                                                                        }
                                                                     }
                                                                     Spacer()
                                                                 }
                                                                 .padding(.horizontal, 12)
-                                                                .padding(.vertical, 10)
-                                                                .background(Color.white)
-                                                                .cornerRadius(14)
-                                                                .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
-                                                                .overlay(
-                                                                    RoundedRectangle(cornerRadius: 14)
-                                                                        .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
-                                                                )
+                                                                .padding(.vertical, 8)
+                                                                .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                                                                .cornerRadius(10)
                                                             }
                                                         }
                                                     }
                                                 }
 
-                                                // 3. COURSE READINGS (THIRD - ORGANIZED CHRONOLOGICALLY BY DATE)
+                                                // 2. Course Readings
                                                 let courseReadings = allReadings.filter { $0.week?.course == courseObj && !$0.isDeleted }
                                                 if !courseReadings.isEmpty {
-                                                    VStack(alignment: .leading, spacing: 10) {
-                                                        HStack(spacing: 6) {
-                                                            Image(systemName: "book.closed.fill")
-                                                                .font(.system(size: 11, weight: .bold))
-                                                                .foregroundColor(Color(red: 0.55, green: 0.27, blue: 0.96))
-                                                            Text("COURSE READINGS (\(courseReadings.count))")
-                                                                .font(.system(size: 11, weight: .bold))
+                                                    VStack(alignment: .leading, spacing: 6) {
+                                                        HStack {
+                                                            Text("Course Readings (\(courseReadings.count))")
+                                                                .font(.system(size: 11, weight: .bold, design: .rounded))
                                                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                                .textCase(.uppercase)
+                                                            Spacer()
                                                         }
 
                                                         let sortedReadings = courseReadings.sorted { r1, r2 in
-                                                            let d1 = r1.dueDate ?? r1.week?.computedStartDate ?? WeekDateConverter.date(forWeek: r1.week?.weekNumber ?? 1)
-                                                            let d2 = r2.dueDate ?? r2.week?.computedStartDate ?? WeekDateConverter.date(forWeek: r2.week?.weekNumber ?? 1)
+                                                            let d1 = r1.dueDate ?? r1.week?.computedStartDate ?? WeekDateConverter.date(forWeek: r1.week?.weekNumber ?? 0)
+                                                            let d2 = r2.dueDate ?? r2.week?.computedStartDate ?? WeekDateConverter.date(forWeek: r2.week?.weekNumber ?? 0)
                                                             if d1 != d2 { return d1 < d2 }
-                                                            return (r1.week?.weekNumber ?? 1) < (r2.week?.weekNumber ?? 1)
+                                                            return (r1.week?.weekNumber ?? 0) < (r2.week?.weekNumber ?? 0)
                                                         }
 
                                                         ForEach(sortedReadings) { reading in
-                                                            let weekNum = reading.week?.weekNumber ?? 1
+                                                            let weekNum = reading.week?.weekNumber ?? 0
                                                             HStack(alignment: .center, spacing: 10) {
                                                                 RoundedRectangle(cornerRadius: 3)
                                                                     .fill(courseColor)
@@ -883,12 +880,14 @@ public struct AssignmentsView: View {
                                                                         .lineLimit(2)
 
                                                                     HStack(spacing: 8) {
-                                                                        Text("Week \(weekNum)")
-                                                                            .font(.system(size: 11, weight: .semibold))
-                                                                            .foregroundColor(courseColor)
+                                                                        if weekNum > 0 {
+                                                                            Text("Week \(weekNum)")
+                                                                                .font(.system(size: 11, weight: .semibold))
+                                                                                .foregroundColor(courseColor)
+                                                                        }
 
                                                                         if let range = reading.dateRangeStr, !range.isEmpty {
-                                                                            Text("• \(range)")
+                                                                            Text(weekNum > 0 ? "• \(range)" : range)
                                                                                 .font(.system(size: 11, weight: .medium))
                                                                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                                         }
@@ -1002,7 +1001,8 @@ public struct AssignmentsView: View {
                                                     Text(assignment.title)
                                                         .font(.system(size: 14, weight: .bold))
                                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                                    Text("Assignment · \(assignment.course?.courseName ?? "Course") · Week \(assignment.weekNumber)")
+                                                    let assignWeekSuffix = assignment.weekNumber > 0 ? " · Week \(assignment.weekNumber)" : ""
+                                                    Text("Assignment · \(assignment.course?.courseName ?? "Course")\(assignWeekSuffix)")
                                                         .font(.caption)
                                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                 }
@@ -1048,7 +1048,9 @@ public struct AssignmentsView: View {
                                                     Text(reading.title)
                                                         .font(.system(size: 14, weight: .bold))
                                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                                    Text("Reading · \(reading.week?.course?.courseName ?? "Course") · Week \(reading.week?.weekNumber ?? 1)")
+                                                    let readWeekNum = reading.week?.weekNumber ?? 0
+                                                    let readWeekSuffix = readWeekNum > 0 ? " · Week \(readWeekNum)" : ""
+                                                    Text("Reading · \(reading.week?.course?.courseName ?? "Course")\(readWeekSuffix)")
                                                         .font(.caption)
                                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                 }
@@ -1116,6 +1118,7 @@ public struct AssignmentsView: View {
                     Spacer(minLength: 90)
                 }
             }
+            .fuzzedScrollEdges(top: 36, bottom: 85)
             .scrollDismissesKeyboard(.immediately)
             .background(Color(red: 0.95, green: 0.96, blue: 0.98))
             #if os(iOS)
@@ -1270,24 +1273,38 @@ public struct AssignmentCardRow: View {
 
             // Content Area (Tapping opens Assignment Details)
             VStack(alignment: .leading, spacing: 4) {
-                let displayCourseTitle: String = {
-                    if let course = assignment.course {
-                        let name = course.courseName.trimmingCharacters(in: .whitespaces)
-                        return name.isEmpty ? "COURSE" : name
-                    }
-                    return "COURSE"
-                }()
-
+                // Top Line: Course Code Pill & Week Tag & Category
                 HStack(spacing: 6) {
-                    Text(displayCourseTitle)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(courseColor)
+                    if let code = assignment.courseCode ?? assignment.course?.courseCode, !code.isEmpty {
+                        Text(code)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(courseColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(courseColor.opacity(0.12))
+                            .cornerRadius(4)
+                    }
+
+                    Text(assignment.weekOrModuleDisplay)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+
+                    if let sub = assignment.subTypeRaw, !sub.isEmpty, sub != "ASSIGNMENT" && sub != "PAPER" {
+                        Text(sub.capitalized)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Color(red: 0.94, green: 0.96, blue: 0.98))
+                            .cornerRadius(3)
+                    }
 
                     Spacer(minLength: 0)
                 }
 
+                // Card Title: Strictly assignment.title (never course title)
                 Text(assignment.title)
-                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                    .font(.cpItemTitle)
                     .foregroundColor(assignment.isCompleted ? Color(red: 0.35, green: 0.42, blue: 0.52) : Color(red: 0.22, green: 0.28, blue: 0.38))
                     .strikethrough(assignment.isCompleted)
                     .multilineTextAlignment(.leading)
@@ -1297,8 +1314,14 @@ public struct AssignmentCardRow: View {
                 let assignDateText = WeekDateConverter.formattedDueDate(for: assignment.dueDate, weekNumber: assignment.weekNumber)
                 HStack(spacing: 8) {
                     Text(assignDateText)
-                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .font(.cpDescription)
                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+
+                    if let weight = assignment.weightPercentage, !weight.isEmpty {
+                        Text("• \(weight)")
+                            .font(.cpDescriptionMedium)
+                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                    }
                 }
                 .padding(.top, 1)
             }
@@ -1365,23 +1388,7 @@ public struct AssignmentCardRow: View {
     }
 
     private func formattedDueDate(_ date: Date?) -> String {
-        let d: Date
-        if let explicitDate = date {
-            d = explicitDate
-        } else {
-            let calendar = Calendar.current
-            var comp = DateComponents()
-            comp.year = 2026
-            comp.month = 9
-            comp.day = 4
-            comp.hour = 23
-            comp.minute = 59
-            let startDate = calendar.date(from: comp) ?? Date()
-            d = calendar.date(byAdding: .day, value: (assignment.weekNumber - 1) * 7, to: startDate) ?? Date()
-        }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return "Due " + formatter.string(from: d) + " · Week \(assignment.weekNumber)"
+        WeekDateConverter.formattedDueDate(for: date, weekNumber: assignment.weekNumber)
     }
 }
 
@@ -1400,7 +1407,7 @@ public struct SortTabTile: View {
                     .foregroundColor(iconColor)
 
                 Text(title)
-                    .font(.system(size: 12, weight: isSelected ? .bold : .semibold, design: .rounded))
+                    .font(isSelected ? .cpItemTitle : .cpDescriptionMedium)
                     .foregroundColor(isSelected ? Color(red: 0.08, green: 0.12, blue: 0.22) : Color(red: 0.35, green: 0.42, blue: 0.52))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -1440,6 +1447,19 @@ public struct EditAssignmentSheet: View {
     private static let rubricDelimiterRegex = try? NSRegularExpression(pattern: #"(?:\r?\n|\||;|\s*,\s*(?=[A-Za-z0-9\s]+[:\-–]|\d+\s*(?:pts|points|%)))"#)
 
     private var parsedRubricItems: [(title: String, points: String)] {
+        let structured = assignment.rubricCriteria
+        if !structured.isEmpty {
+            return structured.map { criterion in
+                let ptsStr: String = {
+                    if let pts = criterion.points {
+                        return pts.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(pts)) pts" : "\(pts) pts"
+                    }
+                    return ""
+                }()
+                return (title: criterion.criterionName, points: ptsStr)
+            }
+        }
+
         let rawText = pointsBreakdownTextState
         guard !rawText.isEmpty else { return [] }
         
@@ -1550,7 +1570,7 @@ public struct EditAssignmentSheet: View {
                                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             } else {
-                                Text("Unknown")
+                                Text("No date set")
                                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                             }
@@ -1568,19 +1588,6 @@ public struct EditAssignmentSheet: View {
                         .pickerStyle(.menu)
                         .onChange(of: gradeWeightPercentState) { _, newPct in
                             assignment.weightPercentage = "\(newPct)%"
-                        }
-
-                        Picker("Points Possible", selection: $pointsValueState) {
-                            let defaultOpts = Array(stride(from: 0, through: 500, by: 5))
-                            let opts = defaultOpts.contains(pointsValueState) ? defaultOpts : (defaultOpts + [pointsValueState]).sorted()
-                            ForEach(opts, id: \.self) { pts in
-                                Text("\(pts) Points").tag(pts)
-                            }
-                        }
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .pickerStyle(.menu)
-                        .onChange(of: pointsValueState) { _, newPts in
-                            assignment.pointsPossible = "\(newPts) Points"
                         }
 
                         VStack(alignment: .leading, spacing: 10) {
@@ -1856,13 +1863,15 @@ public struct CourseSectionAssignmentRow: View {
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
-                    Text("Week \(assignment.weekNumber)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(courseColor)
+                    if let badge = assignment.contextBadgeText {
+                        Text(badge)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(courseColor)
+                    }
 
                     if let due = assignment.dueDate {
                         let formattedDue = WeekDateConverter.formattedDueDate(for: due, weekNumber: assignment.weekNumber)
-                        Text("• \(formattedDue)")
+                        Text(assignment.contextBadgeText != nil ? "• \(formattedDue)" : formattedDue)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                     }

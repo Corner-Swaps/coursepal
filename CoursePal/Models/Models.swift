@@ -138,6 +138,137 @@ public final class Course {
             dataExtractionStats: nil
         )
     }
+
+    public var hasExplicitDates: Bool {
+        for w in weeks {
+            for r in w.readings where !r.isDeleted && r.dueDate != nil { return true }
+            if w.startDate != nil { return true }
+        }
+        for a in assignments where !a.isDeleted && a.dueDate != nil { return true }
+        return false
+    }
+
+    public var hasExplicitWeeks: Bool {
+        for w in weeks {
+            if w.weekNumber > 0 && !w.readings.filter({ !$0.isDeleted }).isEmpty {
+                let theme = w.theme?.lowercased() ?? ""
+                if theme.contains("week") || theme.contains("module") || theme.contains("session") || theme.contains("unit") {
+                    return true
+                }
+            }
+        }
+        for a in assignments where !a.isDeleted && a.weekNumber > 0 { return true }
+        return false
+    }
+
+    public var earliestItemDate: Date? {
+        var dates: [Date] = []
+        for w in weeks {
+            for r in w.readings where !r.isDeleted {
+                if let d = r.dueDate { dates.append(d) }
+            }
+            if let d = w.startDate { dates.append(d) }
+        }
+        for a in assignments where !a.isDeleted {
+            if let d = a.dueDate { dates.append(d) }
+        }
+        return dates.min()
+    }
+
+    public func reorganizeWeeksFromDates(modelContext: ModelContext? = nil) {
+        let calendar = Calendar.current
+        let allNonDeletedReadings = weeks.flatMap { $0.readings }.filter { !$0.isDeleted }
+        let allNonDeletedAssignments = assignments.filter { !$0.isDeleted }
+
+        var datedItems: [(date: Date, isReading: Bool, reading: Reading?, assignment: Assignment?)] = []
+        for r in allNonDeletedReadings {
+            if let d = r.dueDate {
+                datedItems.append((d, true, r, nil))
+            }
+        }
+        for a in allNonDeletedAssignments {
+            if let d = a.dueDate {
+                datedItems.append((d, false, nil, a))
+            }
+        }
+
+        if !datedItems.isEmpty {
+            let earliestDate = datedItems.map { $0.date }.min()!
+            let startOfWeek1 = calendar.dateInterval(of: .weekOfYear, for: earliestDate)?.start ?? calendar.startOfDay(for: earliestDate)
+
+            // Map each dated item to its derived week number
+            for item in datedItems {
+                let diffWeeks = calendar.dateComponents([.weekOfYear], from: startOfWeek1, to: item.date).weekOfYear ??
+                                (calendar.dateComponents([.day], from: startOfWeek1, to: item.date).day! / 7)
+                let derivedWeekNum = max(1, diffWeeks + 1)
+
+                if let r = item.reading {
+                    let targetWeek: Week
+                    if let existing = weeks.first(where: { $0.weekNumber == derivedWeekNum }) {
+                        targetWeek = existing
+                    } else {
+                        let nw = Week(id: UUID(), weekNumber: derivedWeekNum, theme: "Week \(derivedWeekNum) Schedule")
+                        nw.course = self
+                        weeks.append(nw)
+                        modelContext?.insert(nw)
+                        targetWeek = nw
+                    }
+                    let weekStart = calendar.date(byAdding: .day, value: (derivedWeekNum - 1) * 7, to: startOfWeek1) ?? startOfWeek1
+                    let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
+                    targetWeek.startDate = weekStart
+                    targetWeek.dateRangeStr = LocalSyllabusParser.formatExplicitDateRange(start: weekStart, end: weekEnd)
+
+                    if r.week?.persistentModelID != targetWeek.persistentModelID {
+                        if let oldWeek = r.week {
+                            oldWeek.readings.removeAll(where: { $0.persistentModelID == r.persistentModelID })
+                        }
+                        r.week = targetWeek
+                        if !targetWeek.readings.contains(where: { $0.persistentModelID == r.persistentModelID }) {
+                            targetWeek.readings.append(r)
+                        }
+                    }
+                } else if let a = item.assignment {
+                    a.weekNumber = derivedWeekNum
+                }
+            }
+
+            // For undated readings, guarantee they remain linked to Week 1 or their current week
+            for r in allNonDeletedReadings where r.dueDate == nil {
+                if r.week == nil {
+                    let defaultWeek = weeks.first(where: { $0.weekNumber == 1 }) ?? weeks.first
+                    if let dw = defaultWeek {
+                        r.week = dw
+                        if !dw.readings.contains(where: { $0.persistentModelID == r.persistentModelID }) {
+                            dw.readings.append(r)
+                        }
+                    }
+                }
+            }
+            for a in allNonDeletedAssignments where a.dueDate == nil {
+                if a.weekNumber <= 0 {
+                    a.weekNumber = 1
+                }
+            }
+        } else {
+            // For courses without dates, ensure all readings and assignments are assigned to valid weeks (defaulting to Week 1)
+            let defaultWeek = weeks.first(where: { $0.weekNumber == 1 }) ?? weeks.first
+            for w in weeks {
+                for r in w.readings {
+                    if r.week == nil, let dw = defaultWeek {
+                        r.week = dw
+                        if !dw.readings.contains(where: { $0.persistentModelID == r.persistentModelID }) {
+                            dw.readings.append(r)
+                        }
+                    }
+                }
+            }
+            for a in assignments {
+                if a.weekNumber <= 0 {
+                    a.weekNumber = 1
+                }
+            }
+        }
+    }
 }
 
 @Model
@@ -206,6 +337,8 @@ public enum MediaType: String, Codable, CaseIterable {
 public final class Reading {
     @Attribute(.unique) public var id: UUID = UUID()
     public var title: String = ""
+    public var authorName: String?
+    public var resourceTitle: String?
     public var mediaTypeRaw: String = "textbook"
     public var isCompleted: Bool = false
     public var isDeleted: Bool = false
@@ -234,6 +367,8 @@ public final class Reading {
     public init(
         id: UUID = UUID(),
         title: String,
+        authorName: String? = nil,
+        resourceTitle: String? = nil,
         mediaType: MediaType = .textbook,
         isCompleted: Bool = false,
         isDeleted: Bool = false,
@@ -254,6 +389,8 @@ public final class Reading {
     ) {
         self.id = id
         self.title = title
+        self.authorName = authorName
+        self.resourceTitle = resourceTitle
         self.mediaTypeRaw = mediaType.rawValue
         self.isCompleted = isCompleted
         self.isDeleted = isDeleted
@@ -304,6 +441,23 @@ public final class Reading {
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
+    public var authorAndChaptersSubtitle: String? {
+        var parts: [String] = []
+        if let auth = authorName?.trimmingCharacters(in: .whitespacesAndNewlines), !auth.isEmpty {
+            let cleanAuth = auth.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
+            if !cleanAuth.isEmpty {
+                parts.append(cleanAuth)
+            }
+        }
+        if let chDisplay = chapterAndPagesDisplay, !chDisplay.isEmpty {
+            let cleanCh = chDisplay.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
+            if !cleanCh.isEmpty {
+                parts.append(cleanCh)
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     public var computedTopics: [String] {
         if let explicit = relevantTopics, !explicit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let items = explicit.components(separatedBy: CharacterSet(charactersIn: ",|;\n"))
@@ -330,7 +484,39 @@ public final class Reading {
         return []
     }
 
+    public var contextBadgeText: String? {
+        if let w = week, w.weekNumber > 0 {
+            if let theme = w.theme, theme.lowercased().contains("module") {
+                if let modRange = theme.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
+                    return String(theme[modRange]).capitalized
+                }
+            }
+            return "Week \(w.weekNumber)"
+        }
+        if let explicit = relevantTopics, let modRange = explicit.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
+            return String(explicit[modRange]).capitalized
+        }
+        if mediaType != .article {
+            return mediaType.displayName
+        }
+        if let firstTopic = computedTopics.first {
+            return firstTopic
+        }
+        return nil
+    }
+
     public var cleanDisplayTitle: String {
+        if let res = resourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !res.isEmpty {
+            if let auth = authorName?.trimmingCharacters(in: .whitespacesAndNewlines), !auth.isEmpty {
+                if res.lowercased().contains(auth.lowercased()) {
+                    return res
+                } else {
+                    return "\(auth): \(res)"
+                }
+            }
+            return res
+        }
+
         var raw = title.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // 1. Strip XML tags
@@ -355,10 +541,14 @@ public final class Reading {
         // 4. Strip prefix noise
         raw = raw.replacingOccurrences(of: #"(?i)^\s*(?:readings?|read|watch|listen|required|module\s*\d+|unit\s*\d+|week\s*\d+)\s*[:\-–]*\s*"#, with: "", options: .regularExpression)
 
-        // 5. Cap words to max 5
+        // 5. Clean punctuation & remnants
+        raw = raw.replacingOccurrences(of: #"\s*[:;\-–]\s*$"#, with: "", options: .regularExpression)
+        raw = raw.replacingOccurrences(of: #"^\s*[:;\-–]\s*"#, with: "", options: .regularExpression)
+
+        // 6. Cap words to max 6
         let words = raw.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        if words.count > 5 {
-            return words.prefix(5).joined(separator: " ")
+        if words.count > 6 {
+            return words.prefix(6).joined(separator: " ")
         }
 
         return raw.isEmpty ? "Reading" : raw
@@ -375,6 +565,7 @@ public final class Assignment {
     public var fullInstructions: String?
     public var pointsPossible: String?
     public var pointsBreakdown: String?
+    public var rubricJSON: String?
     public var noteText: String?
     public var isCompleted: Bool
     public var isDeleted: Bool
@@ -387,6 +578,14 @@ public final class Assignment {
     public var docColorHex: String?
     
     public var course: Course?
+
+    public var rubricCriteria: [RubricCriterionDTO] {
+        if let data = rubricJSON?.data(using: .utf8),
+           let items = try? JSONDecoder().decode([RubricCriterionDTO].self, from: data), !items.isEmpty {
+            return items
+        }
+        return []
+    }
 
     public var cleanDisplayTitle: String {
         var raw = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -403,13 +602,23 @@ public final class Assignment {
         raw = raw.replacingOccurrences(of: #"(?i)\s*\(?\b\d{1,4}\s*(?:pts|points|pt)\b\)?\s*"#, with: " ", options: .regularExpression)
         raw = raw.replacingOccurrences(of: #"(?i)^\s*(?:assignments?|due|required|overview of|module\s*\d+|unit\s*\d+|week\s*\d+)\s*[:\-–]*\s*"#, with: "", options: .regularExpression)
 
-        // 4. Cap words to max 4
+        // 4. Cap words to max 12
         let words = raw.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        if words.count > 4 {
-            return words.prefix(4).joined(separator: " ")
+        if words.count > 12 {
+            return words.prefix(12).joined(separator: " ")
         }
 
         return raw.isEmpty ? "Assignment" : raw
+    }
+
+    public var weekOrModuleDisplay: String {
+        if weekNumber > 0 {
+            return "Week \(weekNumber)"
+        }
+        if let explicit = relevantTopics, !explicit.isEmpty {
+            return explicit
+        }
+        return "Assignment"
     }
 
     public init(
@@ -420,6 +629,7 @@ public final class Assignment {
         fullInstructions: String? = nil,
         pointsPossible: String? = nil,
         pointsBreakdown: String? = nil,
+        rubricJSON: String? = nil,
         noteText: String? = nil,
         isCompleted: Bool = false,
         isDeleted: Bool = false,
@@ -438,6 +648,7 @@ public final class Assignment {
         self.fullInstructions = fullInstructions
         self.pointsPossible = pointsPossible
         self.pointsBreakdown = pointsBreakdown
+        self.rubricJSON = rubricJSON
         self.noteText = noteText
         self.isCompleted = isCompleted
         self.isDeleted = isDeleted
@@ -476,6 +687,27 @@ public final class Assignment {
             }
         }
         return []
+    }
+
+    public var contextBadgeText: String? {
+        if weekNumber > 0 {
+            if let wTheme = course?.weeks.first(where: { $0.weekNumber == weekNumber })?.theme,
+               wTheme.lowercased().contains("module"),
+               let modRange = wTheme.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
+                return String(wTheme[modRange]).capitalized
+            }
+            return "Week \(weekNumber)"
+        }
+        if let explicit = relevantTopics, let modRange = explicit.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
+            return String(explicit[modRange]).capitalized
+        }
+        if let subType = subTypeRaw, !subType.isEmpty, subType.uppercased() != "OTHER" {
+            return subType.capitalized
+        }
+        if let weight = weightPercentage, !weight.isEmpty {
+            return weight
+        }
+        return nil
     }
 
     public var associatedReadings: [Reading] {
@@ -843,6 +1075,8 @@ public struct CourseImporter {
                     let reading = Reading(
                         id: UUID(),
                         title: cleanReadingTitle,
+                        authorName: rDTO.authorName,
+                        resourceTitle: rDTO.resourceTitle,
                         mediaType: mediaType,
                         isCompleted: rDTO.isCompleted ?? false,
                         summaryText: summary,
@@ -851,8 +1085,8 @@ public struct CourseImporter {
                         videoUrl: videoUrl,
                         dueDate: parsedDueDate,
                         dateRangeStr: rDTO.dateRangeStr ?? week.dateRangeStr,
-                        chapterText: extractedCh,
-                        pagesText: extractedPg,
+                        chapterText: rDTO.chapterText ?? extractedCh,
+                        pagesText: rDTO.pagesText ?? extractedPg,
                         courseCode: newCourse.courseCode,
                         relevantTopics: rDTO.relevantTopics
                     )
@@ -869,34 +1103,47 @@ public struct CourseImporter {
 
                 let parsedDueDate = WeekDateConverter.parseRobustDate(aDTO.dueDate)
                 let weekNumber: Int = {
-                    if let d = parsedDueDate { return WeekDateConverter.weekNumber(for: d) }
+                    if let due = parsedDueDate {
+                        if let cStart = newCourse.earliestItemDate {
+                            return WeekDateConverter.deriveWeekNumber(for: due, courseStartDate: cStart)
+                        }
+                        return WeekDateConverter.weekNumber(for: due)
+                    }
                     return 1
                 }()
 
-                    let mediaUrl: String? = {
-                        if let cand = aDTO.mediaUrl, URLHelper.isValidURL(cand) { return cand }
-                        if let cand = aDTO.fullInstructions, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
-                        if let extracted = URLHelper.extractFirstURL(from: aDTO.title) { return extracted }
-                        return nil
-                    }()
+                let mediaUrl: String? = {
+                    if let cand = aDTO.mediaUrl, URLHelper.isValidURL(cand) { return cand }
+                    if let cand = aDTO.fullInstructions, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
+                    if let extracted = URLHelper.extractFirstURL(from: aDTO.title) { return extracted }
+                    return nil
+                }()
 
-                    let cleanTitle = cleanAndSummarizeTitle(aDTO.title, isReading: false)
-                    let assignment = Assignment(
-                        id: UUID(),
-                        title: cleanTitle,
-                        weekNumber: weekNumber,
-                        dueDate: parsedDueDate,
-                        fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
-                        pointsPossible: aDTO.pointsPossible ?? "100 Points",
-                        pointsBreakdown: sanitizePointsBreakdown(aDTO.pointsBreakdown),
-                        noteText: nil,
-                        isCompleted: false,
-                        isDeleted: false,
-                        courseCode: newCourse.courseCode,
-                        weightPercentage: aDTO.weightPercentage,
-                        subTypeRaw: "PAPER",
-                        mediaUrl: mediaUrl
-                    )
+                let rubricJSONString: String? = {
+                    if let r = aDTO.rubric, !r.isEmpty, let data = try? JSONEncoder().encode(r) {
+                        return String(data: data, encoding: .utf8)
+                    }
+                    return nil
+                }()
+
+                let cleanTitle = cleanAndSummarizeTitle(aDTO.title, isReading: false)
+                let assignment = Assignment(
+                    id: UUID(),
+                    title: cleanTitle,
+                    weekNumber: weekNumber,
+                    dueDate: parsedDueDate,
+                    fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
+                    pointsPossible: aDTO.pointsPossible ?? "100 Points",
+                    pointsBreakdown: sanitizePointsBreakdown(aDTO.pointsBreakdown),
+                    rubricJSON: rubricJSONString,
+                    noteText: nil,
+                    isCompleted: false,
+                    isDeleted: false,
+                    courseCode: newCourse.courseCode,
+                    weightPercentage: aDTO.weightPercentage,
+                    subTypeRaw: "PAPER",
+                    mediaUrl: mediaUrl
+                )
                 assignment.course = newCourse
                 newCourse.assignments.append(assignment)
                 modelContext.insert(assignment)
@@ -916,6 +1163,8 @@ public struct CourseImporter {
         syllabusDoc.course = newCourse
         newCourse.syllabusDocs.append(syllabusDoc)
         modelContext.insert(syllabusDoc)
+
+        newCourse.reorganizeWeeksFromDates(modelContext: modelContext)
 
         modelContext.insert(newCourse)
         do {
@@ -962,38 +1211,43 @@ public struct CourseImporter {
             }
         }
 
-        // 3. For Readings: Strip topic header words like "overview", "tools", "systems" before author names (e.g. "overview Gehart")
+        // 3. For Readings: Only strip generic labels like "Required Reading:" or "Reading:"
         if isReading {
-            let topicWords = ["overview", "tools", "systems", "introduction to", "intro to", "overview of"]
-            for word in topicWords {
-                let pattern = "^(?i)" + NSRegularExpression.escapedPattern(for: word) + "\\s+"
-                title = title.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            let topicPrefixes = [
+                "Work ", "Stages ", "Initial Stages ", "Transition ", "Working ",
+                "Presentations ", "Settings ", "Groups in Diverse Settings "
+            ]
+            for tp in topicPrefixes {
+                if title.lowercased().hasPrefix(tp.lowercased()) {
+                    title = String(title.dropFirst(tp.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+
+            let readingPrefixes = [
+                "Required Readings:", "Required Reading:", "Assigned Reading:", "Assigned Readings:",
+                "Weekly Readings:", "Readings:", "Reading:", "Read:"
+            ]
+            for prefix in readingPrefixes {
+                if let range = title.range(of: prefix, options: [.caseInsensitive, .anchored]) {
+                    title = String(title[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
             }
             
-            // Strip chapter text pattern (e.g. "chapters 1-3", "chapter 5", "ch. 5", "chapters 6 & 7", "chs. 6 & 7")
-            let chPattern = #"(?i)\b(?:chapters?|chs?\.?)\s*\d+(?:\s*(?:-|–|&|and|,)\s*\d+)*\b"#
-            title = title.replacingOccurrences(of: chPattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Clean up orphan delimiters
+            title = title.replacingOccurrences(of: #":\s*;"#, with: " ;", options: .regularExpression)
+            title = title.replacingOccurrences(of: #"[:;]\s*[:;]+"#, with: " /", options: .regularExpression)
+            title = title.replacingOccurrences(of: #"\s*;\s*"#, with: " / ", options: .regularExpression)
             
-            // Strip page range pattern (e.g. "pages 14-80", "pp. 14-80", "p. 5", "pages 12 & 13")
-            let pgPattern = #"(?i)\b(?:pages?|pp\b\.?|p\b\.?)\s*\d+(?:\s*(?:-|–|&|and|,)\s*\d+)*\b"#
-            title = title.replacingOccurrences(of: pgPattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            // Strip standalone indicator words (e.g. "chapter", "chapters", "pages")
-            let standaloneWords = #"(?i)\b(?:readonly|chapters?|ch\b\.?|pages?|pp\b\.?)\b"#
-            title = title.replacingOccurrences(of: standaloneWords, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            // Strip ampersand/conjunction remnants with numbers (e.g. " ( & 7", " & 7", " and 7")
-            let remnantPattern = #"(?i)\s*[\(\[\]\)]?\s*(?:&|and|,|\+|\-|\–)\s*\d+\s*[\(\[\]\)]?"#
-            title = title.replacingOccurrences(of: remnantPattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            // Strip empty parentheses () or ( )
-            title = title.replacingOccurrences(of: #"\(\s*\)"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-            
+            // If title matches Author Ch. X without colon e.g. "Corey Ch. 1 & 2" -> "Corey: Ch. 1 & 2"
+            if !title.contains(":") {
+                title = title.replacingOccurrences(of: #"(?i)^([A-Z][a-zA-Z\s&,\.\-–]+?)\s+(chapters?|chs?\.?)\s*"#, with: "$1: $2 ", options: .regularExpression)
+            }
+
             // Collapse multiple spaces
             title = title.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
             
-            // Strip trailing/leading separators or parentheses
-            title = title.replacingOccurrences(of: #"^[\:\-\–\s\(\)]+|[\:\-\–\s\(\)]+$"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Strip trailing/leading separators
+            title = title.replacingOccurrences(of: #"^[\:\;\-\–\s\/]+|[\:\;\-\–\s\/]+$"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         title = title.replacingOccurrences(of: #"^(Week\s*\d+|Module\s*\d+|\d+[\.\:\-]*)\s*"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1004,17 +1258,17 @@ public struct CourseImporter {
         }
 
         if isReading {
-            if title.count > 65 {
+            if title.count > 100 {
                 let words = title.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                if words.count > 10 {
-                    title = words.prefix(10).joined(separator: " ") + "..."
+                if words.count > 15 {
+                    title = words.prefix(15).joined(separator: " ") + "..."
                 }
             }
         } else {
-            if title.count > 60 {
+            if title.count > 120 {
                 let words = title.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                if words.count > 8 {
-                    title = words.prefix(8).joined(separator: " ") + "..."
+                if words.count > 18 {
+                    title = words.prefix(18).joined(separator: " ") + "..."
                 }
             }
         }
@@ -1044,32 +1298,32 @@ public struct CourseImporter {
     @discardableResult
     public static func importDTO(_ dto: CourseDTO, into existingCourse: Course, modelContext: ModelContext) -> Course {
         let cleanName = dto.courseName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isPlaceholderName = existingCourse.courseName.isEmpty ||
-                                existingCourse.courseName.lowercased() == "new course" ||
-                                existingCourse.courseName.lowercased() == "course" ||
-                                existingCourse.courseName.lowercased() == "syllabus course"
-
-        // ONLY update courseName if the existing course has an empty/placeholder name!
-        // Never overwrite a user's custom assigned course name!
-        if isPlaceholderName && !cleanName.isEmpty {
+        if !cleanName.isEmpty && cleanName.lowercased() != "new course" {
             existingCourse.courseName = cleanName
         }
 
-        let isPlaceholderCode = (existingCourse.courseCode ?? "").isEmpty ||
-                                existingCourse.courseCode?.uppercased() == "CRS" ||
-                                isGenericKey(normalizeKey(existingCourse.courseCode ?? ""))
-        if isPlaceholderCode, let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty, cleanCode.uppercased() != "CRS" {
+        if let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty, cleanCode.uppercased() != "CRS" {
             existingCourse.courseCode = cleanCode
         }
 
-        if let instructor = dto.instructorName, !instructor.isEmpty, (existingCourse.instructorName ?? "").isEmpty {
+        if let instructor = dto.instructorName, !instructor.isEmpty {
             existingCourse.instructorName = instructor
         }
-        if let email = dto.instructorEmail, !email.isEmpty, (existingCourse.instructorEmail ?? "").isEmpty {
+        if let email = dto.instructorEmail, !email.isEmpty {
             existingCourse.instructorEmail = email
         }
-        if let desc = dto.courseDescription, !desc.isEmpty, (existingCourse.courseDescription ?? "").isEmpty {
+        if let desc = dto.courseDescription, !desc.isEmpty {
             existingCourse.courseDescription = desc
+        }
+
+        // Ensure baseline weeks exist on the course
+        if existingCourse.weeks.isEmpty {
+            for w in 1...max(16, dto.termWeeks ?? 16) {
+                let week = Week(id: UUID(), weekNumber: w, theme: "Week \(w) Schedule")
+                week.course = existingCourse
+                existingCourse.weeks.append(week)
+                modelContext.insert(week)
+            }
         }
 
         var usedColors = Set<String>()
@@ -1119,7 +1373,6 @@ public struct CourseImporter {
             }
 
             if let readings = wDTO.readings, !readings.isEmpty {
-                let allExistingReadings = existingCourse.weeks.flatMap { $0.readings }
                 for rDTO in readings {
                     let normTitle = rDTO.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                     let mediaType: MediaType = {
@@ -1142,26 +1395,36 @@ public struct CourseImporter {
                     }()
 
                     let parsedDueDate: Date? = WeekDateConverter.parseRobustDate(rDTO.dueDate)
+                    let (extractedCh, extractedPg) = LocalSyllabusParser.shared.extractChapterAndPages(from: rDTO.title)
 
-                    if let existingReading = allExistingReadings.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle }) {
+                    let cleanTitle = cleanAndSummarizeTitle(rDTO.title, isReading: true)
+                    if let existingReading = week.readings.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle || $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == cleanTitle.lowercased() }) {
                         existingReading.summaryText = ""
                         existingReading.keyTakeawaysText = takeaways
                         existingReading.estimatedTimeText = estTime
+                        if let auth = rDTO.authorName { existingReading.authorName = auth }
+                        if let res = rDTO.resourceTitle { existingReading.resourceTitle = res }
+                        if let ch = rDTO.chapterText ?? extractedCh { existingReading.chapterText = ch }
+                        if let pg = rDTO.pagesText ?? extractedPg { existingReading.pagesText = pg }
                         if let pDate = parsedDueDate { existingReading.dueDate = pDate }
                     } else {
-                        let cleanTitle = cleanAndSummarizeTitle(rDTO.title, isReading: true)
                         let reading = Reading(
                             id: UUID(),
                             title: cleanTitle,
+                            authorName: rDTO.authorName,
+                            resourceTitle: rDTO.resourceTitle,
                             mediaType: mediaType,
                             isCompleted: rDTO.isCompleted ?? false,
                             summaryText: summary,
                             keyTakeawaysText: takeaways,
                             estimatedTimeText: estTime,
                             videoUrl: videoUrl,
-                            dueDate: parsedDueDate ?? week.computedEndDate,
+                            dueDate: parsedDueDate,
                             dateRangeStr: rDTO.dateRangeStr ?? week.dateRangeStr,
+                            chapterText: rDTO.chapterText ?? extractedCh,
+                            pagesText: rDTO.pagesText ?? extractedPg,
                             courseCode: existingCourse.courseCode,
+                            relevantTopics: rDTO.relevantTopics,
                             sourceDocumentName: newDocTitle,
                             docColorHex: newDocColor
                         )
@@ -1178,8 +1441,20 @@ public struct CourseImporter {
                 let normTitle = aDTO.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let parsedDueDate = WeekDateConverter.parseRobustDate(aDTO.dueDate)
                 let weekNumber: Int = {
-                    if let d = parsedDueDate { return WeekDateConverter.weekNumber(for: d) }
+                    if let due = parsedDueDate {
+                        if let cStart = existingCourse.earliestItemDate {
+                            return WeekDateConverter.deriveWeekNumber(for: due, courseStartDate: cStart)
+                        }
+                        return WeekDateConverter.weekNumber(for: due)
+                    }
                     return 1
+                }()
+
+                let rubricJSONString: String? = {
+                    if let r = aDTO.rubric, !r.isEmpty, let data = try? JSONEncoder().encode(r) {
+                        return String(data: data, encoding: .utf8)
+                    }
+                    return nil
                 }()
 
                 if let existingAssignment = existingCourse.assignments.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle }) {
@@ -1187,6 +1462,7 @@ public struct CourseImporter {
                     if let pts = aDTO.pointsPossible, !pts.isEmpty { existingAssignment.pointsPossible = pts }
                     if let weight = aDTO.weightPercentage, !weight.isEmpty { existingAssignment.weightPercentage = weight }
                     if let bd = sanitizePointsBreakdown(aDTO.pointsBreakdown), !bd.isEmpty { existingAssignment.pointsBreakdown = bd }
+                    if let rub = rubricJSONString { existingAssignment.rubricJSON = rub }
                     if parsedDueDate != nil { existingAssignment.dueDate = parsedDueDate }
                     existingAssignment.noteText = nil
                 } else {
@@ -1206,6 +1482,7 @@ public struct CourseImporter {
                         fullInstructions: aDTO.fullInstructions ?? "Complete \(aDTO.title)",
                         pointsPossible: aDTO.pointsPossible ?? "100 Points",
                         pointsBreakdown: sanitizePointsBreakdown(aDTO.pointsBreakdown),
+                        rubricJSON: rubricJSONString,
                         noteText: nil,
                         isCompleted: false,
                         isDeleted: false,
@@ -1222,6 +1499,7 @@ public struct CourseImporter {
                 }
             }
         }
+        existingCourse.reorganizeWeeksFromDates(modelContext: modelContext)
 
         do {
             try modelContext.save()
@@ -1235,43 +1513,32 @@ public struct CourseImporter {
     }
 
     private static func importItemDTOs(_ items: [ItemDTO], into course: Course, modelContext: ModelContext, sourceDocumentName: String? = nil, docColorHex: String? = nil) {
-        // Ensure weeks 1..16 exist on course
-        for w in 1...max(16, course.termWeeks) {
-            if !course.weeks.contains(where: { $0.weekNumber == w }) {
-                let week = Week(id: UUID(), weekNumber: w, theme: "Week \(w) Schedule")
-                week.course = course
-                course.weeks.append(week)
-                modelContext.insert(week)
+        let calendar = Calendar.current
+
+        // 1. Gather all explicit dates across incoming items and course
+        var allDates: [Date] = []
+        for item in items {
+            if let dStr = item.dueDateIso, !dStr.isEmpty {
+                let p = LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026)
+                if !p.isoString.isEmpty { allDates.append(p.date) }
+            } else if let desc = item.description, !desc.isEmpty {
+                let p = LocalSyllabusParser.parseISO8601Date(from: desc, fallbackYear: 2026)
+                if !p.isoString.isEmpty { allDates.append(p.date) }
+            } else {
+                let p = LocalSyllabusParser.parseISO8601Date(from: item.title, fallbackYear: 2026)
+                if !p.isoString.isEmpty { allDates.append(p.date) }
             }
         }
+        if let courseEarliest = course.earliestItemDate {
+            allDates.append(courseEarliest)
+        }
+
+        let earliestDate = allDates.min()
+        let startOfWeek1 = earliestDate != nil ? (calendar.dateInterval(of: .weekOfYear, for: earliestDate!)?.start ?? calendar.startOfDay(for: earliestDate!)) : nil
 
         let courseAssignments = course.assignments
-        let courseReadings = course.weeks.flatMap { $0.readings }
 
         for item in items {
-            let weekNum = item.weekNumber ?? 1
-            let normTitle = normalizeTitle(item.title)
-            let parsedDueDate: Date? = {
-                if let dStr = item.dueDateIso, !dStr.isEmpty {
-                    let p = LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026)
-                    if !p.isoString.isEmpty { return p.date }
-                }
-                if let desc = item.description, !desc.isEmpty {
-                    let p = LocalSyllabusParser.parseISO8601Date(from: desc, fallbackYear: 2026)
-                    if !p.isoString.isEmpty { return p.date }
-                }
-                let pTitle = LocalSyllabusParser.parseISO8601Date(from: item.title, fallbackYear: 2026)
-                if !pTitle.isoString.isEmpty { return pTitle.date }
-                return nil
-            }()
-
-            let dayName: String? = {
-                if let dStr = item.dueDateIso, !dStr.isEmpty, let d = LocalSyllabusParser.extractDayName(from: dStr) { return d }
-                if let d = LocalSyllabusParser.extractDayName(from: item.title) { return d }
-                if let desc = item.description, !desc.isEmpty, let d = LocalSyllabusParser.extractDayName(from: desc) { return d }
-                return nil
-            }()
-
             let catLower = item.category.lowercased()
             let isAssignment = catLower == "assignment" ||
                                catLower.contains("assign") ||
@@ -1286,9 +1553,51 @@ public struct CourseImporter {
                                catLower.contains("test") ||
                                catLower.contains("midterm") ||
                                catLower.contains("final")
+
+            let parsedDueDate: Date? = {
+                if let dStr = item.dueDateIso, !dStr.isEmpty {
+                    let p = LocalSyllabusParser.parseISO8601Date(from: dStr, fallbackYear: 2026)
+                    if !p.isoString.isEmpty { return p.date }
+                }
+                if let desc = item.description, !desc.isEmpty {
+                    let p = LocalSyllabusParser.parseISO8601Date(from: desc, fallbackYear: 2026)
+                    if !p.isoString.isEmpty { return p.date }
+                }
+                let pTitle = LocalSyllabusParser.parseISO8601Date(from: item.title, fallbackYear: 2026)
+                if !pTitle.isoString.isEmpty { return pTitle.date }
+                return nil
+            }()
+
+            let weekNum: Int = {
+                if let explicitW = item.weekNumber, explicitW > 0 {
+                    return explicitW
+                }
+                if let due = parsedDueDate, let w1Start = startOfWeek1 {
+                    let diffWeeks = calendar.dateComponents([.weekOfYear], from: w1Start, to: due).weekOfYear ??
+                                    (calendar.dateComponents([.day], from: w1Start, to: due).day! / 7)
+                    return max(1, diffWeeks + 1)
+                }
+                return 0
+            }()
+
+            let normTitle = normalizeTitle(item.title)
+
+            let dayName: String? = {
+                if let dStr = item.dueDateIso, !dStr.isEmpty, let d = LocalSyllabusParser.extractDayName(from: dStr) { return d }
+                if let d = LocalSyllabusParser.extractDayName(from: item.title) { return d }
+                if let desc = item.description, !desc.isEmpty, let d = LocalSyllabusParser.extractDayName(from: desc) { return d }
+                return nil
+            }()
             if isAssignment {
                 let existingAssign = course.assignments.first(where: { normalizeTitle($0.title) == normTitle }) ??
                                      courseAssignments.first(where: { normalizeTitle($0.title) == normTitle })
+                let rubricJSONString: String? = {
+                    if let r = item.rubric, !r.isEmpty, let data = try? JSONEncoder().encode(r) {
+                        return String(data: data, encoding: .utf8)
+                    }
+                    return nil
+                }()
+
                 if let existing = existingAssign {
                     print("ℹ️ [RE-UPLOAD CLAUSE] Assignment '\(item.title)' already exists. Updating in place.")
                     if let desc = item.description, !desc.isEmpty { existing.fullInstructions = desc }
@@ -1297,7 +1606,9 @@ public struct CourseImporter {
                     if let weight = item.percentage, !weight.isEmpty { existing.weightPercentage = weight }
                     if let sub = item.subType, !sub.isEmpty { existing.subTypeRaw = sub }
                     if let media = item.mediaUrl, !media.isEmpty { existing.mediaUrl = media }
+                    if let rub = rubricJSONString { existing.rubricJSON = rub }
                     if parsedDueDate != nil { existing.dueDate = parsedDueDate }
+                    if weekNum > 0 { existing.weekNumber = weekNum }
                     if let sName = sourceDocumentName { existing.sourceDocumentName = sName }
                     if let dColor = docColorHex { existing.docColorHex = dColor }
                     existing.noteText = nil
@@ -1314,14 +1625,16 @@ public struct CourseImporter {
 
                     let cleanTitle = cleanAndSummarizeTitle(item.title, isReading: false)
 
+                    let assignWeekNum = weekNum > 0 ? weekNum : 1
                     let assignment = Assignment(
                         id: UUID(),
                         title: cleanTitle,
-                        weekNumber: weekNum,
+                        weekNumber: assignWeekNum,
                         dueDate: parsedDueDate,
                         fullInstructions: instructionsText,
                         pointsPossible: item.points ?? "100 Points Possible",
                         pointsBreakdown: realBreakdown,
+                        rubricJSON: rubricJSONString,
                         noteText: nil,
                         isCompleted: false,
                         isDeleted: false,
@@ -1337,15 +1650,35 @@ public struct CourseImporter {
                     modelContext.insert(assignment)
                 }
             } else {
-                let week: Week
-                if let targetWeek = course.weeks.first(where: { $0.weekNumber == weekNum }) {
-                    week = targetWeek
-                } else {
-                    week = Week(id: UUID(), weekNumber: weekNum, theme: "Week \(weekNum) Schedule")
-                    week.course = course
-                    course.weeks.append(week)
-                    modelContext.insert(week)
-                }
+                let targetWeek: Week = {
+                    if weekNum > 0 {
+                        if let existing = course.weeks.first(where: { $0.weekNumber == weekNum }) {
+                            return existing
+                        }
+                        let nw = Week(id: UUID(), weekNumber: weekNum, theme: "Week \(weekNum) Schedule")
+                        nw.course = course
+                        if let w1Start = startOfWeek1 {
+                            let weekStart = calendar.date(byAdding: .day, value: (weekNum - 1) * 7, to: w1Start) ?? w1Start
+                            let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
+                            nw.startDate = weekStart
+                            nw.dateRangeStr = LocalSyllabusParser.formatExplicitDateRange(start: weekStart, end: weekEnd)
+                        }
+                        course.weeks.append(nw)
+                        modelContext.insert(nw)
+                        return nw
+                    }
+                    if let firstWeek = course.weeks.first(where: { $0.weekNumber == 1 }) {
+                        return firstWeek
+                    }
+                    if let anyWeek = course.weeks.first {
+                        return anyWeek
+                    }
+                    let w1 = Week(id: UUID(), weekNumber: 1, theme: "Course Schedule")
+                    w1.course = course
+                    course.weeks.append(w1)
+                    modelContext.insert(w1)
+                    return w1
+                }()
 
                 let mediaType: MediaType = {
                     switch (item.subType ?? "TEXTBOOK").lowercased() {
@@ -1381,25 +1714,36 @@ public struct CourseImporter {
 
                 let effectiveDateStr: String? = {
                     if let pDate = parsedDueDate {
-                        return WeekDateConverter.formattedDueDate(for: pDate, week: week, weekNumber: weekNum)
+                        return WeekDateConverter.formattedDueDate(for: pDate, week: targetWeek, weekNumber: weekNum)
                     }
-                    if let wRange = week.dateRangeStr?.trimmingCharacters(in: .whitespacesAndNewlines), !wRange.isEmpty, wRange.lowercased() != "unknown" {
+                    if let wRange = targetWeek.dateRangeStr?.trimmingCharacters(in: .whitespacesAndNewlines), !wRange.isEmpty, wRange.lowercased() != "unknown" {
                         return wRange
                     }
-                    return "Unknown"
+                    return nil
                 }()
 
-                let existingReading = course.weeks.flatMap({ $0.readings }).first(where: { normalizeTitle($0.title) == normTitle }) ??
-                                      courseReadings.first(where: { normalizeTitle($0.title) == normTitle })
+                let cleanTitle = cleanAndSummarizeTitle(item.title, isReading: true)
+                let existingReading = course.weeks.flatMap { $0.readings }.first(where: {
+                    normalizeTitle($0.title) == normTitle || normalizeTitle($0.title) == normalizeTitle(cleanTitle)
+                })
                 if let existing = existingReading {
                     print("ℹ️ [RE-UPLOAD CLAUSE] Reading '\(item.title)' already exists. Updating in place.")
                     existing.summaryText = ""
                     if let media = item.mediaUrl, !media.isEmpty { existing.videoUrl = media }
+                    if let auth = item.authorName { existing.authorName = auth }
+                    if let res = item.resourceTitle { existing.resourceTitle = res }
                     if let pDate = parsedDueDate { existing.dueDate = pDate }
                     if let ch = finalChapter { existing.chapterText = ch }
                     if let pg = finalPages { existing.pagesText = pg }
                     if let sName = sourceDocumentName { existing.sourceDocumentName = sName }
                     if let dColor = docColorHex { existing.docColorHex = dColor }
+                    if existing.week?.persistentModelID != targetWeek.persistentModelID {
+                        existing.week?.readings.removeAll(where: { $0.persistentModelID == existing.persistentModelID })
+                        existing.week = targetWeek
+                        if !targetWeek.readings.contains(where: { $0.persistentModelID == existing.persistentModelID }) {
+                            targetWeek.readings.append(existing)
+                        }
+                    }
                 } else {
                     let videoUrl: String? = {
                         if let cand = item.mediaUrl, URLHelper.isValidURL(cand) { return cand }
@@ -1408,10 +1752,11 @@ public struct CourseImporter {
                         return nil
                     }()
 
-                    let cleanTitle = cleanAndSummarizeTitle(item.title, isReading: true)
                     let reading = Reading(
                         id: UUID(),
                         title: cleanTitle,
+                        authorName: item.authorName,
+                        resourceTitle: item.resourceTitle,
                         mediaType: mediaType,
                         isCompleted: false,
                         isDeleted: false,
@@ -1428,12 +1773,14 @@ public struct CourseImporter {
                         sourceDocumentName: sourceDocumentName,
                         docColorHex: docColorHex
                     )
-                    reading.week = week
-                    week.readings.append(reading)
+                    reading.week = targetWeek
+                    targetWeek.readings.append(reading)
                     modelContext.insert(reading)
                 }
             }
         }
+
+        course.reorganizeWeeksFromDates(modelContext: modelContext)
     }
 
     public static func defaultBreakdown(for title: String, subType: String, totalPointsStr: String?) -> String {
@@ -1500,6 +1847,14 @@ public enum WeekDateConverter {
         return max(1, min(20, week))
     }
 
+    public static func deriveWeekNumber(for targetDate: Date, courseStartDate: Date) -> Int {
+        let calendar = Calendar.current
+        let startOfWeek1 = calendar.dateInterval(of: .weekOfYear, for: courseStartDate)?.start ?? calendar.startOfDay(for: courseStartDate)
+        let diffWeeks = calendar.dateComponents([.weekOfYear], from: startOfWeek1, to: targetDate).weekOfYear ??
+                        (calendar.dateComponents([.day], from: startOfWeek1, to: targetDate).day! / 7)
+        return max(1, diffWeeks + 1)
+    }
+
     public static func date(forWeek weekNumber: Int, startDate: Date = baseTermStartDate) -> Date {
         let calendar = Calendar.current
         return calendar.date(byAdding: .day, value: max(0, weekNumber - 1) * 7, to: startDate) ?? startDate
@@ -1515,13 +1870,18 @@ public enum WeekDateConverter {
         return nil
     }
 
-    public static func formattedDueDate(for date: Date?, week: Week? = nil, weekNumber: Int = 1) -> String {
-        let weekNum = max(1, weekNumber)
+    public static func formattedDueDate(for date: Date?, week: Week? = nil, weekNumber: Int = 0) -> String {
         guard let explicitDate = date else {
             if let wRange = week?.dateRangeStr?.trimmingCharacters(in: .whitespacesAndNewlines), !wRange.isEmpty, wRange.lowercased() != "unknown" {
-                return "\(wRange) · Week \(weekNum)"
+                return wRange
             }
-            return "Unknown · Week \(weekNum)"
+            if weekNumber > 0 {
+                return "Week \(weekNumber)"
+            }
+            if let w = week?.weekNumber, w > 0 {
+                return "Week \(w)"
+            }
+            return "No due date specified"
         }
 
         let formatter = DateFormatter()
@@ -1535,7 +1895,7 @@ public enum WeekDateConverter {
             formatter.dateFormat = "EEEE, MMMM d"
         }
 
-        return "Due " + formatter.string(from: explicitDate) + " · Week \(weekNum)"
+        return "Due " + formatter.string(from: explicitDate)
     }
 }
 

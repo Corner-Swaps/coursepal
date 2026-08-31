@@ -18,23 +18,8 @@ public struct InfoCreditsSheetView: View {
                 VStack(spacing: 20) {
                     // App Logo & Header
                     VStack(spacing: 8) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 22)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color(red: 0.14, green: 0.44, blue: 0.96), Color(red: 0.10, green: 0.30, blue: 0.85)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 80, height: 80)
-                                .shadow(color: Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.35), radius: 12, x: 0, y: 6)
-
-                            Image(systemName: "graduationcap.fill")
-                                .font(.system(size: 38, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        .padding(.top, 10)
+                        AppIconLogoView(size: 80)
+                            .padding(.top, 10)
 
                         Text("CoursePal")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -227,7 +212,7 @@ public struct InfoCreditsSheetView: View {
                 .padding(.top, 12)
             }
             .background(Color(red: 0.95, green: 0.96, blue: 0.98))
-            .navigationTitle("About CoursePal")
+            .navigationTitle("")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -248,7 +233,7 @@ public struct InfoCreditsSheetView: View {
                 VersionReleaseSheetView()
             }
             .sheet(isPresented: $showingUserGuideFAQ) {
-                UserGuideFAQSheetView()
+                UserGuideFaqSheetView()
             }
         }
     }
@@ -286,7 +271,7 @@ public struct TermsOfServiceSheetView: View {
 
                         CRITICAL NOTICE:
                         • The official syllabus provided by your institution, official instructor announcements, and your school's Learning Management System (Canvas, Blackboard, Brightspace, Moodle) remain the sole authoritative and binding sources for all course deadlines, exam dates, syllabus requirements, and grading policies.
-                        • You are solely responsible for verifying all dates, times, assignment specs, and milestone schedules generated or imported by CoursePal against your official course syllabus.
+                        • You are solely responsible for verifying all dates, times, assignment specs, and assignment schedules generated or imported by CoursePal against your official course syllabus.
                         • Optical character recognition (OCR) and artificial intelligence (AI) parsing may occasionally misread or misinterpret text due to document scan quality, complex table layouts, or instructor revisions. CoursePal makes no warranty of 100% automated parsing precision.
                         """
                     )
@@ -333,15 +318,29 @@ public struct TermsOfServiceSheetView: View {
                         These Terms are governed by and construed in accordance with the laws of the Province of British Columbia and the federal laws of Canada applicable therein, without giving effect to any principles of conflicts of law.
                         """
                     )
+
+                    // Section 6: Multi-Document Vault & Custom Grading Disclosures
+                    LegalSectionCard(
+                        icon: "folder.badge.gearshape",
+                        iconColor: Color(red: 0.05, green: 0.65, blue: 0.40),
+                        title: "6. MULTI-DOCUMENT VAULT, API USAGE & GRADING",
+                        bodyText: """
+                        • Multi-Document Addendums: When you upload supplementary PDFs, rubric updates, or weekly addendums to our Document Vault, CoursePal merges new criteria into existing courses without overwriting your completion progress.
+                        • Complex Grading Policies: In courses with non-standard policies (such as "drop lowest quizzes", Canadian Decimal Grading 3.8/4.0, or weighted categories), students are required to verify the extracted assignment descriptions against official syllabus text.
+                        • Public Release Security: For public production distribution, CoursePal utilizes secure API gateways protected by Apple App Check to prevent unauthorized access and protect API keys.
+                        """
+                    )
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
             .background(Color.white)
             .navigationTitle("Terms of Service")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
@@ -383,16 +382,17 @@ public struct PrivacyPolicySheetView: View {
                         """
                     )
 
-                    // Privacy Section 2: AI Processing & Zero Training
+                    // Privacy Section 2: AI Processing & Google AI Terms
                     LegalSectionCard(
                         icon: "cpu.fill",
                         iconColor: Color(red: 0.55, green: 0.27, blue: 0.96),
-                        title: "2. AI PROCESSING & ZERO MODEL TRAINING",
+                        title: "2. AI PROCESSING & GOOGLE AI STUDIO TERMS",
                         bodyText: """
-                        When you choose to parse a syllabus document:
-                        • Transient Transmission: Document text or images are transmitted securely via encrypted HTTPS (TLS 1.3) solely for real-time extraction into structured schedule data.
-                        • Zero Model Training: Your private course syllabi, documents, and student schedules are NEVER retained or used to train public or foundation AI models.
-                        • Voluntary: Automated AI parsing is completely optional. You can enter and manage all courses manually offline at any time.
+                        When you choose to parse a syllabus document using Google Gemini AI:
+                        • Free Tier Data Notice: Under Google AI Studio's default Free Tier, Google's terms state that data may be reviewed by human reviewers to improve AI models.
+                        • Commercial / Paid Tier Protection: When commercial billing is activated or when using Tier 1 API keys, Google enforces enterprise privacy with zero human review and zero data retention/model training, ensuring full FERPA and PIPEDA compliance.
+                        • Transient Transmission: Data sent to Google Gemini is encrypted via TLS 1.3 in real-time solely to return structured course schedules.
+                        • Fully Offline Local Parser: Automated cloud AI parsing is completely optional. If you prefer zero network transmission, CoursePal includes a 100% on-device offline parser (LocalSyllabusParser) that extracts schedules without sending any data over the internet.
                         """
                     )
 
@@ -435,9 +435,11 @@ public struct PrivacyPolicySheetView: View {
             }
             .background(Color.white)
             .navigationTitle("Privacy Policy")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
@@ -497,9 +499,9 @@ public struct VersionReleaseSheetView: View {
                     LegalSectionCard(
                         icon: "calendar.badge.clock",
                         iconColor: Color(red: 0.55, green: 0.27, blue: 0.96),
-                        title: "2. APPLE CALENDAR & REMINDERS SYNC",
+                        title: "2. APPLE CALENDAR & REMINDERS",
                         bodyText: """
-                        • Two-Way Timeline Export: Export assignment milestones and exam schedules directly to your native iOS Calendar.
+                        • Two-Way Timeline Export: Export assignment deliverables and exam schedules directly to your native iOS Calendar.
                         • Automated Due Date Notifications: Custom local reminders before upcoming academic deliverables.
                         """
                     )
@@ -518,22 +520,53 @@ public struct VersionReleaseSheetView: View {
                     // Feature 4: Security
                     LegalSectionCard(
                         icon: "lock.shield.fill",
-                        iconColor: Color(red: 0.06, green: 0.73, blue: 0.50),
-                        title: "4. LOCAL SANDBOX SECURITY",
+                        iconColor: Color(red: 0.10, green: 0.70, blue: 0.40),
+                        title: "4. ON-DEVICE DATA PRIVACY",
                         bodyText: """
-                        • 100% On-Device Persistence: Built on SwiftData and local file sandboxing.
-                        • Zero Ads & Zero Data Selling: No trackers, analytics telemetry, or commercial monetization of student records.
+                        • Zero Tracking: Your data stays locally on your device in secure SwiftData storage.
+                        • Multi-Doc Vault: Link multiple syllabi, rubrics, and schedules per course.
                         """
                     )
 
-                    // Feature 5: Support
+                    // Feature 5: AI Customization
                     LegalSectionCard(
-                        icon: "envelope.fill",
-                        iconColor: Color(red: 0.35, green: 0.42, blue: 0.52),
-                        title: "5. DEVELOPER & SUPPORT CONTACT",
+                        icon: "sparkles",
+                        iconColor: Color(red: 0.14, green: 0.44, blue: 0.96),
+                        title: "5. INTELLIGENT SYLLABUS OCR & AI",
                         bodyText: """
-                        Have questions, feature requests, or need help? Contact us anytime at support@coursepal.app or goloubov@gmail.com.
+                        • Apple Vision: Offline, high-speed on-device text recognition.
+                        • Google Gemini Flash: Optional multimodal parsing for complex multi-column schedules.
                         """
+                    )
+                }
+
+                // MARK: - FAQ Section
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+
+                        Text("Frequently Asked Questions")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                    }
+                    .padding(.top, 8)
+
+                    // FAQ Item 1: Syllabus Upload
+                    FAQCard(
+                        icon: "doc.text.viewfinder",
+                        iconColor: Color(red: 0.14, green: 0.44, blue: 0.96),
+                        question: "How does Syllabus Upload & AI Parsing work?",
+                        answer: "You can upload syllabus PDF files, scanned documents, or photos. CoursePal uses Apple Vision OCR and Google Gemini AI to automatically parse weekly schedules, reading chapters, homework deadlines, point weights, and exams into an organized planner."
+                    )
+
+                    // FAQ Item 2: Apple Calendar Sync
+                    FAQCard(
+                        icon: "calendar.badge.clock",
+                        iconColor: Color(red: 0.55, green: 0.27, blue: 0.96),
+                        question: "How do I sync assignments to Apple Calendar?",
+                        answer: "Open any course or assignment and tap the Calendar export action. You can grant calendar permissions to automatically add due dates, exam schedules, and alert notifications to your native iOS Calendar."
                     )
                 }
                 .padding(.horizontal, 20)
@@ -541,9 +574,11 @@ public struct VersionReleaseSheetView: View {
             }
             .background(Color.white)
             .navigationTitle("Release Notes")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
@@ -561,34 +596,34 @@ private struct LegalSectionCard: View {
     let bodyText: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundColor(iconColor)
                 Text(title)
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
             }
 
             Text(bodyText)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundColor(Color(red: 0.25, green: 0.32, blue: 0.42))
+                .font(.system(size: 13.5, weight: .regular, design: .rounded))
+                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                 .lineSpacing(3)
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(red: 0.98, green: 0.98, blue: 0.99))
-        .cornerRadius(12)
+        .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+        .cornerRadius(14)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 14)
                 .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
         )
     }
 }
 
 // MARK: - Standalone Page 4: User Guide & FAQ
-public struct UserGuideFAQSheetView: View {
+public struct UserGuideFaqSheetView: View {
     @Environment(\.dismiss) private var dismiss
 
     public init() {}
@@ -597,12 +632,10 @@ public struct UserGuideFAQSheetView: View {
         NavigationStack {
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 18) {
-                    // Header
                     VStack(alignment: .leading, spacing: 4) {
                         Text("User Guide & FAQ")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-
                         Text("Everything you need to know about using CoursePal.")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
@@ -624,7 +657,7 @@ public struct UserGuideFAQSheetView: View {
                         icon: "calendar.badge.clock",
                         iconColor: Color(red: 0.55, green: 0.27, blue: 0.96),
                         question: "How do I sync assignments to Apple Calendar?",
-                        answer: "Open any course or assignment and tap the Calendar export action. You can grant calendar permissions to automatically add due dates, exam milestones, and alert notifications to your native iOS Calendar."
+                        answer: "Open any course or assignment and tap the Calendar export action. You can grant calendar permissions to automatically add due dates, exam schedules, and alert notifications to your native iOS Calendar."
                     )
 
                     // FAQ Item 3: Share & Join Codes
@@ -656,9 +689,11 @@ public struct UserGuideFAQSheetView: View {
             }
             .background(Color.white)
             .navigationTitle("User Guide & FAQ")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
@@ -750,5 +785,75 @@ private struct InfoRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Official App Icon Logo View
+public struct AppIconLogoView: View {
+    public var size: CGFloat = 80
+
+    public init(size: CGFloat = 80) {
+        self.size = size
+    }
+
+    public var body: some View {
+        #if canImport(UIKit)
+        if let uiImage = UIImage(named: "AppLogo") ?? UIImage(named: "AppIcon") ?? getAppIconFromBundle() {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
+        } else {
+            fallbackLogo
+        }
+        #elseif canImport(AppKit)
+        if let nsImage = NSImage(named: "AppLogo") ?? NSImage(named: "AppIcon") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
+        } else {
+            fallbackLogo
+        }
+        #else
+        fallbackLogo
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private func getAppIconFromBundle() -> UIImage? {
+        guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+              let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
+              let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String],
+              let lastIcon = iconFiles.last else {
+            return nil
+        }
+        return UIImage(named: lastIcon)
+    }
+    #endif
+
+    private var fallbackLogo: some View {
+        Image("AppLogo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
     }
 }

@@ -47,8 +47,8 @@ public struct DocumentExtractor {
             if let pdfDoc = PDFDocument(url: url) {
                 var extracted = ""
                 for i in 0..<pdfDoc.pageCount {
-                    if let page = pdfDoc.page(at: i), let pageContent = page.string {
-                        extracted += pageContent + "\n"
+                    if let page = pdfDoc.page(at: i), let pageContent = page.string, !pageContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        extracted += "\n--- Page \(i + 1) ---\n" + pageContent + "\n"
                     }
                 }
                 let clean = sanitizeText(extracted)
@@ -237,7 +237,7 @@ public struct DocumentExtractor {
             .replacingOccurrences(of: #"&lt;"#, with: "<")
             .replacingOccurrences(of: #"&gt;"#, with: ">")
             .replacingOccurrences(of: #"&apos;"#, with: "'")
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
         let cleanScalars = clean.unicodeScalars.filter { scalar in
             (scalar.value >= 32 && scalar.value <= 126) || scalar.value == 10 || scalar.value == 13
         }
@@ -249,5 +249,78 @@ public struct DocumentExtractor {
         let allowed = CharacterSet.alphanumerics.union(.whitespaces).union(.punctuationCharacters)
         let invalid = str.unicodeScalars.filter { !allowed.contains($0) }.count
         return Double(invalid) / Double(max(1, str.count)) < 0.1
+    }
+
+    // MARK: - Targeted Schedule Page Image Extraction
+    public static func extractSchedulePageImages(from pdfData: Data, maxPages: Int = 6) -> [(data: Data, pageNum: Int)] {
+        guard let pdfDoc = PDFDocument(data: pdfData), pdfDoc.pageCount > 0 else { return [] }
+        let totalPages = pdfDoc.pageCount
+
+        let scheduleKeywords = [
+            "week", "schedule", "readings", "assignments", "due", "timeline"
+        ]
+
+        var pageScores: [(pageIndex: Int, score: Int)] = []
+
+        for i in 0..<totalPages {
+            guard let page = pdfDoc.page(at: i) else { continue }
+            let text = (page.string ?? "").lowercased()
+            var score = 0
+            for kw in scheduleKeywords {
+                if text.contains(kw) {
+                    score += 2
+                }
+            }
+            if text.range(of: #"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}/\d{1,2})\b"#, options: .regularExpression) != nil {
+                score += 3
+            }
+            // Include first page for course title & instructor context
+            if i == 0 {
+                score += 4
+            }
+            pageScores.append((pageIndex: i, score: score))
+        }
+
+        var selectedIndices: [Int] = pageScores.filter { $0.score > 0 }.map { $0.pageIndex }
+        if selectedIndices.isEmpty {
+            selectedIndices = Array(0..<min(totalPages, maxPages))
+        } else if selectedIndices.count > maxPages {
+            var topScored = Set(pageScores.sorted(by: { $0.score > $1.score }).prefix(maxPages).map { $0.pageIndex })
+            topScored.insert(0) // Ensure page 1 is always included
+            selectedIndices = selectedIndices.filter { topScored.contains($0) }
+        }
+
+        if !selectedIndices.contains(0) {
+            selectedIndices.insert(0, at: 0)
+        }
+
+        var results: [(data: Data, pageNum: Int)] = []
+        for idx in selectedIndices {
+            guard let page = pdfDoc.page(at: idx) else { continue }
+            let pageRect = page.bounds(for: .mediaBox)
+            // 150 DPI scale calculation: Standard PDF 72 points/inch -> 150/72 scale factor
+            let dpiScale: CGFloat = 150.0 / 72.0
+            let targetSize = CGSize(width: pageRect.width * dpiScale, height: pageRect.height * dpiScale)
+
+            #if canImport(UIKit)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1.0
+            let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            let img = renderer.image { ctx in
+                UIColor.white.set()
+                ctx.fill(CGRect(origin: .zero, size: targetSize))
+                ctx.cgContext.saveGState()
+                ctx.cgContext.translateBy(x: 0.0, y: targetSize.height)
+                ctx.cgContext.scaleBy(x: dpiScale, y: -dpiScale)
+                page.draw(with: .mediaBox, to: ctx.cgContext)
+                ctx.cgContext.restoreGState()
+            }
+            if let jpg = img.jpegData(compressionQuality: 0.6) {
+                results.append((data: jpg, pageNum: idx + 1))
+            }
+            #endif
+        }
+
+        return results
     }
 }

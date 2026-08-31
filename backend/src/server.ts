@@ -368,6 +368,125 @@ app.get('/api/courses', async (req, res) => {
   }
 });
 
+// 3.5. Web Landing Page for QR Scans & Share Links
+app.get('/join', (req, res) => {
+  const code = (req.query.code as string) || '';
+  const data = (req.query.data as string) || '';
+  const appSchemeUrl = `coursepal://join?code=${encodeURIComponent(code)}&data=${encodeURIComponent(data)}`;
+  
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join Course on CoursePal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: var(--card);
+      max-width: 420px;
+      width: 100%;
+      padding: 32px 24px;
+      border-radius: 24px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06), 0 8px 10px -6px rgba(0,0,0,0.04);
+      text-align: center;
+      border: 1px solid #e2e8f0;
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 18px;
+      color: white;
+      font-size: 28px;
+    }
+    h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: 8px; }
+    p { font-size: 0.95rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 24px; }
+    .code-pill {
+      display: inline-block;
+      background: #eff6ff;
+      color: #2563eb;
+      font-weight: 800;
+      font-size: 1.1rem;
+      padding: 8px 16px;
+      border-radius: 12px;
+      letter-spacing: 1px;
+      margin-bottom: 24px;
+      border: 1px dashed #bfdbfe;
+    }
+    .btn-primary {
+      display: block;
+      width: 100%;
+      background: #2563eb;
+      color: white;
+      text-decoration: none;
+      padding: 14px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 12px rgba(37,99,235,0.25);
+    }
+    .btn-secondary {
+      display: block;
+      width: 100%;
+      background: #0f172a;
+      color: white;
+      text-decoration: none;
+      padding: 14px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+  </style>
+  <script>
+    window.onload = function() {
+      if ("${code}") {
+        setTimeout(function() {
+          window.location.href = "${appSchemeUrl}";
+        }, 300);
+      }
+    };
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📚</div>
+    <h1>Enroll in Course</h1>
+    <p>You've been invited to join a course on CoursePal with all readings, assignments, and schedules ready to go.</p>
+    ${code ? `<div class="code-pill">Course Code: ${code}</div>` : ''}
+    <a href="${appSchemeUrl}" class="btn-primary">Open in CoursePal App</a>
+    <a href="https://apps.apple.com/app/coursepal" class="btn-secondary">Download on the App Store </a>
+  </div>
+</body>
+</html>
+  `);
+});
+
 // 4. Join Course by Sharing Code
 app.post('/api/courses/join', async (req, res) => {
   const { userId, sharingCode } = req.body;

@@ -19,23 +19,8 @@ public struct WelcomeTermsModalView: View {
             // Centered Modal Card
             VStack(spacing: 14) {
                 // App Logo Badge
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 0.23, green: 0.51, blue: 0.96), Color(red: 0.11, green: 0.32, blue: 0.86)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 62, height: 62)
-                        .shadow(color: Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.35), radius: 10, x: 0, y: 5)
-
-                    Image(systemName: "graduationcap.fill")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                .padding(.top, 2)
+                AppIconLogoView(size: 62)
+                    .padding(.top, 2)
 
                 // Title & Subtitle
                 VStack(spacing: 3) {
@@ -58,8 +43,8 @@ public struct WelcomeTermsModalView: View {
                             icon: "doc.text.viewfinder",
                             iconColor: Color(red: 0.14, green: 0.44, blue: 0.96),
                             title: "Smart Syllabus Parser",
-                            shortDescription: "Auto-extract readings, deadlines & exams from PDF",
-                            fullDescription: "Upload or scan any course syllabus PDF or image. CoursePal automatically analyzes the document using OCR and Google Gemini AI to identify weekly readings, assignments, point weights, and exam schedules."
+                            shortDescription: "Auto-extract readings, deadlines & rubrics",
+                            fullDescription: "Upload or scan any course syllabus PDF or image. CoursePal automatically analyzes the document using OCR and Google Gemini AI to identify weekly readings, assignments, point weights, rubrics, and exam schedules, with multi-document vault support for course addendums."
                         ),
                         onTap: { item in
                             selectedFeatureDetail = item
@@ -73,7 +58,7 @@ public struct WelcomeTermsModalView: View {
                             iconColor: Color(red: 0.55, green: 0.27, blue: 0.96),
                             title: "Apple Calendar Sync",
                             shortDescription: "Sync assignment due dates directly to iOS Calendar",
-                            fullDescription: "Seamlessly export and synchronize all course milestones with your native iOS Calendar and Reminders. Never miss an assignment with automated timeline reminders."
+                            fullDescription: "Seamlessly export and synchronize all course deadlines and assignments with your native iOS Calendar and Reminders. Never miss an assignment with automated timeline reminders."
                         ),
                         onTap: { item in
                             selectedFeatureDetail = item
@@ -87,7 +72,7 @@ public struct WelcomeTermsModalView: View {
                             iconColor: Color(red: 0.06, green: 0.73, blue: 0.50),
                             title: "Private & Local-First",
                             shortDescription: "100% on-device storage with zero data selling",
-                            fullDescription: "Your academic documents and schedules are stored securely on your personal device in Apple's hardware-encrypted sandbox. Zero data tracking, zero ads, and zero selling of student data."
+                            fullDescription: "Your course schedules are stored securely on your personal device using SwiftData. When AI parsing is used, data is processed transiently under Google AI terms (or locally offline). Zero tracking, zero ads, and zero selling of student records."
                         ),
                         onTap: { item in
                             selectedFeatureDetail = item
@@ -301,9 +286,11 @@ private struct FeatureDetailSheet: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
             }
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Close") {
                         dismiss()
                     }
@@ -312,6 +299,8 @@ private struct FeatureDetailSheet: View {
                 }
             }
         }
+        #if os(iOS)
         .presentationDetents([.medium])
+        #endif
     }
 }

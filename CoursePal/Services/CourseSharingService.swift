@@ -119,18 +119,31 @@ public final class CourseSharingService {
 
     #if canImport(UIKit)
     public func generateQRCode(for text: String) -> UIImage? {
-        let filter = CIFilter.qrCodeGenerator()
         guard let data = text.data(using: .utf8) else { return nil }
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
         filter.setValue(data, forKey: "inputMessage")
         filter.setValue("M", forKey: "inputCorrectionLevel")
 
         guard let ciImage = filter.outputImage else { return nil }
-        let transform = CGAffineTransform(scaleX: 10, y: 10)
+        let transform = CGAffineTransform(scaleX: 12, y: 12)
         let scaledCIImage = ciImage.transformed(by: transform)
 
-        let context = CIContext()
+        let context = CIContext(options: [CIContextOption.useSoftwareRenderer: false])
         guard let cgImage = context.createCGImage(scaledCIImage, from: scaledCIImage.extent) else { return nil }
         return UIImage(cgImage: cgImage)
+    }
+
+    public func generateCourseQRCode(for course: Course) -> UIImage? {
+        let code = course.sharingCode.isEmpty ? (course.courseCode ?? "CRS") : course.sharingCode
+        let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let payload = encodeCourseToPayload(course), payload.count <= 1200 {
+            let fullUrl = "https://classpal.app/join?code=\(cleanCode)&data=\(payload)"
+            if let qr = generateQRCode(for: fullUrl) {
+                return qr
+            }
+        }
+        let shortUrl = "https://classpal.app/join?code=\(cleanCode)"
+        return generateQRCode(for: shortUrl)
     }
     #endif
 

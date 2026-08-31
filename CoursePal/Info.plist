@@ -29,9 +29,9 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>CoursePal needs photo library access to import syllabus images.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>CoursePal needs calendar access to schedule assignment due dates and reading milestones into your Apple Calendar.</string>
+	<string>CoursePal needs calendar access to schedule assignment due dates and reading schedules into your Apple Calendar.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>CoursePal needs calendar access to schedule assignment due dates and reading milestones.</string>
+	<string>CoursePal needs calendar access to schedule assignment due dates and reading schedules.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>CoursePal needs reminders access to alert you before upcoming assignment deadlines.</string>
 	<key>NSRemindersUsageDescription</key>

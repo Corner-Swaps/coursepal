@@ -16,11 +16,20 @@ public struct AssignmentDetailView: View {
     @State private var calendarSyncSuccess: Bool = false
     @State private var calendarSyncMessage: String? = nil
 
+    @State private var aiMilestones: [String] = []
+    @State private var completedMilestones: Set<Int> = []
+    @State private var isGeneratingMilestones: Bool = false
+
     public init(assignment: Assignment) {
         self.assignment = assignment
         _scratchpadText = State(initialValue: assignment.noteText ?? "")
         _selectedWeekNum = State(initialValue: assignment.weekNumber)
-        _dueDateState = State(initialValue: assignment.dueDate ?? WeekDateConverter.date(forWeek: assignment.weekNumber))
+        _dueDateState = State(initialValue: assignment.dueDate ?? Date())
+
+        if let stored = assignment.relevantTopics, stored.contains("|||") {
+            let steps = stored.components(separatedBy: "|||").filter { !$0.isEmpty }
+            _aiMilestones = State(initialValue: steps)
+        }
     }
 
     private var courseCodeStr: String {
@@ -38,6 +47,19 @@ public struct AssignmentDetailView: View {
     private static let rubricDelimiterRegex = try? NSRegularExpression(pattern: #"(?:\r?\n|\||;|\s*,\s*(?=[A-Za-z0-9\s]+[:\-–]|\d+\s*(?:pts|points|%)))"#)
 
     private var rubricItems: [(title: String, points: String)] {
+        let structured = assignment.rubricCriteria
+        if !structured.isEmpty {
+            return structured.map { criterion in
+                let ptsStr: String = {
+                    if let pts = criterion.points {
+                        return pts.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(pts)) pts" : "\(pts) pts"
+                    }
+                    return ""
+                }()
+                return (title: criterion.criterionName, points: ptsStr)
+            }
+        }
+
         guard let breakdown = assignment.pointsBreakdown, !breakdown.isEmpty else { return [] }
         
         let rawSegments: [String]
@@ -103,20 +125,22 @@ public struct AssignmentDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text(courseCodeStr)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.cpDescriptionBold)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(courseColor.opacity(0.15))
                     .foregroundColor(courseColor)
                     .cornerRadius(8)
 
-                Text("Week \(assignment.weekNumber)")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.gray.opacity(0.12))
-                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                    .cornerRadius(8)
+                if let badge = assignment.contextBadgeText {
+                    Text(badge)
+                        .font(.cpDescriptionBold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.gray.opacity(0.12))
+                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                        .cornerRadius(8)
+                }
 
                 subTypeBadgeView
 
@@ -124,12 +148,12 @@ public struct AssignmentDetailView: View {
             }
 
             Text(assignment.title)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.cpPageTitle)
                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
             HStack {
                 Text(courseTitleStr)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(.cpDescriptionMedium)
                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
 
                 Spacer()
@@ -138,11 +162,14 @@ public struct AssignmentDetailView: View {
                     Image(systemName: "calendar.badge.clock")
                         .font(.system(size: 12, weight: .bold))
                     if let due = assignment.dueDate {
-                        Text("Due: \(WeekDateConverter.formattedDueDate(for: due, weekNumber: assignment.weekNumber))")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                        Text(WeekDateConverter.formattedDueDate(for: due, weekNumber: assignment.weekNumber))
+                            .font(.cpDescriptionBold)
+                    } else if assignment.weekNumber > 0 {
+                        Text("Week \(assignment.weekNumber)")
+                            .font(.cpDescriptionBold)
                     } else {
-                        Text("Date: Unknown · Week \(assignment.weekNumber)")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                        Text("No due date specified")
+                            .font(.cpDescriptionBold)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -177,7 +204,7 @@ public struct AssignmentDetailView: View {
                                     .foregroundColor(.blue)
                             }
                             Text("Schedule & Due Date")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.cpItemTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         }
 
@@ -185,7 +212,7 @@ public struct AssignmentDetailView: View {
                             // Week Picker
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Week")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.cpDescriptionMedium)
                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                 Picker("Week", selection: $selectedWeekNum) {
                                     ForEach(1...20, id: \.self) { w in
@@ -193,7 +220,7 @@ public struct AssignmentDetailView: View {
                                     }
                                 }
                                 .pickerStyle(.menu)
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(.cpDescriptionBold)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(Color(red: 0.95, green: 0.96, blue: 0.98))
@@ -202,11 +229,6 @@ public struct AssignmentDetailView: View {
                                     guard !isSyncing else { return }
                                     isSyncing = true
                                     assignment.weekNumber = newW
-                                    if assignment.dueDate != nil {
-                                        let calcDate = WeekDateConverter.date(forWeek: newW)
-                                        dueDateState = calcDate
-                                        assignment.dueDate = calcDate
-                                    }
                                     isSyncing = false
                                 }
                             }
@@ -214,27 +236,49 @@ public struct AssignmentDetailView: View {
 
                             // Due Date / Date Range
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Date Range")
-                                    .font(.system(size: 11, weight: .semibold))
+                                Text("Due Date")
+                                    .font(.cpDescriptionMedium)
                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                if assignment.dueDate != nil {
-                                    DatePicker("", selection: $dueDateState, displayedComponents: [.date, .hourAndMinute])
+                                if let due = assignment.dueDate {
+                                    HStack(spacing: 6) {
+                                        DatePicker("", selection: Binding(
+                                            get: { due },
+                                            set: { newDate in
+                                                guard !isSyncing else { return }
+                                                isSyncing = true
+                                                assignment.dueDate = newDate
+                                                dueDateState = newDate
+                                                let calcWeek = assignment.course?.earliestItemDate != nil
+                                                    ? WeekDateConverter.deriveWeekNumber(for: newDate, courseStartDate: assignment.course!.earliestItemDate!)
+                                                    : WeekDateConverter.weekNumber(for: newDate)
+                                                selectedWeekNum = calcWeek
+                                                assignment.weekNumber = calcWeek
+                                                isSyncing = false
+                                            }
+                                        ), displayedComponents: [.date, .hourAndMinute])
                                         .labelsHidden()
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        .onChange(of: dueDateState) { _, newDate in
-                                            guard !isSyncing else { return }
-                                            isSyncing = true
-                                            assignment.dueDate = newDate
-                                            let calcWeek = WeekDateConverter.weekNumber(for: newDate)
-                                            selectedWeekNum = calcWeek
-                                            assignment.weekNumber = calcWeek
-                                            isSyncing = false
+                                        .font(.cpDescriptionMedium)
+
+                                        Button {
+                                            assignment.dueDate = nil
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.gray)
+                                                .font(.system(size: 14))
                                         }
+                                        .buttonStyle(.plain)
+                                    }
                                 } else {
-                                    Text("Unknown")
-                                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                        .padding(.vertical, 6)
+                                    Button {
+                                        let newD = WeekDateConverter.date(forWeek: assignment.weekNumber)
+                                        assignment.dueDate = newD
+                                        dueDateState = newD
+                                    } label: {
+                                        Text("No date set (+ Add)")
+                                            .font(.cpDescriptionBold)
+                                            .foregroundColor(.blue)
+                                            .padding(.vertical, 6)
+                                    }
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -273,12 +317,12 @@ public struct AssignmentDetailView: View {
                                         .foregroundColor(calendarSyncSuccess ? .green : Color(red: 0.14, green: 0.44, blue: 0.96))
                                 }
                                 Text(calendarSyncSuccess ? "Synced to Apple Calendar" : "Add to Apple Calendar")
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .font(.cpDescriptionBold)
                                     .foregroundColor(calendarSyncSuccess ? .green : Color(red: 0.14, green: 0.44, blue: 0.96))
                                 Spacer()
                                 if let msg = calendarSyncMessage, !calendarSyncSuccess {
                                     Text(msg)
-                                        .font(.caption2)
+                                        .font(.cpDescription)
                                         .foregroundColor(.red)
                                         .lineLimit(1)
                                 }
@@ -307,7 +351,7 @@ public struct AssignmentDetailView: View {
                                     .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                             }
                             Text("Points Breakdown")
-                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .font(.cpItemTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         }
 
@@ -325,10 +369,10 @@ public struct AssignmentDetailView: View {
                                     }
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text("Grade Weight")
-                                            .font(.system(size: 10.5, weight: .semibold))
+                                            .font(.cpDescription)
                                             .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                         Text(weight)
-                                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .font(.cpItemTitle)
                                             .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                     }
                                 }
@@ -350,16 +394,17 @@ public struct AssignmentDetailView: View {
                                 }
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text("Total Points")
-                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .font(.cpDescription)
                                         .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                     Text(assignment.pointsPossible ?? "100 Points")
-                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .font(.cpItemTitle)
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                 }
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.red.opacity(0.0) /* fallback clear */.opacity(0.95))
                             .background(Color(red: 0.95, green: 0.96, blue: 0.98))
                             .cornerRadius(14)
                         }
@@ -368,7 +413,7 @@ public struct AssignmentDetailView: View {
                         if !rubricItems.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Rubric Criteria")
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .font(.cpDescriptionBold)
                                     .foregroundColor(Color(red: 0.40, green: 0.48, blue: 0.58))
 
                                 VStack(spacing: 8) {
@@ -385,14 +430,14 @@ public struct AssignmentDetailView: View {
                                             }
 
                                             Text(item.title)
-                                                .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                                                .font(.cpDescriptionMedium)
                                                 .foregroundColor(Color(red: 0.12, green: 0.16, blue: 0.24))
 
                                             Spacer()
 
                                             if !item.points.isEmpty {
                                                 Text(item.points)
-                                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                                    .font(.cpDescriptionBold)
                                                     .padding(.horizontal, 10)
                                                     .padding(.vertical, 4)
                                                     .background(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.12))
@@ -415,16 +460,109 @@ public struct AssignmentDetailView: View {
                         } else if let rawRubric = assignment.pointsBreakdown, !rawRubric.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Rubric Details")
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .font(.cpDescriptionBold)
                                     .foregroundColor(Color(red: 0.40, green: 0.48, blue: 0.58))
                                 Text(rawRubric)
-                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                    .font(.cpDescription)
                                     .foregroundColor(Color(red: 0.20, green: 0.25, blue: 0.35))
                                     .lineSpacing(4)
                                     .padding(12)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(Color(red: 0.97, green: 0.98, blue: 0.99))
                                     .cornerRadius(12)
+                            }
+                        }
+                    }
+                    .padding(18)
+                    .background(Color.white)
+                    .cornerRadius(20)
+                    .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+
+                    // MARK: - AI Study Roadmap & Milestones Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color(red: 0.55, green: 0.27, blue: 0.96))
+                            Text("AI Study Roadmap & Milestones")
+                                .font(.cpItemTitle)
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            Spacer()
+                            if isGeneratingMilestones {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            } else {
+                                Button(action: { generateRoadmap() }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: aiMilestones.isEmpty ? "wand.and.stars" : "arrow.clockwise")
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text(aiMilestones.isEmpty ? "Generate" : "Regenerate")
+                                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color(red: 0.55, green: 0.27, blue: 0.96).opacity(0.12))
+                                    .foregroundColor(Color(red: 0.55, green: 0.27, blue: 0.96))
+                                    .cornerRadius(8)
+                                }
+                            }
+                        }
+
+                        if aiMilestones.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Let Gemini AI break down this \(assignment.weightPercentage ?? "course") assignment into actionable, step-by-step milestones to help you stay on track.")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                Button(action: { generateRoadmap() }) {
+                                    HStack {
+                                        Image(systemName: "sparkles")
+                                        Text("Generate Actionable Milestones")
+                                    }
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color(red: 0.55, green: 0.27, blue: 0.96))
+                                    .cornerRadius(12)
+                                }
+                                .padding(.top, 4)
+                            }
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(aiMilestones.indices, id: \.self) { idx in
+                                    let isDone = completedMilestones.contains(idx)
+                                    Button(action: {
+                                        if isDone {
+                                            completedMilestones.remove(idx)
+                                        } else {
+                                            completedMilestones.insert(idx)
+                                            #if os(iOS)
+                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                            #endif
+                                        }
+                                    }) {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                                .font(.system(size: 18, weight: .semibold))
+                                                .foregroundColor(isDone ? Color.green : Color.gray.opacity(0.4))
+                                            Text(aiMilestones[idx])
+                                                .font(.system(size: 13.5, weight: isDone ? .regular : .medium))
+                                                .foregroundColor(isDone ? Color.gray : Color(red: 0.12, green: 0.16, blue: 0.24))
+                                                .strikethrough(isDone, color: Color.gray.opacity(0.6))
+                                                .multilineTextAlignment(.leading)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 10)
+                                        .background(isDone ? Color.green.opacity(0.06) : Color(red: 0.97, green: 0.98, blue: 0.99))
+                                        .cornerRadius(12)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .stroke(isDone ? Color.green.opacity(0.2) : Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -440,12 +578,12 @@ public struct AssignmentDetailView: View {
                                 Image(systemName: "text.alignleft")
                                     .foregroundColor(Color(red: 0.55, green: 0.27, blue: 0.96))
                                 Text("Description & Requirements")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.cpItemTitle)
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             }
 
                             Text(instructions)
-                                .font(.system(size: 14, weight: .regular, design: .rounded))
+                                .font(.cpDescription)
                                 .foregroundColor(Color(red: 0.20, green: 0.25, blue: 0.35))
                                 .lineSpacing(4)
                         }
@@ -469,11 +607,11 @@ public struct AssignmentDetailView: View {
                             }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Relevant Topics & Key Concepts")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.cpItemTitle)
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                 if let theme = assignment.course?.weeks.first(where: { $0.weekNumber == assignment.weekNumber })?.theme, !theme.isEmpty {
                                     Text("Module Context: \(theme)")
-                                        .font(.caption)
+                                        .font(.cpDescription)
                                         .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                 }
                             }
@@ -486,7 +624,7 @@ public struct AssignmentDetailView: View {
                                         Image(systemName: "tag.fill")
                                             .font(.system(size: 9, weight: .bold))
                                         Text(topic)
-                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            .font(.cpDescriptionMedium)
                                     }
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
@@ -516,7 +654,7 @@ public struct AssignmentDetailView: View {
                                         .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                                 }
                                 Text("Associated Course Readings & Materials")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.cpItemTitle)
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             }
 
@@ -534,17 +672,17 @@ public struct AssignmentDetailView: View {
 
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(reading.title)
-                                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                .font(.cpItemTitle)
                                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                 .lineLimit(1)
                                             if let pagesOrChapter = reading.chapterAndPagesDisplay {
                                                 Text(pagesOrChapter)
-                                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                                    .font(.cpDescriptionMedium)
                                                     .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                                             }
                                             if !reading.summaryText.isEmpty {
                                                 Text(reading.summaryText)
-                                                    .font(.caption)
+                                                    .font(.cpDescription)
                                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                                     .lineLimit(2)
                                             }
@@ -580,7 +718,7 @@ public struct AssignmentDetailView: View {
                                 Image(systemName: "link.circle.fill")
                                     .foregroundColor(.blue)
                                 Text("Attached Media / Resource Link")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.cpItemTitle)
                             }
 
                             Link(destination: url) {
@@ -588,7 +726,7 @@ public struct AssignmentDetailView: View {
                                     Image(systemName: "play.circle.fill")
                                         .font(.title3)
                                     Text(media)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(.cpDescriptionMedium)
                                         .lineLimit(1)
                                     Spacer()
                                     Image(systemName: "arrow.up.right")
@@ -612,7 +750,7 @@ public struct AssignmentDetailView: View {
                             Image(systemName: "note.text")
                                 .foregroundColor(.purple)
                             Text("Personal Notes & Scratchpad")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.cpItemTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Spacer()
                             if isSavingNote {
@@ -622,6 +760,7 @@ public struct AssignmentDetailView: View {
                         }
 
                         TextEditor(text: $scratchpadText)
+                            .font(.cpDescription)
                             .frame(minHeight: 120)
                             .padding(8)
                             .background(Color(red: 0.97, green: 0.98, blue: 0.99))
@@ -662,6 +801,38 @@ public struct AssignmentDetailView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.system(size: 15, weight: .bold))
+                }
+            }
+        }
+    }
+
+    private func generateRoadmap() {
+        guard !isGeneratingMilestones else { return }
+        isGeneratingMilestones = true
+
+        Task {
+            let rubrics = rubricItems.map { "\($0.title): \($0.points)" }
+            do {
+                let steps = try await APIService.shared.generateAssignmentMilestones(
+                    title: assignment.title,
+                    instructions: assignment.fullInstructions,
+                    weight: assignment.weightPercentage,
+                    points: assignment.pointsPossible,
+                    rubric: rubrics
+                )
+                await MainActor.run {
+                    self.aiMilestones = steps
+                    self.completedMilestones.removeAll()
+                    self.assignment.relevantTopics = steps.joined(separator: "|||")
+                    try? modelContext.save()
+                    self.isGeneratingMilestones = false
+                    #if os(iOS)
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    #endif
+                }
+            } catch {
+                await MainActor.run {
+                    self.isGeneratingMilestones = false
                 }
             }
         }

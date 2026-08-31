@@ -175,9 +175,48 @@ struct CoursePalApp: App {
                         }
                     }
 
+                    // Reorganize weeks derived from dates for all courses
+                    course.reorganizeWeeksFromDates(modelContext: context)
+                    modified = true
+
                     if modified {
                         try? context.save()
                         print("🧹 [DATABASE PURGE] Successfully cleaned details & history for course: \(course.courseName)")
+                    }
+                }
+
+                // Fix orphaned assignments
+                let allAssignDesc = FetchDescriptor<Assignment>()
+                if let assignments = try? context.fetch(allAssignDesc) {
+                    for a in assignments where a.course == nil {
+                        if let match = courses.first(where: { $0.courseCode == a.courseCode }) ?? courses.first {
+                            a.course = match
+                            if !match.assignments.contains(where: { $0.persistentModelID == a.persistentModelID }) {
+                                match.assignments.append(a)
+                            }
+                            match.reorganizeWeeksFromDates(modelContext: context)
+                            try? context.save()
+                        }
+                    }
+                }
+
+                // Fix orphaned readings
+                let allReadingsDesc = FetchDescriptor<Reading>()
+                if let readings = try? context.fetch(allReadingsDesc) {
+                    for r in readings where r.week == nil {
+                        if let matchCourse = courses.first(where: { $0.courseCode == r.courseCode }) ?? courses.first {
+                            let defaultWeek = matchCourse.weeks.first(where: { $0.weekNumber == 1 }) ?? matchCourse.weeks.first
+                            if let dw = defaultWeek {
+                                r.week = dw
+                                if !dw.readings.contains(where: { $0.persistentModelID == r.persistentModelID }) {
+                                    dw.readings.append(r)
+                                }
+                            }
+                            if matchCourse.hasExplicitDates {
+                                matchCourse.reorganizeWeeksFromDates(modelContext: context)
+                            }
+                            try? context.save()
+                        }
                     }
                 }
             }

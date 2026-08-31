@@ -23,11 +23,11 @@ public struct JoinCourseView: View {
                         .foregroundColor(.blue)
 
                     Text("Join Shared Course")
-                        .font(.title)
-                        .fontWeight(.bold)
+                        .font(.cpPageTitle)
+                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
                     Text("Enter the course sharing code provided by your classmate or instructor.")
-                        .font(.subheadline)
+                        .font(.cpDescription)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
@@ -36,12 +36,11 @@ public struct JoinCourseView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("SHARING CODE")
-                        .font(.caption)
-                        .fontWeight(.bold)
+                        .font(.cpItemTitle)
                         .foregroundColor(.secondary)
 
                     TextField("e.g. A1B2C3D4E5F6", text: $sharingCode)
-                        .font(.title3.monospaced())
+                        .font(.cpDescriptionBold)
                         #if os(iOS)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
@@ -61,7 +60,7 @@ public struct JoinCourseView: View {
 
                 if let err = errorMessage {
                     Text(err)
-                        .font(.footnote)
+                        .font(.cpDescription)
                         .foregroundColor(.red)
                 }
 
@@ -73,7 +72,7 @@ public struct JoinCourseView: View {
                         } else {
                             Image(systemName: "arrow.right.circle.fill")
                             Text("Enroll in Course")
-                                .fontWeight(.bold)
+                                .font(.cpItemTitle)
                         }
                     }
                     .frame(maxWidth: .infinity)

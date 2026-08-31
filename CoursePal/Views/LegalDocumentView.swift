@@ -52,9 +52,11 @@ public struct LegalDocumentView: View {
                 .background(Color.white)
             }
             .navigationTitle(navigationTitleText)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         dismiss()
                     }
@@ -90,7 +92,7 @@ public struct LegalDocumentView: View {
 
                 CRITICAL NOTICE:
                 • The official syllabus provided by your institution, official instructor announcements, and your school's Learning Management System (Canvas, Blackboard, Brightspace, Moodle) remain the sole authoritative and binding sources for all course deadlines, exam dates, and grading policies.
-                • You are solely responsible for cross-verifying all dates, times, assignment specs, and milestone schedules generated or imported by CoursePal against your official syllabus.
+                • You are solely responsible for cross-verifying all dates, times, assignment specs, and assignment schedules generated or imported by CoursePal against your official syllabus.
                 • Optical character recognition (OCR) and artificial intelligence (AI) parsing may occasionally misread or misinterpret text due to document scan quality, complex layouts, or instructor revisions. CoursePal makes no warranty of 100% automated parsing precision.
                 """
             )
@@ -259,7 +261,7 @@ public struct LegalDocumentView: View {
                 iconColor: Color(red: 0.55, green: 0.27, blue: 0.96),
                 title: "2. APPLE CALENDAR & REMINDERS SYNC",
                 bodyText: """
-                • Two-Way Timeline Export: Export assignment milestones and exam schedules directly to your native iOS Calendar.
+                • Two-Way Timeline Export: Export assignment deliverables and exam schedules directly to your native iOS Calendar.
                 • Automated Due Date Notifications: Custom local reminders before upcoming academic deliverables.
                 """
             )

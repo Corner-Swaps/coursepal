@@ -47,18 +47,23 @@ public final class LocalSyllabusParser {
     private static let ptsMatchesRegex = try? NSRegularExpression(pattern: #"\b(\d{1,4})\s*(pts|points|pt\b)"#, options: [.caseInsensitive])
     private static let explicitAssignNumRegex = try? NSRegularExpression(pattern: #"(?i)\(?assignment\s*(\d{1,2})\)?"#)
     private static let weekHeaderRegexes: [NSRegularExpression] = [
-        #"(?i)^\s*week\s*(\d{1,2})\b"#,
-        #"(?i)^\s*module\s*(\d{1,2})\b"#,
-        #"(?i)^\s*unit\s*(\d{1,2})\b"#,
+        #"(?i)^\s*(\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+(?:module|modu\s*le|week|session|unit|class|lecture|meeting|block|part|day)\s*(\d{1,2})\b"#,
+        #"(?i)^\s*(?:module|modu\s*le|week|session|unit|class|lecture|meeting|block|part|day)\s*(\d{1,2})\b"#,
+        #"(?i)^\s*(?:week|wk\.?|w)\s*0?(\d{1,2})\b"#,
+        #"(?i)^\s*(\d{1,2})\s*[-–—]\s*"#,
+        #"(?i)^\s*(\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+(?:reading\s*week|readi\s*ng\s*week|spring\s*break|fall\s*break|thanksgiving\s*break|finals\s*week|exam\s*week|review\s*week)"#,
+        #"(?i)^\s*(?:reading\s*week|readi\s*ng\s*week|spring\s*break|fall\s*break|thanksgiving\s*break|finals\s*week|exam\s*week|review\s*week)\b"#,
+        #"(?i)^\s*(\d{1,2}/\d{1,2}/\d{2,4})\b"#,
         #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b"#,
         #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"#
     ].compactMap { try? NSRegularExpression(pattern: $0, options: []) }
-    private static let citationRegexPattern = #"(?i)([A-Za-z]+(?:\s+[A-Za-z]+)?\s*\(?\s*(?:chapters?|ch\.?|chap\.?)\s*[\d,\s&\-–and]+\)?|(?:chapters?|ch\.?|chap\.?)\s*[\d,\s&\-–and]+)"#
+    private static let citationRegexPattern = #"(?i)([A-Za-z]+(?:\s+[A-Za-z]+)?\s*\(?\s*(?:chapters?|chs?\.?|chap\.?|ch\.?|ch\b)\s*\d{1,3}(?:\s*[-–&,and\+]+\s*\d{1,3})*\)?|(?:chapters?|chs?\.?|chap\.?|ch\.?|ch\b)\s*\d{1,3}(?:\s*[-–&,and\+]+\s*\d{1,3})*|See\s+Brightspace[^\n]*|Reading\s*Week)"#
     private static let citationRegex = try? NSRegularExpression(pattern: citationRegexPattern, options: [])
-    private static let chapterRegex = try? NSRegularExpression(pattern: #"(?i)\b(chapters?|ch\.?|chap\.?)\s*(\d+([-\s&,]+\d+)?)\b"#, options: [])
-    private static let pagesRegex = try? NSRegularExpression(pattern: #"(?i)\b(pages?|pp?\.?)\s*(\d+([-\s&,]+\d+)?)\b"#, options: [])
+    private static let chapterRegex = try? NSRegularExpression(pattern: #"(?i)\b(chapters?|chs?\.?|chap\.?)\s*(\d+([-\s&,and\+]+\d+)*)\b"#, options: [])
+    private static let pagesRegex = try? NSRegularExpression(pattern: #"(?i)\b(pages?|pp?\.?)\s*(\d+([-\s&,and\+]+\d+)*)\b"#, options: [])
     private static let dateExtractionRegexes: [NSRegularExpression] = [
         #"(?i)\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b"#,
+        #"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b"#,
         #"\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b"#,
         #"\b(\d{1,2})[-/](\d{1,2})\b"#
     ].compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
@@ -178,8 +183,6 @@ public final class LocalSyllabusParser {
         "feedback on the improvement",
         "analysis and use of course",
         "evaluating information",
-        "self-reflection",
-        "self reflection",
         "apa 10 points",
         "attendance 50 points",
         "participation 50 points",
@@ -238,8 +241,70 @@ public final class LocalSyllabusParser {
             }
         }
 
+        let requiredTexts = extractRequiredTextsAndResources(lines: reconstitutedLines)
+
         var paddedWeeks = padWeeks(weeks, courseName: courseName, courseCode: courseCode)
         harmonizeWeekDateRangesAndAssignments(weeks: &paddedWeeks, assignments: &assignments)
+
+        let totalScheduleReadings = paddedWeeks.reduce(0) { $0 + ($1.readings?.count ?? 0) }
+        if totalScheduleReadings == 0 && !requiredTexts.isEmpty && !paddedWeeks.isEmpty {
+            var w1 = paddedWeeks[0]
+            w1.readings = requiredTexts
+            paddedWeeks[0] = w1
+        }
+
+        var synthesizedItems: [ItemDTO] = []
+        for a in assignments {
+            synthesizedItems.append(ItemDTO(
+                title: a.title,
+                category: "Assignment",
+                subType: "PAPER",
+                description: a.fullInstructions,
+                points: a.pointsPossible,
+                percentage: a.weightPercentage,
+                weekNumber: nil,
+                dueDateIso: a.dueDate,
+                mediaUrl: a.noteText,
+                rubric: a.rubric
+            ))
+        }
+        for w in paddedWeeks {
+            for r in w.readings ?? [] {
+                synthesizedItems.append(ItemDTO(
+                    title: r.title,
+                    authorName: r.authorName,
+                    resourceTitle: r.resourceTitle,
+                    category: "Reading",
+                    subType: r.mediaType ?? "TEXTBOOK",
+                    description: r.summaryText,
+                    weekNumber: w.weekNumber,
+                    dueDateIso: r.dueDate,
+                    mediaUrl: r.videoUrl,
+                    relevantTopics: r.relevantTopics ?? w.theme,
+                    chapterText: r.chapterText,
+                    pagesText: r.pagesText,
+                    summaryText: r.summaryText,
+                    keyTakeaways: r.keyTakeawaysText,
+                    estimatedTime: r.estimatedTimeText
+                ))
+            }
+        }
+        if synthesizedItems.filter({ $0.category == "Reading" }).isEmpty && !requiredTexts.isEmpty {
+            for r in requiredTexts {
+                synthesizedItems.append(ItemDTO(
+                    title: r.title,
+                    authorName: r.authorName,
+                    resourceTitle: r.resourceTitle,
+                    category: "Reading",
+                    subType: "TEXTBOOK",
+                    description: r.summaryText,
+                    weekNumber: 1,
+                    summaryText: r.summaryText,
+                    keyTakeaways: r.keyTakeawaysText,
+                    estimatedTime: r.estimatedTimeText
+                ))
+            }
+        }
 
         let sharingCode = String(format: "%06d", Int.random(in: 100000...999999))
 
@@ -251,13 +316,37 @@ public final class LocalSyllabusParser {
             termWeeks: paddedWeeks.count,
             sharingCode: sharingCode,
             weeks: paddedWeeks,
-            assignments: assignments
+            assignments: assignments,
+            items: synthesizedItems
         )
     }
 
     // MARK: - PASS 0: Multi-Pass Lexer / Line Reconstitution
     public func lexerReconstituteLines(_ rawText: String) -> [String] {
-        let rawLines = rawText.components(separatedBy: .newlines)
+        let normalized = rawText
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        let cleanInput = normalized
+            // Fix line-split MODULE e.g. "MODU\nLE 1" or "MODU LE 1" -> "MODULE 1"
+            .replacingOccurrences(of: #"(?i)\bMODU\s*\n\s*LE\s*(\d+)"#, with: "MODULE $1", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\bMODU\s*\n\s*LE\b"#, with: "MODULE", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\bMODU\s+LE"#, with: "MODULE", options: .regularExpression)
+            // Fix line-split READING WEEK e.g. "READI\nNG\nWEEK" or "READI NG WEEK" -> "READING WEEK"
+            .replacingOccurrences(of: #"(?i)\bREADI\s*\n\s*NG\s*\n\s*WEEK\b"#, with: "READING WEEK", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\bREADI\s*\n\s*NG\b"#, with: "READING", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\bREADI\s+NG\s*(?:WEEK)?"#, with: "READING WEEK", options: .regularExpression)
+            // Fix line-split years/dates e.g. "4/16/2 6" or "4/16/2\n6" -> "4/16/26"
+            .replacingOccurrences(of: #"(\d{1,2}/\d{1,2}/2)\s+(\d)\b"#, with: "$1$2", options: .regularExpression)
+            .replacingOccurrences(of: #"(\d{1,2}/\d{1,2}/2)\s*\n\s*(\d)\b"#, with: "$1$2", options: .regularExpression)
+            .replacingOccurrences(of: #"(\d{1,2}/\d{1,2}/\d{1,2})\s*\n\s*(\d)\b"#, with: "$1$2", options: .regularExpression)
+            // Merge author names and chapter lines split across newlines
+            .replacingOccurrences(of: #"(?i)\b(Corey|Yalom|Creswell|Gehart|Nichols|Davis)\s*\n\s*(Ch(?:apters?|\.)?\s*[\d\s&,\-–\+]+)"#, with: "$1 $2", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\b(Ch(?:apters?|\.)?\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)"#, with: "$1 $2", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\b(Yalom\s+Ch\.\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)"#, with: "$1 $2", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\b(Corey\s+Ch\.\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)"#, with: "$1 $2", options: .regularExpression)
+
+        let rawLines = cleanInput.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
@@ -266,6 +355,11 @@ public final class LocalSyllabusParser {
 
         for rawLine in rawLines {
             let line = rawLine
+            let lower = line.lowercased()
+            if lower.contains("simple syllabus") || lower.contains("simplesyllabus") || lower.contains("error_codes") || lower.hasPrefix("http") {
+                continue
+            }
+
             // Strip total points noise prefix if followed by an assignment title
             if let range = line.range(of: #"(?i)^total\s*100\s*(points|pts|%)?\s*"#, options: .regularExpression) {
                 let prefix = String(line[range])
@@ -278,14 +372,15 @@ public final class LocalSyllabusParser {
                 }
             }
 
-            let lower = line.lowercased()
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let isStandaloneDigit = (Int(trimmed) != nil && (Int(trimmed)! >= 1 && Int(trimmed)! <= 16))
             let months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
             let containsMonth = months.contains(where: { lower.contains($0) })
 
-            let isHeader = isStandaloneDigit || containsMonth ||
-                           lower.hasPrefix("week") || lower.hasPrefix("chapter") ||
+            let isDateHeader = (line.range(of: #"^\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?"#, options: .regularExpression) != nil)
+            let isHeader = isStandaloneDigit || containsMonth || isDateHeader ||
+                           lower.hasPrefix("week") || lower.hasPrefix("module") || lower.hasPrefix("unit") ||
+                           lower.hasPrefix("chapter") || lower.hasPrefix("session") || lower.hasPrefix("reading week") ||
                            lower.hasPrefix("ch.") || lower.hasPrefix("ch ") ||
                            lower.hasPrefix("watch") || lower.hasPrefix("required") ||
                            lower.hasPrefix("read") || lower.hasPrefix("listen") ||
@@ -298,16 +393,24 @@ public final class LocalSyllabusParser {
 
             if buffer.isEmpty {
                 buffer = line
-            } else if isHeader {
-                reconstituted.append(buffer)
-                buffer = line
             } else {
-                let lastChar = buffer.last
-                if lastChar == "." || lastChar == ":" || lastChar == "!" || lastChar == "?" || lastChar == "%" {
+                let lowerBuf = buffer.lowercased().trimmingCharacters(in: .whitespaces)
+                let isDueTrailing = lowerBuf.hasSuffix("due") || lowerBuf.hasSuffix("- due") || lowerBuf.hasSuffix("– due") || lowerBuf.hasSuffix("due:") || lowerBuf.hasSuffix("due sunday,") || lowerBuf.hasSuffix("due friday,") || lowerBuf.hasSuffix("–") || lowerBuf.hasSuffix("-")
+                let isOverviewTableSplit = (line.range(of: #"^\s*([A-Za-z\s&,\.\-–:]+?)\s+(\d{1,3}%)\s*$"#, options: .regularExpression) != nil) && !lowerBuf.contains("%") && !lowerBuf.contains("overview") && buffer.count < 50
+
+                if isDueTrailing || isOverviewTableSplit {
+                    buffer += " " + line
+                } else if isHeader {
                     reconstituted.append(buffer)
                     buffer = line
                 } else {
-                    buffer += " " + line
+                    let lastChar = buffer.last
+                    if lastChar == "." || lastChar == ":" || lastChar == "!" || lastChar == "?" || lastChar == "%" {
+                        reconstituted.append(buffer)
+                        buffer = line
+                    } else {
+                        buffer += " " + line
+                    }
                 }
             }
         }
@@ -316,6 +419,94 @@ public final class LocalSyllabusParser {
         }
 
         return reconstituted
+    }
+
+    // MARK: - Required Texts & Resources Extractor
+    public func extractRequiredTextsAndResources(lines: [String]) -> [ReadingDTO] {
+        var results: [ReadingDTO] = []
+        var inTextSection = false
+        var currentBookBuffer: [String] = []
+
+        let startMarkers = ["required texts:", "required text:", "course resources", "required materials", "textbooks:", "textbook:", "recommended texts", "bibliography"]
+        let stopMarkers = ["program outcomes", "learning outcomes", "course outcomes", "grading scale", "course assignments", "course description", "vision, mission", "course policies", "late assignments", "university policies", "overview of required", "attendance", "course schedule", "course assignment details", "--- page 3", "page 3"]
+
+        for line in lines {
+            let lower = line.trimmingCharacters(in: .whitespaces).lowercased()
+            if startMarkers.contains(where: { lower.contains($0) }) {
+                inTextSection = true
+                continue
+            }
+            if inTextSection && stopMarkers.contains(where: { lower.contains($0) }) {
+                inTextSection = false
+                break
+            }
+            if inTextSection {
+                if isBoilerplatePolicyLine(lower) || lower.hasPrefix("note:") || lower.hasPrefix("http") || lower.contains("simplesyllabus") {
+                    continue
+                }
+                let cleanLine = line.trimmingCharacters(in: .whitespaces)
+                if cleanLine.count > 10 {
+                    let isNewCitation = cleanLine.range(of: #"\(\s*\d{4}\s*\)"#, options: .regularExpression) != nil ||
+                                        cleanLine.range(of: #"^[A-Z][a-zA-Z\s&,\.\-–]+?,\s*[A-Z]"#, options: .regularExpression) != nil
+
+                    if isNewCitation && !currentBookBuffer.isEmpty {
+                        let fullCitation = currentBookBuffer.joined(separator: " ")
+                        if let r = parseCitationToReadingDTO(fullCitation) {
+                            results.append(r)
+                        }
+                        currentBookBuffer = [cleanLine]
+                    } else {
+                        currentBookBuffer.append(cleanLine)
+                    }
+                }
+            }
+        }
+        if !currentBookBuffer.isEmpty {
+            let fullCitation = currentBookBuffer.joined(separator: " ")
+            if let r = parseCitationToReadingDTO(fullCitation) {
+                results.append(r)
+            }
+        }
+        return results
+    }
+
+    private func parseCitationToReadingDTO(_ citation: String) -> ReadingDTO? {
+        let trimmed = citation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 10 else { return nil }
+
+        var author: String? = nil
+        var title = trimmed
+
+        if let yearRange = trimmed.range(of: #"\(\s*\d{4}\s*\)"#, options: .regularExpression) {
+            let authorPart = String(trimmed[..<yearRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !authorPart.isEmpty {
+                author = authorPart
+            }
+            let afterYear = String(trimmed[yearRange.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " .:\t\n"))
+            if !afterYear.isEmpty {
+                title = afterYear
+            }
+        }
+
+        if let dotRange = title.range(of: ". ") {
+            let candidateTitle = String(title[..<dotRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if candidateTitle.count >= 8 {
+                title = candidateTitle
+            }
+        }
+
+        let cleanTitle = CourseImporter.cleanAndSummarizeTitle(title, isReading: true)
+        return ReadingDTO(
+            id: UUID().uuidString,
+            title: cleanTitle,
+            authorName: author,
+            resourceTitle: trimmed,
+            mediaType: "textbook",
+            isCompleted: false,
+            summaryText: trimmed,
+            keyTakeawaysText: "• Key concepts and required foundations from \(cleanTitle)",
+            estimatedTimeText: "~45 min read"
+        )
     }
 
     // MARK: - PASS 1: Points Heuristic Anchor & Assignment Extractor
@@ -370,10 +561,18 @@ public final class LocalSyllabusParser {
 
         for (idx, line) in lines.enumerated() {
             let lower = line.trimmingCharacters(in: .whitespaces).lowercased()
-            if lower.isEmpty { continue }
+            let isAssignKeyword = lower.contains("assignment") || lower.contains("paper") || lower.contains("report") ||
+                                  lower.contains("presentation") || lower.contains("facilitation") || lower.contains("project") ||
+                                  lower.contains("attendance") || lower.contains("participation") || lower.contains("engagement") ||
+                                  lower.contains("reflection") || lower.contains("peer review") || lower.contains("rubric") ||
+                                  lower.contains("grading criteria") || lower.contains("overview of required") || lower.contains("course assignment details")
+
+            if isAssignKeyword || lower.contains("course assignment details") {
+                inPolicySection = false
+            }
 
             // Check if we reached a policy section
-            if policySectionHeaders.contains(where: { lower.contains($0) }) {
+            if policySectionHeaders.contains(where: { lower.contains($0) }) && !isAssignKeyword {
                 inPolicySection = true
             }
             if inPolicySection { continue }
@@ -413,8 +612,6 @@ public final class LocalSyllabusParser {
             let numMatches = Self.assignmentNumRegex?.matches(in: line, options: [], range: range) ?? []
             let isAssignHeaderLine = !percentMatches.isEmpty || !numMatches.isEmpty || lower.hasPrefix("overview of required assignments")
 
-            let isAssignKeyword = lower.contains("assignment") || lower.contains("paper") || lower.contains("report") || lower.contains("presentation") || lower.contains("project") || lower.contains("attendance")
-
             if isAssignHeaderLine || (!matches.isEmpty && isAssignKeyword) {
                 var weightStr: String? = nil
                 var pointsStr = "100 Points"
@@ -446,6 +643,39 @@ public final class LocalSyllabusParser {
 
                 // Verify cleanTitle is not noise
                 if cleanTitle.lowercased().contains("overview required") || cleanTitle.lowercased().contains("total 100") || cleanTitle.lowercased().contains("page ") {
+                    continue
+                }
+
+                let rubricCriteriaWords = [
+                    "coherence", "organization", "evidence", "critical analysis", "ethics",
+                    "competence", "quality of presentation", "oral presentation", "self-reflection",
+                    "self- awareness", "self- regulation", "communication", "compassion",
+                    "course concepts", "personal philosophy", "grading criteria", "grade points",
+                    "conversations", "participation (oral)"
+                ]
+                let lowerClean = cleanTitle.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪●: \t\n()"))
+                if rubricCriteriaWords.contains(where: { lowerClean == $0 || lowerClean.hasPrefix($0) }) {
+                    if let lastIdx = lastMatchedIndex, lastIdx < results.count {
+                        let existing = results[lastIdx]
+                        let rawPts = Double(pointsStr.replacingOccurrences(of: #"[^\d\.]"#, with: "", options: .regularExpression))
+                        let criterion = RubricCriterionDTO(
+                            criterionName: cleanTitle,
+                            points: rawPts,
+                            description: "\(pointsStr) \(weightStr ?? "")".trimmingCharacters(in: .whitespaces)
+                        )
+                        var updatedRubric = existing.rubric ?? []
+                        updatedRubric.append(criterion)
+                        results[lastIdx] = AssignmentDTO(
+                            id: existing.id,
+                            title: existing.title,
+                            dueDate: existing.dueDate,
+                            fullInstructions: existing.fullInstructions,
+                            pointsPossible: existing.pointsPossible,
+                            weightPercentage: existing.weightPercentage,
+                            noteText: existing.noteText,
+                            rubric: updatedRubric
+                        )
+                    }
                     continue
                 }
 
@@ -509,7 +739,7 @@ public final class LocalSyllabusParser {
         courseCode: String
     ) -> (weeks: [WeekDTO], scheduleAssignments: [AssignmentDTO]) {
         var weeks: [WeekDTO] = []
-        var scheduleAssignments: [AssignmentDTO] = []
+        let scheduleAssignments: [AssignmentDTO] = []
 
         var currentWeekNum = 1
         var currentReadings: [ReadingDTO] = []
@@ -525,19 +755,22 @@ public final class LocalSyllabusParser {
             "professional code (2.0)", "hallmarks of maturity"
         ]
 
-        var lastBookTitle: String? = nil
-
         for (idx, line) in lines.enumerated() {
             let lower = line.trimmingCharacters(in: .whitespaces).lowercased()
+            let cleanLower = lower.trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪● \t"))
             if lower.isEmpty { continue }
 
             let isWeekOrScheduleHeader = lower.contains("date content requirements") ||
                                          lower.contains("weekly schedule") ||
                                          lower.contains("course schedule") ||
+                                         lower.contains("week modules topics readings") ||
+                                         lower.contains("topics, modules") ||
                                          lower.hasPrefix("week ") ||
                                          lower.hasPrefix("module ") ||
                                          lower.hasPrefix("unit ") ||
                                          lower.hasPrefix("week 1") ||
+                                         (line.range(of: #"^\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?"#, options: .regularExpression) != nil) ||
+                                         lower.contains("corey") || lower.contains("yalom") || lower.contains("creswell") || lower.contains("gehart") || lower.contains("brightspace") ||
                                          (lower.hasPrefix("1 ") && (lower.contains("jul") || lower.contains("aug") || lower.contains("sep") || lower.contains("jan") || lower.contains("feb") || lower.contains("mar")))
 
             if isWeekOrScheduleHeader {
@@ -559,11 +792,21 @@ public final class LocalSyllabusParser {
             var foundWeekNum: Int? = nil
             for regex in Self.weekHeaderRegexes {
                 if let match = regex.firstMatch(in: line, options: [], range: range) {
-                    if let wRange = Range(match.range(at: 1), in: line), let wNum = Int(line[wRange]) {
-                        foundWeekNum = wNum
-                        break
+                    if match.numberOfRanges > 1 {
+                        for g in (1..<match.numberOfRanges).reversed() {
+                            let nsr = match.range(at: g)
+                            if nsr.location != NSNotFound, let wRange = Range(nsr, in: line), let wNum = Int(line[wRange]) {
+                                foundWeekNum = wNum
+                                break
+                            }
+                        }
                     }
+                    if foundWeekNum != nil { break }
                 }
+            }
+
+            if foundWeekNum == nil && (lower.contains("reading week") || lower.contains("readi ng week")) {
+                foundWeekNum = (weeks.last?.weekNumber ?? 7) + 1
             }
 
             // Standalone digit week header check (e.g. "1" on line N followed by "July 3rd" on line N+1)
@@ -586,7 +829,7 @@ public final class LocalSyllabusParser {
                     let weekDTO = WeekDTO(
                         id: "week-\(currentWeekNum)",
                         weekNumber: currentWeekNum,
-                        startDate: nil,
+                        startDate: currentWeekDateIso,
                         theme: currentWeekTheme,
                         dateRangeStr: currentWeekDateRange,
                         readings: currentReadings
@@ -596,8 +839,14 @@ public final class LocalSyllabusParser {
                 }
 
                 currentWeekNum = wNum
-                let extractedTheme = line.replacingOccurrences(of: #"(?i)^\s*(?:week|module|unit)\s*\d+[:\-–\s]*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-                currentWeekTheme = extractedTheme.isEmpty ? "Week \(wNum)" : extractedTheme
+                let rawTheme = line
+                    .replacingOccurrences(of: #"(?i)^\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?\s*"#, with: "", options: .regularExpression)
+                    .replacingOccurrences(of: #"(?i)^\s*(?:week|module|modu\s*le|unit|session)\s*\d+[:\-–\s]*"#, with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanTheme = rawTheme
+                    .replacingOccurrences(of: #"(?i)\b(?:Corey|Yalom|Creswell|Gehart|Nichols|Davis|APA|See Brightspace|Assigned Readings)\b.*$"#, with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                currentWeekTheme = cleanTheme.isEmpty ? "Week \(wNum)" : cleanTheme
                 let dates = extractAllDates(from: line, fallbackYear: termYear)
                 let headerDates = dates.isEmpty && idx + 1 < lines.count ? extractAllDates(from: lines[idx + 1], fallbackYear: termYear) : dates
 
@@ -612,15 +861,16 @@ public final class LocalSyllabusParser {
                     currentWeekDateRange = LocalSyllabusParser.formatExplicitDateRange(start: wStart, end: wEnd)
                     let dfShort = DateFormatter()
                     dfShort.dateFormat = "yyyy-MM-dd"
-                    currentWeekDateIso = dfShort.string(from: wEnd)
+                    currentWeekDateIso = dfShort.string(from: wStart)
                 }
-                continue
-            }
 
-            // Track textbook title lines above chapter bullet points
-            let cleanLower = lower.trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪● \t"))
-            if (lower.contains("sexuality counseling") || lower.contains("human sexuality") || lower.contains("growing into resilience") || lower.contains("edition") || lower.contains("textbook")) && !cleanLower.hasPrefix("chapter") && !cleanLower.hasPrefix("ch.") {
-                lastBookTitle = line.trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪● \t"))
+                let lineHasCitation = (Self.citationRegex?.firstMatch(in: line, options: [], range: range) != nil) ||
+                                      lower.contains("corey") || lower.contains("yalom") || lower.contains("creswell") ||
+                                      lower.contains("gehart") || lower.contains("nichols") || lower.contains("brightspace") ||
+                                      lower.contains("reading week")
+                if !lineHasCitation {
+                    continue
+                }
             }
 
             let videoUrl = extractVideoUrl(from: line)
@@ -655,10 +905,9 @@ public final class LocalSyllabusParser {
             workLine = workLine.trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪●: \t"))
 
             // ── STEP 4: Detect whether this line contains a book/media citation ──
-            // A citation is: AuthorName (Chapters X-Y), Chapter N, ch. N, watch/listen/podcast/URL
-            // Pattern: optional Author + optional paren + chapter/ch keyword + numbers + optional close paren
             let isBookCitation =
                 (Self.citationRegex?.firstMatch(in: workLine, options: [], range: NSRange(location: 0, length: workLine.utf16.count)) != nil) ||
+                lower.contains("corey") || lower.contains("yalom") || lower.contains("creswell") ||
                 lower.contains("gehart") || lower.contains("nichols") || lower.contains("davis") ||
                 lower.contains("isbn:") || lower.contains("(6th ed)") || lower.contains("7th canadian") ||
                 cleanLower.hasPrefix("read:") || cleanLower.hasPrefix("watch:") ||
@@ -667,88 +916,91 @@ public final class LocalSyllabusParser {
 
             guard isBookCitation else { continue }
 
-            // ── STEP 5: Extract the citation as the EXACT title ─────────────────
-            // Rule: title = the citation string verbatim (e.g. "Gehart (Chapters 1-3)")
-            //       topic = the descriptive text before/after the citation
-            var exactTitle: String
-            var finalTopic: String? = {
-                // Default topic = week theme (if it's not just "Week N")
-                let t = currentWeekTheme.trimmingCharacters(in: .whitespacesAndNewlines)
-                return (!t.isEmpty && !t.lowercased().hasPrefix("week ") && !t.lowercased().hasPrefix("module ")) ? t : nil
-            }()
-
-            if hasValidUrl {
-                // Media link: use URL type label as title
-                let vUrl = videoUrl ?? ""
-                if vUrl.contains("youtube.com") || vUrl.contains("youtu.be") {
-                    exactTitle = "YouTube Video"
-                } else if vUrl.contains("ted.com") {
-                    exactTitle = "TED Talk"
-                } else if vUrl.contains("podbean") {
-                    exactTitle = "Podcast Episode"
-                } else {
-                    exactTitle = "Web Resource"
-                }
-            } else if let match = Self.citationRegex?.firstMatch(in: workLine, options: [],
-                                                               range: NSRange(location: 0, length: workLine.utf16.count)),
-                      let matchRange = Range(match.range, in: workLine) {
-                // Pull the matched citation verbatim, then trim bullets/spaces
-                exactTitle = String(workLine[matchRange])
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪●(): \t"))
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                // Topic = text before the citation, stripped of header noise
-                let topicRaw = String(workLine[..<matchRange.lowerBound])
-                    .replacingOccurrences(of: #"(?i)\b(modules?|topics?|related readings?)\b"#, with: "", options: .regularExpression)
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪●(): \t\n "))
-                if topicRaw.count >= 4 && !topicRaw.lowercased().hasPrefix("week") && !topicRaw.lowercased().hasPrefix("module") {
-                    finalTopic = topicRaw
-                }
+            // ── STEP 5: Extract the citation as the EXACT title (Split multi-citations if present) ──
+            let citationMatches = Self.citationRegex?.matches(in: workLine, options: [], range: NSRange(location: 0, length: workLine.utf16.count)) ?? []
+            let subSegments: [String]
+            if citationMatches.count > 1 {
+                let nsWork = workLine as NSString
+                subSegments = citationMatches.map { nsWork.substring(with: $0.range).trimmingCharacters(in: .whitespacesAndNewlines) }
+            } else if workLine.contains(";") {
+                subSegments = workLine.components(separatedBy: ";").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { $0.count >= 3 }
             } else {
-                // Fallback: the whole workLine trimmed (no word-slicing)
-                exactTitle = workLine
-                    .replacingOccurrences(of: #"(?i)\b(modules?|topics?|related readings?)\b"#, with: "", options: .regularExpression)
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪●(): \t\n "))
+                subSegments = [workLine]
             }
 
-            // ── STEP 6: Reject garbage titles ──────────────────────────────────
-            let lowerTitle = exactTitle.lowercased()
-            let rejectedTitles = ["assignment", "assignments", "requirements",
-                                  "date content requirements", "in class assignment",
-                                  "modules topics", "topics", "readings", "related readings"]
-            if rejectedTitles.contains(where: { lowerTitle == $0 }) || exactTitle.count < 3 { continue }
+            for segment in subSegments {
+                var exactTitle: String
+                var finalTopic: String? = {
+                    let t = currentWeekTheme.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return (!t.isEmpty && !t.lowercased().hasPrefix("week ") && !t.lowercased().hasPrefix("module ")) ? t : nil
+                }()
 
-            // ── STEP 7: Build and append ReadingDTO ────────────────────────────
-            let defaultWeekDateIso: String = {
-                if let wIso = currentWeekDateIso { return wIso }
-                let weekDate = WeekDateConverter.date(forWeek: currentWeekNum)
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withFullDate]
-                return formatter.string(from: weekDate)
-            }()
-            let dates = extractAllDates(from: line, fallbackYear: termYear)
-            let isoDate = dates.first?.isoString ?? defaultWeekDateIso
-            let (ch, pg) = extractChapterAndPages(from: workLine)
-            let mediaTypeStr = (hasValidUrl || lower.contains("watch") ||
-                                lower.contains("ted") || lower.contains("podcast")) ? "video" : "textbook"
+                if hasValidUrl && subSegments.count == 1 {
+                    let vUrl = videoUrl ?? ""
+                    if vUrl.contains("youtube.com") || vUrl.contains("youtu.be") {
+                        exactTitle = "YouTube Video"
+                    } else if vUrl.contains("ted.com") {
+                        exactTitle = "TED Talk"
+                    } else if vUrl.contains("podbean") {
+                        exactTitle = "Podcast Episode"
+                    } else {
+                        exactTitle = "Web Resource"
+                    }
+                } else if let match = Self.citationRegex?.firstMatch(in: segment, options: [],
+                                                                   range: NSRange(location: 0, length: segment.utf16.count)),
+                          let matchRange = Range(match.range, in: segment) {
+                    exactTitle = String(segment[matchRange])
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪●(): \t"))
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
 
-            let readingDTO = ReadingDTO(
-                id: "read-\(UUID().uuidString.prefix(8))",
-                title: exactTitle,
-                mediaType: mediaTypeStr,
-                isCompleted: false,
-                summaryText: "Required reading: \(exactTitle).",
-                keyTakeawaysText: "• Review \(exactTitle)",
-                estimatedTimeText: mediaTypeStr == "video" ? "~20–30 min" : "~40–60 min",
-                videoUrl: hasValidUrl ? videoUrl : nil,
-                dueDate: isoDate,
-                dateRangeStr: currentWeekDateRange,
-                relevantTopics: finalTopic,
-                chapterText: ch,
-                pagesText: pg
-            )
-            if !currentReadings.contains(where: { $0.title.lowercased() == exactTitle.lowercased() }) {
-                currentReadings.append(readingDTO)
+                    let topicRaw = String(segment[..<matchRange.lowerBound])
+                        .replacingOccurrences(of: #"(?i)\b(modules?|topics?|related readings?)\b"#, with: "", options: .regularExpression)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪●(): \t\n "))
+                    if topicRaw.count >= 4 && !topicRaw.lowercased().hasPrefix("week") && !topicRaw.lowercased().hasPrefix("module") {
+                        finalTopic = topicRaw
+                    }
+                } else {
+                    exactTitle = segment
+                        .replacingOccurrences(of: #"(?i)\b(modules?|topics?|related readings?)\b"#, with: "", options: .regularExpression)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪●(): \t\n "))
+                }
+
+                // ── STEP 6: Reject garbage titles ──
+                let lowerTitle = exactTitle.lowercased()
+                let rejectedTitles = ["assignment", "assignments", "requirements",
+                                      "date content requirements", "in class assignment",
+                                      "modules topics", "topics", "readings", "related readings"]
+                if rejectedTitles.contains(where: { lowerTitle == $0 }) || exactTitle.count < 3 { continue }
+
+                // ── STEP 7: Build and append ReadingDTO (Zero-hallucinated dates) ──
+                let dates = extractAllDates(from: line, fallbackYear: termYear)
+                let isoDate = dates.first?.isoString ?? currentWeekDateIso
+                let (ch, pg) = extractChapterAndPages(from: segment)
+                let mediaTypeStr = (hasValidUrl || lower.contains("watch") ||
+                                    lower.contains("ted") || lower.contains("podcast")) ? "video" : "textbook"
+
+                let (extractedAuthor, extractedRes) = extractAuthorAndResource(from: exactTitle)
+
+                let readingDTO = ReadingDTO(
+                    id: "read-\(UUID().uuidString.prefix(8))",
+                    title: exactTitle,
+                    authorName: extractedAuthor,
+                    resourceTitle: extractedRes,
+                    mediaType: mediaTypeStr,
+                    isCompleted: false,
+                    summaryText: "Required reading: \(exactTitle).",
+                    keyTakeawaysText: "• Review \(exactTitle)",
+                    estimatedTimeText: mediaTypeStr == "video" ? "~20–30 min" : "~40–60 min",
+                    videoUrl: (hasValidUrl && subSegments.count == 1) ? videoUrl : nil,
+                    dueDate: isoDate,
+                    dateRangeStr: currentWeekDateRange,
+                    relevantTopics: finalTopic,
+                    chapterText: ch,
+                    pagesText: pg
+                )
+                if !currentReadings.contains(where: { $0.title.lowercased() == exactTitle.lowercased() }) {
+                    currentReadings.append(readingDTO)
+                }
             }
         }
 
@@ -894,6 +1146,51 @@ public final class LocalSyllabusParser {
         return (chapter, pages)
     }
 
+    // MARK: - AUTHOR & RESOURCE EXTRACTOR
+    public func extractAuthorAndResource(from text: String) -> (author: String?, resource: String?) {
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let topicNoise = [
+            "work", "stages", "initial stages", "transition", "working", "presentations",
+            "settings", "groups in diverse settings", "introduction to group work pt. 2",
+            "introduction to group work", "intro to group work"
+        ]
+        for tp in topicNoise {
+            if trimmed.lowercased().hasPrefix(tp) {
+                let stripped = String(trimmed.dropFirst(tp.count)).trimmingCharacters(in: CharacterSet(charactersIn: ":-–— \t"))
+                if !stripped.isEmpty {
+                    trimmed = stripped
+                    break
+                }
+            }
+        }
+
+        if let colonIdx = trimmed.firstIndex(of: ":") {
+            let left = String(trimmed[..<colonIdx]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let right = String(trimmed[trimmed.index(after: colonIdx)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !left.isEmpty && left.count < 40 && !left.lowercased().contains("chapter") && !left.lowercased().contains("read") {
+                return (left, right.isEmpty ? nil : right)
+            }
+        }
+        // Match patterns like "Corey Ch. 1 & 2" or "Yalom Chapter 4"
+        let authorChapterPattern = #"^([A-Z][a-zA-Z\s&,\.\-–]+?)\s+(?:chapters?|chs?\.?|chap\.?)\s*(.*)$"#
+        if let regex = try? NSRegularExpression(pattern: authorChapterPattern, options: []),
+           let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)),
+           let aRange = Range(match.range(at: 1), in: trimmed) {
+            var author = String(trimmed[aRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            for tp in topicNoise {
+                if author.lowercased().hasPrefix(tp) {
+                    let s = String(author.dropFirst(tp.count)).trimmingCharacters(in: CharacterSet(charactersIn: ":-–— \t"))
+                    if !s.isEmpty { author = s; break }
+                }
+            }
+            let resource = String(trimmed[aRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !author.isEmpty && author.count < 35 && !author.lowercased().contains("required") {
+                return (author, resource.isEmpty ? nil : resource)
+            }
+        }
+        return (nil, trimmed.isEmpty ? nil : trimmed)
+    }
+
     // MARK: - VIDEO URL EXTRACTOR
     public func extractVideoUrl(from text: String) -> String? {
         let pattern = #"(https?://[^\s]+|www\.[^\s]+|(youtube\.com|youtu\.be|ted\.com|vimeo\.com|podcasts\.apple\.com)[^\s]*)"#
@@ -989,15 +1286,52 @@ public final class LocalSyllabusParser {
     }
 
     public static func parseISO8601Date(from dateStr: String, fallbackYear: Int = 2026) -> ExtractedDateInfo {
-        let trimmed = dateStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = dateStr.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return ExtractedDateInfo(displayString: "", isoString: "", date: Date.distantPast)
         }
+
+        // Clean leading label noise
+        trimmed = trimmed.replacingOccurrences(of: #"(?i)^\s*(?:due(?:\s+date)?|date|scheduled|by|on|week\s*\d+|module\s*\d+)\s*[:\-–—]?\s*"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "()[]{}<>,;:\'\"")))
+
+        if trimmed.isEmpty {
+            return ExtractedDateInfo(displayString: "", isoString: "", date: Date.distantPast)
+        }
+
+        // If string contains a date range (e.g. "9/1 - 9/7", "09-01 - 09-07", "9-1 - 9-7", "4/2/26 - 4/8/26", "Sep 1 - Sep 7, 2026")
+        let rangeDelimiters = [" – ", " — ", " - ", " to ", " –", " —", " -", "–", "—"]
+        for delim in rangeDelimiters {
+            if trimmed.contains(delim) {
+                let parts = trimmed.components(separatedBy: delim).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                if parts.count >= 2 {
+                    // For an assignment/due date, try the end date first; if valid, return it
+                    let endParsed = parseSingleComponentDate(parts[1], fallbackYear: fallbackYear)
+                    if endParsed.date != Date.distantPast {
+                        return endParsed
+                    }
+                    let startParsed = parseSingleComponentDate(parts[0], fallbackYear: fallbackYear)
+                    if startParsed.date != Date.distantPast {
+                        return startParsed
+                    }
+                }
+            }
+        }
+
+        return parseSingleComponentDate(trimmed, fallbackYear: fallbackYear)
+    }
+
+    private static func parseSingleComponentDate(_ raw: String, fallbackYear: Int) -> ExtractedDateInfo {
+        let cleanRaw = raw.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "()[]{}<>,;:\'\"")))
+        if cleanRaw.isEmpty {
+            return ExtractedDateInfo(displayString: "", isoString: "", date: Date.distantPast)
+        }
+
         let calendar = Calendar.current
 
         // 1. Try standard ISO8601 DateFormatter first (e.g. "2026-09-13", "2026-09-13T23:59:59Z")
         let isoFormatter = ISO8601DateFormatter()
-        if let d = isoFormatter.date(from: trimmed) {
+        if let d = isoFormatter.date(from: cleanRaw) {
             let dfShort = DateFormatter()
             dfShort.dateFormat = "yyyy-MM-dd"
             let isoStr = dfShort.string(from: d)
@@ -1015,8 +1349,8 @@ public final class LocalSyllabusParser {
         var foundExplicitDate = false
 
         // 2. YYYY-MM-DD or YYYY/MM/DD regex (e.g. "2026-09-13", "2026/08/21")
-        if let match = Self.isoDateRegex?.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) {
-            let nsStr = trimmed as NSString
+        if let match = Self.isoDateRegex?.firstMatch(in: cleanRaw, options: [], range: NSRange(location: 0, length: cleanRaw.utf16.count)) {
+            let nsStr = cleanRaw as NSString
             if let y = Int(nsStr.substring(with: match.range(at: 1))),
                let m = Int(nsStr.substring(with: match.range(at: 2))),
                let d = Int(nsStr.substring(with: match.range(at: 3))),
@@ -1027,11 +1361,11 @@ public final class LocalSyllabusParser {
                 foundExplicitDate = true
             }
         }
-        // 3. MM/DD/YYYY or MM-DD-YYYY or MM/DD regex (e.g., "09/13/2026", "9/13")
-        else if let match = Self.slashDateRegex?.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) {
-            let nsStr = trimmed as NSString
+        // 3. MM/DD/YYYY or MM-DD-YYYY or MM-DD-YY or MM/DD/YY or MM/DD or MM-DD regex (e.g., "09-01-2026", "9-1-2026", "4-2-26", "9/13")
+        else if let match = Self.slashDateRegex?.firstMatch(in: cleanRaw, options: [], range: NSRange(location: 0, length: cleanRaw.utf16.count)) {
+            let nsStr = cleanRaw as NSString
             if let m = Int(nsStr.substring(with: match.range(at: 1))),
-               let d = Int(nsStr.substring(with: match.range(at: 3).location != NSNotFound ? match.range(at: 2) : match.range(at: 2))),
+               let d = Int(nsStr.substring(with: match.range(at: 2))),
                m >= 1 && m <= 12 && d >= 1 && d <= 31 {
                 components.month = m
                 components.day = d
@@ -1041,18 +1375,19 @@ public final class LocalSyllabusParser {
                 }
             }
         }
-        // 4. Parse text month dates (e.g., "Sunday, Sep. 13, 2026", "September 13th", "13 Sep 2026")
+        // 4. Parse text month dates (e.g., "Sunday, Sep. 13, 2026", "September 13th", "13-Sep-2026", "13 Sep 2026")
         else {
             let monthsMap = [
                 "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
                 "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
-                "aug": 8, "august": 8, "sep": 9, "september": 9, "oct": 10, "october": 10,
+                "aug": 8, "august": 8, "sep": 9, "september": 9, "sept": 9, "oct": 10, "october": 10,
                 "nov": 11, "november": 11, "dec": 12, "december": 12
             ]
 
-            var cleanStr = trimmed.lowercased().replacingOccurrences(of: ",", with: "")
+            var cleanStr = cleanRaw.lowercased().replacingOccurrences(of: ",", with: " ")
             cleanStr = cleanStr.replacingOccurrences(of: #"(\d{1,2})(st|nd|rd|th)\b"#, with: "$1", options: .regularExpression)
             cleanStr = cleanStr.replacingOccurrences(of: #"\b\d{1,2}(:\d{2})?\s*(am|pm)\b"#, with: "", options: .regularExpression)
+            cleanStr = cleanStr.replacingOccurrences(of: #"[-/]"#, with: " ", options: .regularExpression)
 
             let tokens = cleanStr.components(separatedBy: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)).filter { !$0.isEmpty }
 
@@ -1209,12 +1544,31 @@ public final class LocalSyllabusParser {
     }
 
     private func fuzzyMatch(_ s1: String, _ s2: String) -> Bool {
-        let clean1 = s1.lowercased().replacingOccurrences(of: "[^a-z]", with: "", options: .regularExpression)
-        let clean2 = s2.lowercased().replacingOccurrences(of: "[^a-z]", with: "", options: .regularExpression)
+        let l1 = s1.lowercased()
+        let l2 = s2.lowercased()
+
+        // Never match Peer Review with Reflection or other distinct deliverables
+        let isPeerReview1 = l1.contains("peer review") || l1.contains("peer-review")
+        let isPeerReview2 = l2.contains("peer review") || l2.contains("peer-review")
+        let isReflection1 = l1.contains("reflection") || l1.contains("self-reflection")
+        let isReflection2 = l2.contains("reflection") || l2.contains("self-reflection")
+
+        if (isPeerReview1 && isReflection2) || (isReflection1 && isPeerReview2) {
+            return false
+        }
+        if isPeerReview1 != isPeerReview2 && (isPeerReview1 || isPeerReview2) {
+            return false
+        }
+        if isReflection1 != isReflection2 && (isReflection1 || isReflection2) {
+            return false
+        }
+
+        let clean1 = l1.replacingOccurrences(of: "[^a-z]", with: "", options: .regularExpression)
+        let clean2 = l2.replacingOccurrences(of: "[^a-z]", with: "", options: .regularExpression)
         if clean1.isEmpty || clean2.isEmpty { return false }
         if clean1 == clean2 { return true }
-        if clean1.count >= 6 && clean2.contains(clean1) { return true }
-        if clean2.count >= 6 && clean1.contains(clean2) { return true }
+        if clean1.count >= 8 && clean2.contains(clean1) { return true }
+        if clean2.count >= 8 && clean1.contains(clean2) { return true }
 
         let words1 = s1.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count >= 3 }
         let words2 = s2.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count >= 3 }
@@ -1225,7 +1579,7 @@ public final class LocalSyllabusParser {
             let union = set1.union(set2)
             if !union.isEmpty {
                 let jaccard = Double(intersection.count) / Double(union.count)
-                if jaccard >= 0.70 { return true }
+                if jaccard >= 0.85 { return true }
             }
         }
         return false
@@ -1267,47 +1621,6 @@ public final class LocalSyllabusParser {
                     }
                     weeks[i].readings = updatedReadings
                 }
-            }
-        }
-
-        // Match CPC 523 & CPC 514 assignments missing due dates with week schedule dates
-        for aIdx in 0..<assignments.count {
-            let assignTitle = assignments[aIdx].title.lowercased()
-            let old = assignments[aIdx]
-            
-            if assignTitle.contains("sexuality reflection") {
-                assignments[aIdx] = AssignmentDTO(id: old.id, title: old.title, dueDate: "2026-07-31", fullInstructions: old.fullInstructions, pointsPossible: old.pointsPossible, weightPercentage: old.weightPercentage, noteText: old.noteText)
-            } else if assignTitle == "peer review practice" || (assignTitle.contains("peer review") && !assignTitle.contains("group report") && !assignTitle.contains("discussion board") && !assignTitle.contains("activity")) {
-                assignments[aIdx] = AssignmentDTO(id: old.id, title: old.title, dueDate: "2026-08-21", fullInstructions: old.fullInstructions, pointsPossible: old.pointsPossible, weightPercentage: old.weightPercentage, noteText: old.noteText)
-            } else if assignTitle.contains("sexuality research paper") {
-                assignments[aIdx] = AssignmentDTO(id: old.id, title: old.title, dueDate: "2026-09-04", fullInstructions: old.fullInstructions, pointsPossible: old.pointsPossible, weightPercentage: old.weightPercentage, noteText: old.noteText)
-            } else if assignTitle.contains("peer review discussion board") {
-                assignments[aIdx] = AssignmentDTO(id: old.id, title: "Peer Review Discussion Board Activity", dueDate: "2026-07-27", fullInstructions: old.fullInstructions, pointsPossible: "100 Points", weightPercentage: "20%", noteText: old.noteText)
-            } else if assignTitle.contains("attendance") || assignTitle.contains("participation") {
-                assignments[aIdx] = AssignmentDTO(id: old.id, title: "Attendance & Participation", dueDate: "2026-09-24", fullInstructions: old.fullInstructions, pointsPossible: "100 Points", weightPercentage: "10%", noteText: old.noteText)
-            } else if assignTitle.contains("research article analysis") {
-                assignments[aIdx] = AssignmentDTO(id: old.id, title: "Research Article Analysis - Group Presentation", dueDate: "2026-07-23", fullInstructions: old.fullInstructions, pointsPossible: "100 Points", weightPercentage: "20%", noteText: old.noteText)
-            } else if assignTitle.contains("research study design") {
-                assignments[aIdx] = AssignmentDTO(id: old.id, title: "Research Study Design - Individual Paper", dueDate: "2026-09-06", fullInstructions: old.fullInstructions, pointsPossible: "100 Points", weightPercentage: "40%", noteText: old.noteText)
-            }
-        }
-
-        // Ensure Creswell Research Design textbook reading is present for CPC 514
-        if !weeks.isEmpty {
-            var w1Readings = weeks[0].readings ?? []
-            if !w1Readings.contains(where: { $0.title.lowercased().contains("creswell") || $0.title.lowercased().contains("research design") }) {
-                let creswellReading = ReadingDTO(
-                    id: UUID().uuidString,
-                    title: "Creswell & Creswell: Research Design (6th ed)",
-                    mediaType: "textbook",
-                    isCompleted: false,
-                    summaryText: "Required textbook covering Qualitative, Quantitative, and Mixed Methods Approaches.",
-                    keyTakeawaysText: "• Chapter 1: Selection of a Research Approach\n• Chapter 2: Review of the Literature",
-                    estimatedTimeText: "~45 min read",
-                    dueDate: weeks[0].dateRangeStr
-                )
-                w1Readings.insert(creswellReading, at: 0)
-                weeks[0].readings = w1Readings
             }
         }
     }

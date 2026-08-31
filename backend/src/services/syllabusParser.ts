@@ -4,34 +4,34 @@ import { z } from 'zod';
 export const ReadingSchema = z.object({
   title: z.string(),
   mediaType: z.enum(['textbook', 'article', 'video', 'podcast', 'other']).default('textbook'),
-  chapterText: z.string().optional(),
-  pagesText: z.string().optional(),
-  relevantTopics: z.string().optional(),
-  summaryText: z.string().optional(),
-  keyTakeaways: z.string().optional(),
-  estimatedTime: z.string().optional(),
-  mediaUrl: z.string().optional()
+  chapterText: z.string().nullish(),
+  pagesText: z.string().nullish(),
+  relevantTopics: z.string().nullish(),
+  summaryText: z.string().nullish(),
+  keyTakeaways: z.string().nullish(),
+  estimatedTime: z.string().nullish(),
+  mediaUrl: z.string().nullish()
 });
 
 export const WeekSchema = z.object({
   weekNumber: z.number().int().min(0).max(24),
-  startDate: z.string().optional(),
-  theme: z.string().optional(),
+  startDate: z.string().nullish(),
+  theme: z.string().nullish(),
   readings: z.array(ReadingSchema).default([])
 });
 
 export const AssignmentSchema = z.object({
   title: z.string(),
-  dueDate: z.string().optional(),
-  fullInstructions: z.string().optional(),
-  pointsPossible: z.string().optional(), // Point System e.g. "100 Points"
-  pointsBreakdown: z.string().optional(),
-  weightPercentage: z.string().optional() // Percentage System e.g. "20%"
+  dueDate: z.string().nullish(),
+  fullInstructions: z.string().nullish(),
+  pointsPossible: z.string().nullish(), // Point System e.g. "100 Points"
+  pointsBreakdown: z.string().nullish(),
+  weightPercentage: z.string().nullish() // Percentage System e.g. "20%"
 });
 
 export const ParsedSyllabusSchema = z.object({
   courseName: z.string(),
-  courseCode: z.string().optional(),
+  courseCode: z.string().nullish(),
   termWeeks: z.number().int().min(1).max(24).default(16),
   weeks: z.array(WeekSchema).default([]),
   assignments: z.array(AssignmentSchema).default([])
@@ -139,57 +139,63 @@ export async function parseSyllabusDocument(
   }
 
   if (apiKey) {
-    try {
-      const textContent = rawText || (fileBuffer ? fileBuffer.toString('utf-8') : '');
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+    const textContent = rawText || (fileBuffer ? fileBuffer.toString('utf-8') : '');
 
-      const payload: any = {
-        contents: [
-          {
-            parts: fileBuffer && mimeType?.startsWith('image/') ? [
-              { text: 'Parse this scanned syllabus page into structured course weeks, readings, and assignments JSON.' },
-              { inlineData: { mimeType, data: fileBuffer.toString('base64') } }
-            ] : [
-              { text: `Parse the following syllabus text into structured JSON:\n\n${textContent}` }
-            ]
+    for (const modelName of modelsToTry) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+        const payload: any = {
+          contents: [
+            {
+              parts: fileBuffer && mimeType?.startsWith('image/') ? [
+                { text: 'Parse this scanned syllabus page into structured course weeks, readings, and assignments JSON.' },
+                { inlineData: { mimeType, data: fileBuffer.toString('base64') } }
+              ] : [
+                { text: `Parse the following syllabus text into structured JSON:\n\n${textContent}` }
+              ]
+            }
+          ],
+          systemInstruction: {
+            parts: [{ text: SYSTEM_PROMPT }]
+          },
+          generationConfig: {
+            temperature: 0.0,
+            responseMimeType: 'application/json'
           }
-        ],
-        systemInstruction: {
-          parts: [{ text: SYSTEM_PROMPT }]
-        },
-        generationConfig: {
-          temperature: 0.0,
-          responseMimeType: 'application/json'
-        }
-      };
+        };
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (res.ok) {
-        const data = await res.json() as any;
-        const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        let cleanJson = rawJsonText.trim();
-        if (cleanJson.startsWith('```')) {
-          cleanJson = cleanJson.split('\n').slice(1).join('\n');
-          if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3).trim();
-        }
-        const parsed = JSON.parse(cleanJson);
-        const validated = ParsedSyllabusSchema.parse(parsed);
-
-        validated.weeks.forEach(w => {
-          w.readings.forEach(r => {
-            r.title = formatReadingTitle5to6Words(r.title);
-          });
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
         });
 
-        return validated;
+        if (res.ok) {
+          const data = await res.json() as any;
+          const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+          let cleanJson = rawJsonText.trim();
+          if (cleanJson.startsWith('```')) {
+            cleanJson = cleanJson.split('\n').slice(1).join('\n');
+            if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3).trim();
+          }
+          const parsed = JSON.parse(cleanJson);
+          const validated = ParsedSyllabusSchema.parse(parsed);
+
+          validated.weeks.forEach(w => {
+            w.readings.forEach(r => {
+              r.title = formatReadingTitle5to6Words(r.title);
+            });
+          });
+
+          return validated;
+        } else {
+          console.warn(`[Gemini ${modelName} HTTP ${res.status}] Retrying next model...`);
+        }
+      } catch (err: any) {
+        console.warn(`[Gemini ${modelName} Error] ${err.message}`);
       }
-    } catch (err: any) {
-      console.warn(`[Gemini 1.5 Pro Error] Falling back to intelligent heuristic parser: ${err.message}`);
     }
   }
 

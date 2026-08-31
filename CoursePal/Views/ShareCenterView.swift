@@ -25,10 +25,10 @@ public struct ShareCenterView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Invite")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .font(.cpPageTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Text("Share your courses or join someone else's")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.cpDescriptionMedium)
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         }
                         Spacer()
@@ -42,7 +42,7 @@ public struct ShareCenterView: View {
                             Image(systemName: isSuccessNotice ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                                 .foregroundColor(isSuccessNotice ? .green : .orange)
                             Text(notice)
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.cpDescriptionBold)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         }
                         .padding(.horizontal, 14)
@@ -94,7 +94,7 @@ public struct ShareCenterView: View {
                                         .font(.system(size: 18))
                                         .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                     Text("Upload a syllabus to get started — your course codes will appear here.")
-                                        .font(.system(size: 13))
+                                        .font(.cpDescription)
                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                 }
                                 .padding(18)
@@ -114,11 +114,11 @@ public struct ShareCenterView: View {
 
                                             VStack(alignment: .leading, spacing: 3) {
                                                 Text(course.courseCode ?? course.courseName)
-                                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                                                    .font(.cpItemTitle)
                                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                     .lineLimit(1)
                                                 Text(course.courseName)
-                                                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                                    .font(.cpDescription)
                                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                     .lineLimit(1)
                                             }
@@ -129,7 +129,7 @@ public struct ShareCenterView: View {
                                             HStack(spacing: 6) {
                                                 HStack(spacing: 5) {
                                                     Text(course.sharingCode.isEmpty ? "—" : course.sharingCode)
-                                                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                                        .font(.cpDescriptionBold)
                                                         .foregroundColor(codeColor)
 
                                                     Button(action: {
@@ -166,27 +166,6 @@ public struct ShareCenterView: View {
                                                         .cornerRadius(8)
                                                 }
                                                 .buttonStyle(.plain)
-
-                                                // Native iOS Share Button
-                                                Button(action: {
-                                                    let shareMsg = CourseSharingService.shared.generateShareMessage(for: course)
-                                                    #if canImport(UIKit)
-                                                    let avc = UIActivityViewController(activityItems: [shareMsg], applicationActivities: nil)
-                                                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                                                       let root = scene.windows.first?.rootViewController {
-                                                        root.present(avc, animated: true)
-                                                    }
-                                                    #endif
-                                                }) {
-                                                    Image(systemName: "square.and.arrow.up")
-                                                        .font(.system(size: 12, weight: .bold))
-                                                        .foregroundColor(codeColor)
-                                                        .padding(.horizontal, 8)
-                                                        .padding(.vertical, 6)
-                                                        .background(codeColor.opacity(0.12))
-                                                        .cornerRadius(8)
-                                                }
-                                                .buttonStyle(.plain)
                                             }
                                         }
                                         .padding(14)
@@ -206,18 +185,18 @@ public struct ShareCenterView: View {
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(Color(red: 0.55, green: 0.27, blue: 0.96))
                                 Text("JOIN A COURSE")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.cpItemTitle)
                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                             }
                             .padding(.leading, 4)
 
                             VStack(alignment: .leading, spacing: 14) {
                                 Text("Got a code or link from a classmate?")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.cpItemTitle)
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
                                 Text("Paste the link or enter the course code shared with you. CoursePal will load their course schedule, readings, and assignments.")
-                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .font(.cpDescription)
                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                     .fixedSize(horizontal: false, vertical: true)
 
@@ -226,7 +205,7 @@ public struct ShareCenterView: View {
                                         Image(systemName: "key.fill")
                                             .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                         TextField("Enter course code or paste link...", text: $inputCode)
-                                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                            .font(.cpDescription)
                                             .autocorrectionDisabled()
                                             #if os(iOS)
                                             .textInputAutocapitalization(.never)
@@ -245,7 +224,7 @@ public struct ShareCenterView: View {
                                             Image(systemName: "arrow.down.circle.fill")
                                                 .font(.system(size: 15, weight: .bold))
                                             Text("Join Course")
-                                                .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                                                .font(.cpItemTitle)
                                         }
                                         .foregroundColor(.white)
                                         .frame(maxWidth: .infinity)
@@ -279,10 +258,10 @@ public struct ShareCenterView: View {
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("About & Legal")
-                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        .font(.cpItemTitle)
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                     Text("Privacy policy, terms of service & support")
-                                        .font(.system(size: 11.5, weight: .medium))
+                                        .font(.cpDescription)
                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                 }
 
@@ -401,53 +380,48 @@ public struct ShareCenterView: View {
         }
         .sheet(item: $showingQRCodeForCourse) { course in
             NavigationStack {
-                VStack(spacing: 24) {
-                    VStack(spacing: 8) {
+                VStack(spacing: 16) {
+                    VStack(spacing: 4) {
                         Text(course.courseName)
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             .multilineTextAlignment(.center)
+                            .lineLimit(2)
 
-                        Text("Share Code: \(course.sharingCode)")
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                            .foregroundColor(CourseColorHelper.color(for: course.hexColor))
+                        HStack(spacing: 6) {
+                            Text("Share Code:")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            Text(course.sharingCode)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(CourseColorHelper.color(for: course.hexColor))
+                        }
                     }
-                    .padding(.top, 16)
+                    .padding(.top, 8)
 
                     #if canImport(UIKit)
-                    let shareUrl = CourseSharingService.shared.generateShareLink(for: course).absoluteString
-                    if let qrImage = CourseSharingService.shared.generateQRCode(for: shareUrl) {
+                    if let qrImage = CourseSharingService.shared.generateCourseQRCode(for: course) {
                         Image(uiImage: qrImage)
                             .interpolation(.none)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 230, height: 230)
-                            .padding(16)
+                            .frame(width: 190, height: 190)
+                            .padding(14)
                             .background(Color.white)
-                            .cornerRadius(20)
-                            .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
+                            .cornerRadius(18)
+                            .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 3)
                     }
                     #endif
 
-                    Text("Classmates can scan this QR code with their iPhone camera to instantly enroll in this course with all readings and assignments.")
-                        .font(.system(size: 13, weight: .medium))
+                    Text("Classmates can scan this QR code with their iPhone camera to open CoursePal and enroll instantly.")
+                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, 20)
 
-                    Button("Close") {
-                        showingQRCodeForCourse = nil
-                    }
-                    .font(.system(size: 15, weight: .bold))
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 12)
-                    .background(Color(red: 0.94, green: 0.95, blue: 0.98))
-                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                    .cornerRadius(12)
-
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
                 .navigationTitle("Course QR Code")
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
@@ -458,6 +432,9 @@ public struct ShareCenterView: View {
                     }
                 }
             }
+            .presentationDetents([.height(430), .fraction(0.55)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
         }
     }
 

@@ -307,51 +307,63 @@ public final class SyllabusUploadManager {
                 self.courseUploadStatuses[cid] = "Analyzing syllabus..."
             }
 
-            // 1. Smart Text-First Route: If clean native text was extracted, parse directly (10x faster & token-efficient)
-            if let text = extractedText, text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 150 {
-                self.statusText = "Analyzing syllabus text..."
-                print("⚡️ [UPLOAD] Fast text-first route for: \(cleanFileName) (\(text.count) chars)")
+            // 1. PRIMARY ROUTE A: Ultra-Fast Token-Efficient AI Text Route (Uses ~600 tokens total via Gemini 2.5 Flash-Lite)
+            if NetworkMonitor.shared.isOnline, let text = extractedText, text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 100 {
+                self.statusText = "Analyzing syllabus with AI..."
+                if let cid = targetCourse?.id {
+                    self.courseUploadStatuses[cid] = "Analyzing syllabus with AI..."
+                }
+                print("⚡️ [UPLOAD] Running PRIMARY AI Text Reader (gemini-2.5-flash-lite) for: \(cleanFileName) (\(text.count) chars)")
                 do {
                     let textDTO = try await APIService.shared.parseSyllabusText(text)
-                    if (textDTO.items?.count ?? 0) > 0 || (textDTO.weeks?.flatMap { $0.readings ?? [] }.count ?? 0) > 0 {
+                    let itemsCount = (textDTO.items?.count ?? 0) + (textDTO.assignments?.count ?? 0) + (textDTO.weeks?.flatMap { $0.readings ?? [] }.count ?? 0)
+                    if itemsCount > 0 {
                         parsedDTO = textDTO
-                        print("✅ [UPLOAD] Gemini Text Parse SUCCESS — items: \(textDTO.items?.count ?? 0)")
+                        print("✅ [UPLOAD] Gemini 2.5 Flash-Lite Text Parse SUCCESS — total items: \(itemsCount)")
                     }
                 } catch {
-                    print("⚠️ [UPLOAD] Gemini text parse failed: \(error.localizedDescription). Falling back to multimodal parser.")
+                    print("⚠️ [UPLOAD] Gemini text parse error: \(error.localizedDescription). Proceeding to vision/local fallback...")
                 }
             }
 
-            // 2. Multimodal Vision Route: If text was sparse/empty or text parse yielded no items, parse via Base64 PDF
-            let hasItems = (parsedDTO?.items?.count ?? 0) > 0 || (parsedDTO?.weeks?.flatMap { $0.readings ?? [] }.count ?? 0) > 0
-            if !hasItems, ext == "PDF", let pData = fileData, !pData.isEmpty {
-                self.statusText = "Analyzing syllabus document..."
+            // 2. PRIMARY ROUTE B: Multimodal Vision Route (For Pure Scanned Image PDFs / Photos without Text Layer)
+            let hasTextSuccess = ((parsedDTO?.items?.count ?? 0) + (parsedDTO?.assignments?.count ?? 0) + (parsedDTO?.weeks?.flatMap { $0.readings ?? [] }.count ?? 0)) > 0
+            if !hasTextSuccess, NetworkMonitor.shared.isOnline, ext == "PDF", let pData = fileData, !pData.isEmpty {
+                self.statusText = "Scanning schedule pages with AI..."
                 if let cid = targetCourse?.id {
-                    self.courseUploadStatuses[cid] = "Extracting course schedule & readings..."
+                    self.courseUploadStatuses[cid] = "Scanning schedule pages with AI..."
                 }
-                print("🤖 [UPLOAD] Attempting Gemini Multimodal parse for PDF: \(cleanFileName)")
+                print("🤖 [UPLOAD] Running PRIMARY AI Vision Reader for scanned PDF: \(cleanFileName)")
                 do {
-                    parsedDTO = try await APIService.shared.parsePDFDocumentData(pData)
-                    print("✅ [UPLOAD] Gemini Multimodal PDF parse SUCCESS — items: \(parsedDTO?.items?.count ?? 0)")
+                    let pdfDTO = try await APIService.shared.parsePDFDocumentData(pData)
+                    let pdfItemsCount = (pdfDTO.items?.count ?? 0) + (pdfDTO.assignments?.count ?? 0) + (pdfDTO.weeks?.flatMap { $0.readings ?? [] }.count ?? 0)
+                    if pdfItemsCount > 0 {
+                        parsedDTO = pdfDTO
+                        print("✅ [UPLOAD] Gemini Vision Parse SUCCESS — total items: \(pdfItemsCount)")
+                    }
                 } catch {
-                    print("❌ [UPLOAD] Gemini Multimodal parse failed: \(error.localizedDescription).")
+                    print("⚠️ [UPLOAD] Gemini Vision parse error: \(error.localizedDescription). Proceeding to local offline fallback...")
                 }
             }
 
-            // 3. Fallback to LocalSyllabusParser if AI parsing failed or yielded no items
-            let finalHasItems = (parsedDTO?.items?.count ?? 0) > 0 || (parsedDTO?.weeks?.flatMap { $0.readings ?? [] }.count ?? 0) > 0
-            if !finalHasItems {
-                self.statusText = "Processing syllabus schedule..."
+            // 3. OFFLINE / NETWORK ERROR FALLBACK: Native On-Device iPhone Reader (0 API Tokens, 100% Offline)
+            let hasAISuccess = ((parsedDTO?.items?.count ?? 0) + (parsedDTO?.assignments?.count ?? 0) + (parsedDTO?.weeks?.flatMap { $0.readings ?? [] }.count ?? 0)) > 0
+            if !hasAISuccess {
+                self.statusText = "Extracting syllabus locally..."
                 if let cid = targetCourse?.id {
-                    self.courseUploadStatuses[cid] = "Processing syllabus schedule..."
+                    self.courseUploadStatuses[cid] = "Extracting syllabus locally..."
                 }
-                print("📋 [UPLOAD] Using LOCAL parser fallback for: \(cleanFileName)")
+                print("📱 [UPLOAD] Running OFFLINE Fallback Native On-Device Reader for: \(cleanFileName)")
                 var textToParse: String = extractedText ?? ""
                 if textToParse.isEmpty, let pData = fileData, !pData.isEmpty {
                     textToParse = DocumentExtractor.extractText(from: url) ?? ""
                 }
                 if !textToParse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    parsedDTO = LocalSyllabusParser.shared.parseText(textToParse)
+                    let localDTO = LocalSyllabusParser.shared.parseText(textToParse)
+                    let localAssignCount = (localDTO.assignments?.count ?? 0) + (localDTO.items?.filter { $0.category == "Assignment" }.count ?? 0)
+                    let localReadCount = (localDTO.weeks?.reduce(0) { $0 + ($1.readings?.count ?? 0) } ?? 0) + (localDTO.items?.filter { $0.category == "Reading" }.count ?? 0)
+                    print("📊 [LOCAL PARSER RESULTS] Assignments: \(localAssignCount), Readings: \(localReadCount)")
+                    parsedDTO = localDTO
                 }
             }
 
@@ -423,7 +435,11 @@ public final class SyllabusUploadManager {
                 let finalName = targetCourse?.courseName ?? dto.courseName
                 self.lastImportedCourseName = finalName
                 let itemCount = (dto.items?.count ?? 0) + (dto.assignments?.count ?? 0) + (dto.weeks?.reduce(0) { $0 + ($1.readings?.count ?? 0) } ?? 0)
-                self.successMessage = "Success! Extracted '\(finalName)' with \(itemCount) items!"
+                if itemCount > 0 {
+                    self.successMessage = "Success! Extracted '\(finalName)' with \(itemCount) items!"
+                } else {
+                    self.successMessage = "Saved '\(finalName)' to Vault. Note: No structured schedule or reading items were detected in this document."
+                }
                 if self.pendingJobQueue.isEmpty {
                     self.showingSuccessAlert = true
                 }

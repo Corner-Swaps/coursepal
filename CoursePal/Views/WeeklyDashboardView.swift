@@ -3,12 +3,60 @@ import SwiftData
 
 // MARK: - CoursePal Theme & Course Color Palette
 public struct CoursePalTheme {
-    static let textDark = Color(red: 0.07, green: 0.11, blue: 0.20)      // Deep Slate Dark
-    static let textMuted = Color(red: 0.35, green: 0.42, blue: 0.52)     // Crisp Slate Gray
-    static let accentBlue = Color(red: 0.14, green: 0.44, blue: 0.96)    // Electric Blue
-    static let pillBlueBg = Color(red: 0.89, green: 0.93, blue: 1.0)     // Soft Blue Pill
-    static let bgCanvas = Color(red: 0.95, green: 0.96, blue: 0.98)      // Light Slate Canvas
-    static let cardBg = Color.white                                       // Pure White Card
+    public static let textDark = Color(red: 0.07, green: 0.11, blue: 0.20)      // Deep Slate Dark
+    public static let textMuted = Color(red: 0.35, green: 0.42, blue: 0.52)     // Crisp Slate Gray
+    public static let accentBlue = Color(red: 0.14, green: 0.44, blue: 0.96)    // Electric Blue
+    public static let pillBlueBg = Color(red: 0.89, green: 0.93, blue: 1.0)     // Soft Blue Pill
+    public static let bgCanvas = Color(red: 0.95, green: 0.96, blue: 0.98)      // Light Slate Canvas
+    public static let cardBg = Color.white                                       // Pure White Card
+}
+
+// MARK: - Standardized 3-Tier Typography (1 Font: System Rounded, 3 Sizes & Weights)
+extension Font {
+    /// Tier 1 (Thick / Bold): Page Titles, Screen Headers, Modal Titles (21.5pt Bold Rounded - 10% reduction)
+    public static let cpPageTitle = Font.system(size: 21.5, weight: .bold, design: .rounded)
+    
+    /// Tier 2 (Thick / Bold): Item Titles, Assignment Names, Reading Titles, Course Names, Card Titles, Add Buttons (14.5pt Bold Rounded - 10% reduction)
+    public static let cpItemTitle = Font.system(size: 14.5, weight: .bold, design: .rounded)
+    
+    /// Tier 3 (Thin / Regular): Descriptions, Dates, Subtitles, Metadata, Body Text (13pt Regular/Medium/Bold Rounded)
+    public static let cpDescription = Font.system(size: 13, weight: .regular, design: .rounded)
+    public static let cpDescriptionMedium = Font.system(size: 13, weight: .medium, design: .rounded)
+    public static let cpDescriptionBold = Font.system(size: 13, weight: .bold, design: .rounded)
+}
+
+// MARK: - Fuzzed Top & Bottom Scroll Edges Modifier
+extension View {
+    public func fuzzedScrollEdges(top: CGFloat = 36, bottom: CGFloat = 85) -> some View {
+        self.mask(
+            VStack(spacing: 0) {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black.opacity(0.4), location: 0.45),
+                        .init(color: .black, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: top)
+
+                Rectangle()
+                    .fill(Color.black)
+
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0.0),
+                        .init(color: .black.opacity(0.4), location: 0.55),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: bottom)
+            }
+        )
+    }
 }
 
 // MARK: - Reading Title Cleaner & Chapter Extractor Engine
@@ -83,6 +131,7 @@ public struct WeeklyDashboardView: View {
     @State private var showingCourseFilterSheet: Bool = false
     @State private var showingInfoSheet: Bool = false
     @State private var showingEmptyTrashConfirmation: Bool = false
+    @State private var courseForAIChat: Course? = nil
 
     private var completedCount: Int {
         activeReadings.filter({ $0.isCompleted }).count
@@ -107,7 +156,7 @@ public struct WeeklyDashboardView: View {
     private var readingsByWeek: [Int: [Reading]] {
         var grouped: [Int: [Reading]] = [:]
         for reading in activeReadings {
-            let weekNum = reading.week?.weekNumber ?? 1
+            let weekNum = reading.week?.weekNumber ?? 0
             grouped[weekNum, default: []].append(reading)
         }
         return grouped
@@ -115,7 +164,7 @@ public struct WeeklyDashboardView: View {
 
     // All course weeks sorted chronologically by calendar date (earliest dates first)
     private var sortedCourseWeeks: [Week] {
-        let filtered = allWeeks.filter { $0.course != nil }
+        let filtered = allWeeks.filter { $0.course != nil && $0.weekNumber > 0 }
         return filtered.sorted { w1, w2 in
             if w1.computedStartDate != w2.computedStartDate {
                 return w1.computedStartDate < w2.computedStartDate
@@ -127,13 +176,30 @@ public struct WeeklyDashboardView: View {
     // Week numbers ordered strictly by their earliest calendar date (e.g. Sept 5 before Sept 20)
     private var courseWeekNumbers: [Int] {
         var earliestDateForWeek: [Int: Date] = [:]
-        for week in sortedCourseWeeks {
+        for reading in activeReadings {
+            let w = reading.week?.weekNumber ?? 0
+            if w > 0 {
+                if let d = reading.dueDate {
+                    if let existing = earliestDateForWeek[w] {
+                        if d < existing { earliestDateForWeek[w] = d }
+                    } else {
+                        earliestDateForWeek[w] = d
+                    }
+                } else if let wStart = reading.week?.startDate {
+                    if let existing = earliestDateForWeek[w] {
+                        if wStart < existing { earliestDateForWeek[w] = wStart }
+                    } else {
+                        earliestDateForWeek[w] = wStart
+                    }
+                }
+            }
+        }
+        for week in sortedCourseWeeks where week.weekNumber > 0 {
             if earliestDateForWeek[week.weekNumber] == nil {
                 earliestDateForWeek[week.weekNumber] = week.computedStartDate
             }
         }
-        let uniqueWeeks = Array(earliestDateForWeek.keys)
-        return uniqueWeeks.sorted { w1, w2 in
+        let sortedPositiveWeeks = Array(earliestDateForWeek.keys).sorted { w1, w2 in
             let date1 = earliestDateForWeek[w1] ?? WeekDateConverter.date(forWeek: w1)
             let date2 = earliestDateForWeek[w2] ?? WeekDateConverter.date(forWeek: w2)
             if date1 != date2 {
@@ -141,6 +207,12 @@ public struct WeeklyDashboardView: View {
             }
             return w1 < w2
         }
+
+        let hasWeek0 = activeReadings.contains(where: { ($0.week?.weekNumber ?? 0) == 0 })
+        if hasWeek0 {
+            return [0] + sortedPositiveWeeks
+        }
+        return sortedPositiveWeeks
     }
 
     public init() {}
@@ -156,10 +228,10 @@ public struct WeeklyDashboardView: View {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Readings")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .font(.cpPageTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Text("\(remainingTotalCount) reading\(remainingTotalCount == 1 ? "" : "s") remaining")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.cpDescriptionMedium)
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         }
 
@@ -192,7 +264,7 @@ public struct WeeklyDashboardView: View {
                                         .font(.system(size: 15, weight: .bold))
                                         .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                     Text("\(completedCount)")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .font(.cpDescriptionBold)
                                         .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                 }
                                 .padding(.horizontal, 9)
@@ -214,7 +286,7 @@ public struct WeeklyDashboardView: View {
                                         .font(.system(size: 14, weight: .regular))
                                         .foregroundColor(Color(red: 0.85, green: 0.25, blue: 0.20))
                                     Text("\(deletedReadingsCount)")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .font(.cpDescriptionBold)
                                         .foregroundColor(Color(red: 0.85, green: 0.25, blue: 0.20))
                                 }
                                 .padding(.horizontal, 9)
@@ -235,7 +307,7 @@ public struct WeeklyDashboardView: View {
                         // 1. Clean Title at the Very Top (Full width, unsquished, no icon, no subtitle)
                         HStack {
                             Text("Weekly Reading Tracker")
-                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                                .font(.cpItemTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
                             Spacer()
@@ -255,7 +327,7 @@ public struct WeeklyDashboardView: View {
                                 }) {
                                     VStack(spacing: 8) {
                                         Text("ALL")
-                                            .font(.system(size: 13, weight: .bold))
+                                            .font(.cpDescriptionBold)
                                             .foregroundColor(selectedWeekFilter == 0 ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
 
                                         ZStack {
@@ -269,7 +341,7 @@ public struct WeeklyDashboardView: View {
                                         }
 
                                         Text("\(remainingTotalCount) Total")
-                                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                            .font(.cpDescription)
                                             .foregroundColor(selectedWeekFilter == 0 ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.45, green: 0.52, blue: 0.62))
                                     }
                                     .padding(.vertical, 12)
@@ -285,9 +357,7 @@ public struct WeeklyDashboardView: View {
                                 .buttonStyle(.plain)
 
                                 // Dynamic Week Cards (W1, W2, W3 ... W16) - Large Spacious Format (width: 86, height: 136)
-                                let weekNums = courseWeekNumbers.isEmpty
-                                    ? Array(1...(courses.map { $0.termWeeks }.max() ?? 12))
-                                    : courseWeekNumbers
+                                let weekNums = courseWeekNumbers.filter { $0 > 0 }
 
                                 ForEach(weekNums, id: \.self) { weekNum in
                                     let isSelected = selectedWeekFilter == weekNum
@@ -306,7 +376,7 @@ public struct WeeklyDashboardView: View {
                                     }) {
                                         VStack(spacing: 8) {
                                             Text("Week \(weekNum)")
-                                                .font(.system(size: 13, weight: isSelected ? .bold : .semibold))
+                                                .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
                                                 .foregroundColor(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
 
                                             ZStack {
@@ -320,7 +390,7 @@ public struct WeeklyDashboardView: View {
                                                         .foregroundColor(.white)
                                                 } else {
                                                     Text("\(weekCount)")
-                                                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                                                        .font(.cpItemTitle)
                                                         .foregroundColor(isSelected ? .white : Color(red: 0.08, green: 0.12, blue: 0.22))
                                                 }
                                             }
@@ -328,7 +398,7 @@ public struct WeeklyDashboardView: View {
 
                                             // Item Count Display under Week Circle (Static 'Items' per user directive)
                                             Text("Items")
-                                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
                                                 .foregroundColor(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
                                                 .frame(height: 16)
                                         }
@@ -364,6 +434,7 @@ public struct WeeklyDashboardView: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                         TextField("Search readings…", text: $searchQuery)
+                            .font(.cpDescription)
                             .autocorrectionDisabled()
                             .onSubmit {
                                 #if os(iOS)
@@ -410,18 +481,18 @@ public struct WeeklyDashboardView: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Congratulations! 🎉")
-                                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                                    .font(.cpItemTitle)
                                     .foregroundColor(Color(red: 0.05, green: 0.55, blue: 0.35))
 
                                 Text("You finished all readings!")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .font(.cpDescriptionMedium)
                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                             }
 
                             Spacer()
 
                             Text("100%")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .font(.cpDescriptionBold)
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
@@ -440,9 +511,9 @@ public struct WeeklyDashboardView: View {
                     } else {
                         VStack(spacing: 8) {
                             HStack {
-                                HStack(spacing: 6) {
+                                HStack(spacing: 5) {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.system(size: 12, weight: .bold))
                                         .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                     Text("Readings Progress")
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -457,10 +528,10 @@ public struct WeeklyDashboardView: View {
                                     Text("\(completedCount) of \(totalActiveCount) Done (\(progressPct)%)")
                                         .font(.system(size: 11, weight: .bold, design: .rounded))
                                         .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 2.5)
                                         .background(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.12))
-                                        .cornerRadius(12)
+                                        .cornerRadius(10)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -491,31 +562,43 @@ public struct WeeklyDashboardView: View {
                             Circle()
                                 .fill(CourseColorHelper.color(for: course.hexColor))
                                 .frame(width: 8, height: 8)
-                            Text("Filtered by: \(course.courseCode ?? "CRS") · \(course.courseName)")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                            Text("Showing:")
+                                .font(.cpDescription)
+                                .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+
+                            Text(course.courseName)
+                                .font(.cpItemTitle)
+                                .foregroundColor(CourseColorHelper.color(for: course.hexColor))
+
                             Spacer()
+
                             Button(action: {
                                 withAnimation {
                                     selectedCourseFilter = nil
                                 }
                             }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(Color(red: 0.55, green: 0.62, blue: 0.72))
-                                    .font(.system(size: 14))
+                                HStack(spacing: 3) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text("Clear")
+                                        .font(.cpDescriptionBold)
+                                }
+                                .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white)
+                                .cornerRadius(8)
+                                .shadow(color: Color.black.opacity(0.03), radius: 3, x: 0, y: 1)
                             }
                             .buttonStyle(.plain)
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.white)
+                        .background(CourseColorHelper.color(for: course.hexColor).opacity(0.12))
                         .cornerRadius(12)
-                        .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
                         .padding(.horizontal, 18)
-                        .padding(.bottom, 4)
                     }
-
-
 
                     // MARK: - Filtered Readings Content
                     if courses.isEmpty && sortMode != "trash" {
@@ -530,10 +613,10 @@ public struct WeeklyDashboardView: View {
                             }
 
                             Text("No courses yet")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.cpItemTitle)
                                 .foregroundColor(CoursePalTheme.textDark)
                             Text("Upload a syllabus to automatically populate your reading schedule.")
-                                .font(.system(size: 12.5))
+                                .font(.cpDescription)
                                 .foregroundColor(CoursePalTheme.textMuted)
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: 240)
@@ -551,9 +634,7 @@ public struct WeeklyDashboardView: View {
                         .padding(.horizontal, 18)
                     } else if sortMode == "readings" || sortMode == "week" {
                         // ── READINGS GROUPED BY WEEK ──────────────────
-                        let allWeekNums = courseWeekNumbers.isEmpty
-                            ? Array(1...(courses.map { $0.termWeeks }.max() ?? 12))
-                            : courseWeekNumbers
+                        let allWeekNums = courseWeekNumbers
                         let displayNums: [Int] = selectedWeekFilter == 0
                             ? allWeekNums
                             : (allWeekNums.filter { $0 == selectedWeekFilter }.isEmpty ? [selectedWeekFilter] : allWeekNums.filter { $0 == selectedWeekFilter })
@@ -564,7 +645,7 @@ public struct WeeklyDashboardView: View {
                                 return !weekReadings.isEmpty
                             }
                             if filtered.isEmpty {
-                                return [selectedWeekFilter == 0 ? 1 : selectedWeekFilter]
+                                return [selectedWeekFilter == 0 ? (allWeekNums.first ?? 0) : selectedWeekFilter]
                             }
                             return filtered
                         }()
@@ -572,35 +653,57 @@ public struct WeeklyDashboardView: View {
                         VStack(alignment: .leading, spacing: 18) {
                             ForEach(activeDisplayNums, id: \.self) { weekNum in
                                 let weekReadings = readingsByWeek[weekNum] ?? []
+                                let weekTheme: String? = {
+                                    if let t = weekReadings.first?.week?.theme, !t.isEmpty, !t.lowercased().hasPrefix("week ") {
+                                        return t
+                                    }
+                                    if let t = weekReadings.compactMap({ $0.relevantTopics }).first(where: { !$0.isEmpty && !$0.lowercased().hasPrefix("week ") }) {
+                                        return t
+                                    }
+                                    return nil
+                                }()
 
                                 VStack(alignment: .leading, spacing: 10) {
                                     HStack(spacing: 8) {
-                                        Text("Week \(weekNum)")
-                                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                                            .foregroundColor(CoursePalTheme.accentBlue)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 4)
-                                            .background(CoursePalTheme.pillBlueBg)
-                                            .cornerRadius(10)
+                                        if weekNum > 0 {
+                                            Text("Week \(weekNum)")
+                                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                .foregroundColor(CoursePalTheme.accentBlue)
+                                                .padding(.horizontal, 9)
+                                                .padding(.vertical, 3.5)
+                                                .background(CoursePalTheme.pillBlueBg)
+                                                .cornerRadius(8)
+                                        }
+
+                                        if let theme = weekTheme {
+                                            Text(theme)
+                                                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                                                .foregroundColor(Color(red: 0.22, green: 0.28, blue: 0.38))
+                                                .lineLimit(1)
+                                        } else if weekNum == 0 {
+                                            Text("Course Readings")
+                                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                .foregroundColor(Color(red: 0.22, green: 0.28, blue: 0.38))
+                                        }
 
                                         Spacer()
 
                                         if !weekReadings.isEmpty {
                                             Button(action: {
-                                                withAnimation { deleteWeekSection(weekNum: weekNum) }
+                                                 withAnimation { deleteWeekSection(weekNum: weekNum) }
                                             }) {
                                                 HStack(spacing: 4) {
                                                     Image(systemName: "trash.fill")
-                                                        .font(.system(size: 10, weight: .bold))
+                                                        .font(.system(size: 9.5, weight: .bold))
                                                     Text("Delete Week")
-                                                        .font(.system(size: 10.5, weight: .bold))
+                                                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
                                                 }
                                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 5)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
                                                 .background(Color(red: 0.93, green: 0.94, blue: 0.96))
-                                                .cornerRadius(12)
-                                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.85, green: 0.88, blue: 0.92), lineWidth: 1))
+                                                .cornerRadius(10)
+                                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.85, green: 0.88, blue: 0.92), lineWidth: 1))
                                             }
                                             .buttonStyle(.plain)
                                         }
@@ -612,19 +715,9 @@ public struct WeeklyDashboardView: View {
                                                 .font(.system(size: 14))
                                                 .foregroundColor(CoursePalTheme.textMuted)
                                             Text("No readings assigned for this week")
-                                                .font(.system(size: 12.5))
+                                                .font(.cpDescription)
                                                 .foregroundColor(CoursePalTheme.textMuted)
                                             Spacer()
-                                            Button(action: { showingAddModal = true }) {
-                                                Text("+ Add")
-                                                    .font(.system(size: 11, weight: .bold))
-                                                    .foregroundColor(CoursePalTheme.accentBlue)
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 5)
-                                                    .background(CoursePalTheme.pillBlueBg)
-                                                    .cornerRadius(10)
-                                            }
-                                            .buttonStyle(.plain)
                                         }
                                         .padding(14)
                                         .frame(maxWidth: .infinity)
@@ -676,18 +769,18 @@ public struct WeeklyDashboardView: View {
                                             .frame(width: 4, height: 36)
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(courseName)
-                                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                .font(.cpItemTitle)
                                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                             if let desc = courseObj?.courseDescription, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                                 Text(desc.trimmingCharacters(in: .whitespacesAndNewlines))
-                                                    .font(.system(size: 10.5, weight: .medium))
+                                                    .font(.cpDescription)
                                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                                     .lineLimit(1)
                                             }
                                         }
                                         Spacer()
                                         Text("\(courseReadings.count) reading\(courseReadings.count == 1 ? "" : "s")")
-                                            .font(.system(size: 10, weight: .bold))
+                                            .font(.cpDescriptionBold)
                                             .foregroundColor(courseColor)
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
@@ -722,7 +815,7 @@ public struct WeeklyDashboardView: View {
                                 Image(systemName: "checkmark.seal.fill")
                                     .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                 Text("COMPLETED READINGS (\(completedReadings.count))")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.cpItemTitle)
                                     .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                 Spacer()
                             }
@@ -739,10 +832,10 @@ public struct WeeklyDashboardView: View {
                                             .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
                                     }
                                     Text("No Completed Readings")
-                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .font(.cpItemTitle)
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                     Text("Readings you mark as complete will be shown here.")
-                                        .font(.system(size: 12))
+                                        .font(.cpDescription)
                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                 }
                                 .padding(.vertical, 32)
@@ -783,7 +876,7 @@ public struct WeeklyDashboardView: View {
                                         Image(systemName: "trash.fill")
                                             .font(.system(size: 13, weight: .bold))
                                         Text("Empty Trash (\(totalDeleted))")
-                                            .font(.system(size: 13, weight: .bold))
+                                            .font(.cpItemTitle)
                                         Spacer()
                                     }
                                     .foregroundColor(.white)
@@ -947,6 +1040,7 @@ public struct WeeklyDashboardView: View {
                     Spacer(minLength: 90)
                 }
             }
+            .fuzzedScrollEdges(top: 36, bottom: 85)
             .scrollDismissesKeyboard(.immediately)
             .background(CoursePalTheme.bgCanvas)
             .alert("Empty Trash?", isPresented: $showingEmptyTrashConfirmation) {
@@ -982,6 +1076,9 @@ public struct WeeklyDashboardView: View {
             }
             .sheet(item: $selectedCourseForDrillDown) { course in
                 CourseDetailView(course: course)
+            }
+            .sheet(item: $courseForAIChat) { course in
+                CourseAIChatView(course: course)
             }
             .sheet(isPresented: $showingCourseFilterSheet) {
                 CourseFilterPickerSheet(courses: courses, selectedCourse: $selectedCourseFilter)
@@ -1063,68 +1160,80 @@ public struct WeekReadingCardView: View {
 
             // Content Area
             VStack(alignment: .leading, spacing: 3) {
-                // Top Line: Course Main Title Pill (Left) & Media Type Badge (Right)
-                let displayCourseTitle: String = {
-                    if let course = reading.week?.course {
-                        let name = course.courseName.trimmingCharacters(in: .whitespaces)
-                        return name.isEmpty ? "COURSE" : name
-                    }
-                    return "COURSE"
-                }()
-
+                // Top Line: Course Code Pill (Left) & Week / Module Badge
                 HStack(spacing: 6) {
-                    Text(displayCourseTitle)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(courseColor)
-
-                    // 2. Media Type Badge (Video, Textbook, etc.) nestled right next to course title
-                    HStack(spacing: 3) {
-                        Image(systemName: reading.mediaType.iconName)
-                            .font(.system(size: 8.5, weight: .semibold))
-                        Text(reading.mediaType.displayName.uppercased())
-                            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                    if let code = reading.courseCode ?? reading.week?.course?.courseCode, !code.isEmpty {
+                        Text(code)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(courseColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(courseColor.opacity(0.12))
+                            .cornerRadius(4)
                     }
-                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color(red: 0.94, green: 0.95, blue: 0.97))
-                    .cornerRadius(6)
+
+                    if let badge = reading.contextBadgeText {
+                        Text(badge)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                    }
 
                     Spacer(minLength: 0)
                 }
 
-                // Reading Title (Verbatim title without regex truncation or forced capitalization)
-                Text(reading.title)
-                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                // Reading Title (Strictly reading title / chapters, NEVER course name)
+                Text(reading.title.isEmpty ? (reading.chapterAndPagesDisplay ?? "Required Reading") : reading.title)
+                    .font(.cpItemTitle)
                     .foregroundColor(reading.isCompleted ? CoursePalTheme.textMuted : Color(red: 0.22, green: 0.28, blue: 0.38))
                     .strikethrough(reading.isCompleted)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
 
+                // Subtitle: Authors · Chapters/Pages (Cleaned of stray colons/semicolons)
+                if let subtitle = reading.authorAndChaptersSubtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.cpDescriptionMedium)
+                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                        .lineLimit(2)
+                }
+
                 // Date Display (Due date formatted: "Due [Day], [Month] [Date] · Week [WeekNumber]")
                 let readingDateText: String = {
-                    let w = reading.week?.weekNumber ?? 1
+                    let w = reading.week?.weekNumber ?? 0
                     return WeekDateConverter.formattedDueDate(for: reading.dueDate, week: reading.week, weekNumber: w)
                 }()
 
                 HStack(spacing: 8) {
                     Text(readingDateText)
-                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .font(.cpDescription)
                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                 }
                 .padding(.top, 1)
+
+                if let topic = reading.relevantTopics?.trimmingCharacters(in: .whitespacesAndNewlines), !topic.isEmpty, !topic.lowercased().hasPrefix("week ") {
+                    HStack(spacing: 4) {
+                        Image(systemName: "tag.fill")
+                            .font(.system(size: 9.5))
+                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                        Text(topic)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            .lineLimit(1)
+                    }
+                    .padding(.top, 1)
+                }
 
                 // Real Clickable Resource Link (Only displayed if a valid URL exists)
                 if let videoUrl = reading.videoUrl, URLHelper.isValidURL(videoUrl), let url = URLHelper.formatURL(videoUrl) {
                     Link(destination: url) {
                         HStack(spacing: 4) {
                             Image(systemName: "link.circle.fill")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.system(size: 12, weight: .bold))
                             Text(url.absoluteString)
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .font(.cpDescriptionMedium)
                                 .lineLimit(1)
                             Image(systemName: "arrow.up.right.square")
-                                .font(.system(size: 9.5, weight: .bold))
+                                .font(.system(size: 11, weight: .bold))
                         }
                         .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                         .padding(.horizontal, 7)
@@ -1791,7 +1900,9 @@ public struct UnifiedTrashFolderSheet: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(reading.title)
                                             .font(.system(size: 14, weight: .bold))
-                                        Text("\(reading.week?.course?.courseName ?? "Course") · Week \(reading.week?.weekNumber ?? 1)")
+                                        let readWeekNum = reading.week?.weekNumber ?? 0
+                                        let readWeekSuffix = readWeekNum > 0 ? " · Week \(readWeekNum)" : ""
+                                        Text("\(reading.week?.course?.courseName ?? "Course")\(readWeekSuffix)")
                                             .font(.caption)
                                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                     }
@@ -1832,7 +1943,8 @@ public struct UnifiedTrashFolderSheet: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(assignment.title)
                                             .font(.system(size: 14, weight: .bold))
-                                        Text("\(assignment.course?.courseName ?? "Course") · Week \(assignment.weekNumber)")
+                                        let assignWeekSuffix = assignment.weekNumber > 0 ? " · Week \(assignment.weekNumber)" : ""
+                                        Text("\(assignment.course?.courseName ?? "Course")\(assignWeekSuffix)")
                                             .font(.caption)
                                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                     }

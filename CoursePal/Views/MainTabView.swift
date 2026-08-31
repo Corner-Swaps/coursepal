@@ -1608,7 +1608,7 @@ public struct AddNewItemModalView: View {
                 .frame(width: 36, height: 5)
                 .padding(.top, 14)
 
-            // Header: Title & Close x Button
+            // Header: Title
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Add New Item")
@@ -1619,17 +1619,6 @@ public struct AddNewItemModalView: View {
                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                 }
                 Spacer()
-                Button(action: { dismiss() }) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(red: 0.93, green: 0.95, blue: 0.97))
-                            .frame(width: 30, height: 30)
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                    }
-                }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
             .padding(.top, 4)

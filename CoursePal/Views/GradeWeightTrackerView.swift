@@ -57,7 +57,7 @@ public struct GradeWeightTrackerView: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(courseColor)
                     Text("GRADE WEIGHT TRACKER")
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .font(.cpItemTitle)
                         .foregroundColor(courseColor)
                 }
 
@@ -65,7 +65,7 @@ public struct GradeWeightTrackerView: View {
 
                 if rawTotalWeightPercentage > 100 {
                     Text("Total \(rawTotalWeightPercentage)% (Adjust Weight)")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.cpDescriptionBold)
                         .foregroundColor(.red)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -74,7 +74,7 @@ public struct GradeWeightTrackerView: View {
                 }
 
                 Text("Target: \(Int(desiredGrade))%")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.cpDescriptionBold)
                     .foregroundColor(CoursePalTheme.textDark)
             }
 
@@ -95,13 +95,13 @@ public struct GradeWeightTrackerView: View {
 
                 HStack {
                     Text("\(completedWeightPercentage)% Completed")
-                        .font(.system(size: 10.5, weight: .bold))
+                        .font(.cpDescriptionBold)
                         .foregroundColor(courseColor)
 
                     Spacer()
 
                     Text("\(100 - completedWeightPercentage)% Remaining")
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(.cpDescription)
                         .foregroundColor(CoursePalTheme.textMuted)
                 }
             }
@@ -109,7 +109,7 @@ public struct GradeWeightTrackerView: View {
             // Target Grade Stepper / Slider
             HStack {
                 Text("Desired Course Grade:")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.cpDescriptionMedium)
                     .foregroundColor(CoursePalTheme.textDark)
 
                 Spacer()
@@ -119,7 +119,7 @@ public struct GradeWeightTrackerView: View {
                     .tint(courseColor)
 
                 Text("\(Int(desiredGrade))%")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.cpDescriptionBold)
                     .foregroundColor(courseColor)
                     .frame(width: 45, alignment: .trailing)
             }

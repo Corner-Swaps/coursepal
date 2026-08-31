@@ -270,10 +270,10 @@ public struct SyllabusRepositoryView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Syllabus")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .font(.cpPageTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             Text("\(unifiedVaultDocs.count) document\(unifiedVaultDocs.count == 1 ? "" : "s") stored in syllabus")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.cpDescriptionMedium)
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         }
 
@@ -315,33 +315,49 @@ public struct SyllabusRepositoryView: View {
                     // MARK: - Loading Status Pill (Above Courses)
                     if SyllabusUploadManager.shared.isUploading {
                         let activeCount = SyllabusUploadManager.shared.uploadingCourseIds.count
-                        let titleText = activeCount > 1 ? "Processing \(activeCount) courses..." : (SyllabusUploadManager.shared.statusText.isEmpty ? "Uploading syllabus document" : SyllabusUploadManager.shared.statusText)
-                        HStack(spacing: 10) {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
+                        let titleText = activeCount > 1 ? "Processing \(activeCount) courses..." : (SyllabusUploadManager.shared.statusText.isEmpty ? "Analyzing syllabus document..." : SyllabusUploadManager.shared.statusText)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
 
-                            Text(titleText)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                .lineLimit(1)
+                                Text(titleText)
+                                    .font(.cpDescriptionBold)
+                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    .lineLimit(1)
 
-                            Spacer()
+                                Spacer()
 
-                            ContinuousProgressBar()
-                                .frame(width: 50)
+                                ContinuousProgressBar()
+                                    .frame(width: 50)
 
-                            Button(action: {
-                                SyllabusUploadManager.shared.cancelAllUploads()
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                Button(action: {
+                                    SyllabusUploadManager.shared.cancelAllUploads()
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+
+                            // Reassuring Educational Banner
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.8))
+                                    .padding(.top, 1)
+
+                                Text("Deep analysis takes 1–2 minutes to extract all readings and assignments accurately. You can freely browse other sections or exit the app — processing will continue in the background.")
+                                    .font(.system(size: 11.5, weight: .regular))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 12)
                         .background(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.08))
                         .cornerRadius(16)
                         .overlay(
@@ -368,10 +384,10 @@ public struct SyllabusRepositoryView: View {
                                     }
 
                                     Text("No Courses Created")
-                                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                                        .font(.cpItemTitle)
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                     Text("Uploaded syllabi will automatically create and name your courses here.")
-                                        .font(.system(size: 12.5))
+                                        .font(.cpDescription)
                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                         .multilineTextAlignment(.center)
                                         .frame(maxWidth: 240)
@@ -487,6 +503,7 @@ public struct SyllabusRepositoryView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+            .fuzzedScrollEdges(top: 36, bottom: 85)
             .background(Color(red: 0.95, green: 0.96, blue: 0.98))
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
@@ -495,7 +512,7 @@ public struct SyllabusRepositoryView: View {
                 VaultDocPreviewSheet(document: doc)
             }
             .sheet(item: $editingCourse) { c in
-                EditCourseModalView(course: c)
+                CourseDetailView(course: c)
             }
             .sheet(item: $editingFaculty) { c in
                 EditFacultyModalView(course: c)
@@ -967,6 +984,7 @@ public struct CourseSyllabusCardRow: View {
     public let onEditReading: (Reading) -> Void
 
     @State private var isExpanded: Bool = false
+    @State private var showingAnalysisLoadingAlert: Bool = false
 
     private var isUploading: Bool {
         SyllabusUploadManager.shared.isUploading && SyllabusUploadManager.shared.uploadingCourseIds.contains(course.id)
@@ -1019,37 +1037,25 @@ public struct CourseSyllabusCardRow: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(fullTitle)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.cpItemTitle)
                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         .lineLimit(1)
 
-                    if let desc = course.courseDescription, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(desc.trimmingCharacters(in: .whitespacesAndNewlines))
-                            .font(.system(size: 11.5, weight: .regular))
-                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                            .lineLimit(2)
-                    }
-
                     if isUploading {
-                        HStack(spacing: 5) {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
-                            Text(uploadStatus)
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                .lineLimit(1)
-                        }
+                        Text(uploadStatus)
+                            .font(.cpDescriptionMedium)
+                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            .lineLimit(1)
                     } else {
                         // Stats summary row (Readings and Assignments)
                         let totalReadings = course.weeks.reduce(0) { $0 + $1.readings.count }
                         HStack(spacing: 4) {
                             Text("\(totalReadings) Readings")
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .font(.cpDescription)
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
 
                             Text("• \(course.assignments.count) Assignments")
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .font(.cpDescription)
                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                         }
                         .lineLimit(1)
@@ -1061,10 +1067,23 @@ public struct CourseSyllabusCardRow: View {
                 // Right Side Action Buttons: Plus Document/Item Menu, Trash, Chevron
                 HStack(spacing: 6) {
                     if isUploading {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(Color(red: 0.14, green: 0.44, blue: 0.96))
-                            .frame(width: 32, height: 32)
+                        Button(action: {
+                            showingAnalysisLoadingAlert = true
+                        }) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(red: 0.95, green: 0.96, blue: 0.98))
+                                Image(systemName: "plus")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
                     } else {
                         Menu {
                             Button(action: onAddDocument) {
@@ -1082,35 +1101,54 @@ public struct CourseSyllabusCardRow: View {
                         } label: {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color(red: 0.92, green: 0.95, blue: 1.0))
-                                    .frame(width: 32, height: 32)
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 15, weight: .bold))
+                                    .fill(Color(red: 0.95, green: 0.96, blue: 0.98))
+                                Image(systemName: "plus")
+                                    .font(.system(size: 13, weight: .bold))
                                     .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                             }
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                            )
                         }
                     }
 
-                    // Garbage Can Button
+                    // Delete Course Button (Trash)
                     Button(action: onDeleteCourse) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundColor(Color.red.opacity(0.85))
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(red: 0.95, green: 0.96, blue: 0.98))
+                            Image(systemName: "trash")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Color(red: 0.85, green: 0.25, blue: 0.20))
+                        }
+                        .frame(width: 30, height: 30)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                        )
                     }
                     .buttonStyle(.plain)
 
-                    // Expand / Collapse Chevron Dropdown Arrow
+                    // Expand / Collapse Chevron Dropdown Button
                     Button(action: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                             isExpanded.toggle()
                         }
                     }) {
-                        Image(systemName: isExpanded ? "chevron.up.circle" : "chevron.down.circle")
-                            .font(.system(size: 18, weight: .regular))
-                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                            .frame(width: 30, height: 30)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(red: 0.95, green: 0.96, blue: 0.98))
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                        }
+                        .frame(width: 30, height: 30)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                        )
                     }
                     .buttonStyle(.plain)
                 }
@@ -1128,292 +1166,227 @@ public struct CourseSyllabusCardRow: View {
                 Divider()
                     .padding(.horizontal, 14)
 
-                VStack(alignment: .leading, spacing: 14) {
-                    // ATTACHED DOCUMENTS SECTION
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("ATTACHED DOCUMENTS (\(course.syllabusDocs.count))")
-                                .font(.system(size: 10.5, weight: .bold))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            Spacer()
-                            Button(action: onAddDocument) {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 11, weight: .bold))
-                                    Text("Add Document")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                }
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        if course.syllabusDocs.isEmpty {
-                            HStack {
-                                Text("No documents attached yet.")
-                                    .font(.system(size: 11.5))
-                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                Spacer()
-                            }
-                            .padding(8)
-                            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
-                            .cornerRadius(8)
-                        } else {
-                            ForEach(course.syllabusDocs, id: \.id) { doc in
-                                HStack(spacing: 6) {
-                                    Image(systemName: "doc.fill")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                    Text(doc.docTitle)
-                                        .font(.system(size: 11.5, weight: .semibold))
-                                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                        .lineLimit(1)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(Color(red: 0.94, green: 0.95, blue: 0.97))
-                                .cornerRadius(8)
-                            }
-                        }
-                    }
-
-                    // Core Syllabus Header Info & Faculty Pill Container
+                VStack(alignment: .leading, spacing: 16) {
+                    // Core Syllabus Header Info & Faculty Container
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
-                            Image(systemName: "envelope.fill")
-                                .font(.system(size: 11, weight: .bold))
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundColor(courseColor)
-                            Text("CORE COURSE HEADER & FACULTY INFO")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundColor(courseColor)
+                            Text("Course & Faculty Details")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            Spacer()
+                            Text("Tap to Edit")
+                                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                         }
 
-                        VStack(alignment: .leading, spacing: 10) {
-                            // Section 1: Course Title & Code
-                            HStack(alignment: .center, spacing: 8) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("COURSE TITLE")
-                                        .font(.system(size: 9.5, weight: .bold))
-                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                        Button(action: onEditCourse) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                // Course Title & Code
+                                HStack(alignment: .center, spacing: 8) {
                                     Text(course.courseName)
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .font(.system(size: 16, weight: .bold, design: .rounded))
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                    if let desc = course.courseDescription, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        Text(desc.trimmingCharacters(in: .whitespacesAndNewlines))
-                                            .font(.system(size: 11, weight: .regular))
-                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.leading)
+
+                                    if let code = course.courseCode, !code.trimmingCharacters(in: .whitespaces).isEmpty {
+                                        Text(code)
+                                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                            .foregroundColor(courseColor)
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 2.5)
+                                            .background(courseColor.opacity(0.12))
+                                            .cornerRadius(6)
                                     }
+
+                                    Spacer(minLength: 0)
+
+                                    Image(systemName: "pencil.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(Color(red: 0.70, green: 0.75, blue: 0.82))
                                 }
-                                Spacer()
-                                Button(action: onEditCourse) {
-                                    Image(systemName: "pencil")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                        .padding(6)
-                                        .background(Color(red: 0.92, green: 0.95, blue: 1.0))
-                                        .clipShape(Circle())
-                                }
-                                .buttonStyle(.plain)
-                            }
 
-                            Divider()
+                                Divider()
 
-                            // Section 2: Primary Faculty & Email
-                            HStack(alignment: .center, spacing: 8) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("FACULTY & CONTACT")
-                                        .font(.system(size: 9.5, weight: .bold))
-                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                // Faculty & Email with Larger, Clear Typography
+                                VStack(alignment: .leading, spacing: 8) {
+                                    // Faculty Row
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "person.fill")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                            .frame(width: 18)
 
-                                    HStack(spacing: 4) {
                                         Text("Faculty:")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.22, green: 0.28, blue: 0.38))
+
                                         Text((course.instructorName ?? "").isEmpty ? "Not specified" : course.instructorName!)
-                                            .font(.system(size: 11, weight: .semibold))
+                                            .font(.system(size: 14.5, weight: .semibold, design: .rounded))
                                             .foregroundColor(courseColor)
                                             .lineLimit(1)
                                     }
 
-                                    HStack(spacing: 4) {
+                                    // Email Row
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "envelope.fill")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                            .frame(width: 18)
+
                                         Text("Email:")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.22, green: 0.28, blue: 0.38))
+
                                         Text((course.instructorEmail ?? "").isEmpty ? "Not specified" : course.instructorEmail!)
-                                            .font(.system(size: 11, weight: .semibold))
+                                            .font(.system(size: 14, weight: .semibold, design: .rounded))
                                             .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                                             .lineLimit(1)
                                     }
                                 }
-                                Spacer()
-                                Button(action: onEditFaculty) {
-                                    Image(systemName: "pencil")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                        .padding(6)
-                                        .background(Color(red: 0.92, green: 0.95, blue: 1.0))
-                                        .clipShape(Circle())
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                            .cornerRadius(14)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // Assignments list inside course with Last Plus Action Pill
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Assignments")
+                            .font(.cpItemTitle)
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+
+                        VStack(spacing: 8) {
+                            ForEach(course.assignments.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) })) { assign in
+                                let assignDocColor = CourseColorHelper.color(for: assign.sourceDocumentHexColor)
+                                Button(action: { onEditAssignment(assign) }) {
+                                    HStack(spacing: 8) {
+                                        Circle()
+                                            .fill(assignDocColor)
+                                            .frame(width: 8, height: 8)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(assign.title)
+                                                .font(.cpItemTitle)
+                                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                                .lineLimit(nil)
+                                                .multilineTextAlignment(.leading)
+
+                                            if let due = assign.dueDate {
+                                                let fmt = DateFormatter()
+                                                let _ = { fmt.dateFormat = "EEEE, MMMM d" }()
+                                                Text("Due \(fmt.string(from: due))")
+                                                    .font(.cpDescription)
+                                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                            }
+                                        }
+                                        Spacer(minLength: 4)
+                                    }
+                                    .padding(10)
+                                    .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                                    .cornerRadius(10)
                                 }
                                 .buttonStyle(.plain)
                             }
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(red: 0.96, green: 0.97, blue: 0.99))
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
-                        )
-                    }
 
-                    // Assignments list inside course with Add & Edit Buttons
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("ASSIGNMENTS (\(course.assignments.count))")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            Spacer()
-                            Button(action: onAddAssignment) {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 11, weight: .bold))
-                                    Text("Add Assignment")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                            // Last Pill: Action Pill for Adding an Assignment (Identical size & neutral style to item pills, no subtext)
+                            Button(action: {
+                                if isUploading {
+                                    showingAnalysisLoadingAlert = true
+                                } else {
+                                    onAddAssignment()
                                 }
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        if course.assignments.isEmpty {
-                            HStack {
-                                Text("No assignments in this course yet.")
-                                    .font(.system(size: 11.5))
-                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                Spacer()
-                            }
-                            .padding(8)
-                            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
-                            .cornerRadius(8)
-                        } else {
-                            ForEach(course.assignments.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) })) { assign in
-                                let assignDocColor = CourseColorHelper.color(for: assign.sourceDocumentHexColor)
+                            }) {
                                 HStack(spacing: 8) {
-                                    Circle()
-                                        .fill(assignDocColor)
-                                        .frame(width: 6, height: 6)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(assign.title)
-                                            .font(.system(size: 12.5, weight: .bold))
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                            .lineLimit(nil)
-                                            .multilineTextAlignment(.leading)
-
-                                        if let due = assign.dueDate {
-                                            let fmt = DateFormatter()
-                                            let _ = { fmt.dateFormat = "EEEE, MMMM d" }()
-                                            Text("Due \(fmt.string(from: due))")
-                                                .font(.system(size: 10.5, weight: .medium))
-                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                        }
-                                    }
-                                    Spacer(minLength: 4)
-
-                                    Button(action: { onEditAssignment(assign) }) {
-                                        Image(systemName: "pencil")
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                            .padding(6)
-                                            .background(Color(red: 0.92, green: 0.95, blue: 1.0))
-                                            .clipShape(Circle())
-                                    }
-                                    .buttonStyle(.plain)
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    Text("Add Assignment")
+                                        .font(.cpItemTitle)
+                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    Spacer()
                                 }
-                                .padding(8)
+                                .padding(10)
                                 .background(Color(red: 0.96, green: 0.97, blue: 0.99))
-                                .cornerRadius(8)
-                            }
-                        }
-                    }
-
-                    // Readings list inside course with Add & Edit Buttons
-                    let allReadingsForCourse = course.weeks.flatMap { $0.readings }
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("READINGS (\(allReadingsForCourse.count))")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            Spacer()
-                            Button(action: onAddReading) {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 11, weight: .bold))
-                                    Text("Add Reading")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                }
-                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .cornerRadius(10)
                             }
                             .buttonStyle(.plain)
                         }
+                    }
 
-                        if allReadingsForCourse.isEmpty {
-                            HStack {
-                                Text("No readings in this course yet.")
-                                    .font(.system(size: 11.5))
-                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                Spacer()
-                            }
-                            .padding(8)
-                            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
-                            .cornerRadius(8)
-                        } else {
+                    // Readings list inside course with Last Plus Action Pill
+                    let allReadingsForCourse = course.weeks.flatMap { $0.readings }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Readings")
+                            .font(.cpItemTitle)
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+
+                        VStack(spacing: 8) {
                             ForEach(allReadingsForCourse, id: \.id) { reading in
                                 let readingDocColor = CourseColorHelper.color(for: reading.sourceDocumentHexColor)
-                                HStack(spacing: 8) {
-                                    Image(systemName: "book.fill")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(readingDocColor)
+                                Button(action: { onEditReading(reading) }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "book.fill")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(readingDocColor)
 
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(reading.title)
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                            .lineLimit(nil)
-                                            .multilineTextAlignment(.leading)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(reading.title)
+                                                .font(.cpItemTitle)
+                                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                                .lineLimit(nil)
+                                                .multilineTextAlignment(.leading)
 
-                                        Text(WeekDateConverter.formattedDueDate(for: reading.dueDate, week: reading.week, weekNumber: reading.week?.weekNumber ?? 1))
-                                            .font(.system(size: 10.5, weight: .medium))
-                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                            Text(WeekDateConverter.formattedDueDate(for: reading.dueDate, week: reading.week, weekNumber: reading.week?.weekNumber ?? 0))
+                                                .font(.cpDescription)
+                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                        }
+                                        Spacer(minLength: 4)
                                     }
-                                    Spacer(minLength: 4)
-
-                                    Button(action: { onEditReading(reading) }) {
-                                        Image(systemName: "pencil")
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                            .padding(6)
-                                            .background(Color(red: 0.92, green: 0.95, blue: 1.0))
-                                            .clipShape(Circle())
-                                    }
-                                    .buttonStyle(.plain)
+                                    .padding(10)
+                                    .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                                    .cornerRadius(10)
                                 }
-                                .padding(8)
-                                .background(Color(red: 0.96, green: 0.97, blue: 0.99))
-                                .cornerRadius(8)
+                                .buttonStyle(.plain)
                             }
+
+                            // Last Pill: Action Pill for Adding a Reading (Identical size & neutral style to item pills, no subtext)
+                            Button(action: {
+                                if isUploading {
+                                    showingAnalysisLoadingAlert = true
+                                } else {
+                                    onAddReading()
+                                }
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    Text("Add Reading")
+                                        .font(.cpItemTitle)
+                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    Spacer()
+                                }
+                                .padding(10)
+                                .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                                .cornerRadius(10)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                        isExpanded.toggle()
-                    }
-                }
                 .transition(.opacity)
                 .clipped()
             }
@@ -1422,6 +1395,11 @@ public struct CourseSyllabusCardRow: View {
         .background(Color.white)
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
+        .alert("Syllabus Analysis in Progress", isPresented: $showingAnalysisLoadingAlert) {
+            Button("Got It", role: .cancel) { }
+        } message: {
+            Text("CoursePal is currently extracting every detail of your syllabus to preserve 100% of your readings, assignments, and schedules.\n\nThis deep analysis takes 1–2 minutes. You can freely browse other sections or exit the app — processing will continue running safely in the background.\n\nOnce complete, use the '+' button to upload additional syllabus documents, scan handouts with your camera, or add custom assignments and readings.")
+        }
     }
 }
 
@@ -1502,7 +1480,9 @@ public struct EditCourseModalView: View {
                 isFocused = true
             }
         }
+        #if os(iOS)
         .presentationDetents([.height(230)])
+        #endif
     }
 }
 
@@ -1559,7 +1539,9 @@ public struct EditFacultyModalView: View {
                 isFocused = true
             }
         }
+        #if os(iOS)
         .presentationDetents([.height(230)])
+        #endif
     }
 }
 
@@ -1614,7 +1596,9 @@ public struct EditAssignmentModalView: View {
                 isFocused = true
             }
         }
+        #if os(iOS)
         .presentationDetents([.height(310)])
+        #endif
     }
 }
 
@@ -1631,7 +1615,7 @@ public struct EditReadingModalView: View {
     public init(reading: Reading) {
         self.reading = reading
         _title = State(initialValue: reading.title)
-        _summary = State(initialValue: reading.summaryText ?? "")
+        _summary = State(initialValue: reading.summaryText)
     }
 
     public var body: some View {
@@ -1669,6 +1653,8 @@ public struct EditReadingModalView: View {
                 isFocused = true
             }
         }
+        #if os(iOS)
         .presentationDetents([.height(310)])
+        #endif
     }
 }

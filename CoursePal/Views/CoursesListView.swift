@@ -24,22 +24,20 @@ public struct CoursesListView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(course.courseCode ?? "COURSE")
-                                            .font(.caption)
-                                            .fontWeight(.bold)
+                                            .font(.cpDescriptionBold)
                                             .foregroundColor(.blue)
 
                                         Text(course.courseName)
-                                            .font(.headline)
+                                            .font(.cpItemTitle)
 
                                         Text("Sharing Code: \(course.sharingCode)")
-                                            .font(.caption2)
-                                            .fontDesign(.monospaced)
+                                            .font(.cpDescription)
                                             .foregroundColor(.secondary)
                                     }
                                     Spacer()
 
                                     Text("\(course.weeks.count) Weeks")
-                                        .font(.caption)
+                                        .font(.cpDescription)
                                         .foregroundColor(.secondary)
                                 }
                                 .padding(.vertical, 4)

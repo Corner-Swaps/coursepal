@@ -171,12 +171,50 @@ public final class SyllabusParserTestSuite {
     Treatment Challenges
     Sexuality Counseling: Theory, Research, and Practice
     • Chapter 11 — Assessment in Sexuality Counseling
-    • Chapter 12 — Interventions in Sexuality Counseling
-    Human Sexuality in a World of Diversity, 7th Canadian Edition
     • Chapter 15 — Sexual Health
     """
 
-    /// Executes all 25 QA test cases against LocalSyllabusParser
+    /// Full text of Document 3 (CPC 527)
+    public static let cpc527Text = """
+    CPC 527: Group Counselling Psychology
+    School of Health and Social Sciences
+    Credits: 3
+    Grading Type: Decimal
+    Faculty Information
+    Kelsey Murrin
+    Email: murrinkelsey@cityu.edu
+    Overview of Required Assignments % of Final Grade
+    Group Therapy Reflection Paper 25%
+    Peer-Review Group Assignment 10%
+    Group Facilitation Presentation/Project 40%
+    Collaboration & Participation 25%
+    TOTAL 100%
+    Course Assignment Details
+    Group Therapy Reflection Paper (25%)
+    Students will write a reflection paper critiquing their facilitation performance.
+    Peer-Review Group Report (10%)
+    Students will provide feedback using a structured template.
+    Group Facilitation Presentation/Project (40%)
+    For the written component of this assignment, students will break into dyads...
+    Collaboration & Participation (25%)
+    Students will be asked to complete a participation self-assessment.
+    Course Schedule
+    Week Modules Topics Readings
+    4/2/26 MODU LE 1 Intro to Group Work Corey Ch. 1 & 2 Yalom Ch. 1
+    4/9/26 MODU LE 2 Introduction to Group Work Pt. 2 Corey Ch. 3 & 4 Yalom Ch. 2
+    4/16/2 6 MODU LE 3 Group Stages: Initial Stages Corey Ch.5 & 6 Yalom Ch. 3
+    4/23/2 6 MODU LE 4 Group Stages: Transition Corey Ch. 7 Yalom Ch. 4 & 5
+    4/30/2 6 MODU LE 5 Group Stages: Working Corey Ch. 8 Yalom Ch. 6 & 7
+    5/7/26 MODU LE 6 Presentations Yalom Ch. 8 & 9
+    5/14/2 6 MODU LE 7 Presentations Yalom Ch. 10 & 11
+    5/21/2 6 READI NG WEEK READING WEEK READING WEEK
+    5/28/2 6 MODU LE 8 Presentations Yalom Ch. 12 & 13 Corey Ch. 9
+    6/4/26 MODU LE 9 Group Stages: Final See Brightspace for Assigned Readings
+    6/11/2 6 MODU LE 10 Groups in Diverse Settings Corey Ch. 10 & 11 Yalom Ch. 14 & 15
+    6/18/2 6 MODU LE 11 Effective Closings See Brightspace for Assigned Readings
+    """
+
+    /// Executes all 26 QA test cases against LocalSyllabusParser
     @discardableResult
     public func run25QATestSuite() -> [TestResult] {
         var results: [TestResult] = []
@@ -335,14 +373,28 @@ public final class SyllabusParserTestSuite {
         let pass25 = !title25.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         results.append(TestResult(testId: 25, testName: "Title Preservation: Full Assignment Title", passed: pass25, details: pass25 ? "Clean Title: '\(title25)'" : "Failed."))
 
+        // Test 26: CPC 527 Group Counselling Psychology End-to-End Parsing
+        let dto527 = LocalSyllabusParser.shared.parseText(SyllabusParserTestSuite.cpc527Text)
+        let totalWeeks527 = dto527.weeks?.count ?? 0
+        let totalAssign527 = dto527.assignments?.count ?? 0
+        let totalReadings527 = dto527.weeks?.reduce(0) { $0 + ($1.readings?.count ?? 0) } ?? 0
+        let presentationWeek = dto527.assignments?.first(where: { $0.title.lowercased().contains("presentation") || $0.title.lowercased().contains("facilitation") })?.dueDate
+        let pass26 = totalWeeks527 >= 11 && totalAssign527 >= 4 && totalReadings527 >= 10
+        results.append(TestResult(
+            testId: 26,
+            testName: "CPC 527 Full Parsing (Weeks, Multi-Author Readings & Assignments)",
+            passed: pass26,
+            details: pass26 ? "Extracted \(totalWeeks527) weeks, \(totalAssign527) assignments, \(totalReadings527) readings. Presentation Due: \(presentationWeek ?? "N/A")" : "Failed: weeks=\(totalWeeks527), assign=\(totalAssign527), readings=\(totalReadings527)"
+        ))
+
         // Print QA Summary Log
-        print("======== 25-TEST COMPREHENSIVE QA PROTOCOL RESULTS ========")
+        print("======== 26-TEST COMPREHENSIVE QA PROTOCOL RESULTS ========")
         for r in results {
             let status = r.passed ? "[PASS]" : "[FAIL]"
             print("\(status) Test \(r.testId): \(r.testName) -> \(r.details)")
         }
         let passCount = results.filter { $0.passed }.count
-        print("SUMMARY: \(passCount)/25 Tests Passed Successfully (\(Int(Double(passCount)/25.0*100))%)")
+        print("SUMMARY: \(passCount)/26 Tests Passed Successfully (\(Int(Double(passCount)/26.0*100))%)")
         print("==========================================================")
         return results
     }
