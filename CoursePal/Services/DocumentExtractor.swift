@@ -106,6 +106,70 @@ public struct DocumentExtractor {
         return nil
     }
 
+    /// Intelligently harvests Course Header, Assignment Details, and Schedule Tables from multi-page PDFs
+    /// while filtering out pure university boilerplate policies (Title IX, campus safety, Here2Talk).
+    public static func extractTargetedSyllabusText(from url: URL) -> String? {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+
+        let ext = url.pathExtension.lowercased()
+        if ext != "pdf" {
+            return extractText(from: url)
+        }
+
+        guard let pdfDoc = PDFDocument(url: url), pdfDoc.pageCount > 0 else {
+            return extractText(from: url)
+        }
+
+        if pdfDoc.pageCount <= 6 {
+            return extractText(from: url)
+        }
+
+        var selectedPages: [(pageNum: Int, text: String)] = []
+        let boilerplateSignatures = [
+            "title ix", "campus safety", "disability support", "here2talk", "mental health resources",
+            "hallmarks of maturity", "sensitive content notice", "student code of conduct", "nondiscrimination",
+            "library services", "online tutoring", "academic integrity policy"
+        ]
+
+        let scheduleKeywords = [
+            "course schedule", "week ", "module ", "readings", "overview of required assignments",
+            "grading criteria", "course assignment details", "due date", "topics", "deliverable",
+            "final grade", "points possible"
+        ]
+
+        for i in 0..<pdfDoc.pageCount {
+            guard let page = pdfDoc.page(at: i), let raw = page.string?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                continue
+            }
+            let lower = raw.lowercased()
+
+            // Always include Page 1 & 2 for Course Title, Code, Credits, and Faculty Info
+            if i < 2 {
+                selectedPages.append((i + 1, raw))
+                continue
+            }
+
+            let hasSchedule = scheduleKeywords.contains { lower.contains($0) }
+            let hasBoilerplate = boilerplateSignatures.contains { lower.contains($0) }
+
+            // If it has critical schedule or assignment keywords, KEEP IT (even if it mentions boilerplate)
+            if hasSchedule {
+                selectedPages.append((i + 1, raw))
+            } else if !hasBoilerplate && (lower.contains("ch.") || lower.contains("chapter") || lower.contains("textbook") || lower.contains("% of grade") || lower.contains("assignment")) {
+                selectedPages.append((i + 1, raw))
+            }
+        }
+
+        if selectedPages.isEmpty {
+            return extractText(from: url)
+        }
+
+        let formatted = selectedPages.map { "--- Page \($0.pageNum) ---\n\($0.text)" }.joined(separator: "\n\n")
+        let cleaned = sanitizeText(formatted)
+        return cleaned.isEmpty ? extractText(from: url) : cleaned
+    }
+
     public static func extractTextFromData(_ data: Data, fileName: String) -> String? {
         let ext = (fileName as NSString).pathExtension.lowercased()
         let cleanExt = ext.isEmpty ? "docx" : ext
@@ -252,12 +316,15 @@ public struct DocumentExtractor {
     }
 
     // MARK: - Targeted Schedule Page Image Extraction
-    public static func extractSchedulePageImages(from pdfData: Data, maxPages: Int = 6) -> [(data: Data, pageNum: Int)] {
+    public static func extractSchedulePageImages(from pdfData: Data, maxPages: Int = 8) -> [(data: Data, pageNum: Int)] {
         guard let pdfDoc = PDFDocument(data: pdfData), pdfDoc.pageCount > 0 else { return [] }
         let totalPages = pdfDoc.pageCount
 
-        let scheduleKeywords = [
-            "week", "schedule", "readings", "assignments", "due", "timeline"
+        let tableKeywords = [
+            "week modules topics readings", "course schedule", "module 1", "module 2", "readings", "corey", "yalom"
+        ]
+        let assignmentKeywords = [
+            "overview of required assignments", "course assignment details", "grading criteria"
         ]
 
         var pageScores: [(pageIndex: Int, score: Int)] = []
@@ -266,9 +333,14 @@ public struct DocumentExtractor {
             guard let page = pdfDoc.page(at: i) else { continue }
             let text = (page.string ?? "").lowercased()
             var score = 0
-            for kw in scheduleKeywords {
+            for kw in tableKeywords {
                 if text.contains(kw) {
-                    score += 2
+                    score += 6
+                }
+            }
+            for kw in assignmentKeywords {
+                if text.contains(kw) {
+                    score += 4
                 }
             }
             if text.range(of: #"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}/\d{1,2})\b"#, options: .regularExpression) != nil {
@@ -276,7 +348,7 @@ public struct DocumentExtractor {
             }
             // Include first page for course title & instructor context
             if i == 0 {
-                score += 4
+                score += 8
             }
             pageScores.append((pageIndex: i, score: score))
         }

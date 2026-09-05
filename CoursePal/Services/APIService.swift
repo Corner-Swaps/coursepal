@@ -1,23 +1,27 @@
 import Foundation
 #if canImport(UIKit)
 import UIKit
+import PDFKit
 #endif
 
 public struct RubricCriterionDTO: Codable, Identifiable {
     public var id: String { criterionName }
     public let criterionName: String
     public let points: Double?
+    public let percentage: Double?
     public let description: String?
 
     enum CodingKeys: String, CodingKey {
         case criterionName = "criterion_name"
         case points
+        case percentage
         case description
     }
 
-    public init(criterionName: String, points: Double? = nil, description: String? = nil) {
+    public init(criterionName: String, points: Double? = nil, percentage: Double? = nil, description: String? = nil) {
         self.criterionName = criterionName
         self.points = points
+        self.percentage = percentage
         self.description = description
     }
 
@@ -34,7 +38,24 @@ public struct RubricCriterionDTO: Codable, Identifiable {
         } else {
             self.points = nil
         }
-        self.description = try container.decodeIfPresent(String.self, forKey: .description)
+        
+        var parsedPct: Double? = nil
+        if let pctDouble = try? container.decodeIfPresent(Double.self, forKey: .percentage) {
+            parsedPct = pctDouble
+        } else if let pctInt = try? container.decodeIfPresent(Int.self, forKey: .percentage) {
+            parsedPct = Double(pctInt)
+        } else if let pctStr = try? container.decodeIfPresent(String.self, forKey: .percentage) {
+            let digits = pctStr.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+            parsedPct = Double(digits)
+        }
+        
+        let desc = try container.decodeIfPresent(String.self, forKey: .description)
+        if parsedPct == nil, let d = desc, let pctMatch = d.range(of: #"\b\d+(?:\.\d+)?\s*%"#, options: .regularExpression) {
+            let digits = d[pctMatch].components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+            parsedPct = Double(digits)
+        }
+        self.percentage = parsedPct
+        self.description = desc
     }
 }
 
@@ -54,6 +75,7 @@ public struct ReadingDTO: Codable, Identifiable {
     public var relevantTopics: String?
     public var chapterText: String?
     public var pagesText: String?
+    public var isFavorite: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, title
@@ -70,6 +92,7 @@ public struct ReadingDTO: Codable, Identifiable {
         case relevantTopics = "relevant_topics"
         case chapterText = "chapter_text"
         case pagesText = "pages_text"
+        case isFavorite = "is_favorite"
     }
 
     public init(
@@ -87,7 +110,8 @@ public struct ReadingDTO: Codable, Identifiable {
         dateRangeStr: String? = nil,
         relevantTopics: String? = nil,
         chapterText: String? = nil,
-        pagesText: String? = nil
+        pagesText: String? = nil,
+        isFavorite: Bool? = false
     ) {
         self.id = id
         self.title = title
@@ -104,6 +128,7 @@ public struct ReadingDTO: Codable, Identifiable {
         self.relevantTopics = relevantTopics
         self.chapterText = chapterText
         self.pagesText = pagesText
+        self.isFavorite = isFavorite
     }
 
     public init(from decoder: Decoder) throws {
@@ -123,6 +148,7 @@ public struct ReadingDTO: Codable, Identifiable {
         self.relevantTopics = try container.decodeIfPresent(String.self, forKey: .relevantTopics)
         self.chapterText = try container.decodeIfPresent(String.self, forKey: .chapterText)
         self.pagesText = try container.decodeIfPresent(String.self, forKey: .pagesText)
+        self.isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 }
 
@@ -182,6 +208,8 @@ public struct AssignmentDTO: Codable, Identifiable {
     public let relevantTopics: String?
     public let mediaUrl: String?
     public let rubric: [RubricCriterionDTO]?
+    public var isFavorite: Bool?
+    public var isCompleted: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, title
@@ -194,6 +222,8 @@ public struct AssignmentDTO: Codable, Identifiable {
         case relevantTopics = "relevant_topics"
         case mediaUrl = "media_url"
         case rubric
+        case isFavorite = "is_favorite"
+        case isCompleted = "is_completed"
     }
 
     public init(
@@ -207,7 +237,9 @@ public struct AssignmentDTO: Codable, Identifiable {
         pointsBreakdown: String? = nil,
         relevantTopics: String? = nil,
         mediaUrl: String? = nil,
-        rubric: [RubricCriterionDTO]? = nil
+        rubric: [RubricCriterionDTO]? = nil,
+        isFavorite: Bool? = false,
+        isCompleted: Bool? = false
     ) {
         self.id = id
         self.title = title
@@ -220,6 +252,8 @@ public struct AssignmentDTO: Codable, Identifiable {
         self.relevantTopics = relevantTopics
         self.mediaUrl = mediaUrl
         self.rubric = rubric
+        self.isFavorite = isFavorite
+        self.isCompleted = isCompleted
     }
 
     public init(from decoder: Decoder) throws {
@@ -235,6 +269,8 @@ public struct AssignmentDTO: Codable, Identifiable {
         self.relevantTopics = try container.decodeIfPresent(String.self, forKey: .relevantTopics)
         self.mediaUrl = try container.decodeIfPresent(String.self, forKey: .mediaUrl)
         self.rubric = try container.decodeIfPresent([RubricCriterionDTO].self, forKey: .rubric)
+        self.isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        self.isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
     }
 }
 
@@ -242,17 +278,29 @@ public struct AssignmentDTO: Codable, Identifiable {
 
 public struct SyllabusPayload: Codable {
     public let courseTitle: String?
+    public let instructorName: String?
+    public let instructorEmail: String?
     public let readings: [ParsedReading]
     public let assignments: [ParsedAssignment]
 
     enum CodingKeys: String, CodingKey {
         case courseTitle = "courseTitle"
+        case instructorName = "instructorName"
+        case instructorEmail = "instructorEmail"
         case readings = "readings"
         case assignments = "assignments"
     }
 
-    public init(courseTitle: String? = nil, readings: [ParsedReading] = [], assignments: [ParsedAssignment] = []) {
+    public init(
+        courseTitle: String? = nil,
+        instructorName: String? = nil,
+        instructorEmail: String? = nil,
+        readings: [ParsedReading] = [],
+        assignments: [ParsedAssignment] = []
+    ) {
         self.courseTitle = courseTitle
+        self.instructorName = instructorName
+        self.instructorEmail = instructorEmail
         self.readings = readings
         self.assignments = assignments
     }
@@ -273,17 +321,57 @@ public struct SyllabusPayload: Codable {
         }
 
         func parseWeekNum(from str: String) -> Int {
+            let lower = str.lowercased()
+            if lower.contains("reading week") || lower.contains("spring break") {
+                return 8
+            }
             if let match = str.range(of: #"(?i)\b(?:week|module|unit|session)\s*(\d{1,2})\b"#, options: .regularExpression) {
                 let sub = String(str[match])
                 let digits = sub.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                return Int(digits) ?? 1
+                if let num = Int(digits), num > 0 { return num }
+            }
+            if lower.contains("final") || lower.contains("end of course") || lower.contains("course end") {
+                return 12
+            }
+            if lower.contains("midterm") {
+                return 6
             }
             let digits = str.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-            return Int(digits) ?? 1
+            if let num = Int(digits), num > 0 { return num }
+            return 1
         }
 
         for r in readings {
             let weekNum = parseWeekNum(from: r.weekOrModule)
+            let lowerTitle = r.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowerTopic = (r.topic ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowerMod = r.weekOrModule.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // If this item is merely a schedule break (e.g. Reading Week or Spring Break) without an actual book/chapters:
+            let isBreak = lowerTitle.contains("reading week") || lowerTitle.contains("spring break") || lowerTopic.contains("reading week") || lowerMod.contains("reading week")
+            let hasNoBook = (r.authors == nil || r.authors!.isEmpty) && (r.chaptersOrPages == nil || r.chaptersOrPages!.isEmpty)
+            if isBreak && hasNoBook {
+                let breakItem = ItemDTO(
+                    title: "",
+                    authorName: nil,
+                    resourceTitle: nil,
+                    category: "Reading",
+                    subType: "BREAK",
+                    description: nil,
+                    points: nil,
+                    pointsBreakdown: nil,
+                    percentage: nil,
+                    weekNumber: weekNum,
+                    dueDateIso: r.date,
+                    mediaUrl: nil,
+                    relevantTopics: "Reading Week",
+                    chapterText: nil,
+                    pagesText: nil
+                )
+                items.append(breakItem)
+                continue
+            }
+
             let cleanAuthors = r.authors?.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
 
             var chText: String? = nil
@@ -298,20 +386,37 @@ public struct SyllabusPayload: Codable {
                 }
             }
 
+            var readingTitle = r.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            var readingDesc: String? = nil
+            if lowerTitle.contains("see brightspace") || lowerTitle.contains("assigned readings") || lowerTitle.contains("refer to portal") || lowerTitle.contains("check brightspace") || lowerTitle.contains("see canvas") {
+                readingTitle = "Assigned Readings"
+                readingDesc = r.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            let combinedReadingTopics: String? = {
+                var parts: [String] = []
+                let wOrM = r.weekOrModule.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !wOrM.isEmpty { parts.append(wOrM) }
+                if let t = r.topic?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty, !wOrM.lowercased().contains(t.lowercased()) {
+                    parts.append(t)
+                }
+                return parts.isEmpty ? nil : parts.joined(separator: " • ")
+            }()
+
             let item = ItemDTO(
-                title: r.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                title: readingTitle,
                 authorName: (cleanAuthors?.isEmpty ?? true) ? nil : cleanAuthors,
-                resourceTitle: r.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                resourceTitle: readingTitle,
                 category: "Reading",
                 subType: "TEXTBOOK",
-                description: nil,
+                description: readingDesc,
                 points: nil,
                 pointsBreakdown: nil,
                 percentage: nil,
                 weekNumber: weekNum,
                 dueDateIso: r.date,
-                mediaUrl: nil,
-                relevantTopics: r.weekOrModule,
+                mediaUrl: r.mediaUrl ?? URLHelper.extractFirstURL(from: r.title + " " + (r.chaptersOrPages ?? "") + " " + (r.topic ?? "")),
+                relevantTopics: combinedReadingTopics,
                 chapterText: chText,
                 pagesText: pgText
             )
@@ -319,9 +424,22 @@ public struct SyllabusPayload: Codable {
         }
 
         for a in assignments {
-            let weekNum = parseWeekNum(from: a.weekOrModule)
+            let weekNum: Int = {
+                let fromModule = parseWeekNum(from: a.weekOrModule)
+                if fromModule > 1 && fromModule <= 16 { return fromModule }
+                if let rawDue = a.rawDueDate, !rawDue.isEmpty {
+                    let fromDue = parseWeekNum(from: rawDue)
+                    if fromDue > 1 && fromDue <= 16 { return fromDue }
+                }
+                return fromModule
+            }()
             let catUpper = a.category.uppercased()
             let subType = catUpper.isEmpty ? "ASSIGNMENT" : catUpper
+
+            let fullInstructions = (a.instructions?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                ? "Due: \(a.rawDueDate ?? a.weekOrModule)"
+                : a.instructions!
+            let rubricBreakdown = a.rubric?.joined(separator: "\n")
 
             let item = ItemDTO(
                 title: a.title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -329,13 +447,13 @@ public struct SyllabusPayload: Codable {
                 resourceTitle: nil,
                 category: "Assignment",
                 subType: subType,
-                description: "Due: \(a.rawDueDate ?? a.weekOrModule)",
-                points: "100 Points",
-                pointsBreakdown: nil,
+                description: fullInstructions,
+                points: a.points ?? "100 Points",
+                pointsBreakdown: rubricBreakdown,
                 percentage: a.weight,
                 weekNumber: weekNum,
                 dueDateIso: a.rawDueDate,
-                mediaUrl: nil,
+                mediaUrl: a.mediaUrl ?? URLHelper.extractFirstURL(from: a.title + " " + (a.instructions ?? "")),
                 relevantTopics: a.weekOrModule,
                 chapterText: nil,
                 pagesText: nil
@@ -349,8 +467,8 @@ public struct SyllabusPayload: Codable {
             courseName: cleanTitle,
             courseCode: extractedCode,
             courseDescription: nil,
-            instructorName: nil,
-            instructorEmail: nil,
+            instructorName: (instructorName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ? nil : instructorName?.trimmingCharacters(in: .whitespacesAndNewlines),
+            instructorEmail: (instructorEmail?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ? nil : instructorEmail?.trimmingCharacters(in: .whitespacesAndNewlines),
             officeHours: nil,
             termWeeks: max(12, (items.compactMap { $0.weekNumber }.max() ?? 12)),
             sharingCode: "",
@@ -364,25 +482,31 @@ public struct SyllabusPayload: Codable {
 
 public struct ParsedReading: Codable {
     public let weekOrModule: String
+    public let topic: String?
     public let title: String
     public let authors: String?
     public let chaptersOrPages: String?
     public let date: String?
+    public let mediaUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case weekOrModule = "weekOrModule"
+        case topic = "topic"
         case title = "title"
         case authors = "authors"
         case chaptersOrPages = "chaptersOrPages"
         case date = "date"
+        case mediaUrl = "mediaUrl"
     }
 
-    public init(weekOrModule: String, title: String, authors: String? = nil, chaptersOrPages: String? = nil, date: String? = nil) {
+    public init(weekOrModule: String, topic: String? = nil, title: String, authors: String? = nil, chaptersOrPages: String? = nil, date: String? = nil, mediaUrl: String? = nil) {
         self.weekOrModule = weekOrModule
+        self.topic = topic
         self.title = title
         self.authors = authors
         self.chaptersOrPages = chaptersOrPages
         self.date = date
+        self.mediaUrl = mediaUrl
     }
 }
 
@@ -392,6 +516,10 @@ public struct ParsedAssignment: Codable {
     public let category: String
     public let rawDueDate: String?
     public let weight: String?
+    public let points: String?
+    public let instructions: String?
+    public let rubric: [String]?
+    public let mediaUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case weekOrModule = "weekOrModule"
@@ -399,14 +527,32 @@ public struct ParsedAssignment: Codable {
         case category = "category"
         case rawDueDate = "rawDueDate"
         case weight = "weight"
+        case points = "points"
+        case instructions = "instructions"
+        case rubric = "rubric"
+        case mediaUrl = "mediaUrl"
     }
 
-    public init(weekOrModule: String, title: String, category: String = "ASSIGNMENT", rawDueDate: String? = nil, weight: String? = nil) {
+    public init(
+        weekOrModule: String,
+        title: String,
+        category: String = "ASSIGNMENT",
+        rawDueDate: String? = nil,
+        weight: String? = nil,
+        points: String? = nil,
+        instructions: String? = nil,
+        rubric: [String]? = nil,
+        mediaUrl: String? = nil
+    ) {
         self.weekOrModule = weekOrModule
         self.title = title
         self.category = category
         self.rawDueDate = rawDueDate
         self.weight = weight
+        self.points = points
+        self.instructions = instructions
+        self.rubric = rubric
+        self.mediaUrl = mediaUrl
     }
 }
 
@@ -602,6 +748,8 @@ public struct CourseDTO: Codable, Identifiable {
     public var assignments: [AssignmentDTO]?
     public var items: [ItemDTO]?
     public var dataExtractionStats: ExtractionStatsDTO?
+    public var isFavorite: Bool?
+    public var chatHistoryJSON: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -617,6 +765,8 @@ public struct CourseDTO: Codable, Identifiable {
         case sharingCode = "sharing_code"
         case weeks, assignments, items
         case dataExtractionStats = "data_extraction_stats"
+        case isFavorite = "is_favorite"
+        case chatHistoryJSON = "chat_history_json"
     }
 
     public init(
@@ -633,7 +783,9 @@ public struct CourseDTO: Codable, Identifiable {
         weeks: [WeekDTO]? = nil,
         assignments: [AssignmentDTO]? = nil,
         items: [ItemDTO]? = nil,
-        dataExtractionStats: ExtractionStatsDTO? = nil
+        dataExtractionStats: ExtractionStatsDTO? = nil,
+        isFavorite: Bool? = false,
+        chatHistoryJSON: String? = nil
     ) {
         self.id = id
         self.creatorId = creatorId
@@ -649,6 +801,8 @@ public struct CourseDTO: Codable, Identifiable {
         self.assignments = assignments
         self.items = items
         self.dataExtractionStats = dataExtractionStats
+        self.isFavorite = isFavorite
+        self.chatHistoryJSON = chatHistoryJSON
     }
 
     public init(from decoder: Decoder) throws {
@@ -669,6 +823,8 @@ public struct CourseDTO: Codable, Identifiable {
         self.assignments = try container.decodeIfPresent([AssignmentDTO].self, forKey: .assignments)
         self.items = try container.decodeIfPresent([ItemDTO].self, forKey: .items)
         self.dataExtractionStats = try container.decodeIfPresent(ExtractionStatsDTO.self, forKey: .dataExtractionStats)
+        self.isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        self.chatHistoryJSON = try container.decodeIfPresent(String.self, forKey: .chatHistoryJSON)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -687,6 +843,8 @@ public struct CourseDTO: Codable, Identifiable {
         try container.encodeIfPresent(assignments, forKey: .assignments)
         try container.encodeIfPresent(items, forKey: .items)
         try container.encodeIfPresent(dataExtractionStats, forKey: .dataExtractionStats)
+        try container.encodeIfPresent(isFavorite, forKey: .isFavorite)
+        try container.encodeIfPresent(chatHistoryJSON, forKey: .chatHistoryJSON)
     }
 }
 
@@ -817,6 +975,119 @@ public final class APIService: ObservableObject {
         return try decoder.decode(CourseDTO.self, from: jsonBodyData)
     }
 
+    public struct SyllabusSourceLocation: Codable, Sendable {
+        public let overviewPageNumber: Int
+        public let overviewQuote: String
+        public let rubricPageNumber: Int?
+        public let rubricQuote: String?
+
+        public init(overviewPageNumber: Int, overviewQuote: String, rubricPageNumber: Int? = nil, rubricQuote: String? = nil) {
+            self.overviewPageNumber = overviewPageNumber
+            self.overviewQuote = overviewQuote
+            self.rubricPageNumber = rubricPageNumber
+            self.rubricQuote = rubricQuote
+        }
+    }
+
+    public func locateSyllabusSource(
+        pdfData: Data,
+        itemTitle: String,
+        isAssignment: Bool,
+        weekNumber: Int? = nil
+    ) async -> SyllabusSourceLocation? {
+        let keyToUse = activeAPIKey
+        guard !keyToUse.isEmpty else { return nil }
+
+        guard let doc = PDFDocument(data: pdfData), doc.pageCount > 0 else { return nil }
+        var pagesText = ""
+        for i in 0..<doc.pageCount {
+            if let page = doc.page(at: i) {
+                let pageStr = page.string ?? ""
+                pagesText += "--- PAGE \(i + 1) ---\n\(pageStr)\n\n"
+            }
+        }
+        guard !pagesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+
+        let itemTypeStr = isAssignment ? "Assignment" : "Reading"
+        let weekStr = (weekNumber != nil && weekNumber! > 0) ? " (Week \(weekNumber!))" : ""
+        let prompt = """
+        You are an academic syllabus locator. Given the following syllabus document with page markers, locate the exact 1-indexed page number and verbatim quote to highlight for:
+        Item: "\(itemTitle)"\(weekStr), Type: \(itemTypeStr)
+
+        CRITICAL INSTRUCTIONS:
+        1. overview_page_number & overview_quote: Locate the specific section or page where this item is formally detailed and described in full (e.g. "Research Article Analysis-Group Presentation (assignment 1)"). Do NOT select generic intro text, general course objectives, or course outcomes from page 1 or 2 if the specific assignment details appear later.
+        2. rubric_page_number & rubric_quote: Locate the exact grading criteria table or rubric section associated with this item (e.g. "Grading Criteria Grade Points" or criterion lines such as "Organization and Coherence 10 Points").
+
+        Respond ONLY with valid JSON in this exact structure:
+        {
+          "overview_page_number": <integer 1-indexed>,
+          "overview_quote": "<exact verbatim phrase or header to highlight in yellow>",
+          "rubric_page_number": <integer 1-indexed where grading criteria or rubric is located, or null if none>,
+          "rubric_quote": "<exact verbatim header such as 'Grading Criteria' or rubric criteria line to highlight, or null if none>"
+        }
+
+        SYLLABUS:
+        \(pagesText)
+        """
+
+        let payload: [String: Any] = [
+            "contents": [
+                ["parts": [["text": prompt]]]
+            ],
+            "generationConfig": [
+                "temperature": 0.1,
+                "responseMimeType": "application/json"
+            ]
+        ]
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+
+        let modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash"]
+        for modelName in modelsToTry {
+            let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(modelName):generateContent?key=\(keyToUse)"
+            guard let url = URL(string: endpoint) else { continue }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 25
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(keyToUse, forHTTPHeaderField: "x-goog-api-key")
+            request.httpBody = httpBody
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { continue }
+
+                struct Part: Decodable { let text: String }
+                struct Content: Decodable { let parts: [Part] }
+                struct Candidate: Decodable { let content: Content }
+                struct GeminiResponse: Decodable { let candidates: [Candidate]? }
+
+                if let geminiResp = try? JSONDecoder().decode(GeminiResponse.self, from: data),
+                   let rawJsonText = geminiResp.candidates?.first?.content.parts.first?.text {
+                    struct LocationDTO: Decodable {
+                        let overview_page_number: Int?
+                        let overview_quote: String?
+                        let rubric_page_number: Int?
+                        let rubric_quote: String?
+                    }
+                    if let rawData = rawJsonText.data(using: .utf8),
+                       let loc = try? JSONDecoder().decode(LocationDTO.self, from: rawData),
+                       let pNum = loc.overview_page_number, let quote = loc.overview_quote, !quote.isEmpty {
+                        return SyllabusSourceLocation(
+                            overviewPageNumber: pNum,
+                            overviewQuote: quote,
+                            rubricPageNumber: loc.rubric_page_number,
+                            rubricQuote: loc.rubric_quote
+                        )
+                    }
+                }
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
     public func testGeminiConnection(apiKey: String) async throws -> Bool {
         let keyToUse = apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.bundledAPIKey : apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyToUse.isEmpty else { return false }
@@ -905,27 +1176,41 @@ public final class APIService: ObservableObject {
             )
         }
 
-        let schedulePages = DocumentExtractor.extractSchedulePageImages(from: pdfData, maxPages: 6)
-        let modelsToTry = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash"]
+        let schedulePages = DocumentExtractor.extractSchedulePageImages(from: pdfData, maxPages: 8)
+        let modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
 
         let systemInstructions = """
         You are an academic syllabus extraction engine. Extract all weekly readings and deliverables into the specified JSON format.
 
         EXTRACTION RULES:
+        0. FACULTY & INSTRUCTOR DETAILS:
+           - "instructorName": Full name and credentials of the primary faculty, professor, or instructor if stated in the document (e.g., "Dr. Alireza Sedghi Taromi, PhD" or "Marie-Pier Gilbert"). If none found, null.
+           - "instructorEmail": Email address of the faculty member or instructor if stated (e.g., "sedghitaromialireza@cityu.edu"). If none found, null.
+
         1. COURSE TITLE:
            - Extract the course name and code (e.g., "CPC 527: Group Counselling Psychology") ONLY into "courseTitle".
            - NEVER prefix or include the course name inside individual reading or assignment titles.
 
-        2. READINGS:
-           - "title": Specific name of the textbook, article, topic, or reading.
-           - "authors": Clean author names only (e.g., "Corey", "Yalom"). Do not include stray punctuation like empty colons or semicolons.
-           - "chaptersOrPages": Isolate chapter numbers, sections, or page ranges (e.g., "Ch. 1–3", "pp. 45–60").
-           - "weekOrModule": The designated week or module (e.g., "Week 1").
+        2. READINGS BREAKDOWN & TOPICS:
+           - CRITICAL: If a week or module lists multiple textbooks, authors, or articles (e.g., "Corey Ch. 1 & 2" AND "Yalom Ch. 1"), output EACH textbook or article as a SEPARATE object in the "readings" array! Never merge multiple books together into one object.
+           - "topic": The weekly session, module, or lecture topic from the schedule table (e.g. "Intro to Group Work", "Introduction to Group Work Pt. 2", "Group Stages: Initial Stages", "Transition", "Working", "Presentations", "Reading Week", "Groups in Diverse Settings", "Effective Closings").
+           - "title": Clean, concise title of the reading, book, or article verbatim as listed in the syllabus schedule (e.g., "Corey", "Yalom", or "Creswell & Creswell"). CRITICAL: DO NOT inject, hallucinate, or append extra subtitles, book descriptions, or phrases like "Process and Practice", "Theory and Practice", or edition details unless they are literally written in the schedule table row. Keep it simply the concise title or author.
+           - "authors": Specific author for that reading (e.g., "Corey" or "Yalom").
+           - "chaptersOrPages": The exact chapter or page numbers for that specific reading (e.g., "Ch. 1 & 2", "Ch. 1", "Ch. 3 & 4").
+           - "weekOrModule": Designated schedule week and/or module (e.g., "Module 1", "Week 1", "Week 2 - Module 2"). CRITICAL: If the document explicitly designates modules in the schedule, include "Module X". BUT NEVER put "Module" or assume modules if the course schedule only uses Weeks and does not explicitly have modules in the syllabus document.
+           - "date": Date listed in the table (e.g., "4/2/26").
+           - "mediaUrl": Any direct URL, web link, DOI, or portal link directly associated with this reading if present in the document, else null.
 
-        3. DELIVERABLES & ASSIGNMENTS:
-           - Match every assignment, report, quiz, or presentation to the EXACT week or date row where it is listed.
-           - DO NOT assign all deliverables to the final week (e.g., Week 11). Distribute them to their specific due weeks.
-           - Separate recurring participation from one-off term deliverables.
+        3. DELIVERABLES & DETAILED RUBRIC CRITERIA:
+           - Extract every assignment, presentation, paper, or participation deliverable from BOTH the Overview and "Course Assignment Details" / "Grading Criteria" sections.
+           - "title": Clean assignment title (e.g., "Group Therapy Reflection Paper").
+           - "weight": Weight of final grade (e.g., "25%", "40%").
+           - "points": Total points possible (e.g., "100 Points").
+           - "instructions": The full, detailed description and requirements from the assignment details section (e.g. page count, formatting requirements, required topics, number of sources).
+           - "rubric": Extract all grading criteria items as an array of strings (e.g. ["Organization and Coherence: 10 Points (10%)", "Evidence and Support: 20 Points (20%)", "Analysis and use of Course Concepts: 20 Points (20%)", "Professional Ethics: 20 Points (20%)", "Cultural Competence: 20 Points (20%)", "Self-reflection: 10 Points (10%)"]).
+           - "weekOrModule": Designated schedule week and/or module where it is due or scheduled (e.g., "Module 6", "Module 9", "Week 6"). If the document explicitly designates modules in the schedule, include "Module X". BUT do not put "Module" if the syllabus document only uses weeks. Never use generic headers like "Overview" or "Final" if a specific week/module/date is indicated.
+           - "rawDueDate": Due date from the schedule table (e.g. "5/7/26", "6/4/26", "6/11/26").
+           - "mediaUrl": Any direct URL, web link, portal link, or submission link directly associated with this assignment if present in the document, else null.
 
         4. OUTPUT:
            - Return valid JSON matching the schema with zero introductory or closing markdown text.
@@ -935,16 +1220,20 @@ public final class APIService: ObservableObject {
             "type": "OBJECT",
             "properties": [
                 "courseTitle": ["type": "STRING", "description": "Course title and code (e.g. 'CPC 527: Group Counselling Psychology')"],
+                "instructorName": ["type": "STRING", "nullable": true, "description": "Name of the faculty member or instructor (e.g. 'Dr. Jane Smith')"],
+                "instructorEmail": ["type": "STRING", "nullable": true, "description": "Email of the faculty member or instructor (e.g. 'jsmith@university.edu')"],
                 "readings": [
                     "type": "ARRAY",
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "weekOrModule": ["type": "STRING", "description": "e.g. 'Week 1', 'Module 2'"],
+                            "weekOrModule": ["type": "STRING", "description": "Designated week and/or module (e.g. 'Module 1', 'Week 1', 'Week 1 - Module 1')"],
+                            "topic": ["type": "STRING", "nullable": true, "description": "Weekly session or lecture topic (e.g. 'Intro to Group Work', 'Presentations')"],
                             "title": ["type": "STRING", "description": "The specific book/paper title or topic, NOT the course name"],
                             "authors": ["type": "STRING", "nullable": true, "description": "e.g. 'Corey', 'Yalom'"],
                             "chaptersOrPages": ["type": "STRING", "nullable": true, "description": "e.g. 'Ch. 1-3', 'pp. 25-50'"],
-                            "date": ["type": "STRING", "nullable": true]
+                            "date": ["type": "STRING", "nullable": true],
+                            "mediaUrl": ["type": "STRING", "nullable": true, "description": "Direct URL or web link for the reading/resource if present"]
                         ],
                         "required": ["weekOrModule", "title"]
                     ]
@@ -954,11 +1243,19 @@ public final class APIService: ObservableObject {
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "weekOrModule": ["type": "STRING", "description": "The explicit week it is due (e.g. 'Week 4', 'Week 11')"],
-                            "title": ["type": "STRING", "description": "Deliverable name (e.g. 'Group Facilitation Presentation')"],
-                            "category": ["type": "STRING", "enum": ["ASSIGNMENT", "QUIZ", "EXAM", "PRESENTATION", "REPORT", "PARTICIPATION"]],
-                            "rawDueDate": ["type": "STRING", "nullable": true, "description": "e.g. 'Oct 14', 'Friday midnight'"],
-                            "weight": ["type": "STRING", "nullable": true]
+                            "weekOrModule": ["type": "STRING", "description": "The explicit week and/or module it is due (e.g. 'Module 6', 'Week 6')"],
+                            "title": ["type": "STRING", "description": "Deliverable name (e.g. 'Group Therapy Reflection Paper')"],
+                            "category": ["type": "STRING", "description": "e.g. 'PAPER', 'PRESENTATION', 'REPORT', 'PARTICIPATION'"],
+                            "rawDueDate": ["type": "STRING", "nullable": true, "description": "e.g. '5/7/26', '6/4/26'"],
+                            "weight": ["type": "STRING", "nullable": true, "description": "e.g. '25%'"],
+                            "points": ["type": "STRING", "nullable": true, "description": "e.g. '100 Points'"],
+                            "instructions": ["type": "STRING", "nullable": true, "description": "Full description and instructions from the syllabus"],
+                            "rubric": [
+                                "type": "ARRAY",
+                                "items": ["type": "STRING"],
+                                "description": "List of rubric criteria items with point values"
+                            ],
+                            "mediaUrl": ["type": "STRING", "nullable": true, "description": "Direct URL or web link for the assignment if present"]
                         ],
                         "required": ["weekOrModule", "title", "category"]
                     ]
@@ -993,6 +1290,7 @@ public final class APIService: ObservableObject {
         }
 
         for modelName in modelsToTry {
+            if Task.isCancelled { throw CancellationError() }
             let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(modelName):generateContent?key=\(apiKey)"
             guard let url = URL(string: endpoint) else { continue }
 
@@ -1080,6 +1378,10 @@ public final class APIService: ObservableObject {
                         break
                     }
                 } catch {
+                    if Task.isCancelled || (error as? URLError)?.code == .cancelled || error is CancellationError {
+                        print("🛑 [APIService] PDF parse cancelled by user. Terminating immediately.")
+                        throw CancellationError()
+                    }
                     let nsErr = error as NSError
                     lastStatusCode = nsErr.code
                     lastErrorMsg = "API Error [\(nsErr.code)]: \(nsErr.localizedDescription)"
@@ -1102,6 +1404,14 @@ public final class APIService: ObservableObject {
     }
 
     public static func preprocessSyllabusText(_ rawText: String) -> String {
+        // If text was already section-filtered by DocumentExtractor, preserve all harvested schedule pages
+        if rawText.contains("--- Page ") {
+            if rawText.count > 35000 {
+                return String(rawText.prefix(35000))
+            }
+            return rawText
+        }
+
         let lines = rawText
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -1113,7 +1423,8 @@ public final class APIService: ObservableObject {
             "university policy", "course policy", "policies and guidelines", "academic honesty",
             "academic integrity", "non-discrimination", "accommodations", "disability support",
             "title ix", "student code of conduct", "hallmarks of maturity", "covid-19 policy",
-            "letter grade distribution", "attendance policy", "campus safety", "copyright notice"
+            "letter grade distribution", "attendance policy", "campus safety", "copyright notice",
+            "here2talk", "mental health resources"
         ]
 
         var relevantLines: [String] = []
@@ -1153,14 +1464,14 @@ public final class APIService: ObservableObject {
         }
 
         let condensed = relevantLines.joined(separator: "\n")
-        if condensed.count > 12000 {
-            return String(condensed.prefix(12000))
+        if condensed.count > 35000 {
+            return String(condensed.prefix(35000))
         }
         return condensed.isEmpty ? rawText : condensed
     }
 
     public func parseSyllabusWithGemini(_ rawText: String, apiKey: String) async throws -> CourseDTO {
-        let modelsToTry = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash"]
+        let modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
         var lastError: Error = URLError(.badServerResponse)
 
         let processedText = Self.preprocessSyllabusText(rawText)
@@ -1170,20 +1481,34 @@ public final class APIService: ObservableObject {
         You are an academic syllabus extraction engine. Extract all weekly readings and deliverables into the specified JSON format.
 
         EXTRACTION RULES:
+        0. FACULTY & INSTRUCTOR DETAILS:
+           - "instructorName": Full name and credentials of the primary faculty, professor, or instructor if stated in the syllabus text (e.g., "Dr. Alireza Sedghi Taromi, PhD" or "Marie-Pier Gilbert"). If none found, null.
+           - "instructorEmail": Email address of the faculty member or instructor if stated (e.g., "sedghitaromialireza@cityu.edu"). If none found, null.
+
         1. COURSE TITLE:
            - Extract the course name and code (e.g., "CPC 527: Group Counselling Psychology") ONLY into "courseTitle".
            - NEVER prefix or include the course name inside individual reading or assignment titles.
 
-        2. READINGS:
-           - "title": Specific name of the textbook, article, topic, or reading.
-           - "authors": Clean author names only (e.g., "Corey", "Yalom"). Do not include stray punctuation like empty colons or semicolons.
-           - "chaptersOrPages": Isolate chapter numbers, sections, or page ranges (e.g., "Ch. 1–3", "pp. 45–60").
-           - "weekOrModule": The designated week or module (e.g., "Week 1").
+        2. READINGS BREAKDOWN & TOPICS:
+           - CRITICAL: If a week or module lists multiple textbooks, authors, or articles (e.g., "Corey Ch. 1 & 2" AND "Yalom Ch. 1"), output EACH textbook or article as a SEPARATE object in the "readings" array! Never merge multiple books together into one object.
+           - "topic": The weekly session, module, or lecture topic from the schedule table (e.g. "Intro to Group Work", "Introduction to Group Work Pt. 2", "Group Stages: Initial Stages", "Transition", "Working", "Presentations", "Reading Week", "Groups in Diverse Settings", "Effective Closings").
+           - "title": Clean, concise title of the reading, book, or article verbatim as listed in the syllabus schedule (e.g., "Corey", "Yalom", or "Creswell & Creswell"). CRITICAL: DO NOT inject, hallucinate, or append extra subtitles, book descriptions, or phrases like "Process and Practice", "Theory and Practice", or edition details unless they are literally written in the schedule table row. Keep it simply the concise title or author.
+           - "authors": Specific author for that reading (e.g., "Corey" or "Yalom").
+           - "chaptersOrPages": The exact chapter or page numbers for that specific reading (e.g., "Ch. 1 & 2", "Ch. 1", "Ch. 3 & 4").
+           - "weekOrModule": Designated schedule week and/or module (e.g., "Module 1", "Week 1", "Week 2 - Module 2"). CRITICAL: If the document explicitly designates modules in the schedule, include "Module X". BUT NEVER put "Module" or assume modules if the course schedule only uses Weeks and does not explicitly have modules in the syllabus document.
+           - "date": Date listed in the table (e.g., "4/2/26").
+           - "mediaUrl": Any direct URL, web link, DOI, or portal link directly associated with this reading if present in the document, else null.
 
-        3. DELIVERABLES & ASSIGNMENTS:
-           - Match every assignment, report, quiz, or presentation to the EXACT week or date row where it is listed.
-           - DO NOT assign all deliverables to the final week (e.g., Week 11). Distribute them to their specific due weeks.
-           - Separate recurring participation from one-off term deliverables.
+        3. DELIVERABLES & DETAILED RUBRIC CRITERIA:
+           - Extract every assignment, presentation, paper, or participation deliverable from BOTH the Overview and "Course Assignment Details" / "Grading Criteria" sections.
+           - "title": Clean assignment title (e.g., "Group Therapy Reflection Paper").
+           - "weight": Weight of final grade (e.g., "25%", "40%").
+           - "points": Total points possible (e.g., "100 Points").
+           - "instructions": The full, detailed description and requirements from the assignment details section (e.g. page count, formatting requirements, required topics, number of sources).
+           - "rubric": Extract all grading criteria items as an array of strings (e.g. ["Organization and Coherence: 10 Points (10%)", "Evidence and Support: 20 Points (20%)", "Analysis and use of Course Concepts: 20 Points (20%)", "Professional Ethics: 20 Points (20%)", "Cultural Competence: 20 Points (20%)", "Self-reflection: 10 Points (10%)"]).
+           - "weekOrModule": Designated schedule week and/or module where it is due or scheduled (e.g., "Module 6", "Module 9", "Week 6"). If the document explicitly designates modules in the schedule, include "Module X". BUT do not put "Module" if the syllabus document only uses weeks. Never use generic headers like "Overview" or "Final" if a specific week/module/date is indicated.
+           - "rawDueDate": Due date from the schedule table (e.g. "5/7/26", "6/4/26", "6/11/26").
+           - "mediaUrl": Any direct URL, web link, portal link, or submission link directly associated with this assignment if present in the document, else null.
 
         4. OUTPUT:
            - Return valid JSON matching the schema with zero introductory or closing markdown text.
@@ -1193,16 +1518,20 @@ public final class APIService: ObservableObject {
             "type": "OBJECT",
             "properties": [
                 "courseTitle": ["type": "STRING", "description": "Course title and code (e.g. 'CPC 527: Group Counselling Psychology')"],
+                "instructorName": ["type": "STRING", "nullable": true, "description": "Name of the faculty member or instructor (e.g. 'Dr. Jane Smith')"],
+                "instructorEmail": ["type": "STRING", "nullable": true, "description": "Email of the faculty member or instructor (e.g. 'jsmith@university.edu')"],
                 "readings": [
                     "type": "ARRAY",
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "weekOrModule": ["type": "STRING", "description": "e.g. 'Week 1', 'Module 2'"],
+                            "weekOrModule": ["type": "STRING", "description": "Designated week and/or module (e.g. 'Module 1', 'Week 1', 'Week 1 - Module 1')"],
+                            "topic": ["type": "STRING", "nullable": true, "description": "Weekly session or lecture topic (e.g. 'Intro to Group Work', 'Presentations')"],
                             "title": ["type": "STRING", "description": "The specific book/paper title or topic, NOT the course name"],
                             "authors": ["type": "STRING", "nullable": true, "description": "e.g. 'Corey', 'Yalom'"],
                             "chaptersOrPages": ["type": "STRING", "nullable": true, "description": "e.g. 'Ch. 1-3', 'pp. 25-50'"],
-                            "date": ["type": "STRING", "nullable": true]
+                            "date": ["type": "STRING", "nullable": true],
+                            "mediaUrl": ["type": "STRING", "nullable": true, "description": "Direct URL or web link for the reading/resource if present"]
                         ],
                         "required": ["weekOrModule", "title"]
                     ]
@@ -1212,11 +1541,19 @@ public final class APIService: ObservableObject {
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "weekOrModule": ["type": "STRING", "description": "The explicit week it is due (e.g. 'Week 4', 'Week 11')"],
-                            "title": ["type": "STRING", "description": "Deliverable name (e.g. 'Group Facilitation Presentation')"],
-                            "category": ["type": "STRING", "enum": ["ASSIGNMENT", "QUIZ", "EXAM", "PRESENTATION", "REPORT", "PARTICIPATION"]],
-                            "rawDueDate": ["type": "STRING", "nullable": true, "description": "e.g. 'Oct 14', 'Friday midnight'"],
-                            "weight": ["type": "STRING", "nullable": true]
+                            "weekOrModule": ["type": "STRING", "description": "The explicit week and/or module it is due (e.g. 'Module 6', 'Week 6')"],
+                            "title": ["type": "STRING", "description": "Deliverable name (e.g. 'Group Therapy Reflection Paper')"],
+                            "category": ["type": "STRING", "description": "e.g. 'PAPER', 'PRESENTATION', 'REPORT', 'PARTICIPATION'"],
+                            "rawDueDate": ["type": "STRING", "nullable": true, "description": "e.g. '5/7/26', '6/4/26'"],
+                            "weight": ["type": "STRING", "nullable": true, "description": "e.g. '25%'"],
+                            "points": ["type": "STRING", "nullable": true, "description": "e.g. '100 Points'"],
+                            "instructions": ["type": "STRING", "nullable": true, "description": "Full description and instructions from the syllabus"],
+                            "rubric": [
+                                "type": "ARRAY",
+                                "items": ["type": "STRING"],
+                                "description": "List of rubric criteria items with point values"
+                            ],
+                            "mediaUrl": ["type": "STRING", "nullable": true, "description": "Direct URL or web link for the assignment if present"]
                         ],
                         "required": ["weekOrModule", "title", "category"]
                     ]
@@ -1226,6 +1563,7 @@ public final class APIService: ObservableObject {
         ]
 
         for modelName in modelsToTry {
+            if Task.isCancelled { throw CancellationError() }
             let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(modelName):generateContent?key=\(apiKey)"
             guard let url = URL(string: endpoint) else { continue }
 
@@ -1320,11 +1658,17 @@ public final class APIService: ObservableObject {
                     lastError = URLError(.badServerResponse)
                 }
             } catch {
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled || error is CancellationError {
+                    print("🛑 [APIService] Text parse cancelled by user. Terminating immediately.")
+                    throw CancellationError()
+                }
                 print("❌ [NETWORK ERROR] \(modelName): \(error.localizedDescription)")
                 lastError = error
             }
             if attempt == 0 {
+                if Task.isCancelled { throw CancellationError() }
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
+                if Task.isCancelled { throw CancellationError() }
             }
         }
     }
@@ -1501,6 +1845,10 @@ public final class APIService: ObservableObject {
                     }
                 }
             } catch {
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled || error is CancellationError {
+                    print("🛑 [APIService] Image parse cancelled by user. Terminating immediately.")
+                    throw CancellationError()
+                }
                 print("❌ [NETWORK ERROR] Request failed for model \(modelName): \(error.localizedDescription)")
                 lastError = error
             }
@@ -1635,7 +1983,7 @@ public final class APIService: ObservableObject {
             }
         }
 
-        throw lastError ?? NSError(domain: "APIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Gemini AI temporarily unavailable. Please try again."])
+        throw lastError ?? NSError(domain: "APIService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Service temporarily unavailable. Please try again."])
     }
 
     public func askCourseSyllabus(courseContext: String, question: String) async throws -> String {

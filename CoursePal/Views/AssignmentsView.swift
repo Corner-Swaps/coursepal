@@ -36,6 +36,7 @@ public struct AssignmentsView: View {
     @Query(filter: #Predicate<Assignment> { $0.isDeleted }) private var deletedAssignments: [Assignment]
     @Query(filter: #Predicate<Reading> { $0.isDeleted }) private var deletedReadings: [Reading]
     @Query private var allReadings: [Reading]
+    @Query private var allWeeks: [Week]
 
     @State private var searchQuery: String = ""
     @State private var selectedDate: Date = Date()
@@ -52,6 +53,8 @@ public struct AssignmentsView: View {
     @State private var showingCourseFilterSheet: Bool = false
     @State private var showingInfoSheet: Bool = false
     @State private var showingEmptyTrashConfirmation: Bool = false
+    @State private var showingConfetti: Bool = false
+    @State private var confettiTitle: String = ""
 
     private var activeAssignments: [Assignment] {
         var list = dbAssignments.filter { !$0.isDeleted }
@@ -76,7 +79,8 @@ public struct AssignmentsView: View {
 
     private var assignmentsForSelectedDate: [Assignment] {
         dbAssignments.filter { assign in
-            !assign.isDeleted && Calendar.current.isDate(dueDateForAssignment(assign), inSameDayAs: selectedDate)
+            guard let due = assign.dueDate else { return false }
+            return !assign.isDeleted && Calendar.current.isDate(due, inSameDayAs: selectedDate)
         }
     }
 
@@ -98,7 +102,7 @@ public struct AssignmentsView: View {
                         }
                         Spacer()
 
-                        // Top Right Corner Action Icons: Filter (Left of checkmark), Done (Green Count) & Trash (Red Count)
+                        // Top Right Corner Action Icons: Filter, Done (Green Count) & Trash (Red Count)
                         HStack(spacing: 5) {
                             // Filter Pill (On the LEFT of the Checkmark)
                             Button(action: {
@@ -115,6 +119,7 @@ public struct AssignmentsView: View {
                             }
                             .buttonStyle(.plain)
 
+                            // Completed Pill (Checkmark)
                             Button(action: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     sortMode = (sortMode == "completed") ? "assignments" : "completed"
@@ -122,15 +127,15 @@ public struct AssignmentsView: View {
                             }) {
                                 HStack(spacing: 4) {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(Color(red: 0.18, green: 0.72, blue: 0.40))
                                     Text("\(completedAssignments.count)")
                                         .font(.cpDescriptionBold)
-                                        .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
+                                        .foregroundColor(Color(red: 0.18, green: 0.72, blue: 0.40))
                                 }
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 6)
-                                .background(sortMode == "completed" ? Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.15) : Color.white)
+                                .background(sortMode == "completed" ? Color(red: 0.18, green: 0.72, blue: 0.40).opacity(0.15) : Color.white)
                                 .cornerRadius(12)
                                 .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
                             }
@@ -320,93 +325,61 @@ public struct AssignmentsView: View {
                     .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
                     .padding(.horizontal, 18)
 
-                    // MARK: - Assignments Progress Bar Box (Persistent directly under Search Bar, matching Readings style 1:1)
-                    let totalAssignsCount = activeAssignments.count
-                    let completedAssignsCount = activeAssignments.filter({ !$0.isCompleted }).count
-                    let assignProgressPct = totalAssignsCount > 0 ? Int((Double(totalAssignsCount - completedAssignsCount) / Double(totalAssignsCount)) * 100) : 0
-                    let actualDoneCount = totalAssignsCount - completedAssignsCount
-
-                    if totalAssignsCount > 0 && completedAssignsCount == 0 {
-                        // Dedicated Celebration Card overtaking standard progress bar when 100% complete
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.18))
-                                    .frame(width: 38, height: 38)
-                                Image(systemName: "checkmark.seal.fill")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Congratulations! 🎉")
-                                    .font(.cpItemTitle)
-                                    .foregroundColor(Color(red: 0.05, green: 0.55, blue: 0.35))
-
-                                Text("You finished all assignments!")
-                                    .font(.cpDescriptionMedium)
-                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            }
-
-                            Spacer()
-
-                            Text("100%")
-                                .font(.cpDescriptionBold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color(red: 0.05, green: 0.65, blue: 0.40))
-                                .cornerRadius(12)
+                    // MARK: - Per-Course Assignment Progress Bars
+                    let coursesForProgress: [Course] = {
+                        if let selectedCourseFilter {
+                            return [selectedCourseFilter]
                         }
-                        .padding(14)
-                        .background(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.08))
-                        .cornerRadius(18)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18)
-                                .stroke(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.25), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
-                        .padding(.horizontal, 18)
-                    } else {
-                        VStack(spacing: 8) {
-                            HStack {
-                                HStack(spacing: 5) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
-                                    Text("Assignments Progress")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        .foregroundColor(CoursePalTheme.textDark)
-                                }
-                                Spacer()
-                                Button(action: {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                        sortMode = "completed"
+                        return courses
+                    }()
+
+                    if !coursesForProgress.isEmpty && !activeAssignments.isEmpty {
+                        VStack(spacing: 12) {
+                            ForEach(coursesForProgress) { course in
+                                let courseAssigns = dbAssignments.filter { !$0.isDeleted && $0.course?.persistentModelID == course.persistentModelID }
+                                let cTotal = courseAssigns.count
+                                let cDone = courseAssigns.filter { $0.isCompleted }.count
+                                let cPct = cTotal > 0 ? Int((Double(cDone) / Double(cTotal)) * 100) : 0
+                                let cColor = CourseColorHelper.color(for: course.hexColor)
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(cColor)
+                                            .frame(width: 8, height: 8)
+
+                                        Text(course.courseCode ?? course.courseName)
+                                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                                            .foregroundColor(CoursePalTheme.textDark)
+                                            .lineLimit(1)
+
+                                        Spacer()
                                     }
-                                }) {
-                                    Text("\(actualDoneCount) of \(totalAssignsCount) Done (\(assignProgressPct)%)")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                        .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 2.5)
-                                        .background(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.12))
-                                        .cornerRadius(10)
-                                }
-                                .buttonStyle(.plain)
-                            }
 
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(red: 0.89, green: 0.91, blue: 0.94))
-                                        .frame(height: 7)
+                                    HStack(spacing: 8) {
+                                        GeometryReader { geo in
+                                            ZStack(alignment: .leading) {
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .fill(Color(red: 0.89, green: 0.91, blue: 0.94))
+                                                    .frame(height: 6)
 
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(LinearGradient(colors: [Color(red: 0.05, green: 0.65, blue: 0.40), Color(red: 0.10, green: 0.75, blue: 0.45)], startPoint: .leading, endPoint: .trailing))
-                                        .frame(width: geo.size.width * CGFloat(totalAssignsCount > 0 ? Double(actualDoneCount) / Double(totalAssignsCount) : 0), height: 7)
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .fill(cColor)
+                                                    .frame(width: geo.size.width * CGFloat(cTotal > 0 ? Double(cDone) / Double(cTotal) : 0), height: 6)
+                                            }
+                                        }
+                                        .frame(height: 6)
+
+                                        Text("\(cDone) of \(cTotal) (\(cPct)%)")
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 2)
+                                            .background(cColor)
+                                            .cornerRadius(6)
+                                    }
                                 }
                             }
-                            .frame(height: 7)
                         }
                         .padding(14)
                         .background(Color.white)
@@ -480,26 +453,74 @@ public struct AssignmentsView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 14) {
                             if sortMode == "assignments" || sortMode == "all" {
-                                let sortedAssignments = activeAssignments.sorted(by: { ($0.dueDate ?? Date.distantFuture) < ($1.dueDate ?? Date.distantFuture) })
+                                VStack(alignment: .leading, spacing: 18) {
+                                    ForEach(activeWeekNumbersForAssignments, id: \.self) { weekNum in
+                                        let weekAssigns = (assignmentsByWeek[weekNum] ?? []).sorted(by: { ($0.dueDate ?? Date.distantFuture) < ($1.dueDate ?? Date.distantFuture) })
 
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(sortedAssignments) { assignment in
-                                        AssignmentCardRow(
-                                            assignment: assignment,
-                                            onToggle: {
-                                                withAnimation {
-                                                    assignment.isCompleted.toggle()
-                                                    try? modelContext.save()
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            if weekNum > 0 {
+                                                HStack(spacing: 6) {
+                                                    Text("Week \(weekNum)")
+                                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 3)
+                                                        .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                        .clipShape(Capsule())
+
+                                                    if let mod = weekModuleMentionForAssignment(for: weekNum), !mod.isEmpty {
+                                                        Text(mod)
+                                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                            .foregroundColor(.white)
+                                                            .padding(.horizontal, 8)
+                                                            .padding(.vertical, 3)
+                                                            .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                            .clipShape(Capsule())
+                                                    }
+
+                                                    if let range = weekDateRangeForAssignment(for: weekNum), !range.isEmpty {
+                                                        Text(range)
+                                                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                                    }
+
+                                                    Spacer()
                                                 }
-                                            },
-                                            onEdit: { editingAssignment = assignment },
-                                            onDelete: {
-                                                withAnimation(.easeInOut(duration: 0.25)) {
-                                                    assignment.isDeleted = true
-                                                    try? modelContext.save()
+                                                .padding(.top, 4)
+                                            } else {
+                                                HStack(spacing: 6) {
+                                                    Text("General Deliverables")
+                                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 3)
+                                                        .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                        .clipShape(Capsule())
+
+                                                    Spacer()
+                                                }
+                                                .padding(.top, 4)
+                                            }
+
+                                            VStack(spacing: 8) {
+                                                ForEach(weekAssigns) { assignment in
+                                                    AssignmentCardRow(
+                                                        assignment: assignment,
+                                                        onToggle: {
+                                                            toggleAssignment(assignment)
+                                                        },
+                                                        onEdit: { editingAssignment = assignment },
+                                                        onDelete: {
+                                                            withAnimation(.easeInOut(duration: 0.25)) {
+                                                                assignment.isDeleted = true
+                                                                try? modelContext.save()
+                                                                DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
+                                                            }
+                                                        }
+                                                    )
                                                 }
                                             }
-                                        )
+                                        }
                                     }
                                 }
                             } else if sortMode == "completed" {
@@ -519,16 +540,14 @@ public struct AssignmentsView: View {
                                         AssignmentCardRow(
                                             assignment: assignment,
                                             onToggle: {
-                                                withAnimation {
-                                                    assignment.isCompleted.toggle()
-                                                    try? modelContext.save()
-                                                }
+                                                toggleAssignment(assignment)
                                             },
                                             onEdit: { editingAssignment = assignment },
                                             onDelete: {
                                                 withAnimation(.easeInOut(duration: 0.25)) {
                                                     assignment.isDeleted = true
                                                     try? modelContext.save()
+                                                    DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                                                 }
                                             }
                                         )
@@ -595,16 +614,14 @@ public struct AssignmentsView: View {
                                                 AssignmentCardRow(
                                                     assignment: assignment,
                                                     onToggle: {
-                                                        withAnimation {
-                                                            assignment.isCompleted.toggle()
-                                                            try? modelContext.save()
-                                                        }
+                                                        toggleAssignment(assignment)
                                                     },
                                                     onEdit: { editingAssignment = assignment },
                                                     onDelete: {
                                                         withAnimation(.easeInOut(duration: 0.25)) {
                                                             assignment.isDeleted = true
                                                             try? modelContext.save()
+                                                            DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                                                         }
                                                     }
                                                 )
@@ -615,7 +632,7 @@ public struct AssignmentsView: View {
                                 }
                             } else if sortMode == "calendar" {
                                 // Calendar Date Section (Shows exact date instead of week)
-                                let groupedByDate = Dictionary(grouping: activeAssignments, by: { Calendar.current.startOfDay(for: dueDateForAssignment($0)) })
+                                let groupedByDate = assignmentsByDay
                                 let datesToShow = isDateFilterActive ? [Calendar.current.startOfDay(for: selectedDate)] : groupedByDate.keys.sorted()
 
                                 ForEach(datesToShow, id: \.self) { dateKey in
@@ -660,20 +677,58 @@ public struct AssignmentsView: View {
                                                 AssignmentCardRow(
                                                     assignment: assignment,
                                                     onToggle: {
-                                                        withAnimation {
-                                                            assignment.isCompleted.toggle()
-                                                            try? modelContext.save()
-                                                        }
+                                                        toggleAssignment(assignment)
                                                     },
                                                     onEdit: { editingAssignment = assignment },
                                                     onDelete: {
                                                         withAnimation(.easeInOut(duration: 0.25)) {
                                                             assignment.isDeleted = true
                                                             try? modelContext.save()
+                                                            DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                                                         }
                                                     }
                                                 )
                                             }
+                                        }
+                                    }
+                                }
+
+                                let undatedAssigns = activeAssignments.filter { $0.dueDate == nil }
+                                if !undatedAssigns.isEmpty && !isDateFilterActive {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "calendar.badge.exclamationmark")
+                                                    .font(.system(size: 12, weight: .bold))
+                                                    .foregroundColor(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                Text("UNDATED DELIVERABLES")
+                                                    .font(.system(size: 11, weight: .bold))
+                                                    .foregroundColor(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                            }
+
+                                            Spacer()
+
+                                            Text("\(undatedAssigns.count) item\(undatedAssigns.count == 1 ? "" : "s")")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                        }
+                                        .padding(.leading, 4)
+
+                                        ForEach(undatedAssigns) { assignment in
+                                            AssignmentCardRow(
+                                                assignment: assignment,
+                                                onToggle: {
+                                                    toggleAssignment(assignment)
+                                                },
+                                                onEdit: { editingAssignment = assignment },
+                                                onDelete: {
+                                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                                        assignment.isDeleted = true
+                                                        try? modelContext.save()
+                                                        DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
+                                                    }
+                                                }
+                                            )
                                         }
                                     }
                                 }
@@ -700,16 +755,14 @@ public struct AssignmentsView: View {
                                             AssignmentCardRow(
                                                 assignment: assignment,
                                                 onToggle: {
-                                                    withAnimation {
-                                                        assignment.isCompleted.toggle()
-                                                        try? modelContext.save()
-                                                    }
+                                                    toggleAssignment(assignment)
                                                 },
                                                 onEdit: { editingAssignment = assignment },
                                                 onDelete: {
                                                     withAnimation(.easeInOut(duration: 0.25)) {
                                                         assignment.isDeleted = true
                                                         try? modelContext.save()
+                                                        DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                                                     }
                                                 }
                                             )
@@ -873,21 +926,53 @@ public struct AssignmentsView: View {
                                                                     .fill(courseColor)
                                                                     .frame(width: 4, height: 36)
 
-                                                                VStack(alignment: .leading, spacing: 3) {
-                                                                    Text(reading.title)
+                                                                VStack(alignment: .leading, spacing: 4) {
+                                                                    let fullReadingTitleString: String = {
+                                                                        if let ch = reading.cleanChapterText, !ch.isEmpty {
+                                                                            let lowerTitle = reading.title.lowercased()
+                                                                            let lowerCh = ch.lowercased()
+                                                                            if lowerTitle.hasPrefix("chapter") || lowerTitle.hasPrefix("ch.") || lowerTitle.hasPrefix("ch ") {
+                                                                                let strippedTitle = reading.title.replacingOccurrences(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*[\d\s,&–\-and]+\s*[:\-–·•.]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                                                                                if !strippedTitle.isEmpty {
+                                                                                    return "\(ch) · \(strippedTitle)"
+                                                                                }
+                                                                                return ch
+                                                                            }
+                                                                            if !lowerTitle.contains(lowerCh) {
+                                                                                return "\(ch) · \(reading.title)"
+                                                                            }
+                                                                        }
+                                                                        return reading.title
+                                                                    }()
+
+                                                                    Text(fullReadingTitleString)
                                                                         .font(.system(size: 13.5, weight: .bold, design: .rounded))
                                                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                                         .lineLimit(2)
 
-                                                                    HStack(spacing: 8) {
+                                                                    HStack(spacing: 6) {
                                                                         if weekNum > 0 {
                                                                             Text("Week \(weekNum)")
-                                                                                .font(.system(size: 11, weight: .semibold))
-                                                                                .foregroundColor(courseColor)
+                                                                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                                                                .foregroundColor(.white)
+                                                                                .padding(.horizontal, 7)
+                                                                                .padding(.vertical, 2.5)
+                                                                                .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                                                .clipShape(Capsule())
+                                                                        }
+
+                                                                        if let mod = reading.moduleMention, !mod.isEmpty {
+                                                                            Text(mod)
+                                                                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                                                                .foregroundColor(.white)
+                                                                                .padding(.horizontal, 7)
+                                                                                .padding(.vertical, 2.5)
+                                                                                .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                                                .clipShape(Capsule())
                                                                         }
 
                                                                         if let range = reading.dateRangeStr, !range.isEmpty {
-                                                                            Text(weekNum > 0 ? "• \(range)" : range)
+                                                                            Text(range)
                                                                                 .font(.system(size: 11, weight: .medium))
                                                                                 .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                                                         }
@@ -1092,20 +1177,18 @@ public struct AssignmentsView: View {
                                 }
                             } else {
                                 // Chronological Due Date Sort
-                                ForEach(activeAssignments.sorted(by: { dueDateForAssignment($0) < dueDateForAssignment($1) })) { assignment in
+                                ForEach(activeAssignments.sorted(by: { ($0.dueDate ?? Date.distantFuture) < ($1.dueDate ?? Date.distantFuture) })) { assignment in
                                     AssignmentCardRow(
                                         assignment: assignment,
                                         onToggle: {
-                                            withAnimation {
-                                                assignment.isCompleted.toggle()
-                                                try? modelContext.save()
-                                            }
+                                            toggleAssignment(assignment)
                                         },
                                         onEdit: { editingAssignment = assignment },
                                         onDelete: {
                                             withAnimation(.easeInOut(duration: 0.25)) {
                                                 assignment.isDeleted = true
                                                 try? modelContext.save()
+                                                DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                                             }
                                         }
                                     )
@@ -1152,23 +1235,105 @@ public struct AssignmentsView: View {
             .onAppear {
                 sortMode = "assignments"
             }
+            .overlay {
+                if showingConfetti {
+                    ConfettiCelebrationView(isPresented: $showingConfetti, title: confettiTitle)
+                }
+            }
             .dismissKeyboardOnTap()
         }
     }
 
-    private func dueDateForAssignment(_ assign: Assignment) -> Date {
-        if let due = assign.dueDate {
-            return due
+    private func triggerConfetti(title: String) {
+        confettiTitle = title
+        withAnimation {
+            showingConfetti = true
         }
-        let calendar = Calendar.current
-        var comp = DateComponents()
-        comp.year = 2026
-        comp.month = 9
-        comp.day = 4
-        comp.hour = 23
-        comp.minute = 59
-        let startDate = calendar.date(from: comp) ?? Date()
-        return calendar.date(byAdding: .day, value: (assign.weekNumber - 1) * 7, to: startDate) ?? Date()
+    }
+
+    private func toggleAssignment(_ assignment: Assignment) {
+        let willBeCompleted = !assignment.isCompleted
+        withAnimation {
+            assignment.isCompleted = willBeCompleted
+            try? modelContext.save()
+            DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
+        }
+        
+        if willBeCompleted {
+            // 1. Check if this course's assignments are now 100% complete
+            if let course = assignment.course {
+                let courseAssigns = dbAssignments.filter { !$0.isDeleted && $0.course?.persistentModelID == course.persistentModelID }
+                let remaining = courseAssigns.filter { !$0.isCompleted }.count
+                if remaining == 0 && !courseAssigns.isEmpty {
+                    triggerConfetti(title: "🎉 \(course.courseCode ?? course.courseName) Assignments 100% Done!")
+                    return
+                }
+            }
+            
+            // 2. Check if all active assignments across all courses are now 100% complete
+            let allActive = activeAssignments
+            let remainingAll = allActive.filter { !$0.isCompleted }.count
+            if remainingAll == 0 && !allActive.isEmpty {
+                triggerConfetti(title: "🎉 All Assignments 100% Complete!")
+            }
+        }
+    }
+
+    private func dueDateForAssignment(_ assign: Assignment) -> Date? {
+        return assign.dueDate
+    }
+
+    // Group active assignments by week number
+    private var assignmentsByWeek: [Int: [Assignment]] {
+        var grouped: [Int: [Assignment]] = [:]
+        for assign in activeAssignments {
+            grouped[assign.weekNumber, default: []].append(assign)
+        }
+        return grouped
+    }
+
+    private var activeWeekNumbersForAssignments: [Int] {
+        let weeksWithAssigns = Set(assignmentsByWeek.filter({ !$0.value.isEmpty }).map({ $0.key }))
+        let positive = weeksWithAssigns.filter({ $0 > 0 }).sorted()
+        var result = positive
+        if weeksWithAssigns.contains(where: { $0 <= 0 }) {
+            result.append(0)
+        }
+        return result
+    }
+
+    private func weekModuleMentionForAssignment(for weekNum: Int) -> String? {
+        if let selectedCourseFilter {
+            guard selectedCourseFilter.hasDocumentModules else { return nil }
+            return selectedCourseFilter.cachedModuleForWeek(weekNum)
+                ?? selectedCourseFilter.weeks.first(where: { $0.weekNumber == weekNum })?.moduleMention
+        }
+        let assigns = assignmentsByWeek[weekNum] ?? []
+        for a in assigns {
+            if let course = a.course, course.hasDocumentModules {
+                if let mod = a.moduleMention ?? course.cachedModuleForWeek(weekNum) {
+                    return mod
+                }
+            }
+        }
+        return nil
+    }
+
+    private func weekDateRangeForAssignment(for weekNum: Int) -> String? {
+        let assigns = assignmentsByWeek[weekNum] ?? []
+        for a in assigns {
+            if let course = a.course {
+                if let w = course.weeks.first(where: { $0.weekNumber == weekNum }),
+                   let range = w.dateRangeStr, !range.isEmpty, range.lowercased() != "unknown" {
+                    return range
+                }
+            }
+        }
+        if let w = allWeeks.first(where: { $0.weekNumber == weekNum }),
+           let range = w.dateRangeStr, !range.isEmpty, range.lowercased() != "unknown" {
+            return range
+        }
+        return nil
     }
 
     private func dayNumber(for date: Date) -> Int {
@@ -1206,7 +1371,8 @@ public struct AssignmentsView: View {
         var dict: [Date: [Assignment]] = [:]
         let cal = Calendar.current
         for assign in activeAssignments {
-            let start = cal.startOfDay(for: dueDateForAssignment(assign))
+            guard let due = assign.dueDate else { continue }
+            let start = cal.startOfDay(for: due)
             dict[start, default: []].append(assign)
         }
         return dict
@@ -1264,6 +1430,28 @@ public struct AssignmentCardRow: View {
         CourseColorHelper.color(for: assignment.course?.hexColor ?? "#2563EB")
     }
 
+    private var displayTitle: String {
+        var raw = assignment.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cCode = assignment.courseCode ?? assignment.course?.courseCode
+        let cName = assignment.course?.courseName
+
+        if raw.isEmpty || (cCode != nil && raw.lowercased() == cCode!.lowercased()) || (cName != nil && raw.lowercased() == cName!.lowercased()) {
+            return assignment.displaySubType.isEmpty ? "Assignment" : assignment.displaySubType
+        }
+
+        if let cCode = cCode, !cCode.isEmpty {
+            let pattern = #"^(?i)\Q"# + cCode + #"\E\s*[:\-–\.]*\s*"#
+            raw = raw.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let cName = cName, !cName.isEmpty {
+            let pattern = #"^(?i)\Q"# + cName + #"\E\s*[:\-–\.]*\s*"#
+            raw = raw.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        raw = raw.replacingOccurrences(of: #"^[A-Z]{2,5}\s*\d{3,4}[A-Z]?\s*[:\-–\.]*\s*"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return raw.isEmpty ? (assignment.displaySubType.isEmpty ? "Assignment" : assignment.displaySubType) : raw
+    }
+
     public var body: some View {
         HStack(spacing: 8) {
             // Single Vertical Course Color Line Indicator
@@ -1273,37 +1461,32 @@ public struct AssignmentCardRow: View {
 
             // Content Area (Tapping opens Assignment Details)
             VStack(alignment: .leading, spacing: 4) {
-                // Top Line: Course Code Pill & Week Tag & Category
+                // Top Line: Course Title Pill with white letters
+                let pillTitle: String = {
+                    if let cName = assignment.course?.courseName, !cName.isEmpty {
+                        return cName
+                    }
+                    if let cCode = assignment.courseCode, !cCode.isEmpty {
+                        return cCode
+                    }
+                    return "Assignment"
+                }()
+
                 HStack(spacing: 6) {
-                    if let code = assignment.courseCode ?? assignment.course?.courseCode, !code.isEmpty {
-                        Text(code)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(courseColor)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(courseColor.opacity(0.12))
-                            .cornerRadius(4)
-                    }
+                    Text(pillTitle)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(courseColor)
+                        .cornerRadius(5)
 
-                    Text(assignment.weekOrModuleDisplay)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-
-                    if let sub = assignment.subTypeRaw, !sub.isEmpty, sub != "ASSIGNMENT" && sub != "PAPER" {
-                        Text(sub.capitalized)
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(Color(red: 0.94, green: 0.96, blue: 0.98))
-                            .cornerRadius(3)
-                    }
 
                     Spacer(minLength: 0)
                 }
 
-                // Card Title: Strictly assignment.title (never course title)
-                Text(assignment.title)
+                // Card Title: assignment title
+                Text(displayTitle)
                     .font(.cpItemTitle)
                     .foregroundColor(assignment.isCompleted ? Color(red: 0.35, green: 0.42, blue: 0.52) : Color(red: 0.22, green: 0.28, blue: 0.38))
                     .strikethrough(assignment.isCompleted)
@@ -1324,12 +1507,33 @@ public struct AssignmentCardRow: View {
                     }
                 }
                 .padding(.top, 1)
+
+                // Real Clickable Resource Link (Only displayed if a valid URL exists)
+                if let media = assignment.mediaUrl, URLHelper.isValidURL(media), let url = URLHelper.formatURL(media) {
+                    Link(destination: url) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "link.circle.fill")
+                                .font(.system(size: 12, weight: .bold))
+                            Text(url.absoluteString)
+                                .font(.cpDescriptionMedium)
+                                .lineLimit(1)
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3.5)
+                        .background(Color(red: 0.94, green: 0.96, blue: 1.0))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             Spacer(minLength: 4)
 
-            // Right-side Clean Action Buttons: Checkmark Ring & Trashcan
-            HStack(spacing: 12) {
+            // Right-side Action Buttons: Completion Ring & Trashcan
+            HStack(spacing: 8) {
                 // Completion Checkmark Ring Button (Expanded 36x36 touch target for instant 1-tap completion)
                 Button(action: {
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
@@ -1351,7 +1555,7 @@ public struct AssignmentCardRow: View {
                                 .foregroundColor(.white)
                         }
                     }
-                    .frame(width: 36, height: 36)
+                    .frame(width: 32, height: 36)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1365,7 +1569,7 @@ public struct AssignmentCardRow: View {
                     Image(systemName: "trash")
                         .font(.system(size: 15, weight: .regular))
                         .foregroundColor(Color.red.opacity(0.85))
-                        .frame(width: 32, height: 32)
+                        .frame(width: 30, height: 32)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1427,6 +1631,21 @@ public struct SortTabTile: View {
     }
 }
 
+// MARK: - Editable Rubric Model
+public struct EditableRubricItem: Identifiable, Hashable {
+    public let id: UUID
+    public var title: String
+    public var points: String
+    public var percentage: String
+
+    public init(id: UUID = UUID(), title: String, points: String, percentage: String = "") {
+        self.id = id
+        self.title = title
+        self.points = points
+        self.percentage = percentage
+    }
+}
+
 // MARK: - Edit Assignment Sheet
 
 public struct EditAssignmentSheet: View {
@@ -1435,6 +1654,10 @@ public struct EditAssignmentSheet: View {
     @Bindable var assignment: Assignment
 
     @State private var weekNumberState: Int = 1
+    @State private var weekStringState: String = "1"
+    @State private var selectedModuleNumState: Int = 0
+    @State private var moduleInputState: String = ""
+    @State private var hasDueDateState: Bool = false
     @State private var dueDateState: Date = Date()
     @State private var pointsValueState: Int = 100
     @State private var gradeWeightPercentState: Int = 10
@@ -1442,21 +1665,33 @@ public struct EditAssignmentSheet: View {
     @State private var videoUrlTextState: String = ""
     @State private var courseNameTextState: String = ""
     @State private var customNotesState: String = ""
-    @State private var isSyncing: Bool = false
+    @State private var noteInputsState: [String] = []
+    @State private var topicInputsState: [String] = []
+    @State private var rubricItemsState: [EditableRubricItem] = []
+    @State private var cachedCourseStartDate: Date? = nil
 
     private static let rubricDelimiterRegex = try? NSRegularExpression(pattern: #"(?:\r?\n|\||;|\s*,\s*(?=[A-Za-z0-9\s]+[:\-–]|\d+\s*(?:pts|points|%)))"#)
 
-    private var parsedRubricItems: [(title: String, points: String)] {
+    private var parsedRubricItems: [EditableRubricItem] {
         let structured = assignment.rubricCriteria
         if !structured.isEmpty {
             return structured.map { criterion in
                 let ptsStr: String = {
                     if let pts = criterion.points {
-                        return pts.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(pts)) pts" : "\(pts) pts"
+                        return pts.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(pts))" : "\(pts)"
                     }
                     return ""
                 }()
-                return (title: criterion.criterionName, points: ptsStr)
+                let pctStr: String = {
+                    if let pct = criterion.percentage {
+                        return pct.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(pct))" : "\(pct)"
+                    } else if let desc = criterion.description, let match = desc.range(of: #"\b\d+(?:\.\d+)?\s*%"#, options: .regularExpression) {
+                        let digits = desc[match].components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+                        return digits
+                    }
+                    return ""
+                }()
+                return EditableRubricItem(title: criterion.criterionName, points: ptsStr, percentage: pctStr)
             }
         }
 
@@ -1482,26 +1717,44 @@ public struct EditAssignmentSheet: View {
             rawSegments = rawText.components(separatedBy: CharacterSet(charactersIn: "\n|;,")).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         }
 
-        var result: [(title: String, points: String)] = []
+        var result: [EditableRubricItem] = []
         for segment in rawSegments {
-            let trimmed = segment.replacingOccurrences(of: #"^[•\-\*]\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = segment.replacingOccurrences(of: #"^[•\-\*▪●]\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
             
-            if let colonIdx = trimmed.firstIndex(of: ":") {
-                let title = String(trimmed[..<colonIdx]).trimmingCharacters(in: .whitespacesAndNewlines)
-                let pts = String(trimmed[trimmed.index(after: colonIdx)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-                result.append((title: title, points: pts))
-            } else if let dashIdx = trimmed.range(of: " - ") {
-                let title = String(trimmed[..<dashIdx.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-                let pts = String(trimmed[dashIdx.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-                result.append((title: title, points: pts))
-            } else if let match = trimmed.range(of: #"\b\d+\s*(?:pts|points|pt|%)\b"#, options: [.regularExpression, .caseInsensitive]) {
-                let pts = String(trimmed[match]).trimmingCharacters(in: .whitespacesAndNewlines)
-                let title = trimmed.replacingCharacters(in: match, with: "").replacingOccurrences(of: #"[\(\)]"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-                result.append((title: title.isEmpty ? "Criterion" : title, points: pts))
-            } else {
-                result.append((title: trimmed, points: ""))
+            var working = trimmed
+            var pctStr = ""
+            if let pctMatch = working.range(of: #"\b\d+(?:\.\d+)?\s*%"#, options: .regularExpression) {
+                let raw = String(working[pctMatch])
+                pctStr = raw.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+                working.removeSubrange(pctMatch)
             }
+            
+            var ptsStr = ""
+            if let ptsMatch = working.range(of: #"\b\d+(?:\.\d+)?\s*(?:pts|points|pt)\b"#, options: [.regularExpression, .caseInsensitive]) {
+                let raw = String(working[ptsMatch])
+                ptsStr = raw.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+                working.removeSubrange(ptsMatch)
+            }
+            
+            if ptsStr.isEmpty && pctStr.isEmpty {
+                if let numMatch = working.range(of: #"\b\d+(?:\.\d+)?\b"#, options: .regularExpression) {
+                    let raw = String(working[numMatch])
+                    ptsStr = raw
+                    working.removeSubrange(numMatch)
+                }
+            }
+            
+            var cleanTitle = working
+                .replacingOccurrences(of: #"^[\d\s\-\:\.\)]+"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"[\:\-\–\(\)]+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                
+            if cleanTitle.isEmpty {
+                cleanTitle = "Criterion"
+            }
+            
+            result.append(EditableRubricItem(title: cleanTitle, points: ptsStr, percentage: pctStr))
         }
         return result
     }
@@ -1539,41 +1792,52 @@ public struct EditAssignmentSheet: View {
                         .padding(.vertical, 1)
                     }
 
-                    // Section 2: Combined Week & Date Range Section with Bidirectional Sync
-                    Section("Week & Date Range") {
-                        Picker("Week", selection: $weekNumberState) {
-                            ForEach(1...20, id: \.self) { w in
-                                Text("Week \(w)").tag(w)
-                            }
-                        }
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .pickerStyle(.menu)
-                        .onChange(of: weekNumberState) { _, newW in
-                            guard !isSyncing else { return }
-                            isSyncing = true
-                            assignment.weekNumber = newW
-                            if assignment.dueDate != nil {
-                                let calculatedDate = WeekDateConverter.date(forWeek: newW)
-                                dueDateState = calculatedDate
-                                assignment.dueDate = calculatedDate
-                            }
-                            isSyncing = false
+                    // Section 2: Schedule & Due Date (Week, Module, and Due Date - No Made-up Date Ranges)
+                    Section("Schedule") {
+                        HStack(spacing: 8) {
+                            Text("Week")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            TextField("1", text: $weekStringState)
+                                .keyboardType(.numberPad)
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                .frame(width: 80)
+                                .onChange(of: weekStringState) { _, newVal in
+                                    let digits = newVal.filter { $0.isNumber }
+                                    if digits != newVal { weekStringState = digits }
+                                    if let w = Int(digits), w > 0 {
+                                        weekNumberState = w
+                                    }
+                                }
+                            Spacer()
                         }
 
-                        HStack {
-                            Text("Date Range")
+                        HStack(spacing: 8) {
+                            TextField("Module", text: $moduleInputState)
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            Spacer()
-                            if let due = assignment.dueDate {
-                                Text(WeekDateConverter.formattedDueDate(for: due, weekNumber: weekNumberState))
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                            } else {
-                                Text("No date set")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                            }
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                        }
+
+                        Toggle("Due Date & Time", isOn: $hasDueDateState)
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+
+                        if hasDueDateState {
+                            DatePicker("Select Date & Time", selection: $dueDateState, displayedComponents: [.date, .hourAndMinute])
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .onChange(of: dueDateState) { _, newDate in
+                                    let derivedW: Int
+                                    if let firstDate = cachedCourseStartDate {
+                                        derivedW = WeekDateConverter.deriveWeekNumber(for: newDate, courseStartDate: firstDate)
+                                    } else {
+                                        derivedW = WeekDateConverter.weekNumber(for: newDate)
+                                    }
+                                    if weekNumberState != derivedW {
+                                        weekNumberState = derivedW
+                                        weekStringState = "\(derivedW)"
+                                    }
+                                    // Module is untouched
+                                }
                         }
                     }
 
@@ -1594,43 +1858,121 @@ public struct EditAssignmentSheet: View {
                             HStack {
                                 Image(systemName: "list.bullet.clipboard.fill")
                                     .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                 Text("Rubric Criteria")
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                Spacer()
                             }
 
-                            if !parsedRubricItems.isEmpty {
+                            if !rubricItemsState.isEmpty {
                                 VStack(spacing: 8) {
-                                    ForEach(Array(parsedRubricItems.enumerated()), id: \.offset) { idx, item in
-                                        HStack(spacing: 10) {
-                                            ZStack {
-                                                Circle()
-                                                    .fill(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.12))
-                                                    .frame(width: 24, height: 24)
-                                                Image(systemName: "checkmark")
-                                                    .font(.system(size: 10, weight: .bold))
-                                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    ForEach(0..<rubricItemsState.count, id: \.self) { idx in
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            // Row 1: Index + Criterion Title + Delete Button
+                                            HStack(spacing: 8) {
+                                                Text("\(idx + 1) -")
+                                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+
+                                                TextField("Criterion title (e.g. Analysis)...", text: Binding(
+                                                    get: { idx < rubricItemsState.count ? rubricItemsState[idx].title : "" },
+                                                    set: { newVal in
+                                                        if idx < rubricItemsState.count {
+                                                            rubricItemsState[idx].title = newVal
+                                                        }
+                                                    }
+                                                ))
+                                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                                                Spacer()
+
+                                                Button {
+                                                    if idx < rubricItemsState.count {
+                                                        rubricItemsState.remove(at: idx)
+                                                    }
+                                                } label: {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .font(.system(size: 16))
+                                                        .foregroundColor(Color(red: 0.70, green: 0.75, blue: 0.82))
+                                                }
+                                                .buttonStyle(.plain)
                                             }
 
-                                            Text(item.title)
-                                                .font(.system(size: 13.5, weight: .semibold, design: .rounded))
-                                                .foregroundColor(Color(red: 0.12, green: 0.16, blue: 0.24))
+                                            // Row 2: Points & Percentage Inputs (No description/instructions)
+                                            HStack(spacing: 10) {
+                                                // Points Pill
+                                                HStack(spacing: 4) {
+                                                    TextField("Pts", text: Binding(
+                                                        get: {
+                                                            guard idx < rubricItemsState.count else { return "" }
+                                                            let val = rubricItemsState[idx].points
+                                                            return val.replacingOccurrences(of: "pts", with: "", options: .caseInsensitive)
+                                                                .replacingOccurrences(of: "pt", with: "", options: .caseInsensitive)
+                                                                .trimmingCharacters(in: .whitespaces)
+                                                        },
+                                                        set: { newVal in
+                                                            if idx < rubricItemsState.count {
+                                                                rubricItemsState[idx].points = newVal.replacingOccurrences(of: "pts", with: "", options: .caseInsensitive)
+                                                                    .replacingOccurrences(of: "pt", with: "", options: .caseInsensitive)
+                                                                    .trimmingCharacters(in: .whitespaces)
+                                                            }
+                                                        }
+                                                    ))
+                                                    .keyboardType(.numbersAndPunctuation)
+                                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
-                                            Spacer()
+                                                    Text("pts")
+                                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                                }
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
+                                                .background(Color(red: 0.95, green: 0.96, blue: 0.98))
+                                                .cornerRadius(8)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .stroke(Color(red: 0.88, green: 0.90, blue: 0.93), lineWidth: 1)
+                                                )
+                                                .frame(maxWidth: .infinity)
 
-                                            if !item.points.isEmpty {
-                                                Text(item.points)
-                                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 4)
-                                                    .background(Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.12))
-                                                    .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
-                                                    .cornerRadius(8)
+                                                // Percentage Pill
+                                                HStack(spacing: 4) {
+                                                    TextField("Weight", text: Binding(
+                                                        get: {
+                                                            guard idx < rubricItemsState.count else { return "" }
+                                                            return rubricItemsState[idx].percentage.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)
+                                                        },
+                                                        set: { newVal in
+                                                            if idx < rubricItemsState.count {
+                                                                rubricItemsState[idx].percentage = newVal.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)
+                                                            }
+                                                        }
+                                                    ))
+                                                    .keyboardType(.numbersAndPunctuation)
+                                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                                                    Text("%")
+                                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                                }
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
+                                                .background(Color(red: 0.95, green: 0.96, blue: 0.98))
+                                                .cornerRadius(8)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .stroke(Color(red: 0.88, green: 0.90, blue: 0.93), lineWidth: 1)
+                                                )
+                                                .frame(maxWidth: .infinity)
                                             }
+                                            .padding(.leading, 24)
                                         }
                                         .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
+                                        .padding(.vertical, 10)
                                         .background(Color.white)
                                         .cornerRadius(12)
                                         .overlay(
@@ -1639,17 +1981,76 @@ public struct EditAssignmentSheet: View {
                                         )
                                     }
                                 }
-                            } else {
-                                Text("No rubric breakdown extracted")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                    .padding(.vertical, 4)
                             }
+
+                            Button {
+                                rubricItemsState.append(EditableRubricItem(title: "", points: "", percentage: ""))
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Criterion")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .padding(.top, 2)
+                            }
+                            .buttonStyle(.plain)
                         }
                         .padding(.vertical, 4)
                     }
 
-                    // Section 4: Resource Link
+                    // Section 4: Dedicated Topics Section (Clean numbered list: 1 - Topic, editable like rest of sections)
+                    Section("Topics") {
+                        if topicInputsState.isEmpty {
+                            Button {
+                                topicInputsState.append("")
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Topic")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
+                        } else {
+                            ForEach(0..<topicInputsState.count, id: \.self) { idx in
+                                HStack(spacing: 8) {
+                                    Text("\(idx + 1) -")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+
+                                    TextField("Topic description...", text: Binding(
+                                        get: { idx < topicInputsState.count ? topicInputsState[idx] : "" },
+                                        set: { newVal in
+                                            if idx < topicInputsState.count {
+                                                topicInputsState[idx] = newVal
+                                                let nonEmpty = topicInputsState.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                                                assignment.relevantTopics = nonEmpty.isEmpty ? nil : nonEmpty.joined(separator: ", ")
+                                            }
+                                        }
+                                    ))
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                }
+                            }
+
+                            Button {
+                                topicInputsState.append("")
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Topic")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
+                        }
+                    }
+
+                    // Section 5: Resource Link
                     Section("Resource Link") {
                         TextField("Paste video or article URL...", text: $videoUrlTextState)
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -1675,14 +2076,83 @@ public struct EditAssignmentSheet: View {
                         }
                     }
 
-                    // Section 5: Notes Section (Double size input pill)
+                    // Section 6: Notes
                     Section("Notes") {
-                        TextField("Enter notes...", text: $customNotesState, axis: .vertical)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .lineLimit(6...14)
-                            .onChange(of: customNotesState) { _, newValue in
-                                assignment.noteText = newValue
+                        if noteInputsState.isEmpty {
+                            Button {
+                                noteInputsState.append("")
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Note")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                             }
+                        } else {
+                            VStack(spacing: 14) { // Space between each note
+                                ForEach(0..<noteInputsState.count, id: \.self) { idx in
+                                    HStack(alignment: .top, spacing: 12) {
+                                        Text("\(idx + 1) -")
+                                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                            .padding(.top, 2)
+
+                                        TextField("Add note or instruction...", text: Binding(
+                                            get: { idx < noteInputsState.count ? noteInputsState[idx] : "" },
+                                            set: { newVal in
+                                                if idx < noteInputsState.count {
+                                                    noteInputsState[idx] = newVal
+                                                }
+                                            }
+                                        ), axis: .vertical)
+                                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                                        .lineSpacing(6) // Separate text lines more inside the note
+                                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                        .lineLimit(3...16)
+
+                                        Spacer(minLength: 4)
+
+                                        Button {
+                                            if idx < noteInputsState.count {
+                                                noteInputsState.remove(at: idx)
+                                            }
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 16))
+                                                .foregroundColor(Color(red: 0.70, green: 0.75, blue: 0.82))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.top, 2)
+                                    }
+                                    .padding(.horizontal, 18)
+                                    .padding(.vertical, 18)
+                                    .frame(minHeight: 90, alignment: .topLeading) // Taller note pill
+                                    .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+                                    .cornerRadius(14)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
+                                    )
+                                }
+                            }
+                            .padding(.vertical, 4)
+
+                            Button {
+                                noteInputsState.append("")
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Note")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .padding(.top, 2)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -1690,10 +2160,32 @@ public struct EditAssignmentSheet: View {
                 .scrollDismissesKeyboard(.immediately)
             }
             .onAppear {
-                weekNumberState = assignment.weekNumber
-                dueDateState = assignment.dueDate ?? WeekDateConverter.date(forWeek: assignment.weekNumber)
+                weekNumberState = assignment.weekNumber > 0 ? assignment.weekNumber : 1
+                weekStringState = "\(weekNumberState)"
+                if let d = assignment.dueDate {
+                    hasDueDateState = true
+                    dueDateState = d
+                } else {
+                    hasDueDateState = false
+                    dueDateState = Date()
+                }
+                if let mod = assignment.moduleMention {
+                    moduleInputState = mod
+                    if let match = mod.range(of: #"\d+"#, options: .regularExpression), let num = Int(mod[match]) {
+                        selectedModuleNumState = num
+                    } else {
+                        selectedModuleNumState = 0
+                    }
+                } else {
+                    moduleInputState = ""
+                    selectedModuleNumState = 0
+                }
                 videoUrlTextState = assignment.mediaUrl ?? ""
-                customNotesState = assignment.noteText ?? ""
+                let rawNotes = assignment.noteText ?? assignment.fullInstructions ?? ""
+                customNotesState = rawNotes
+                noteInputsState = rawNotes.components(separatedBy: .newlines)
+                    .map { $0.replacingOccurrences(of: #"^[•\-\*▪●]\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
                 courseNameTextState = assignment.course?.courseName ?? ""
                 
                 let rawPts = assignment.pointsPossible ?? "100 Points"
@@ -1709,19 +2201,108 @@ public struct EditAssignmentSheet: View {
                 } else {
                     pointsBreakdownTextState = ""
                 }
+
+                rubricItemsState = parsedRubricItems
+
+                let currentTopics = assignment.computedTopics.filter { !$0.lowercased().hasPrefix("module") && !$0.lowercased().hasPrefix("mod ") }
+                if !currentTopics.isEmpty {
+                    topicInputsState = currentTopics
+                } else if let rel = assignment.relevantTopics, !rel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    topicInputsState = [rel.trimmingCharacters(in: .whitespacesAndNewlines)]
+                } else {
+                    topicInputsState = []
+                }
+                cachedCourseStartDate = assignment.course?.weeks.compactMap({ $0.startDate }).min() ?? assignment.course?.earliestItemDate
             }
             .navigationTitle("Details")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(red: 0.95, green: 0.96, blue: 0.98), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        // Save Week
+                        assignment.weekNumber = weekNumberState
+
+                        // Save Due Date
+                        assignment.dueDate = hasDueDateState ? dueDateState : nil
+
+                        // Save Points & Weight
+                        assignment.pointsPossible = pointsValueState > 0 ? "\(pointsValueState) Points" : nil
+                        assignment.weightPercentage = "\(gradeWeightPercentState)%"
+
+                        // Save Topics & Module
+                        let trimmedMod = moduleInputState.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let course = assignment.course, !trimmedMod.isEmpty {
+                            course.cacheModule(trimmedMod, forWeek: weekNumberState)
+                        }
+                        let nonEmptyTopics = topicInputsState.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                        if !nonEmptyTopics.isEmpty {
+                            assignment.relevantTopics = nonEmptyTopics.joined(separator: ", ")
+                        } else if !trimmedMod.isEmpty {
+                            assignment.relevantTopics = trimmedMod
+                        } else if selectedModuleNumState > 0 {
+                            assignment.relevantTopics = "Module \(selectedModuleNumState)"
+                        } else {
+                            assignment.relevantTopics = nil
+                        }
+
+                        // Save Rubric Criteria
+                        let validRubrics = rubricItemsState
+                            .map { EditableRubricItem(
+                                title: $0.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                                points: $0.points.trimmingCharacters(in: .whitespacesAndNewlines),
+                                percentage: $0.percentage.trimmingCharacters(in: .whitespacesAndNewlines)
+                            ) }
+                            .filter { !$0.title.isEmpty || !$0.points.isEmpty || !$0.percentage.isEmpty }
+
+                        if !validRubrics.isEmpty {
+                            let dtoArray = validRubrics.map { item -> RubricCriterionDTO in
+                                let ptsDigits = item.points.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+                                let doubleVal = Double(ptsDigits)
+                                let pctDigits = item.percentage.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+                                let doublePct = Double(pctDigits)
+                                let titleStr = item.title.isEmpty ? "Criterion" : item.title
+                                return RubricCriterionDTO(criterionName: titleStr, points: doubleVal, percentage: doublePct, description: nil)
+                            }
+                            if let data = try? JSONEncoder().encode(dtoArray), let jsonStr = String(data: data, encoding: .utf8) {
+                                assignment.rubricJSON = jsonStr
+                            }
+                            assignment.pointsBreakdown = validRubrics.map { item in
+                                let titleStr = item.title.isEmpty ? "Criterion" : item.title
+                                var parts: [String] = []
+                                let cleanPts = item.points.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+                                if !cleanPts.isEmpty {
+                                    parts.append("\(cleanPts) pts")
+                                }
+                                let cleanPct = item.percentage.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted).joined()
+                                if !cleanPct.isEmpty {
+                                    parts.append("\(cleanPct)%")
+                                }
+                                if parts.isEmpty {
+                                    return titleStr
+                                } else {
+                                    return "\(titleStr): \(parts.joined(separator: ", "))"
+                                }
+                            }.joined(separator: "\n")
+                        } else {
+                            assignment.rubricJSON = nil
+                            assignment.pointsBreakdown = nil
+                        }
+
+                        // Save Notes & Instructions
+                        let nonEmptyNotes = noteInputsState.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                        let mergedNotes = nonEmptyNotes.isEmpty ? nil : nonEmptyNotes.joined(separator: "\n")
+                        assignment.noteText = mergedNotes
+                        assignment.fullInstructions = mergedNotes
+
                         try? modelContext.save()
                         dismiss()
                     }
@@ -1849,6 +2430,28 @@ public struct CourseSectionAssignmentRow: View {
     public let assignment: Assignment
     public let courseColor: Color
 
+    private var displayTitle: String {
+        var raw = assignment.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cCode = assignment.courseCode ?? assignment.course?.courseCode
+        let cName = assignment.course?.courseName
+
+        if raw.isEmpty || (cCode != nil && raw.lowercased() == cCode!.lowercased()) || (cName != nil && raw.lowercased() == cName!.lowercased()) {
+            return assignment.displaySubType.isEmpty ? "Assignment" : assignment.displaySubType
+        }
+
+        if let cCode = cCode, !cCode.isEmpty {
+            let pattern = #"^(?i)\Q"# + cCode + #"\E\s*[:\-–\.]*\s*"#
+            raw = raw.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let cName = cName, !cName.isEmpty {
+            let pattern = #"^(?i)\Q"# + cName + #"\E\s*[:\-–\.]*\s*"#
+            raw = raw.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        raw = raw.replacingOccurrences(of: #"^[A-Z]{2,5}\s*\d{3,4}[A-Z]?\s*[:\-–\.]*\s*"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return raw.isEmpty ? (assignment.displaySubType.isEmpty ? "Assignment" : assignment.displaySubType) : raw
+    }
+
     public var body: some View {
         HStack(alignment: .center, spacing: 10) {
             // Single Vertical Course Color Line Indicator
@@ -1857,7 +2460,7 @@ public struct CourseSectionAssignmentRow: View {
                 .frame(width: 4, height: 36)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(assignment.title)
+                Text(displayTitle)
                     .font(.system(size: 14.5, weight: .bold, design: .rounded))
                     .foregroundColor(Color(red: 0.22, green: 0.28, blue: 0.38))
                     .lineLimit(2)
@@ -1878,10 +2481,12 @@ public struct CourseSectionAssignmentRow: View {
                 }
             }
             Spacer()
+
             Button(action: {
                 withAnimation {
                     assignment.isDeleted = true
                     try? modelContext.save()
+                    DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                 }
             }) {
                 Image(systemName: "trash")

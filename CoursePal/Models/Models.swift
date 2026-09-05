@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import PDFKit
 
 // MARK: - SwiftData Models (iOS Single Source of Truth)
 
@@ -16,6 +17,8 @@ public final class Course {
     public var termWeeks: Int
     public var sharingCode: String
     public var isDeleted: Bool
+    public var isFavorite: Bool = false
+    public var chatHistoryJSON: String?
     public var createdAt: Date
     
     @Relationship(deleteRule: .cascade, inverse: \Week.course)
@@ -39,7 +42,9 @@ public final class Course {
         termWeeks: Int = 16,
         sharingCode: String = "",
         isDeleted: Bool = false,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        isFavorite: Bool = false,
+        chatHistoryJSON: String? = nil
     ) {
         self.id = id
         self.creatorId = creatorId
@@ -60,6 +65,8 @@ public final class Course {
         }
         self.isDeleted = isDeleted
         self.createdAt = createdAt
+        self.isFavorite = isFavorite
+        self.chatHistoryJSON = chatHistoryJSON
     }
 
     public func toDTO() -> CourseDTO {
@@ -86,7 +93,8 @@ public final class Course {
                     dateRangeStr: r.dateRangeStr,
                     relevantTopics: r.relevantTopics,
                     chapterText: r.chapterText,
-                    pagesText: r.pagesText
+                    pagesText: r.pagesText,
+                    isFavorite: r.isFavorite
                 ))
             }
             weeksDTO.append(WeekDTO(
@@ -117,7 +125,10 @@ public final class Course {
                 noteText: a.noteText,
                 pointsBreakdown: a.pointsBreakdown,
                 relevantTopics: a.relevantTopics,
-                mediaUrl: a.mediaUrl
+                mediaUrl: a.mediaUrl,
+                rubric: a.rubricCriteria,
+                isFavorite: a.isFavorite,
+                isCompleted: a.isCompleted
             ))
         }
 
@@ -135,7 +146,9 @@ public final class Course {
             weeks: weeksDTO,
             assignments: assignmentsDTO,
             items: nil,
-            dataExtractionStats: nil
+            dataExtractionStats: nil,
+            isFavorite: isFavorite,
+            chatHistoryJSON: chatHistoryJSON
         )
     }
 
@@ -202,7 +215,7 @@ public final class Course {
                                 (calendar.dateComponents([.day], from: startOfWeek1, to: item.date).day! / 7)
                 let derivedWeekNum = max(1, diffWeeks + 1)
 
-                if let r = item.reading {
+                if let r = item.reading, r.week == nil {
                     let targetWeek: Week
                     if let existing = weeks.first(where: { $0.weekNumber == derivedWeekNum }) {
                         targetWeek = existing
@@ -213,22 +226,14 @@ public final class Course {
                         modelContext?.insert(nw)
                         targetWeek = nw
                     }
-                    let weekStart = calendar.date(byAdding: .day, value: (derivedWeekNum - 1) * 7, to: startOfWeek1) ?? startOfWeek1
-                    let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
-                    targetWeek.startDate = weekStart
-                    targetWeek.dateRangeStr = LocalSyllabusParser.formatExplicitDateRange(start: weekStart, end: weekEnd)
-
-                    if r.week?.persistentModelID != targetWeek.persistentModelID {
-                        if let oldWeek = r.week {
-                            oldWeek.readings.removeAll(where: { $0.persistentModelID == r.persistentModelID })
-                        }
-                        r.week = targetWeek
-                        if !targetWeek.readings.contains(where: { $0.persistentModelID == r.persistentModelID }) {
-                            targetWeek.readings.append(r)
-                        }
+                    r.week = targetWeek
+                    if !targetWeek.readings.contains(where: { $0.persistentModelID == r.persistentModelID }) {
+                        targetWeek.readings.append(r)
                     }
                 } else if let a = item.assignment {
-                    a.weekNumber = derivedWeekNum
+                    if a.weekNumber <= 0 {
+                        a.weekNumber = derivedWeekNum
+                    }
                 }
             }
 
@@ -267,6 +272,95 @@ public final class Course {
                     a.weekNumber = 1
                 }
             }
+        }
+    }
+
+    private static var courseHasDocModulesCache: [UUID: Bool] = [:]
+    private static var courseModuleCache: [UUID: [Int: String]] = [:]
+
+    public static func invalidateModuleCache(for courseId: UUID? = nil) {
+        if let courseId {
+            courseHasDocModulesCache.removeValue(forKey: courseId)
+            courseModuleCache.removeValue(forKey: courseId)
+        } else {
+            courseHasDocModulesCache.removeAll()
+            courseModuleCache.removeAll()
+        }
+    }
+
+    public var hasDocumentModules: Bool {
+        if let cached = Self.courseHasDocModulesCache[id] {
+            return cached
+        }
+        var fullText = ""
+        for doc in syllabusDocs {
+            if let data = doc.rawFileData, let pdf = PDFDocument(data: data) {
+                fullText += (0..<pdf.pageCount).compactMap { pdf.page(at: $0)?.string }.joined(separator: "\n") + "\n"
+            } else if let contact = doc.instructorContact, !contact.isEmpty {
+                fullText += contact + "\n"
+            }
+        }
+        if fullText.isEmpty {
+            Self.courseHasDocModulesCache[id] = false
+            return false
+        }
+        
+        let clean = fullText
+            .replacingOccurrences(of: #"(?i)\bMODU\s*[\r\n]+\s*LE"#, with: "MODULE", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\bMODU\s+LE"#, with: "MODULE", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\bMOD\s*[\r\n]+\s*ULE"#, with: "MODULE", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\bM\s*[\r\n]+\s*ODULE"#, with: "MODULE", options: .regularExpression)
+        
+        // 1. Explicit schedule table header with module
+        let headerPattern = #"(?i)\b(?:week\s+modules|modules\s+topics|topics,\s*modules|module\s*(?:and|&|/)\s*week|week\s*(?:and|&|/)\s*module|module\s+readings|module\s+schedule)\b"#
+        if clean.range(of: headerPattern, options: .regularExpression) != nil {
+            Self.courseHasDocModulesCache[id] = true
+            return true
+        }
+        
+        // 2. Count distinct module numbers in the document (must have at least 2 distinct module numbers, e.g. Module 1, Module 2...)
+        let moduleRegex = try? NSRegularExpression(pattern: #"(?i)\bmodule\s*(\d{1,2})\b"#)
+        let matches = moduleRegex?.matches(in: clean, range: NSRange(clean.startIndex..., in: clean)) ?? []
+        let moduleNums = Set(matches.compactMap { match -> Int? in
+            guard match.numberOfRanges > 1 else { return nil }
+            let r = match.range(at: 1)
+            let s = (clean as NSString).substring(with: r)
+            return Int(s)
+        })
+        
+        let result = moduleNums.count >= 2
+        Self.courseHasDocModulesCache[id] = result
+        return result
+    }
+
+    public func cachedModuleForWeek(_ weekNum: Int) -> String? {
+        guard hasDocumentModules else { return nil }
+        if let cachedMap = Self.courseModuleCache[id] {
+            return cachedMap[weekNum]
+        }
+        var fullText = ""
+        for doc in syllabusDocs {
+            if let data = doc.rawFileData, let pdf = PDFDocument(data: data) {
+                fullText += (0..<pdf.pageCount).compactMap { pdf.page(at: $0)?.string }.joined(separator: "\n") + "\n"
+            }
+            if fullText.isEmpty, let contact = doc.instructorContact {
+                fullText += contact + "\n"
+            }
+        }
+        if !fullText.isEmpty {
+            let (wMap, _) = ModuleExtractor.extractModulesFromText(fullText)
+            Self.courseModuleCache[id] = wMap
+            return wMap[weekNum]
+        }
+        Self.courseModuleCache[id] = [:]
+        return nil
+    }
+
+    public func cacheModule(_ moduleStr: String, forWeek weekNum: Int) {
+        if Self.courseModuleCache[id] != nil {
+            Self.courseModuleCache[id]?[weekNum] = moduleStr
+        } else {
+            Self.courseModuleCache[id] = [weekNum: moduleStr]
         }
     }
 }
@@ -310,6 +404,20 @@ public final class Week {
             return Calendar.current.date(byAdding: .day, value: 6, to: start)
         }
         return Calendar.current.date(byAdding: .day, value: 6, to: computedStartDate)
+    }
+
+    public var moduleMention: String? {
+        guard let course = course, course.hasDocumentModules else { return nil }
+        if let t = theme, let modRange = t.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(t[modRange]).capitalized
+        }
+        if let firstMod = readings.compactMap({ $0.moduleMention }).first {
+            return firstMod
+        }
+        if let cached = course.cachedModuleForWeek(weekNumber) {
+            return cached
+        }
+        return nil
     }
 }
 
@@ -356,6 +464,7 @@ public final class Reading {
     public var relevantTopics: String?
     public var sourceDocumentName: String?
     public var docColorHex: String?
+    public var isFavorite: Bool = false
     
     public var week: Week?
 
@@ -385,7 +494,8 @@ public final class Reading {
         semanticCategoryRaw: String? = "reading",
         relevantTopics: String? = nil,
         sourceDocumentName: String? = nil,
-        docColorHex: String? = nil
+        docColorHex: String? = nil,
+        isFavorite: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -408,6 +518,7 @@ public final class Reading {
         self.relevantTopics = relevantTopics
         self.sourceDocumentName = sourceDocumentName
         self.docColorHex = docColorHex
+        self.isFavorite = isFavorite
     }
 
     public var displaySourceDocument: String? {
@@ -430,10 +541,24 @@ public final class Reading {
         return "#7C3AED"
     }
 
+    public static func expandChapterToFullWord(_ text: String?) -> String? {
+        guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        var result = t
+        if let r = result.range(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*"#, options: .regularExpression) {
+            result = result.replacingCharacters(in: r, with: "Chapter ")
+        } else if result.range(of: #"^\d+"#, options: .regularExpression) != nil {
+            result = "Chapter " + result
+        } else {
+            result = result.replacingOccurrences(of: #"(?i)\b(?:chapters?|chaps?\.?|chs?\.?)\s*"#, with: "Chapter ", options: .regularExpression)
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public var chapterAndPagesDisplay: String? {
         var parts: [String] = []
         if let ch = chapterText, !ch.trimmingCharacters(in: .whitespaces).isEmpty {
-            parts.append(ch)
+            let fullCh = Reading.expandChapterToFullWord(ch) ?? ch
+            parts.append(fullCh)
         }
         if let pg = pagesText, !pg.trimmingCharacters(in: .whitespaces).isEmpty {
             parts.append(pg)
@@ -443,18 +568,118 @@ public final class Reading {
 
     public var authorAndChaptersSubtitle: String? {
         var parts: [String] = []
+        let lowerTitle = title.lowercased()
         if let auth = authorName?.trimmingCharacters(in: .whitespacesAndNewlines), !auth.isEmpty {
             let cleanAuth = auth.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
-            if !cleanAuth.isEmpty {
+            if !cleanAuth.isEmpty && !lowerTitle.contains(cleanAuth.lowercased()) {
                 parts.append(cleanAuth)
             }
         }
-        if let chDisplay = chapterAndPagesDisplay, !chDisplay.isEmpty {
+        
+        let titleHasChapter = lowerTitle.range(of: #"(?i)\b(chapters?|chs?\.?)\s*\d+"#, options: .regularExpression) != nil
+        
+        if let ch = chapterText?.trimmingCharacters(in: .whitespacesAndNewlines), !ch.isEmpty {
+            var cleanCh = ch.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
+            if titleHasChapter {
+                // Strip out chapter mentions from ch since title already has it
+                cleanCh = cleanCh.replacingOccurrences(of: #"(?i)\b(chapters?|chs?\.?)\s*\d+([\s&,\-–]+\d+)?\s*[:•·\-–]*\s*"#, with: "", options: .regularExpression)
+                    .replacingOccurrences(of: #"^[:;\-\s•·]+|[:;\-\s•·]+$"#, with: "", options: .regularExpression)
+            } else {
+                cleanCh = Reading.expandChapterToFullWord(cleanCh) ?? cleanCh
+            }
+            if !cleanCh.isEmpty && !lowerTitle.contains(cleanCh.lowercased()) {
+                parts.append(cleanCh)
+            }
+        } else if !titleHasChapter, let chDisplay = chapterAndPagesDisplay, !chDisplay.isEmpty {
             let cleanCh = chDisplay.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
-            if !cleanCh.isEmpty {
+            if !cleanCh.isEmpty && !lowerTitle.contains(cleanCh.lowercased()) {
                 parts.append(cleanCh)
             }
         }
+        
+        if let pg = pagesText?.trimmingCharacters(in: .whitespacesAndNewlines), !pg.isEmpty {
+            let cleanPg = pg.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
+            if !cleanPg.isEmpty && !lowerTitle.contains(cleanPg.lowercased()) && !parts.contains(where: { $0.lowercased().contains(cleanPg.lowercased()) }) {
+                parts.append(cleanPg)
+            }
+        }
+        
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    public var cleanChapterText: String? {
+        var rawCh: String? = nil
+        
+        if let ch = chapterText?.trimmingCharacters(in: .whitespacesAndNewlines), !ch.isEmpty {
+            rawCh = ch
+        } else if let match = title.range(of: #"(?i)\s*[\(\[]\s*((?:chapters?|chaps?\.?|chs?\.?)\s*\d+[\s&,\-–\d]*)\s*[\)\]]"#, options: .regularExpression) {
+            rawCh = String(title[match]).replacingOccurrences(of: #"[()\[\]]"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let match = title.range(of: #"(?i)\s*[:\-–]\s*((?:chapters?|chaps?\.?|chs?\.?)\s*\d+[\s&,\-–\d]*)$"#, options: .regularExpression) {
+            rawCh = String(title[match]).replacingOccurrences(of: #"^[:\-–\s]+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if !summaryText.isEmpty {
+            let (extCh, _) = LocalSyllabusParser.shared.extractChapterAndPages(from: summaryText)
+            if let extCh = extCh, !extCh.isEmpty {
+                rawCh = extCh
+            }
+        } else if let chDisplay = chapterAndPagesDisplay, !chDisplay.isEmpty {
+            let clean = chDisplay.replacingOccurrences(of: #"^[:;\-\s•·]+|[:;\-\s•·]+$"#, with: "", options: .regularExpression)
+            if !clean.isEmpty { rawCh = clean }
+        }
+        
+        guard let found = rawCh?.trimmingCharacters(in: .whitespacesAndNewlines), !found.isEmpty else {
+            return nil
+        }
+        
+        let cleanCh = found.replacingOccurrences(of: #"^[:;\-\s•·]+|[:;\-\s•·]+$"#, with: "", options: .regularExpression)
+        var digitsAndDetails = cleanCh.replacingOccurrences(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^[:;\-\s•·.]+|[:;\-\s•·.]+$"#, with: "", options: .regularExpression)
+        
+        if digitsAndDetails.isEmpty {
+            digitsAndDetails = cleanCh
+        }
+        
+        return "Chapter \(digitsAndDetails)"
+    }
+
+    public var displayTitleWithChapter: String {
+        let cleanTitle = cleanDisplayTitle
+        if let ch = cleanChapterText, !ch.isEmpty {
+            let lowerTitle = cleanTitle.lowercased()
+            let lowerCh = ch.lowercased()
+            if lowerTitle.hasPrefix("chapter") || lowerTitle.hasPrefix("ch.") || lowerTitle.hasPrefix("ch ") {
+                let strippedTitle = cleanTitle.replacingOccurrences(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*[\d\s,&–\-and]+\s*[:\-–·•.]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !strippedTitle.isEmpty {
+                    return "\(ch) · \(strippedTitle)"
+                }
+                return ch
+            }
+            if !lowerTitle.contains(lowerCh) {
+                return "\(ch) · \(cleanTitle)"
+            }
+        }
+        return cleanTitle
+    }
+
+    public var authorAndPagesSubtitle: String? {
+        var parts: [String] = []
+        let lowerTitle = title.lowercased()
+        if let auth = authorName?.trimmingCharacters(in: .whitespacesAndNewlines), !auth.isEmpty {
+            let cleanAuth = auth.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
+            if !cleanAuth.isEmpty && !lowerTitle.contains(cleanAuth.lowercased()) {
+                parts.append(cleanAuth)
+            }
+        }
+        
+        if let pg = pagesText?.trimmingCharacters(in: .whitespacesAndNewlines), !pg.isEmpty {
+            var cleanPg = pg.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
+            if !cleanPg.isEmpty && !lowerTitle.contains(cleanPg.lowercased()) && !parts.contains(where: { $0.lowercased().contains(cleanPg.lowercased()) }) {
+                if !cleanPg.lowercased().hasPrefix("pp") && !cleanPg.lowercased().hasPrefix("p.") && cleanPg.range(of: #"^\d+"#, options: .regularExpression) != nil {
+                    cleanPg = "pp. \(cleanPg)"
+                }
+                parts.append(cleanPg)
+            }
+        }
+        
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
@@ -464,7 +689,17 @@ public final class Reading {
                 .map { $0.replacingOccurrences(of: #"(?i)^\s*week\s*\d+\s*(schedule|topics)?\s*:?\s*"#, with: "", options: .regularExpression)
                          .replacingOccurrences(of: "•", with: "")
                          .trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty && !$0.lowercased().hasPrefix("week ") && $0.count >= 3 && !$0.lowercased().contains("required reading for") }
+                .filter { item in
+                    let lower = item.lowercased()
+                    guard !item.isEmpty && !lower.hasPrefix("week ") && item.count >= 3 && !lower.contains("required reading for") else { return false }
+                    if lower.hasPrefix("module") || lower.hasPrefix("mod ") || lower == "module" {
+                        return false
+                    }
+                    if item.range(of: #"(?i)^\s*module\s*\d+\b"#, options: .regularExpression) != nil {
+                        return false
+                    }
+                    return true
+                }
             if !items.isEmpty {
                 return items
             }
@@ -475,7 +710,17 @@ public final class Reading {
             if !cleanTheme.isEmpty && !cleanTheme.lowercased().hasPrefix("week ") {
                 let parts = cleanTheme.components(separatedBy: CharacterSet(charactersIn: ",|;&"))
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty && $0.count >= 3 }
+                    .filter { item in
+                        let lower = item.lowercased()
+                        guard !item.isEmpty && item.count >= 3 else { return false }
+                        if lower.hasPrefix("module") || lower.hasPrefix("mod ") || lower == "module" {
+                            return false
+                        }
+                        if item.range(of: #"(?i)^\s*module\s*\d+\b"#, options: .regularExpression) != nil {
+                            return false
+                        }
+                        return true
+                    }
                 if !parts.isEmpty {
                     return parts
                 }
@@ -485,22 +730,58 @@ public final class Reading {
     }
 
     public var contextBadgeText: String? {
-        if let w = week, w.weekNumber > 0 {
-            if let theme = w.theme, theme.lowercased().contains("module") {
-                if let modRange = theme.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
-                    return String(theme[modRange]).capitalized
+        if let course = week?.course, course.hasDocumentModules {
+            if let w = week, w.weekNumber > 0 {
+                if let theme = w.theme, theme.lowercased().contains("module") {
+                    if let modRange = theme.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+                        return String(theme[modRange]).capitalized
+                    }
                 }
             }
-            return "Week \(w.weekNumber)"
+            if let explicit = relevantTopics, let modRange = explicit.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+                return String(explicit[modRange]).capitalized
+            }
         }
-        if let explicit = relevantTopics, let modRange = explicit.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
-            return String(explicit[modRange]).capitalized
+        if let w = week, w.weekNumber > 0 {
+            return "Week \(w.weekNumber)"
         }
         if mediaType != .article {
             return mediaType.displayName
         }
         if let firstTopic = computedTopics.first {
             return firstTopic
+        }
+        return nil
+    }
+
+    public var moduleMention: String? {
+        guard let course = week?.course, course.hasDocumentModules else { return nil }
+        if let explicit = relevantTopics, let modRange = explicit.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(explicit[modRange]).capitalized
+        }
+        if let theme = week?.theme,
+           let modRange = theme.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(theme[modRange]).capitalized
+        }
+        if let res = resourceTitle, let modRange = res.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(res[modRange]).capitalized
+        }
+        if let t = title.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(title[t]).capitalized
+        }
+        if let ch = chapterText, let modRange = ch.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(ch[modRange]).capitalized
+        }
+        if !summaryText.isEmpty, let modRange = summaryText.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(summaryText[modRange]).capitalized
+        }
+        if let w = week, let mod = w.moduleMention {
+            return mod
+        }
+        if let wNum = week?.weekNumber, wNum > 0 {
+            if let cachedMod = course.cachedModuleForWeek(wNum) {
+                return cachedMod
+            }
         }
         return nil
     }
@@ -576,6 +857,7 @@ public final class Assignment {
     public var relevantTopics: String?
     public var sourceDocumentName: String?
     public var docColorHex: String?
+    public var isFavorite: Bool = false
     
     public var course: Course?
 
@@ -639,7 +921,8 @@ public final class Assignment {
         mediaUrl: String? = nil,
         relevantTopics: String? = nil,
         sourceDocumentName: String? = nil,
-        docColorHex: String? = nil
+        docColorHex: String? = nil,
+        isFavorite: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -659,6 +942,7 @@ public final class Assignment {
         self.relevantTopics = relevantTopics
         self.sourceDocumentName = sourceDocumentName
         self.docColorHex = docColorHex
+        self.isFavorite = isFavorite
     }
 
     public var displaySourceDocument: String? {
@@ -681,7 +965,17 @@ public final class Assignment {
                 .map { $0.replacingOccurrences(of: #"(?i)^\s*week\s*\d+\s*(schedule|topics)?\s*:?\s*"#, with: "", options: .regularExpression)
                          .replacingOccurrences(of: "•", with: "")
                          .trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty && !$0.lowercased().hasPrefix("week ") && $0.count >= 3 }
+                .filter { item in
+                    let lower = item.lowercased()
+                    guard !item.isEmpty && !lower.hasPrefix("week ") && item.count >= 3 else { return false }
+                    if lower.hasPrefix("module") || lower.hasPrefix("mod ") || lower == "module" {
+                        return false
+                    }
+                    if item.range(of: #"(?i)^\s*module\s*\d+\b"#, options: .regularExpression) != nil {
+                        return false
+                    }
+                    return true
+                }
             if !items.isEmpty {
                 return items
             }
@@ -690,22 +984,49 @@ public final class Assignment {
     }
 
     public var contextBadgeText: String? {
-        if weekNumber > 0 {
-            if let wTheme = course?.weeks.first(where: { $0.weekNumber == weekNumber })?.theme,
-               wTheme.lowercased().contains("module"),
-               let modRange = wTheme.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
-                return String(wTheme[modRange]).capitalized
+        if let course = course, course.hasDocumentModules {
+            if weekNumber > 0 {
+                if let wTheme = course.weeks.first(where: { $0.weekNumber == weekNumber })?.theme,
+                   wTheme.lowercased().contains("module"),
+                   let modRange = wTheme.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
+                    return String(wTheme[modRange]).capitalized
+                }
             }
-            return "Week \(weekNumber)"
+            if let explicit = relevantTopics, let modRange = explicit.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
+                return String(explicit[modRange]).capitalized
+            }
         }
-        if let explicit = relevantTopics, let modRange = explicit.range(of: #"(?i)\b(module\s*\d+)\b"#, options: .regularExpression) {
-            return String(explicit[modRange]).capitalized
+        if weekNumber > 0 {
+            return "Week \(weekNumber)"
         }
         if let subType = subTypeRaw, !subType.isEmpty, subType.uppercased() != "OTHER" {
             return subType.capitalized
         }
         if let weight = weightPercentage, !weight.isEmpty {
             return weight
+        }
+        return nil
+    }
+
+    public var moduleMention: String? {
+        guard let course = course, course.hasDocumentModules else { return nil }
+        if let explicit = relevantTopics, let modRange = explicit.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(explicit[modRange]).capitalized
+        }
+        if let wTheme = course.weeks.first(where: { $0.weekNumber == weekNumber })?.theme,
+           let modRange = wTheme.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(wTheme[modRange]).capitalized
+        }
+        if let t = title.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(title[t]).capitalized
+        }
+        if let desc = fullInstructions, let modRange = desc.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+            return String(desc[modRange]).capitalized
+        }
+        if weekNumber > 0 {
+            if let cachedMod = course.cachedModuleForWeek(weekNumber) {
+                return cachedMod
+            }
         }
         return nil
     }
@@ -809,6 +1130,215 @@ public final class VaultDocument {
         self.docColorHex = docColorHex
         self.rawFileData = rawFileData
         self.uploadedAt = uploadedAt
+    }
+}
+
+// MARK: - Dedicated Faculty & Contact Information Extractor
+public struct FacultyExtractor {
+    public static func extractFaculty(from rawText: String) -> (name: String?, email: String?) {
+        var detectedName: String? = nil
+        var detectedEmail: String? = nil
+
+        let lines = rawText.components(separatedBy: .newlines)
+        let searchLines = Array(lines.prefix(150))
+
+        // 1. Email Extraction
+        let emailRegex = #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#
+        for line in searchLines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let range = trimmed.range(of: emailRegex, options: .regularExpression) {
+                let candidate = String(trimmed[range])
+                let lower = candidate.lowercased()
+                if !lower.contains("helpdesk") && !lower.contains("support@") && !lower.contains("info@") && !lower.contains("registrar@") {
+                    detectedEmail = candidate
+                    break
+                } else if detectedEmail == nil {
+                    detectedEmail = candidate
+                }
+            }
+        }
+
+        // 2. Faculty Name Extraction via Prefix Patterns
+        let namePrefixPatterns = [
+            #"(?i)^\s*(?:Primary\s+Faculty|Faculty\s+Information|Course\s+Faculty|Faculty\s+Member|Primary\s+Instructor|Course\s+Instructor|Instructor\s+Name|Instructor|Professor|Faculty)\s*[:\-–]\s*(.+)$"#,
+            #"(?i)^\s*(?:Dr\.|Prof\.|Professor)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+.*)$"#
+        ]
+
+        for line in searchLines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            for pat in namePrefixPatterns {
+                if let regex = try? NSRegularExpression(pattern: pat) {
+                    let nsString = trimmed as NSString
+                    let results = regex.matches(in: trimmed, range: NSRange(location: 0, length: nsString.length))
+                    if let match = results.first, match.numberOfRanges > 1 {
+                        let extracted = nsString.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        let cleanName = cleanFacultyName(extracted)
+                        if isValidFacultyName(cleanName) {
+                            detectedName = cleanName
+                            break
+                        }
+                    }
+                }
+            }
+            if detectedName != nil { break }
+        }
+
+        // Fallback: If header line indicates faculty details, check succeeding lines
+        if detectedName == nil {
+            for (idx, line) in searchLines.enumerated() {
+                let lower = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if lower == "faculty & contact information" || lower == "faculty information" || lower == "instructor information" || lower == "instructor details" || lower == "course faculty" {
+                    for offset in 1...3 {
+                        if idx + offset < searchLines.count {
+                            let nextLine = searchLines[idx + offset].trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !nextLine.isEmpty && !nextLine.lowercased().contains("email") && !nextLine.lowercased().contains("phone") && !nextLine.lowercased().contains("office") {
+                                let clean = cleanFacultyName(nextLine)
+                                if isValidFacultyName(clean) {
+                                    detectedName = clean
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    if detectedName != nil { break }
+                }
+            }
+        }
+
+        return (detectedName, detectedEmail)
+    }
+
+    private static func cleanFacultyName(_ raw: String) -> String {
+        var name = raw
+        if let emailRange = name.range(of: #"(?i)\s*(?:Email|Phone|Office|E-mail)\s*[:\-].*$"#, options: .regularExpression) {
+            name = String(name[..<emailRange.lowerBound])
+        }
+        name = name.trimmingCharacters(in: CharacterSet(charactersIn: " ,;:\t\n"))
+        return name
+    }
+
+    private static func isValidFacultyName(_ name: String) -> Bool {
+        guard name.count >= 3 && name.count <= 75 else { return false }
+        let lower = name.lowercased()
+        if lower.contains("syllabus") || lower.contains("schedule") || lower.contains("description") || lower.contains("objective") || lower.contains("school of") || lower.contains("university") || lower.contains("credits") {
+            return false
+        }
+        return true
+    }
+}
+
+// MARK: - Dedicated Module & Schedule Extractor
+public struct ModuleExtractor {
+    /// Extracts module designations mapped to week numbers and item titles from syllabus text.
+    public static func extractModulesFromText(_ rawText: String) -> (weekToModule: [Int: String], itemModules: [String: String]) {
+        var weekToModule: [Int: String] = [:]
+        var itemModules: [String: String] = [:]
+        
+        var text = rawText
+        // Fix line-split words from narrow PDF table columns
+        text = text.replacingOccurrences(of: #"(?i)\bMODU\s*[\r\n]+\s*LE\s*(\d+)"#, with: "MODULE $1", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bMODU\s*[\r\n]+\s*LE\b"#, with: "MODULE", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bMODU\s+LE"#, with: "MODULE", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bMOD\s*[\r\n]+\s*ULE"#, with: "MODULE", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bM\s*[\r\n]+\s*ODULE"#, with: "MODULE", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bREADI\s*[\r\n]+\s*NG\s*[\r\n]+\s*WEEK\b"#, with: "READING WEEK", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bREADI\s*[\r\n]+\s*NG\b"#, with: "READING", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bWEE\s*[\r\n]+\s*K"#, with: "WEEK", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bWE\s*[\r\n]+\s*EK"#, with: "WEEK", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bCHAP\s*[\r\n]+\s*TER"#, with: "CHAPTER", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i)\bCH\s*[\r\n]+\s*APTER"#, with: "CHAPTER", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(\d{1,2}/\d{1,2}/2)\s*\n\s*(\d)\b"#, with: "$1$2", options: .regularExpression)
+        
+        let lines = text.components(separatedBy: .newlines)
+        var currentModule: String? = nil
+        var currentWeek: Int = 0
+        var allDetectedModules: Set<String> = []
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            
+            let lower = trimmed.lowercased()
+            // Skip document header timestamps e.g. "8/26/26, 8:28 AM ... Simple Syllabus"
+            if lower.contains("simple syllabus") || lower.contains("simplesyllabus") || lower.contains("http") || lower.contains("error_codes") || lower.range(of: #"\d{1,2}/\d{1,2}/\d{2,4},\s*\d{1,2}:\d{2}"#, options: .regularExpression) != nil {
+                continue
+            }
+            
+            if lower.contains("reading week") || lower.contains("spring break") {
+                currentWeek += 1
+                continue
+            }
+            
+            let hasDate = trimmed.range(of: #"\b\d{1,2}/\d{1,2}/(?:\d{2}|\d{4})\b"#, options: .regularExpression) != nil
+            
+            // Match "Module 1", "Mod 2", "Module 03"
+            if let modRange = trimmed.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+                let modStr = String(trimmed[modRange]).capitalized
+                currentModule = modStr
+                allDetectedModules.insert(modStr)
+                
+                if let wkRange = trimmed.range(of: #"(?i)\bweek\s*(\d+)\b"#, options: .regularExpression) {
+                    let digits = String(trimmed[wkRange]).components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                    if let wNum = Int(digits), wNum > 0 {
+                        currentWeek = wNum
+                    }
+                } else if hasDate {
+                    currentWeek += 1
+                } else {
+                    let digits = modStr.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                    if let mNum = Int(digits), mNum > 0 {
+                        if currentWeek < mNum {
+                            currentWeek = mNum
+                        }
+                    }
+                }
+                
+                if currentWeek > 0 {
+                    weekToModule[currentWeek] = modStr
+                }
+            } else if let wkRange = trimmed.range(of: #"(?i)\bweek\s*(\d+)\b"#, options: .regularExpression) {
+                let digits = String(trimmed[wkRange]).components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                if let wNum = Int(digits), wNum > 0 {
+                    currentWeek = wNum
+                    if let mod = currentModule, weekToModule[wNum] == nil {
+                        weekToModule[wNum] = mod
+                    }
+                }
+            } else if hasDate && currentModule != nil {
+                currentWeek += 1
+                if let mod = currentModule, weekToModule[currentWeek] == nil {
+                    weekToModule[currentWeek] = mod
+                }
+            }
+            
+            if let mod = currentModule {
+                if lower.count >= 3 && !lower.hasPrefix("module") && !lower.hasPrefix("week") && !lower.hasPrefix("course schedule") {
+                    itemModules[lower] = mod
+                }
+            }
+        }
+        
+        // Document must explicitly contain modules in its schedule or have multiple distinct modules
+        let hasHeader = text.range(of: #"(?i)\b(?:week\s+modules|modules\s+topics|topics,\s*modules|module\s*(?:and|&|/)\s*week|week\s*(?:and|&|/)\s*module|module\s+readings|module\s+schedule)\b"#, options: .regularExpression) != nil
+        if !hasHeader && allDetectedModules.count < 2 {
+            return ([:], [:])
+        }
+        
+        // Fallback: If modules were detected in course but some weeks 1..16 are missing from weekToModule:
+        if !allDetectedModules.isEmpty {
+            for mStr in allDetectedModules {
+                let digits = mStr.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                if let mNum = Int(digits), mNum > 0, mNum <= 16 {
+                    if weekToModule[mNum] == nil {
+                        weekToModule[mNum] = mStr
+                    }
+                }
+            }
+        }
+        
+        return (weekToModule, itemModules)
     }
 }
 
@@ -1015,7 +1545,9 @@ public struct CourseImporter {
             instructorEmail: dto.instructorEmail,
             hexColor: assignedColor,
             termWeeks: dto.termWeeks ?? 16,
-            sharingCode: dto.sharingCode
+            sharingCode: dto.sharingCode,
+            isFavorite: dto.isFavorite ?? false,
+            chatHistoryJSON: dto.chatHistoryJSON
         )
 
         for w in 1...max(16, dto.termWeeks ?? 16) {
@@ -1036,9 +1568,11 @@ public struct CourseImporter {
                 week = existingWeek
                 if let theme = wDTO.theme, !theme.isEmpty { week.theme = theme }
                 if let dateRange = wDTO.dateRangeStr, !dateRange.isEmpty { week.dateRangeStr = dateRange }
+                if let sDate = WeekDateConverter.parseRobustDate(wDTO.startDate) { week.startDate = sDate }
             } else {
                 let weekId = UUID(uuidString: wDTO.id) ?? UUID()
-                week = Week(id: weekId, weekNumber: wDTO.weekNumber, theme: wDTO.theme, dateRangeStr: wDTO.dateRangeStr)
+                let sDate = WeekDateConverter.parseRobustDate(wDTO.startDate)
+                week = Week(id: weekId, weekNumber: wDTO.weekNumber, startDate: sDate, theme: wDTO.theme, dateRangeStr: wDTO.dateRangeStr)
                 week.course = newCourse
                 newCourse.weeks.append(week)
                 modelContext.insert(week)
@@ -1067,11 +1601,11 @@ public struct CourseImporter {
                         return nil
                     }()
 
-                    let parsedDueDate: Date? = WeekDateConverter.parseRobustDate(rDTO.dueDate)
+                    let parsedDueDate: Date? = WeekDateConverter.parseRobustDate(rDTO.dueDate) ?? week.startDate
 
                     let (extractedCh, extractedPg) = LocalSyllabusParser.shared.extractChapterAndPages(from: rDTO.title)
 
-                    let cleanReadingTitle = cleanAndSummarizeTitle(rDTO.title, isReading: true)
+                    let cleanReadingTitle = cleanAndSummarizeTitle(rDTO.title, isReading: true, courseCode: newCourse.courseCode, courseName: newCourse.courseName)
                     let reading = Reading(
                         id: UUID(),
                         title: cleanReadingTitle,
@@ -1088,7 +1622,8 @@ public struct CourseImporter {
                         chapterText: rDTO.chapterText ?? extractedCh,
                         pagesText: rDTO.pagesText ?? extractedPg,
                         courseCode: newCourse.courseCode,
-                        relevantTopics: rDTO.relevantTopics
+                        relevantTopics: rDTO.relevantTopics,
+                        isFavorite: rDTO.isFavorite ?? false
                     )
                     reading.week = week
                     week.readings.append(reading)
@@ -1114,6 +1649,7 @@ public struct CourseImporter {
 
                 let mediaUrl: String? = {
                     if let cand = aDTO.mediaUrl, URLHelper.isValidURL(cand) { return cand }
+                    if let cand = aDTO.noteText, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
                     if let cand = aDTO.fullInstructions, let extracted = URLHelper.extractFirstURL(from: cand) { return extracted }
                     if let extracted = URLHelper.extractFirstURL(from: aDTO.title) { return extracted }
                     return nil
@@ -1126,7 +1662,7 @@ public struct CourseImporter {
                     return nil
                 }()
 
-                let cleanTitle = cleanAndSummarizeTitle(aDTO.title, isReading: false)
+                let cleanTitle = cleanAndSummarizeTitle(aDTO.title, isReading: false, courseCode: newCourse.courseCode, courseName: newCourse.courseName)
                 let assignment = Assignment(
                     id: UUID(),
                     title: cleanTitle,
@@ -1137,12 +1673,13 @@ public struct CourseImporter {
                     pointsBreakdown: sanitizePointsBreakdown(aDTO.pointsBreakdown),
                     rubricJSON: rubricJSONString,
                     noteText: nil,
-                    isCompleted: false,
+                    isCompleted: aDTO.isCompleted ?? false,
                     isDeleted: false,
                     courseCode: newCourse.courseCode,
                     weightPercentage: aDTO.weightPercentage,
                     subTypeRaw: "PAPER",
-                    mediaUrl: mediaUrl
+                    mediaUrl: mediaUrl,
+                    isFavorite: aDTO.isFavorite ?? false
                 )
                 assignment.course = newCourse
                 newCourse.assignments.append(assignment)
@@ -1178,9 +1715,34 @@ public struct CourseImporter {
         return newCourse
     }
 
-    public static func cleanAndSummarizeTitle(_ rawTitle: String, isReading: Bool) -> String {
+    public static func cleanAndSummarizeTitle(_ rawTitle: String, isReading: Bool, courseCode: String? = nil, courseName: String? = nil) -> String {
         var title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty { return isReading ? "Reading" : "Assignment" }
+
+        // Strip specific course code / name if provided
+        if let code = courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
+            if title.lowercased() == code.lowercased() {
+                title = isReading ? "Required Reading" : "Assignment"
+            } else {
+                let pattern = #"^(?i)\Q"# + code + #"\E\s*[:\-–\.]*\s*"#
+                title = title.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        if let name = courseName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            if title.lowercased() == name.lowercased() {
+                title = isReading ? "Required Reading" : "Assignment"
+            } else {
+                let pattern = #"^(?i)\Q"# + name + #"\E\s*[:\-–\.]*\s*"#
+                title = title.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        // Strip general course code prefix like "CPC 514: " or "CS 101 - "
+        if title.range(of: #"^[A-Z]{2,5}\s*\d{3,4}[A-Z]?$"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            title = isReading ? "Required Reading" : "Assignment"
+        } else {
+            title = title.replacingOccurrences(of: #"^[A-Z]{2,5}\s*\d{3,4}[A-Z]?\s*[:\-–\.]*\s*"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
 
         // 1. Strip sentence preambles for Assignments
         if !isReading {
@@ -1233,6 +1795,16 @@ public struct CourseImporter {
                 }
             }
             
+            // Strip extra subtitles and hallucinated book descriptions (e.g. " - Process and Practice", "Theory and Practice", etc.)
+            let extraSubtitlesToStrip = [
+                #"(?i)\s*[-–:]*\s*(?:Groups\s*[-–:]*\s*)?(?:Process\s+(?:and|&)\s+Practice)\b"#,
+                #"(?i)\s*[-–:]*\s*(?:Theory\s+(?:and|&)\s+Practice(?:\s+of\s+Group\s+Psychotherapy)?)\b"#,
+                #"(?i)\s*[-–:]*\s*(?:Qualitative,?\s+quantitative,?\s+and\s+mixed\s+methods\s+approaches.*)$"#
+            ]
+            for pat in extraSubtitlesToStrip {
+                title = title.replacingOccurrences(of: pat, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
             // Clean up orphan delimiters
             title = title.replacingOccurrences(of: #":\s*;"#, with: " ;", options: .regularExpression)
             title = title.replacingOccurrences(of: #"[:;]\s*[:;]+"#, with: " /", options: .regularExpression)
@@ -1273,6 +1845,9 @@ public struct CourseImporter {
             }
         }
 
+        // Clean any leftover orphan punctuation
+        title = title.replacingOccurrences(of: #"^[\:\;\-\–\s\/]+|[\:\;\-\–\s\/]+$"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+
         return title.isEmpty ? (isReading ? "Reading" : "Assignment") : title
     }
 
@@ -1297,13 +1872,18 @@ public struct CourseImporter {
 
     @discardableResult
     public static func importDTO(_ dto: CourseDTO, into existingCourse: Course, modelContext: ModelContext) -> Course {
+        let currentCourseName = existingCourse.courseName.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanName = dto.courseName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !cleanName.isEmpty && cleanName.lowercased() != "new course" {
-            existingCourse.courseName = cleanName
+        if currentCourseName.isEmpty || currentCourseName.lowercased() == "syllabus course" || currentCourseName.lowercased() == "new course" {
+            if !cleanName.isEmpty && cleanName.lowercased() != "new course" {
+                existingCourse.courseName = cleanName
+            }
         }
 
-        if let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty, cleanCode.uppercased() != "CRS" {
-            existingCourse.courseCode = cleanCode
+        if existingCourse.courseCode == nil || existingCourse.courseCode!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || existingCourse.courseCode == "CRS" {
+            if let cleanCode = dto.courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !cleanCode.isEmpty, cleanCode.uppercased() != "CRS" {
+                existingCourse.courseCode = cleanCode
+            }
         }
 
         if let instructor = dto.instructorName, !instructor.isEmpty {
@@ -1314,6 +1894,12 @@ public struct CourseImporter {
         }
         if let desc = dto.courseDescription, !desc.isEmpty {
             existingCourse.courseDescription = desc
+        }
+        if let fav = dto.isFavorite, fav {
+            existingCourse.isFavorite = true
+        }
+        if let chat = dto.chatHistoryJSON, !chat.isEmpty, (existingCourse.chatHistoryJSON == nil || existingCourse.chatHistoryJSON!.isEmpty) {
+            existingCourse.chatHistoryJSON = chat
         }
 
         // Ensure baseline weeks exist on the course
@@ -1364,9 +1950,11 @@ public struct CourseImporter {
                 week = targetWeek
                 if let theme = wDTO.theme, !theme.isEmpty { week.theme = theme }
                 if let dateRange = wDTO.dateRangeStr, !dateRange.isEmpty { week.dateRangeStr = dateRange }
+                if let sDate = WeekDateConverter.parseRobustDate(wDTO.startDate) { week.startDate = sDate }
             } else {
                 let weekId = UUID(uuidString: wDTO.id) ?? UUID()
-                week = Week(id: weekId, weekNumber: wDTO.weekNumber, theme: wDTO.theme, dateRangeStr: wDTO.dateRangeStr)
+                let sDate = WeekDateConverter.parseRobustDate(wDTO.startDate)
+                week = Week(id: weekId, weekNumber: wDTO.weekNumber, startDate: sDate, theme: wDTO.theme, dateRangeStr: wDTO.dateRangeStr)
                 week.course = existingCourse
                 existingCourse.weeks.append(week)
                 modelContext.insert(week)
@@ -1394,10 +1982,10 @@ public struct CourseImporter {
                         return nil
                     }()
 
-                    let parsedDueDate: Date? = WeekDateConverter.parseRobustDate(rDTO.dueDate)
+                    let parsedDueDate: Date? = WeekDateConverter.parseRobustDate(rDTO.dueDate) ?? week.startDate
                     let (extractedCh, extractedPg) = LocalSyllabusParser.shared.extractChapterAndPages(from: rDTO.title)
 
-                    let cleanTitle = cleanAndSummarizeTitle(rDTO.title, isReading: true)
+                    let cleanTitle = cleanAndSummarizeTitle(rDTO.title, isReading: true, courseCode: existingCourse.courseCode, courseName: existingCourse.courseName)
                     if let existingReading = week.readings.first(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normTitle || $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == cleanTitle.lowercased() }) {
                         existingReading.summaryText = ""
                         existingReading.keyTakeawaysText = takeaways
@@ -1406,7 +1994,11 @@ public struct CourseImporter {
                         if let res = rDTO.resourceTitle { existingReading.resourceTitle = res }
                         if let ch = rDTO.chapterText ?? extractedCh { existingReading.chapterText = ch }
                         if let pg = rDTO.pagesText ?? extractedPg { existingReading.pagesText = pg }
-                        if let pDate = parsedDueDate { existingReading.dueDate = pDate }
+                        if let pDate = parsedDueDate {
+                            existingReading.dueDate = pDate
+                        } else if existingReading.dueDate == nil {
+                            existingReading.dueDate = week.startDate
+                        }
                     } else {
                         let reading = Reading(
                             id: UUID(),
@@ -1473,7 +2065,7 @@ public struct CourseImporter {
                         return nil
                     }()
 
-                    let cleanTitle = cleanAndSummarizeTitle(aDTO.title, isReading: false)
+                    let cleanTitle = cleanAndSummarizeTitle(aDTO.title, isReading: false, courseCode: existingCourse.courseCode, courseName: existingCourse.courseName)
                     let assignment = Assignment(
                         id: UUID(),
                         title: cleanTitle,
@@ -1623,7 +2215,7 @@ public struct CourseImporter {
                         return base
                     }()
 
-                    let cleanTitle = cleanAndSummarizeTitle(item.title, isReading: false)
+                    let cleanTitle = cleanAndSummarizeTitle(item.title, isReading: false, courseCode: course.courseCode, courseName: course.courseName)
 
                     let assignWeekNum = weekNum > 0 ? weekNum : 1
                     let assignment = Assignment(
@@ -1652,17 +2244,36 @@ public struct CourseImporter {
             } else {
                 let targetWeek: Week = {
                     if weekNum > 0 {
+                        let candidateTheme: String? = {
+                            if let top = item.relevantTopics?.trimmingCharacters(in: .whitespacesAndNewlines), !top.isEmpty {
+                                let modPrefix: String? = {
+                                    if let r = top.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+                                        return String(top[r]).capitalized
+                                    }
+                                    return nil
+                                }()
+                                let clean = top.replacingOccurrences(of: #"(?i)^\s*(module|week|unit|session)\s*\d+\s*[:\-–\.]*\s*"#, with: "", options: .regularExpression)
+                                               .replacingOccurrences(of: #"(?i)^\s*schedule\s*[:\-–\.]*\s*"#, with: "", options: .regularExpression)
+                                               .trimmingCharacters(in: .whitespacesAndNewlines)
+                                if let mod = modPrefix {
+                                    return clean.isEmpty ? mod : "\(mod): \(clean)"
+                                }
+                                if !clean.isEmpty && clean.range(of: #"(?i)^(week|module|unit|session)\s*\d+$"#, options: .regularExpression) == nil {
+                                    return clean
+                                }
+                            }
+                            return nil
+                        }()
+
                         if let existing = course.weeks.first(where: { $0.weekNumber == weekNum }) {
+                            if let cTheme = candidateTheme, (existing.theme == nil || existing.theme!.isEmpty || existing.theme!.lowercased().hasPrefix("week ")) {
+                                existing.theme = cTheme
+                            }
                             return existing
                         }
-                        let nw = Week(id: UUID(), weekNumber: weekNum, theme: "Week \(weekNum) Schedule")
+                        let defaultTheme = course.cachedModuleForWeek(weekNum) ?? "Week \(weekNum) Schedule"
+                        let nw = Week(id: UUID(), weekNumber: weekNum, theme: candidateTheme ?? defaultTheme)
                         nw.course = course
-                        if let w1Start = startOfWeek1 {
-                            let weekStart = calendar.date(byAdding: .day, value: (weekNum - 1) * 7, to: w1Start) ?? w1Start
-                            let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
-                            nw.startDate = weekStart
-                            nw.dateRangeStr = LocalSyllabusParser.formatExplicitDateRange(start: weekStart, end: weekEnd)
-                        }
                         course.weeks.append(nw)
                         modelContext.insert(nw)
                         return nw
@@ -1716,34 +2327,46 @@ public struct CourseImporter {
                     if let pDate = parsedDueDate {
                         return WeekDateConverter.formattedDueDate(for: pDate, week: targetWeek, weekNumber: weekNum)
                     }
-                    if let wRange = targetWeek.dateRangeStr?.trimmingCharacters(in: .whitespacesAndNewlines), !wRange.isEmpty, wRange.lowercased() != "unknown" {
-                        return wRange
-                    }
                     return nil
                 }()
 
-                let cleanTitle = cleanAndSummarizeTitle(item.title, isReading: true)
-                let existingReading = course.weeks.flatMap { $0.readings }.first(where: {
-                    normalizeTitle($0.title) == normTitle || normalizeTitle($0.title) == normalizeTitle(cleanTitle)
+                // If this is a schedule break (e.g. Reading Week), targetWeek was already prepared with the theme.
+                if (item.subType ?? "").uppercased() == "BREAK" || item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    continue
+                }
+
+                let cleanTitle = cleanAndSummarizeTitle(item.title, isReading: true, courseCode: course.courseCode, courseName: course.courseName)
+                var finalTitle = cleanTitle
+                var resolvedChapter = finalChapter
+                if let match = finalTitle.range(of: #"(?i)\s*[\(\[]\s*((?:chapters?|chs?\.?)\s*\d+[\s&,\-–\d]*)\s*[\)\]]"#, options: .regularExpression) {
+                    if resolvedChapter == nil || resolvedChapter!.isEmpty {
+                        resolvedChapter = String(finalTitle[match]).replacingOccurrences(of: #"[()\[\]]"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    finalTitle.removeSubrange(match)
+                    finalTitle = finalTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else if let match = finalTitle.range(of: #"(?i)\s*[:\-–]\s*((?:chapters?|chs?\.?)\s*\d+[\s&,\-–\d]*)$"#, options: .regularExpression) {
+                    if resolvedChapter == nil || resolvedChapter!.isEmpty {
+                        let sub = String(finalTitle[match])
+                        resolvedChapter = sub.replacingOccurrences(of: #"^[:\-–\s]+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    finalTitle.removeSubrange(match)
+                    finalTitle = finalTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+
+                let existingReading = targetWeek.readings.first(where: {
+                    normalizeTitle($0.title) == normTitle || normalizeTitle($0.title) == normalizeTitle(finalTitle) || normalizeTitle($0.title) == normalizeTitle(cleanTitle)
                 })
                 if let existing = existingReading {
-                    print("ℹ️ [RE-UPLOAD CLAUSE] Reading '\(item.title)' already exists. Updating in place.")
-                    existing.summaryText = ""
+                    print("ℹ️ [RE-UPLOAD CLAUSE] Reading '\(item.title)' already exists in Week \(weekNum). Updating in place.")
+                    existing.summaryText = item.description ?? ""
                     if let media = item.mediaUrl, !media.isEmpty { existing.videoUrl = media }
                     if let auth = item.authorName { existing.authorName = auth }
                     if let res = item.resourceTitle { existing.resourceTitle = res }
                     if let pDate = parsedDueDate { existing.dueDate = pDate }
-                    if let ch = finalChapter { existing.chapterText = ch }
+                    if let ch = resolvedChapter { existing.chapterText = ch }
                     if let pg = finalPages { existing.pagesText = pg }
                     if let sName = sourceDocumentName { existing.sourceDocumentName = sName }
                     if let dColor = docColorHex { existing.docColorHex = dColor }
-                    if existing.week?.persistentModelID != targetWeek.persistentModelID {
-                        existing.week?.readings.removeAll(where: { $0.persistentModelID == existing.persistentModelID })
-                        existing.week = targetWeek
-                        if !targetWeek.readings.contains(where: { $0.persistentModelID == existing.persistentModelID }) {
-                            targetWeek.readings.append(existing)
-                        }
-                    }
                 } else {
                     let videoUrl: String? = {
                         if let cand = item.mediaUrl, URLHelper.isValidURL(cand) { return cand }
@@ -1752,24 +2375,30 @@ public struct CourseImporter {
                         return nil
                     }()
 
+                    let effectiveTopics: String? = {
+                        if let top = item.relevantTopics, !top.isEmpty { return top }
+                        if let mod = course.cachedModuleForWeek(weekNum) { return mod }
+                        return targetWeek.theme
+                    }()
+
                     let reading = Reading(
                         id: UUID(),
-                        title: cleanTitle,
+                        title: finalTitle,
                         authorName: item.authorName,
                         resourceTitle: item.resourceTitle,
                         mediaType: mediaType,
                         isCompleted: false,
                         isDeleted: false,
-                        summaryText: "",
+                        summaryText: item.description ?? "",
                         keyTakeawaysText: takeawaysText,
                         estimatedTimeText: estimatedTimeStr,
                         videoUrl: videoUrl,
                         dueDate: parsedDueDate,
                         dateRangeStr: effectiveDateStr,
-                        chapterText: finalChapter,
+                        chapterText: resolvedChapter,
                         pagesText: finalPages,
                         courseCode: course.courseCode,
-                        relevantTopics: item.relevantTopics,
+                        relevantTopics: effectiveTopics,
                         sourceDocumentName: sourceDocumentName,
                         docColorHex: docColorHex
                     )
@@ -1875,13 +2504,7 @@ public enum WeekDateConverter {
             if let wRange = week?.dateRangeStr?.trimmingCharacters(in: .whitespacesAndNewlines), !wRange.isEmpty, wRange.lowercased() != "unknown" {
                 return wRange
             }
-            if weekNumber > 0 {
-                return "Week \(weekNumber)"
-            }
-            if let w = week?.weekNumber, w > 0 {
-                return "Week \(w)"
-            }
-            return "No due date specified"
+            return "No due date set"
         }
 
         let formatter = DateFormatter()
@@ -1949,5 +2572,84 @@ public enum URLHelper {
         }
 
         return nil
+    }
+}
+
+// MARK: - Course to CourseDTO Reconstruction
+extension Course {
+    public func toCourseDTO() -> CourseDTO {
+        var dtWeeks: [WeekDTO] = []
+        for w in weeks {
+            var dtReadings: [ReadingDTO] = []
+            for r in w.readings {
+                dtReadings.append(ReadingDTO(
+                    id: r.id.uuidString,
+                    title: r.title,
+                    authorName: r.authorName,
+                    resourceTitle: r.resourceTitle,
+                    mediaType: r.mediaType.rawValue,
+                    isCompleted: r.isCompleted,
+                    summaryText: r.summaryText,
+                    keyTakeawaysText: r.keyTakeawaysText,
+                    estimatedTimeText: r.estimatedTimeText,
+                    videoUrl: r.videoUrl,
+                    dueDate: r.dueDate.map { ISO8601DateFormatter().string(from: $0) },
+                    dateRangeStr: r.dateRangeStr,
+                    relevantTopics: r.relevantTopics,
+                    chapterText: r.chapterText,
+                    pagesText: r.pagesText,
+                    isFavorite: r.isFavorite
+                ))
+            }
+            dtWeeks.append(WeekDTO(
+                id: w.id.uuidString,
+                weekNumber: w.weekNumber,
+                startDate: w.startDate.map { ISO8601DateFormatter().string(from: $0) },
+                theme: w.theme,
+                dateRangeStr: w.dateRangeStr,
+                readings: dtReadings
+            ))
+        }
+
+        var dtAssignments: [AssignmentDTO] = []
+        for a in assignments {
+            var rubricDTOs: [RubricCriterionDTO]? = nil
+            if let rJSON = a.rubricJSON, let data = rJSON.data(using: .utf8) {
+                rubricDTOs = try? JSONDecoder().decode([RubricCriterionDTO].self, from: data)
+            }
+
+            dtAssignments.append(AssignmentDTO(
+                id: a.id.uuidString,
+                title: a.title,
+                dueDate: a.dueDate.map { ISO8601DateFormatter().string(from: $0) },
+                fullInstructions: a.fullInstructions,
+                pointsPossible: a.pointsPossible,
+                weightPercentage: a.weightPercentage,
+                noteText: a.noteText,
+                pointsBreakdown: a.pointsBreakdown,
+                relevantTopics: a.relevantTopics,
+                mediaUrl: a.mediaUrl,
+                rubric: rubricDTOs,
+                isFavorite: a.isFavorite,
+                isCompleted: a.isCompleted
+            ))
+        }
+
+        return CourseDTO(
+            id: self.id.uuidString,
+            creatorId: self.creatorId.uuidString,
+            courseName: self.courseName,
+            courseCode: self.courseCode ?? "CRS",
+            courseDescription: self.courseDescription,
+            instructorName: self.instructorName,
+            instructorEmail: self.instructorEmail,
+            termWeeks: self.termWeeks,
+            sharingCode: self.sharingCode,
+            weeks: dtWeeks,
+            assignments: dtAssignments,
+            items: [],
+            isFavorite: self.isFavorite,
+            chatHistoryJSON: self.chatHistoryJSON
+        )
     }
 }

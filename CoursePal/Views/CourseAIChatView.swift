@@ -1,16 +1,24 @@
 import SwiftUI
 import SwiftData
 
-public struct CourseChatMessage: Identifiable, Equatable {
-    public let id: UUID = UUID()
+public struct CourseChatMessage: Identifiable, Equatable, Codable {
+    public let id: UUID
     public let text: String
     public let isUser: Bool
-    public let timestamp: Date = Date()
+    public let timestamp: Date
+
+    public init(id: UUID = UUID(), text: String, isUser: Bool, timestamp: Date = Date()) {
+        self.id = id
+        self.text = text
+        self.isUser = isUser
+        self.timestamp = timestamp
+    }
 }
 
 public struct CourseAIChatView: View {
     @Bindable public var course: Course
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     
     @State private var messages: [CourseChatMessage] = []
     @State private var inputText: String = ""
@@ -52,7 +60,13 @@ public struct CourseAIChatView: View {
                 context += "  Instructions: \(instr)\n"
             }
             if !a.rubricCriteria.isEmpty {
-                let rubrics = a.rubricCriteria.map { "\($0.criterionName): \($0.description ?? "")" }.joined(separator: ", ")
+                let rubrics = a.rubricCriteria.map { crit in
+                    var p: [String] = []
+                    if let pts = crit.points { p.append(pts.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(pts)) pts" : "\(pts) pts") }
+                    if let pct = crit.percentage { p.append(pct.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(pct))%" : "\(pct)%") }
+                    let score = p.isEmpty ? (crit.description ?? "") : p.joined(separator: ", ")
+                    return "\(crit.criterionName): \(score)"
+                }.joined(separator: "; ")
                 context += "  Rubric: \(rubrics)\n"
             }
         }
@@ -85,6 +99,20 @@ public struct CourseAIChatView: View {
                             .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                     }
                     Spacer()
+                    
+                    if !messages.isEmpty {
+                        Menu {
+                            Button(role: .destructive, action: { clearHistory() }) {
+                                Label("Clear History", systemImage: "trash")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 20))
+                                .foregroundColor(Color(red: 0.5, green: 0.55, blue: 0.65))
+                                .padding(.trailing, 6)
+                        }
+                    }
+
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 24))
@@ -246,6 +274,35 @@ public struct CourseAIChatView: View {
             }
             .background(Color(red: 0.95, green: 0.96, blue: 0.98).ignoresSafeArea())
             .navigationBarHidden(true)
+            .onAppear {
+                loadChatHistory()
+            }
+        }
+    }
+
+    private func loadChatHistory() {
+        if let json = course.chatHistoryJSON,
+           let data = json.data(using: .utf8),
+           let saved = try? JSONDecoder().decode([CourseChatMessage].self, from: data) {
+            self.messages = saved
+        }
+    }
+
+    private func saveChatHistory() {
+        if let data = try? JSONEncoder().encode(messages),
+           let json = String(data: data, encoding: .utf8) {
+            course.chatHistoryJSON = json
+            try? modelContext.save()
+            DataPersistenceBackupManager.shared.performAutoBackup(modelContext: modelContext)
+        }
+    }
+
+    private func clearHistory() {
+        withAnimation {
+            messages.removeAll()
+            course.chatHistoryJSON = nil
+            try? modelContext.save()
+            DataPersistenceBackupManager.shared.performAutoBackup(modelContext: modelContext)
         }
     }
 
@@ -256,6 +313,7 @@ public struct CourseAIChatView: View {
         inputText = ""
         let userMsg = CourseChatMessage(text: trimmed, isUser: true)
         messages.append(userMsg)
+        saveChatHistory()
         isLoading = true
 
         Task {
@@ -263,11 +321,13 @@ public struct CourseAIChatView: View {
                 let answer = try await APIService.shared.askCourseSyllabus(courseContext: self.courseContext, question: trimmed)
                 await MainActor.run {
                     self.messages.append(CourseChatMessage(text: answer, isUser: false))
+                    self.saveChatHistory()
                     self.isLoading = false
                 }
             } catch {
                 await MainActor.run {
                     self.messages.append(CourseChatMessage(text: "⚠️ \(error.localizedDescription)", isUser: false))
+                    self.saveChatHistory()
                     self.isLoading = false
                 }
             }

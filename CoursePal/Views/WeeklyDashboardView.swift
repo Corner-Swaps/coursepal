@@ -115,8 +115,9 @@ public struct WeeklyDashboardView: View {
     @Query(filter: #Predicate<Reading> { $0.isDeleted }) private var deletedReadings: [Reading]
     @Query(filter: #Predicate<Assignment> { $0.isDeleted }) private var deletedAssignments: [Assignment]
 
-    @State private var searchQuery: String = ""
     @State private var selectedDate: Date = Date()
+    @State private var isDateFilterActive: Bool = false
+    @State private var searchQuery: String = ""
     @State private var selectedWeekFilter: Int = 0 // 0 = All Weeks, 1..16
     @State private var sortMode: String = "readings" // "readings", "completed", "trash"
     @State private var showingAddModal: Bool = false
@@ -132,9 +133,11 @@ public struct WeeklyDashboardView: View {
     @State private var showingInfoSheet: Bool = false
     @State private var showingEmptyTrashConfirmation: Bool = false
     @State private var courseForAIChat: Course? = nil
+    @State private var showingConfetti: Bool = false
+    @State private var confettiTitle: String = ""
 
     private var completedCount: Int {
-        activeReadings.filter({ $0.isCompleted }).count
+        readings.filter({ !$0.isDeleted && $0.isCompleted }).count
     }
 
     private var activeReadings: [Reading] {
@@ -145,7 +148,41 @@ public struct WeeklyDashboardView: View {
         if !searchQuery.isEmpty {
             list = list.filter { $0.title.localizedCaseInsensitiveContains(searchQuery) }
         }
+        if isDateFilterActive {
+            let cal = Calendar.current
+            let exactMatches = list.filter { r in
+                guard let due = r.dueDate else { return false }
+                return cal.isDate(due, inSameDayAs: selectedDate)
+            }
+            if !exactMatches.isEmpty {
+                list = exactMatches
+            } else if let matchedWeek = weekNumber(for: selectedDate) {
+                list = list.filter { ($0.week?.weekNumber ?? 0) == matchedWeek }
+            } else {
+                list = []
+            }
+        }
         return list
+    }
+
+    private func weekNumber(for date: Date) -> Int? {
+        let cal = Calendar.current
+        let targetDay = cal.startOfDay(for: date)
+        for r in readings where !r.isDeleted {
+            if let due = r.dueDate, cal.isDate(due, inSameDayAs: targetDay) {
+                if let w = r.week?.weekNumber, w > 0 {
+                    return w
+                }
+            }
+        }
+        for w in allWeeks where w.weekNumber > 0 {
+            let wStart = cal.startOfDay(for: w.computedStartDate)
+            let wEnd = cal.date(byAdding: .day, value: 7, to: wStart) ?? wStart
+            if targetDay >= wStart && targetDay < wEnd {
+                return w.weekNumber
+            }
+        }
+        return nil
     }
 
     private var deletedReadingsCount: Int {
@@ -215,6 +252,227 @@ public struct WeeklyDashboardView: View {
         return sortedPositiveWeeks
     }
 
+    public enum CourseGroupingType {
+        case week
+        case module
+        case unit
+        case session
+        case none
+    }
+
+    // Detect whether the course or active readings are structured by Modules, Weeks, Sessions, or Units
+    private var courseGroupingType: CourseGroupingType {
+        var moduleCount = 0
+        var weekCount = 0
+        var unitCount = 0
+        var sessionCount = 0
+        for r in activeReadings {
+            let top = (r.relevantTopics ?? "").lowercased()
+            let theme = (r.week?.theme ?? "").lowercased()
+            if top.contains("module") || theme.contains("module") { moduleCount += 1 }
+            if top.contains("week") || theme.contains("week") { weekCount += 1 }
+            if top.contains("unit") || theme.contains("unit") { unitCount += 1 }
+            if top.contains("session") || theme.contains("session") { sessionCount += 1 }
+        }
+        for w in sortedCourseWeeks {
+            let theme = (w.theme ?? "").lowercased()
+            if theme.contains("module") { moduleCount += 1 }
+            if theme.contains("week") && !theme.hasPrefix("week ") { weekCount += 1 }
+        }
+        if moduleCount > weekCount && moduleCount > 0 {
+            return .module
+        } else if weekCount > 0 {
+            return .week
+        } else if unitCount > 0 {
+            return .unit
+        } else if sessionCount > 0 {
+            return .session
+        } else {
+            let distinctWeeks = Set(activeReadings.compactMap { $0.week?.weekNumber }).filter { $0 > 1 }
+            if distinctWeeks.count >= 2 {
+                return .week
+            }
+            return .none
+        }
+    }
+
+    private var courseSectionKind: String {
+        switch courseGroupingType {
+        case .module: return "Module"
+        case .week: return "Week"
+        case .unit: return "Unit"
+        case .session: return "Session"
+        case .none: return ""
+        }
+    }
+
+    private func sectionMetadata(for weekNum: Int) -> (pillTitle: String, headerBadge: String, isBreak: Bool) {
+        let weekReadings = readingsByWeek[weekNum] ?? []
+        let weekObj = allWeeks.first(where: { $0.weekNumber == weekNum })
+        let rawTheme = weekObj?.theme ?? weekReadings.compactMap({ $0.relevantTopics }).first
+
+        let lower = (rawTheme ?? "").lowercased()
+        let isBreak = lower.contains("reading week") || lower.contains("spring break") || lower.contains("break")
+
+        if isBreak {
+            return (
+                pillTitle: "Break",
+                headerBadge: "Reading Week",
+                isBreak: true
+            )
+        }
+
+        switch courseGroupingType {
+        case .module:
+            return (pillTitle: "Mod \(weekNum)", headerBadge: "Module \(weekNum)", isBreak: false)
+        case .week:
+            return (pillTitle: "Week \(weekNum)", headerBadge: "Week \(weekNum)", isBreak: false)
+        case .unit:
+            return (pillTitle: "Unit \(weekNum)", headerBadge: "Unit \(weekNum)", isBreak: false)
+        case .session:
+            return (pillTitle: "Session \(weekNum)", headerBadge: "Session \(weekNum)", isBreak: false)
+        case .none:
+            return (pillTitle: "All", headerBadge: "Course Readings", isBreak: false)
+        }
+    }
+
+    private func scheduledDate(for reading: Reading) -> Date {
+        if let due = reading.dueDate { return due }
+        if let start = reading.week?.startDate { return start }
+        let w = reading.week?.weekNumber ?? 1
+        return WeekDateConverter.date(forWeek: w)
+    }
+
+    // Active week numbers that currently have readings (or single week if filtered)
+    private var activeWeekNumbersWithReadings: [Int] {
+        if selectedWeekFilter > 0 {
+            return [selectedWeekFilter]
+        }
+        let weeksWithReadings = Set(readingsByWeek.filter({ !$0.value.isEmpty }).map({ $0.key }))
+        var ordered: [Int] = []
+        for w in courseWeekNumbers where weeksWithReadings.contains(w) && w > 0 {
+            if !ordered.contains(w) { ordered.append(w) }
+        }
+        let remainingPositive = weeksWithReadings.filter({ $0 > 0 && !ordered.contains($0) }).sorted()
+        ordered.append(contentsOf: remainingPositive)
+        if weeksWithReadings.contains(0) {
+            ordered.append(0)
+        }
+        return ordered
+    }
+
+    private func weekModuleMention(for weekNum: Int) -> String? {
+        if let selectedCourseFilter {
+            guard selectedCourseFilter.hasDocumentModules else { return nil }
+            return selectedCourseFilter.weeks.first(where: { $0.weekNumber == weekNum })?.moduleMention
+                ?? selectedCourseFilter.cachedModuleForWeek(weekNum)
+        }
+        let weekReadings = readingsByWeek[weekNum] ?? []
+        for r in weekReadings {
+            if let course = r.week?.course, course.hasDocumentModules {
+                if let mod = r.week?.moduleMention ?? course.cachedModuleForWeek(weekNum) {
+                    return mod
+                }
+            }
+        }
+        return nil
+    }
+
+    private func weekDateRange(for weekNum: Int) -> String? {
+        let weekReadings = readingsByWeek[weekNum] ?? []
+        for r in weekReadings {
+            if let range = r.week?.dateRangeStr, !range.isEmpty, range.lowercased() != "unknown" {
+                return range
+            }
+            if let range = r.dateRangeStr, !range.isEmpty, range.lowercased() != "unknown" {
+                return range
+            }
+        }
+        if let w = allWeeks.first(where: { $0.weekNumber == weekNum }) {
+            if let range = w.dateRangeStr, !range.isEmpty, range.lowercased() != "unknown" {
+                return range
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Static Formatters (Zero allocations per render)
+    private static let dayNameFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "EEEE"
+        return df
+    }()
+
+    private static let monthYearFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "MMMM yyyy"
+        return df
+    }()
+
+    private static let bannerDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        return df
+    }()
+
+    private func dayNumber(for date: Date) -> Int {
+        Calendar.current.component(.day, from: date)
+    }
+
+    private func dayNameString(for date: Date) -> String {
+        Self.dayNameFormatter.string(from: date)
+    }
+
+    private func monthYearString(for date: Date) -> String {
+        Self.monthYearFormatter.string(from: date)
+    }
+
+    private var readingsByDay: [Date: [Reading]] {
+        var dict: [Date: [Reading]] = [:]
+        let cal = Calendar.current
+        let source = (selectedCourseFilter != nil)
+            ? readings.filter { !$0.isDeleted && $0.week?.course?.persistentModelID == selectedCourseFilter?.persistentModelID }
+            : readings.filter { !$0.isDeleted }
+
+        for r in source {
+            guard let due = r.dueDate else { continue }
+            let start = cal.startOfDay(for: due)
+            dict[start, default: []].append(r)
+        }
+        return dict
+    }
+
+    private func hasReadingOnDate(_ date: Date) -> Bool {
+        let dayKey = Calendar.current.startOfDay(for: date)
+        return !(readingsByDay[dayKey]?.isEmpty ?? true)
+    }
+
+    private func courseColorsForDate(_ date: Date) -> [Color] {
+        let dayKey = Calendar.current.startOfDay(for: date)
+        let matching = readingsByDay[dayKey] ?? []
+        let colors = Array(Set(matching.map { CourseColorHelper.color(for: $0.week?.course?.hexColor ?? "#2563EB") }))
+        return colors.isEmpty ? [Color(red: 0.14, green: 0.44, blue: 0.96)] : Array(colors.prefix(3))
+    }
+
+    private func generateDaysInMonth(for date: Date) -> [Date?] {
+        let calendar = Calendar.current
+        guard let monthInterval = calendar.dateInterval(of: .month, for: date),
+              let firstDay = calendar.date(from: calendar.dateComponents([.year, .month], from: monthInterval.start)) else {
+            return []
+        }
+
+        let firstWeekday = calendar.component(.weekday, from: firstDay) - 1
+        let numberOfDays = calendar.range(of: .day, in: .month, for: date)?.count ?? 30
+
+        var days: [Date?] = Array(repeating: nil, count: firstWeekday)
+        for day in 0..<numberOfDays {
+            if let dayDate = calendar.date(byAdding: .day, value: day, to: firstDay) {
+                days.append(dayDate)
+            }
+        }
+        return days
+    }
+
     public init() {}
 
     public var body: some View {
@@ -253,7 +511,7 @@ public struct WeeklyDashboardView: View {
                             }
                             .buttonStyle(.plain)
 
-                            // Green Checkmark Pill (Completed Count)
+                            // Completed Pill (Checkmark)
                             Button(action: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     sortMode = (sortMode == "completed") ? "readings" : "completed"
@@ -261,15 +519,15 @@ public struct WeeklyDashboardView: View {
                             }) {
                                 HStack(spacing: 4) {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(Color(red: 0.18, green: 0.72, blue: 0.40))
                                     Text("\(completedCount)")
                                         .font(.cpDescriptionBold)
-                                        .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
+                                        .foregroundColor(Color(red: 0.18, green: 0.72, blue: 0.40))
                                 }
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 6)
-                                .background(sortMode == "completed" ? Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.15) : Color.white)
+                                .background(sortMode == "completed" ? Color(red: 0.18, green: 0.72, blue: 0.40).opacity(0.15) : Color.white)
                                 .cornerRadius(12)
                                 .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
                             }
@@ -301,133 +559,133 @@ public struct WeeklyDashboardView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 18)
 
-                    // MARK: - 1. Master Tall Hero Weekly Reading Tracker Card Box (Matching Assignments Calendar Scale ~280-300pt Tall)
-
-                    VStack(alignment: .leading, spacing: 16) {
-                        // 1. Clean Title at the Very Top (Full width, unsquished, no icon, no subtitle)
+                    // MARK: - Interactive Deadlines Calendar Card (Matching Assignments)
+                    VStack(spacing: 12) {
+                        // Month Nav Header (< Month Year >)
                         HStack {
-                            Text("Weekly Reading Tracker")
+                            Button(action: {
+                                if let prev = Calendar.current.date(byAdding: .month, value: -1, to: selectedDate) {
+                                    selectedDate = prev
+                                }
+                            }) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            }
+                            .buttonStyle(.plain)
+
+                            Spacer()
+
+                            Text(monthYearString(for: selectedDate))
                                 .font(.cpItemTitle)
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
                             Spacer()
+
+                            Button(action: {
+                                if let next = Calendar.current.date(byAdding: .month, value: 1, to: selectedDate) {
+                                    selectedDate = next
+                                }
+                            }) {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            }
+                            .buttonStyle(.plain)
                         }
 
-                        // 2. Large Spacious Horizontal Scrolling Week Cards (Taller pills matching Calendar card scale & edge-to-edge scroll)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                // "ALL WEEKS" Card Pill (width: 86, height: 136) using bottom-left menu book.fill icon!
-                                Button(action: {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        if sortMode == "completed" || sortMode == "trash" {
-                                            sortMode = "readings"
-                                        }
-                                        selectedWeekFilter = 0
-                                    }
-                                }) {
-                                    VStack(spacing: 8) {
-                                        Text("ALL")
-                                            .font(.cpDescriptionBold)
-                                            .foregroundColor(selectedWeekFilter == 0 ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
-
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 18)
-                                                .fill(selectedWeekFilter == 0 ? LinearGradient(colors: [Color(red: 0.14, green: 0.44, blue: 0.96), Color(red: 0.25, green: 0.55, blue: 0.98)], startPoint: .topLeading, endPoint: .bottomTrailing) : LinearGradient(colors: [Color(red: 0.94, green: 0.95, blue: 0.97), Color(red: 0.91, green: 0.93, blue: 0.96)], startPoint: .top, endPoint: .bottom))
-                                                .frame(width: 50, height: 50)
-
-                                            Image(systemName: "book.fill")
-                                                .font(.system(size: 22, weight: .bold))
-                                                .foregroundColor(selectedWeekFilter == 0 ? .white : Color(red: 0.35, green: 0.42, blue: 0.52))
-                                        }
-
-                                        Text("\(remainingTotalCount) Total")
-                                            .font(.cpDescription)
-                                            .foregroundColor(selectedWeekFilter == 0 ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.45, green: 0.52, blue: 0.62))
-                                    }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 10)
-                                    .frame(width: 86, height: 136)
-                                    .background(selectedWeekFilter == 0 ? Color(red: 0.89, green: 0.93, blue: 1.0) : Color(red: 0.97, green: 0.98, blue: 0.99))
-                                    .cornerRadius(20)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 20)
-                                            .stroke(selectedWeekFilter == 0 ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: selectedWeekFilter == 0 ? 2 : 1)
-                                    )
+                        // Split Row: Left Hero Date + Right Mini Month Grid
+                        HStack(alignment: .center, spacing: 18) {
+                            // Left Hero Date (Tuesday 4) - Tapping filters/unfilters
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isDateFilterActive = true
+                                    selectedWeekFilter = 0
                                 }
-                                .buttonStyle(.plain)
+                            }) {
+                                VStack(spacing: 2) {
+                                    Text(dayNameString(for: selectedDate))
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                    Text("\(dayNumber(for: selectedDate))")
+                                        .font(.system(size: 50, weight: .bold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                }
+                                .frame(width: 86)
+                            }
+                            .buttonStyle(.plain)
 
-                                // Dynamic Week Cards (W1, W2, W3 ... W16) - Large Spacious Format (width: 86, height: 136)
-                                let weekNums = courseWeekNumbers.filter { $0 > 0 }
+                            Divider()
+                                .frame(height: 140)
 
-                                ForEach(weekNums, id: \.self) { weekNum in
-                                    let isSelected = selectedWeekFilter == weekNum
-                                    let weekReadings = readingsByWeek[weekNum] ?? []
-                                    let uncompletedWeekReadings = weekReadings.filter { !$0.isCompleted }
-                                    let weekDone = !weekReadings.isEmpty && uncompletedWeekReadings.isEmpty
-                                    let weekCount = uncompletedWeekReadings.count
+                            // Right Mini Month Grid
+                            VStack(spacing: 6) {
+                                HStack(spacing: 0) {
+                                    ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { day in
+                                        Text(day)
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                }
 
-                                    Button(action: {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            if sortMode == "completed" || sortMode == "trash" {
-                                                sortMode = "readings"
-                                            }
-                                            selectedWeekFilter = (selectedWeekFilter == weekNum) ? 0 : weekNum
-                                        }
-                                    }) {
-                                        VStack(spacing: 8) {
-                                            Text("Week \(weekNum)")
-                                                .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
-                                                .foregroundColor(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
+                                let daysInMonth = generateDaysInMonth(for: selectedDate)
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 4) {
+                                    ForEach(daysInMonth, id: \.self) { dateObj in
+                                        if let date = dateObj {
+                                            let isSelected = isDateFilterActive && Calendar.current.isDate(date, inSameDayAs: selectedDate)
+                                            let hasDeadline = hasReadingOnDate(date)
 
-                                            ZStack {
-                                                Circle()
-                                                    .fill(isSelected ? LinearGradient(colors: [Color(red: 0.14, green: 0.44, blue: 0.96), Color(red: 0.25, green: 0.55, blue: 0.98)], startPoint: .topLeading, endPoint: .bottomTrailing) : (weekDone ? LinearGradient(colors: [Color(red: 0.05, green: 0.65, blue: 0.40), Color(red: 0.10, green: 0.75, blue: 0.45)], startPoint: .top, endPoint: .bottom) : LinearGradient(colors: [Color(red: 0.93, green: 0.94, blue: 0.96), Color(red: 0.89, green: 0.91, blue: 0.94)], startPoint: .top, endPoint: .bottom)))
-                                                    .frame(width: 50, height: 50)
+                                            Button(action: {
+                                                withAnimation(.easeInOut(duration: 0.2)) {
+                                                    if isDateFilterActive && Calendar.current.isDate(date, inSameDayAs: selectedDate) {
+                                                        isDateFilterActive = false
+                                                    } else {
+                                                        selectedDate = date
+                                                        isDateFilterActive = true
+                                                        selectedWeekFilter = 0
+                                                    }
+                                                }
+                                            }) {
+                                                VStack(spacing: 1) {
+                                                    ZStack {
+                                                        Circle()
+                                                            .fill(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color.clear)
+                                                            .frame(width: 28, height: 28)
 
-                                                if weekDone {
-                                                    Image(systemName: "checkmark")
-                                                        .font(.system(size: 18, weight: .bold))
-                                                        .foregroundColor(.white)
-                                                } else {
-                                                    Text("\(weekCount)")
-                                                        .font(.cpItemTitle)
-                                                        .foregroundColor(isSelected ? .white : Color(red: 0.08, green: 0.12, blue: 0.22))
+                                                        Text("\(dayNumber(for: date))")
+                                                            .font(.system(size: 12, weight: isSelected ? .bold : .semibold))
+                                                            .foregroundColor(isSelected ? .white : Color(red: 0.08, green: 0.12, blue: 0.22))
+                                                    }
+
+                                                    if hasDeadline {
+                                                        HStack(spacing: 2) {
+                                                            ForEach(courseColorsForDate(date), id: \.self) { cColor in
+                                                                Circle()
+                                                                    .fill(cColor)
+                                                                    .frame(width: 4, height: 4)
+                                                            }
+                                                        }
+                                                    } else {
+                                                        Spacer().frame(height: 4)
+                                                    }
                                                 }
                                             }
-                                            .transaction { $0.animation = nil }
-
-                                            // Item Count Display under Week Circle (Static 'Items' per user directive)
-                                            Text("Items")
-                                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                                                .foregroundColor(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.35, green: 0.42, blue: 0.52))
-                                                .frame(height: 16)
+                                            .buttonStyle(.plain)
+                                        } else {
+                                            Text("")
+                                                .frame(width: 28, height: 28)
                                         }
-                                        .padding(.vertical, 12)
-                                        .padding(.horizontal, 10)
-                                        .frame(width: 86, height: 136)
-                                        .background(isSelected ? Color(red: 0.89, green: 0.93, blue: 1.0) : Color.white)
-                                        .cornerRadius(20)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 20)
-                                                .stroke(isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96) : Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: isSelected ? 2 : 1)
-                                        )
-                                        .shadow(color: isSelected ? Color(red: 0.14, green: 0.44, blue: 0.96).opacity(0.15) : Color.black.opacity(0.02), radius: 6, x: 0, y: 3)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 4)
                         }
-                        .padding(.horizontal, -16)
-
                     }
                     .padding(16)
                     .background(Color.white)
                     .cornerRadius(20)
                     .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
                     .padding(.horizontal, 18)
-                    .transaction { $0.animation = nil }
 
                     // MARK: - 2. Search Bar (Below Week Bar)
                     HStack {
@@ -463,91 +721,61 @@ public struct WeeklyDashboardView: View {
                     .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
                     .padding(.horizontal, 18)
 
-                    // MARK: - Reading Progress Bar Box (Persistent on Main Readings Page under Search Pill)
-                    let totalActiveCount = activeReadings.count
-                    let progressPct = totalActiveCount > 0 ? Int((Double(completedCount) / Double(totalActiveCount)) * 100) : 0
-
-                    if totalActiveCount > 0 && completedCount == totalActiveCount {
-                        // Dedicated Celebration Card overtaking standard progress bar when 100% complete
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.18))
-                                    .frame(width: 38, height: 38)
-                                Image(systemName: "checkmark.seal.fill")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Congratulations! 🎉")
-                                    .font(.cpItemTitle)
-                                    .foregroundColor(Color(red: 0.05, green: 0.55, blue: 0.35))
-
-                                Text("You finished all readings!")
-                                    .font(.cpDescriptionMedium)
-                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            }
-
-                            Spacer()
-
-                            Text("100%")
-                                .font(.cpDescriptionBold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color(red: 0.05, green: 0.65, blue: 0.40))
-                                .cornerRadius(12)
+                    // MARK: - Per-Course Reading Progress Bars
+                    let coursesForProgress: [Course] = {
+                        if let selectedCourseFilter {
+                            return [selectedCourseFilter]
                         }
-                        .padding(14)
-                        .background(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.08))
-                        .cornerRadius(18)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18)
-                                .stroke(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.25), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 2)
-                        .padding(.horizontal, 18)
-                    } else {
-                        VStack(spacing: 8) {
-                            HStack {
-                                HStack(spacing: 5) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
-                                    Text("Readings Progress")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        .foregroundColor(CoursePalTheme.textDark)
-                                }
-                                Spacer()
-                                Button(action: {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                        sortMode = "completed"
+                        return courses
+                    }()
+
+                    if !coursesForProgress.isEmpty && !activeReadings.isEmpty {
+                        VStack(spacing: 12) {
+                            ForEach(coursesForProgress) { course in
+                                let courseReadings = readings.filter { !$0.isDeleted && $0.week?.course?.persistentModelID == course.persistentModelID }
+                                let cTotal = courseReadings.count
+                                let cDone = courseReadings.filter { $0.isCompleted }.count
+                                let cPct = cTotal > 0 ? Int((Double(cDone) / Double(cTotal)) * 100) : 0
+                                let cColor = CourseColorHelper.color(for: course.hexColor)
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(cColor)
+                                            .frame(width: 8, height: 8)
+
+                                        Text(course.courseCode ?? course.courseName)
+                                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                                            .foregroundColor(CoursePalTheme.textDark)
+                                            .lineLimit(1)
+
+                                        Spacer()
                                     }
-                                }) {
-                                    Text("\(completedCount) of \(totalActiveCount) Done (\(progressPct)%)")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                        .foregroundColor(Color(red: 0.05, green: 0.65, blue: 0.40))
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 2.5)
-                                        .background(Color(red: 0.05, green: 0.65, blue: 0.40).opacity(0.12))
-                                        .cornerRadius(10)
-                                }
-                                .buttonStyle(.plain)
-                            }
 
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(red: 0.89, green: 0.91, blue: 0.94))
-                                        .frame(height: 7)
+                                    HStack(spacing: 8) {
+                                        GeometryReader { geo in
+                                            ZStack(alignment: .leading) {
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .fill(Color(red: 0.89, green: 0.91, blue: 0.94))
+                                                    .frame(height: 6)
 
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(LinearGradient(colors: [Color(red: 0.05, green: 0.65, blue: 0.40), Color(red: 0.10, green: 0.75, blue: 0.45)], startPoint: .leading, endPoint: .trailing))
-                                        .frame(width: geo.size.width * CGFloat(totalActiveCount > 0 ? Double(completedCount) / Double(totalActiveCount) : 0), height: 7)
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .fill(cColor)
+                                                    .frame(width: geo.size.width * CGFloat(cTotal > 0 ? Double(cDone) / Double(cTotal) : 0), height: 6)
+                                            }
+                                        }
+                                        .frame(height: 6)
+
+                                        Text("\(cDone) of \(cTotal) (\(cPct)%)")
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 2)
+                                            .background(cColor)
+                                            .cornerRadius(6)
+                                    }
                                 }
                             }
-                            .frame(height: 7)
                         }
                         .padding(14)
                         .background(Color.white)
@@ -631,100 +859,107 @@ public struct WeeklyDashboardView: View {
                                 .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
                         )
                         .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
+                    } else if activeReadings.isEmpty && sortMode != "trash" {
+                        VStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 18)
+                                    .fill(Color(red: 0.89, green: 0.93, blue: 1.0))
+                                    .frame(width: 56, height: 56)
+                                Image(systemName: isDateFilterActive ? "calendar.badge.exclamationmark" : "book.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(CoursePalTheme.accentBlue)
+                            }
+
+                            Text(isDateFilterActive ? "No Readings on This Date" : (searchQuery.isEmpty ? "No readings yet" : "No results found"))
+                                .font(.cpItemTitle)
+                                .foregroundColor(CoursePalTheme.textDark)
+                            Text(isDateFilterActive ? "There are no readings scheduled for this date." : (searchQuery.isEmpty ? "Upload a syllabus to automatically populate your reading schedule." : "Nothing matches \"\(searchQuery)\"."))
+                                .font(.cpDescription)
+                                .foregroundColor(CoursePalTheme.textMuted)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 260)
+
+                            if isDateFilterActive {
+                                Button(action: {
+                                    withAnimation(.easeOut(duration: 0.15)) {
+                                        isDateFilterActive = false
+                                    }
+                                }) {
+                                    Text("Show All Readings")
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(CoursePalTheme.accentBlue)
+                                        .cornerRadius(10)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.top, 4)
+                            }
+                        }
+                        .padding(.vertical, 32)
+                        .padding(.horizontal, 20)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.white)
+                        .cornerRadius(20)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
                         .padding(.horizontal, 18)
                     } else if sortMode == "readings" || sortMode == "week" {
-                        // ── READINGS GROUPED BY WEEK ──────────────────
-                        let allWeekNums = courseWeekNumbers
-                        let displayNums: [Int] = selectedWeekFilter == 0
-                            ? allWeekNums
-                            : (allWeekNums.filter { $0 == selectedWeekFilter }.isEmpty ? [selectedWeekFilter] : allWeekNums.filter { $0 == selectedWeekFilter })
-                        let activeDisplayNums: [Int] = {
-                            let filtered = displayNums.filter { num in
-                                if selectedWeekFilter != 0 && num == selectedWeekFilter { return true }
-                                let weekReadings = readingsByWeek[num] ?? []
-                                return !weekReadings.isEmpty
-                            }
-                            if filtered.isEmpty {
-                                return [selectedWeekFilter == 0 ? (allWeekNums.first ?? 0) : selectedWeekFilter]
-                            }
-                            return filtered
-                        }()
-
+                        // ── READINGS GROUPED BY WEEK ──
                         VStack(alignment: .leading, spacing: 18) {
-                            ForEach(activeDisplayNums, id: \.self) { weekNum in
-                                let weekReadings = readingsByWeek[weekNum] ?? []
-                                let weekTheme: String? = {
-                                    if let t = weekReadings.first?.week?.theme, !t.isEmpty, !t.lowercased().hasPrefix("week ") {
-                                        return t
-                                    }
-                                    if let t = weekReadings.compactMap({ $0.relevantTopics }).first(where: { !$0.isEmpty && !$0.lowercased().hasPrefix("week ") }) {
-                                        return t
-                                    }
-                                    return nil
-                                }()
+                            ForEach(activeWeekNumbersWithReadings, id: \.self) { weekNum in
+                                let weekReadings = (readingsByWeek[weekNum] ?? []).sorted(by: { scheduledDate(for: $0) < scheduledDate(for: $1) })
 
                                 VStack(alignment: .leading, spacing: 10) {
-                                    HStack(spacing: 8) {
-                                        if weekNum > 0 {
+                                    if weekNum > 0 {
+                                        HStack(spacing: 6) {
                                             Text("Week \(weekNum)")
-                                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                                .foregroundColor(CoursePalTheme.accentBlue)
-                                                .padding(.horizontal, 9)
-                                                .padding(.vertical, 3.5)
-                                                .background(CoursePalTheme.pillBlueBg)
-                                                .cornerRadius(8)
-                                        }
-
-                                        if let theme = weekTheme {
-                                            Text(theme)
-                                                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                                                .foregroundColor(Color(red: 0.22, green: 0.28, blue: 0.38))
-                                                .lineLimit(1)
-                                        } else if weekNum == 0 {
-                                            Text("Course Readings")
-                                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                                .foregroundColor(Color(red: 0.22, green: 0.28, blue: 0.38))
-                                        }
-
-                                        Spacer()
-
-                                        if !weekReadings.isEmpty {
-                                            Button(action: {
-                                                 withAnimation { deleteWeekSection(weekNum: weekNum) }
-                                            }) {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "trash.fill")
-                                                        .font(.system(size: 9.5, weight: .bold))
-                                                    Text("Delete Week")
-                                                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                                                }
-                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                .foregroundColor(.white)
                                                 .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Color(red: 0.93, green: 0.94, blue: 0.96))
-                                                .cornerRadius(10)
-                                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.85, green: 0.88, blue: 0.92), lineWidth: 1))
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
+                                                .padding(.vertical, 3)
+                                                .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                .clipShape(Capsule())
 
-                                    if weekReadings.isEmpty {
-                                        HStack(spacing: 10) {
-                                            Image(systemName: "calendar.badge.clock")
-                                                .font(.system(size: 14))
-                                                .foregroundColor(CoursePalTheme.textMuted)
-                                            Text("No readings assigned for this week")
-                                                .font(.cpDescription)
-                                                .foregroundColor(CoursePalTheme.textMuted)
+                                            if let mod = weekModuleMention(for: weekNum), !mod.isEmpty {
+                                                Text(mod)
+                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 3)
+                                                    .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                    .clipShape(Capsule())
+                                            }
+
+                                            if let range = weekDateRange(for: weekNum), !range.isEmpty {
+                                                Text(range)
+                                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                            }
+
                                             Spacer()
                                         }
-                                        .padding(14)
-                                        .frame(maxWidth: .infinity)
-                                        .background(Color.white)
-                                        .cornerRadius(14)
-                                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 0.89, green: 0.91, blue: 0.94).opacity(0.6), lineWidth: 1))
+                                        .padding(.top, 4)
                                     } else {
+                                        HStack(spacing: 6) {
+                                            Text("General Readings")
+                                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 3)
+                                                .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                                .clipShape(Capsule())
+
+                                            Spacer()
+                                        }
+                                        .padding(.top, 4)
+                                    }
+
+                                    VStack(spacing: 10) {
                                         ForEach(weekReadings) { reading in
                                             WeekReadingCardView(
                                                 reading: reading,
@@ -1090,30 +1325,66 @@ public struct WeeklyDashboardView: View {
             .toolbar(.hidden, for: .navigationBar)
             #endif
         }
+        .overlay {
+            if showingConfetti {
+                ConfettiCelebrationView(isPresented: $showingConfetti, title: confettiTitle)
+            }
+        }
         .dismissKeyboardOnTap()
+        .onAppear {
+            let cal = Calendar.current
+            let hasReadingsInSelectedMonth = readings.contains { r in
+                guard !r.isDeleted, let due = r.dueDate else { return false }
+                return cal.isDate(due, equalTo: selectedDate, toGranularity: .month)
+            }
+            if !hasReadingsInSelectedMonth {
+                let validDueDates = readings.filter { !$0.isDeleted }.compactMap { $0.dueDate }.sorted()
+                let today = cal.startOfDay(for: Date())
+                if let nextDue = validDueDates.first(where: { $0 >= today }) ?? validDueDates.first {
+                    selectedDate = nextDue
+                }
+            }
+        }
+    }
+
+    private func triggerConfetti(title: String) {
+        confettiTitle = title
+        withAnimation {
+            showingConfetti = true
+        }
     }
 
     private func toggleReading(_ reading: Reading) {
-        reading.isCompleted.toggle()
+        let willBeCompleted = !reading.isCompleted
+        reading.isCompleted = willBeCompleted
         try? modelContext.save()
+        DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
+        
+        if willBeCompleted {
+            // 1. Check if this course's readings are now 100% complete
+            if let course = reading.week?.course {
+                let courseReadings = readings.filter { !$0.isDeleted && $0.week?.course?.persistentModelID == course.persistentModelID }
+                let remaining = courseReadings.filter { !$0.isCompleted }.count
+                if remaining == 0 && !courseReadings.isEmpty {
+                    triggerConfetti(title: "🎉 \(course.courseCode ?? course.courseName) Readings 100% Done!")
+                    return
+                }
+            }
+            
+            // 2. Check if all active readings across all courses are now 100% complete
+            let allActive = activeReadings
+            let remainingAll = allActive.filter { !$0.isCompleted }.count
+            if remainingAll == 0 && !allActive.isEmpty {
+                triggerConfetti(title: "🎉 All Readings 100% Complete!")
+            }
+        }
     }
 
     private func softDeleteReading(_ reading: Reading) {
         withAnimation(.easeInOut(duration: 0.25)) {
             reading.isDeleted = true
             try? modelContext.save()
-        }
-    }
-
-    private func deleteWeekSection(weekNum: Int) {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            for r in readings.filter({ $0.week?.weekNumber == weekNum }) {
-                r.isDeleted = true
-            }
-            for a in dbAssignments.filter({ $0.weekNumber == weekNum }) {
-                a.isDeleted = true
-            }
-            try? modelContext.save()
+            DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
         }
     }
 }
@@ -1151,6 +1422,28 @@ public struct WeekReadingCardView: View {
         CourseColorHelper.color(for: reading.week?.course?.hexColor ?? "#2563EB")
     }
 
+    private var displayTitle: String {
+        var raw = reading.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cCode = reading.courseCode ?? reading.week?.course?.courseCode
+        let cName = reading.week?.course?.courseName
+
+        if raw.isEmpty || (cCode != nil && raw.lowercased() == cCode!.lowercased()) || (cName != nil && raw.lowercased() == cName!.lowercased()) {
+            return reading.chapterAndPagesDisplay ?? "Required Reading"
+        }
+
+        if let cCode = cCode, !cCode.isEmpty {
+            let pattern = #"^(?i)\Q"# + cCode + #"\E\s*[:\-–\.]*\s*"#
+            raw = raw.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let cName = cName, !cName.isEmpty {
+            let pattern = #"^(?i)\Q"# + cName + #"\E\s*[:\-–\.]*\s*"#
+            raw = raw.replacingOccurrences(of: pattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        raw = raw.replacingOccurrences(of: #"^[A-Z]{2,5}\s*\d{3,4}[A-Z]?\s*[:\-–\.]*\s*"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return raw.isEmpty ? (reading.chapterAndPagesDisplay ?? "Required Reading") : raw
+    }
+
     public var body: some View {
         HStack(spacing: 10) {
             // Single Vertical Course Color Line Indicator
@@ -1160,65 +1453,100 @@ public struct WeekReadingCardView: View {
 
             // Content Area
             VStack(alignment: .leading, spacing: 3) {
-                // Top Line: Course Code Pill (Left) & Week / Module Badge
+                // Top Line: Course Title Pill (Left, white letters) & Media Type Badge (if not standard textbook)
+                let pillTitle: String = {
+                    if let cName = reading.week?.course?.courseName, !cName.isEmpty {
+                        return cName
+                    }
+                    if let cCode = reading.courseCode ?? reading.week?.course?.courseCode, !cCode.isEmpty {
+                        return cCode
+                    }
+                    return "Reading"
+                }()
+
                 HStack(spacing: 6) {
-                    if let code = reading.courseCode ?? reading.week?.course?.courseCode, !code.isEmpty {
-                        Text(code)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(courseColor)
+                    Text(pillTitle)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(courseColor)
+                        .cornerRadius(5)
+
+
+                    if reading.mediaType != .textbook {
+                        Text(reading.mediaType.displayName)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(courseColor.opacity(0.12))
+                            .background(Color(red: 0.93, green: 0.94, blue: 0.96))
                             .cornerRadius(4)
-                    }
-
-                    if let badge = reading.contextBadgeText {
-                        Text(badge)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                     }
 
                     Spacer(minLength: 0)
                 }
 
-                // Reading Title (Strictly reading title / chapters, NEVER course name)
-                Text(reading.title.isEmpty ? (reading.chapterAndPagesDisplay ?? "Required Reading") : reading.title)
+                // Reading Title with Chapter before name, in black
+                let titleColor = reading.isCompleted ? CoursePalTheme.textMuted : Color(red: 0.08, green: 0.12, blue: 0.22)
+                let fullTitleString: String = {
+                    if let ch = reading.cleanChapterText, !ch.isEmpty {
+                        let lowerTitle = displayTitle.lowercased()
+                        let lowerCh = ch.lowercased()
+                        if lowerTitle.hasPrefix("chapter") || lowerTitle.hasPrefix("ch.") || lowerTitle.hasPrefix("ch ") {
+                            let strippedTitle = displayTitle.replacingOccurrences(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*[\d\s,&–\-and]+\s*[:\-–·•.]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !strippedTitle.isEmpty {
+                                return "\(ch) · \(strippedTitle)"
+                            }
+                            return ch
+                        }
+                        if !lowerTitle.contains(lowerCh) {
+                            return "\(ch) · \(displayTitle)"
+                        }
+                    }
+                    return displayTitle
+                }()
+
+                Text(fullTitleString)
                     .font(.cpItemTitle)
-                    .foregroundColor(reading.isCompleted ? CoursePalTheme.textMuted : Color(red: 0.22, green: 0.28, blue: 0.38))
+                    .foregroundColor(titleColor)
                     .strikethrough(reading.isCompleted)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
 
-                // Subtitle: Authors · Chapters/Pages (Cleaned of stray colons/semicolons)
-                if let subtitle = reading.authorAndChaptersSubtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.cpDescriptionMedium)
-                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                        .lineLimit(2)
-                }
-
-                // Date Display (Due date formatted: "Due [Day], [Month] [Date] · Week [WeekNumber]")
-                let readingDateText: String = {
-                    let w = reading.week?.weekNumber ?? 0
-                    return WeekDateConverter.formattedDueDate(for: reading.dueDate, week: reading.week, weekNumber: w)
-                }()
-
-                HStack(spacing: 8) {
-                    Text(readingDateText)
-                        .font(.cpDescription)
-                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                }
-                .padding(.top, 1)
-
-                if let topic = reading.relevantTopics?.trimmingCharacters(in: .whitespacesAndNewlines), !topic.isEmpty, !topic.lowercased().hasPrefix("week ") {
-                    HStack(spacing: 4) {
-                        Image(systemName: "tag.fill")
-                            .font(.system(size: 9.5))
-                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                        Text(topic)
-                            .font(.system(size: 11, weight: .medium))
+                // Subtitle: Authors · Pages (Cleaned of stray colons/semicolons, NO chapters underneath)
+                if let subtitle = reading.authorAndPagesSubtitle, !subtitle.isEmpty {
+                    if !displayTitle.lowercased().contains(subtitle.lowercased()) && !subtitle.lowercased().contains(displayTitle.lowercased()) {
+                        Text(subtitle)
+                            .font(.cpDescriptionMedium)
                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            .lineLimit(1)
+                            .lineLimit(2)
+                    } else if let auth = reading.authorName, !auth.isEmpty, !displayTitle.lowercased().contains(auth.lowercased()) {
+                        Text(auth)
+                            .font(.cpDescriptionMedium)
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                            .lineLimit(2)
+                    }
+                }
+
+                // Date Display (Clean calendar date without redundant "Due" or "Week X")
+                if let explicitDate = reading.dueDate {
+                    let dateText: String = {
+                        let formatter = DateFormatter()
+                        let calendar = Calendar.current
+                        let itemYear = calendar.component(.year, from: explicitDate)
+                        let currentYear = calendar.component(.year, from: Date())
+                        formatter.dateFormat = (itemYear != currentYear) ? "EEEE, MMMM d, yyyy" : "EEEE, MMMM d"
+                        return formatter.string(from: explicitDate)
+                    }()
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                        Text(dateText)
+                            .font(.cpDescription)
+                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                     }
                     .padding(.top, 1)
                 }
@@ -1247,8 +1575,8 @@ public struct WeekReadingCardView: View {
 
             Spacer(minLength: 4)
 
-            // Right-side Clean Action Buttons: Checkmark Ring & Trashcan
-            HStack(spacing: 12) {
+            // Right-side Action Buttons: Checkmark Ring & Trashcan
+            HStack(spacing: 8) {
                 // Completion Checkmark Ring Button
                 Button(action: {
                     onToggle()
@@ -1268,7 +1596,7 @@ public struct WeekReadingCardView: View {
                                 .foregroundColor(.white)
                         }
                     }
-                    .frame(width: 36, height: 36)
+                    .frame(width: 32, height: 36)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1282,7 +1610,7 @@ public struct WeekReadingCardView: View {
                     Image(systemName: "trash")
                         .font(.system(size: 15, weight: .regular))
                         .foregroundColor(Color.red.opacity(0.85))
-                        .frame(width: 32, height: 32)
+                        .frame(width: 30, height: 32)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1314,13 +1642,18 @@ public struct EditReadingSheet: View {
 
     @State private var courseNameInput: String = ""
     @State private var selectedWeekNum: Int = 1
+    @State private var weekString: String = "1"
+    @State private var selectedModuleNum: Int = 0
+    @State private var moduleInput: String = ""
     @State private var videoUrlInput: String = ""
-    @State private var dateRangeInput: String = ""
+    @State private var hasDueDate: Bool = false
     @State private var dueDateInput: Date = Date()
     @State private var chapterInput: String = ""
+    @State private var topicInputs: [String] = []
     @State private var topicsInput: String = ""
     @State private var notesInput: String = ""
-    @State private var isSyncing: Bool = false
+    @State private var noteInputs: [String] = []
+    @State private var cachedCourseStartDate: Date? = nil
 
     public var body: some View {
         NavigationStack {
@@ -1355,104 +1688,117 @@ public struct EditReadingSheet: View {
                         .padding(.vertical, 1)
                     }
 
-                    // Section 2: Combined Week & Date Range Section with Bidirectional Sync
-                    Section("Week & Date Range") {
-                        Picker("Week", selection: $selectedWeekNum) {
-                            ForEach(1...20, id: \.self) { w in
-                                Text("Week \(w)").tag(w)
-                            }
-                        }
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .pickerStyle(.menu)
-                        .onChange(of: selectedWeekNum) { _, newWeekNum in
-                            guard !isSyncing else { return }
-                            isSyncing = true
-                            if let course = reading.week?.course,
-                               let targetWeek = course.weeks.first(where: { $0.weekNumber == newWeekNum }) {
-                                reading.week = targetWeek
-                            }
-                            if reading.dueDate != nil {
-                                let calculatedDate = reading.week?.computedStartDate ?? WeekDateConverter.date(forWeek: newWeekNum)
-                                dueDateInput = calculatedDate
-                                reading.dueDate = calculatedDate
-                            }
-                            isSyncing = false
+                    // Section 2: Schedule & Due Date (Week, Module, and Due Date - No Made-up Date Ranges)
+                    // Section 2: Schedule & Due Date (Week, Module, and Due Date - No Made-up Date Ranges)
+                    Section("Schedule") {
+                        HStack(spacing: 8) {
+                            Text("Week")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            TextField("1", text: $weekString)
+                                .keyboardType(.numberPad)
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                .frame(width: 80)
+                                .onChange(of: weekString) { _, newVal in
+                                    let digits = newVal.filter { $0.isNumber }
+                                    if digits != newVal { weekString = digits }
+                                    if let w = Int(digits), w > 0 {
+                                        selectedWeekNum = w
+                                    }
+                                }
+                            Spacer()
                         }
 
-                        HStack {
-                            Text("Date Range")
+                        HStack(spacing: 8) {
+                            TextField("Module", text: $moduleInput)
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            Spacer()
-                            let displayRange: String = {
-                                if let range = reading.dateRangeStr, !range.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    return range
-                                }
-                                if let due = reading.dueDate {
-                                    let formatter = DateFormatter()
-                                    formatter.dateStyle = .medium
-                                    return formatter.string(from: due)
-                                }
-                                if let wRange = reading.week?.dateRangeStr, !wRange.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    return wRange
-                                }
-                                return "Unknown"
-                            }()
-                            Text(displayRange)
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                        }
+
+                        Toggle("Due Date", isOn: $hasDueDate)
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+
+                        if hasDueDate {
+                            DatePicker("Select Date", selection: $dueDateInput, displayedComponents: [.date])
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .foregroundColor(displayRange == "Unknown" ? Color(red: 0.45, green: 0.52, blue: 0.62) : Color(red: 0.08, green: 0.12, blue: 0.22))
+                                .onChange(of: dueDateInput) { _, newDate in
+                                    let derivedW: Int
+                                    if let firstDate = cachedCourseStartDate {
+                                        derivedW = WeekDateConverter.deriveWeekNumber(for: newDate, courseStartDate: firstDate)
+                                    } else {
+                                        derivedW = WeekDateConverter.weekNumber(for: newDate)
+                                    }
+                                    if selectedWeekNum != derivedW {
+                                        selectedWeekNum = derivedW
+                                        weekString = "\(derivedW)"
+                                    }
+                                }
                         }
                     }
 
-                    // Section 3: Dedicated Chapter & Pages Section
+                    // Section 4: Dedicated Chapter & Pages Section
                     Section("Chapter & Pages") {
                         TextField("e.g. Chapter 4, pp. 120-155", text: $chapterInput)
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                             .onChange(of: chapterInput) { _, newValue in
                                 let (ch, pg) = LocalSyllabusParser.shared.extractChapterAndPages(from: newValue)
-                                reading.chapterText = ch ?? newValue
+                                let fullCh: String? = {
+                                    guard let c = ch ?? (newValue.isEmpty ? nil : newValue) else { return nil }
+                                    return Reading.expandChapterToFullWord(c)
+                                }()
+                                reading.chapterText = fullCh
                                 reading.pagesText = pg
                             }
                     }
 
-                    // Section 4: Dedicated Topics Section (Read-only display of document topics & descriptions)
+                    // Section 5: Dedicated Topics Section (Clean numbered list: 1 - Topic, editable like rest of sections)
                     Section("Topics") {
-                        let topicsList = reading.computedTopics
-                        if !topicsList.isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
-                                ForEach(Array(topicsList.enumerated()), id: \.offset) { idx, topicStr in
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "book.pages.fill")
-                                                .font(.system(size: 11, weight: .bold))
-                                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                        if topicInputs.isEmpty {
+                            Button {
+                                topicInputs.append("")
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Topic")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
+                        } else {
+                            ForEach(0..<topicInputs.count, id: \.self) { idx in
+                                HStack(spacing: 8) {
+                                    Text("\(idx + 1) -")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
 
-                                            Text("TOPIC \(idx + 1)")
-                                                .font(.system(size: 10, weight: .bold))
-                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                    TextField("Topic description...", text: Binding(
+                                        get: { idx < topicInputs.count ? topicInputs[idx] : "" },
+                                        set: { newVal in
+                                            if idx < topicInputs.count {
+                                                topicInputs[idx] = newVal
+                                                let nonEmpty = topicInputs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                                                reading.relevantTopics = nonEmpty.isEmpty ? nil : nonEmpty.joined(separator: ", ")
+                                            }
                                         }
-
-                                        Text(topicStr)
-                                            .font(.system(size: 13.5, weight: .semibold, design: .rounded))
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                    .padding(12)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.white)
-                                    .cornerRadius(10)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
-                                    )
+                                    ))
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                 }
                             }
-                            .padding(.vertical, 4)
-                        } else {
-                            Text("No topics specified in document")
-                                .font(.system(size: 13.5, weight: .medium, design: .rounded))
-                                .foregroundColor(Color(red: 0.55, green: 0.62, blue: 0.72))
-                                .padding(.vertical, 4)
+
+                            Button {
+                                topicInputs.append("")
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Topic")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                            }
                         }
                     }
 
@@ -1494,14 +1840,83 @@ public struct EditReadingSheet: View {
                         }
                     }
 
-                    // Section 7: Notes Section (Clean & Empty by default)
+                    // Section 7: Notes
                     Section("Notes") {
-                        TextField("Enter notes...", text: $notesInput, axis: .vertical)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .lineLimit(4...10)
-                            .onChange(of: notesInput) { _, newValue in
-                                reading.summaryText = newValue
+                        if noteInputs.isEmpty {
+                            Button {
+                                noteInputs.append("")
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Note")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                             }
+                        } else {
+                            VStack(spacing: 14) { // Generous space between each note
+                                ForEach(0..<noteInputs.count, id: \.self) { idx in
+                                    HStack(alignment: .top, spacing: 12) {
+                                        Text("\(idx + 1) -")
+                                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                            .padding(.top, 2)
+
+                                        TextField("Add note or instruction...", text: Binding(
+                                            get: { idx < noteInputs.count ? noteInputs[idx] : "" },
+                                            set: { newVal in
+                                                if idx < noteInputs.count {
+                                                    noteInputs[idx] = newVal
+                                                }
+                                            }
+                                        ), axis: .vertical)
+                                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                                        .lineSpacing(6) // Separate text lines more inside the note
+                                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                        .lineLimit(3...16)
+
+                                        Spacer(minLength: 4)
+
+                                        Button {
+                                            if idx < noteInputs.count {
+                                                noteInputs.remove(at: idx)
+                                            }
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 16))
+                                                .foregroundColor(Color(red: 0.70, green: 0.75, blue: 0.82))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.top, 2)
+                                    }
+                                    .padding(.horizontal, 18)
+                                    .padding(.vertical, 18)
+                                    .frame(minHeight: 90, alignment: .topLeading) // Taller note pill
+                                    .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+                                    .cornerRadius(14)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
+                                    )
+                                }
+                            }
+                            .padding(.vertical, 4)
+
+                            Button {
+                                noteInputs.append("")
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("Add Note")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .padding(.top, 2)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -1511,32 +1926,63 @@ public struct EditReadingSheet: View {
             .onAppear {
                 courseNameInput = reading.week?.course?.courseName ?? ""
                 selectedWeekNum = reading.week?.weekNumber ?? 1
+                weekString = "\(selectedWeekNum)"
+                if let mod = reading.moduleMention {
+                    moduleInput = mod
+                    if let match = mod.range(of: #"\d+"#, options: .regularExpression), let num = Int(mod[match]) {
+                        selectedModuleNum = num
+                    } else {
+                        selectedModuleNum = 0
+                    }
+                } else {
+                    moduleInput = ""
+                    selectedModuleNum = 0
+                }
                 videoUrlInput = reading.videoUrl ?? ""
-                dateRangeInput = reading.dateRangeStr ?? reading.week?.dateRangeStr ?? ""
-                dueDateInput = reading.dueDate ?? (reading.week?.computedEndDate ?? WeekDateConverter.date(forWeek: selectedWeekNum))
+                if let d = reading.dueDate {
+                    hasDueDate = true
+                    dueDateInput = d
+                } else {
+                    hasDueDate = false
+                    dueDateInput = Date()
+                }
                 
                 if let chDisplay = reading.chapterAndPagesDisplay, !chDisplay.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    chapterInput = chDisplay
+                    chapterInput = Reading.expandChapterToFullWord(chDisplay) ?? chDisplay
                 } else {
                     let (ch, pg) = LocalSyllabusParser.shared.extractChapterAndPages(from: reading.title)
                     var parts: [String] = []
-                    if let c = ch { parts.append(c) }
+                    if let c = ch { parts.append(Reading.expandChapterToFullWord(c) ?? c) }
                     if let p = pg { parts.append(p) }
                     chapterInput = parts.joined(separator: " • ")
                     if !parts.isEmpty {
-                        reading.chapterText = ch
+                        reading.chapterText = Reading.expandChapterToFullWord(ch) ?? ch
                         reading.pagesText = pg
                     }
                 }
                 
+                let currentTopics = reading.computedTopics.filter { !$0.lowercased().hasPrefix("module") && !$0.lowercased().hasPrefix("mod ") }
+                if !currentTopics.isEmpty {
+                    topicInputs = currentTopics
+                } else if let rel = reading.relevantTopics, !rel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    topicInputs = [rel.trimmingCharacters(in: .whitespacesAndNewlines)]
+                } else {
+                    topicInputs = []
+                }
                 topicsInput = reading.relevantTopics ?? ""
-                notesInput = reading.summaryText
+                let rawNotes = reading.summaryText
+                notesInput = rawNotes
+                noteInputs = rawNotes.components(separatedBy: .newlines)
+                    .map { $0.replacingOccurrences(of: #"^[•\-\*▪●]\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                cachedCourseStartDate = reading.week?.course?.weeks.compactMap({ $0.startDate }).min() ?? reading.week?.course?.earliestItemDate
             }
             .navigationTitle("Details")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(red: 0.95, green: 0.96, blue: 0.98), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1544,6 +1990,34 @@ public struct EditReadingSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        if let course = reading.week?.course {
+                            if let targetWeek = course.weeks.first(where: { $0.weekNumber == selectedWeekNum }) {
+                                reading.week = targetWeek
+                            } else {
+                                let newWeek = Week(id: UUID(), weekNumber: selectedWeekNum, theme: "Week \(selectedWeekNum) Schedule")
+                                newWeek.course = course
+                                course.weeks.append(newWeek)
+                                modelContext.insert(newWeek)
+                                reading.week = newWeek
+                            }
+                        }
+                        reading.dueDate = hasDueDate ? dueDateInput : nil
+                        reading.dateRangeStr = nil
+                        let nonEmptyTopics = topicInputs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                        if !nonEmptyTopics.isEmpty {
+                            reading.relevantTopics = nonEmptyTopics.joined(separator: ", ")
+                        } else {
+                            let t = topicsInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                            reading.relevantTopics = t.isEmpty ? nil : t
+                        }
+
+                        let nonEmptyNotes = noteInputs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                        reading.summaryText = nonEmptyNotes.joined(separator: "\n")
+
+                        let trimmedMod = moduleInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let course = reading.week?.course, !trimmedMod.isEmpty {
+                            course.cacheModule(trimmedMod, forWeek: selectedWeekNum)
+                        }
                         try? modelContext.save()
                         dismiss()
                     }
@@ -1983,5 +2457,164 @@ public struct UnifiedTrashFolderSheet: View {
         }
     }
 }
+
+// MARK: - Confetti Particle Model
+
+public struct ConfettiParticle: Identifiable {
+    public let id = UUID()
+    public let startX: CGFloat
+    public let startY: CGFloat
+    public let vx: CGFloat
+    public let vy: CGFloat
+    public let gravity: CGFloat
+    public let wobbleSpeed: Double
+    public let wobbleAmplitude: CGFloat
+    public let rotationSpeed: Double
+    public let initialRotation: Double
+    public let size: CGSize
+    public let color: Color
+    public let shape: ConfettiShape
+    
+    public enum ConfettiShape: CaseIterable {
+        case rectangle
+        case circle
+        case strip
+    }
+}
+
+// MARK: - Confetti Celebration View
+
+public struct ConfettiCelebrationView: View {
+    @Binding public var isPresented: Bool
+    public var title: String? = nil
+    
+    @State private var startTime: Date = Date()
+    @State private var particles: [ConfettiParticle] = []
+    public init(isPresented: Binding<Bool>, title: String? = nil) {
+        self._isPresented = isPresented
+        self.title = title
+    }
+    
+    public var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                // Canvas Particle System with Hardware-Accelerated Physics
+                TimelineView(.animation) { timeline in
+                    let elapsed = timeline.date.timeIntervalSince(startTime)
+                    
+                    Canvas { context, size in
+                        guard elapsed < 3.2 else { return }
+                        
+                        let globalAlpha = elapsed < 2.2 ? 1.0 : max(0.0, 1.0 - (elapsed - 2.2) / 1.0)
+                        
+                        for p in particles {
+                            // Compute position over elapsed time
+                            let x = p.startX + p.vx * elapsed + sin(elapsed * p.wobbleSpeed) * p.wobbleAmplitude
+                            let y = p.startY + p.vy * elapsed + 0.5 * p.gravity * elapsed * elapsed
+                            
+                            guard y < size.height + 40 && x > -40 && x < size.width + 40 else { continue }
+                            
+                            let rotation = Angle.radians(p.initialRotation + p.rotationSpeed * elapsed)
+                            
+                            var pCtx = context
+                            pCtx.opacity = globalAlpha
+                            pCtx.translateBy(x: x, y: y)
+                            pCtx.rotate(by: rotation)
+                            
+                            let rect = CGRect(x: -p.size.width / 2, y: -p.size.height / 2, width: p.size.width, height: p.size.height)
+                            
+                            switch p.shape {
+                            case .rectangle:
+                                pCtx.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(p.color))
+                            case .circle:
+                                pCtx.fill(Path(ellipseIn: rect), with: .color(p.color))
+                            case .strip:
+                                pCtx.fill(Path(roundedRect: rect, cornerRadius: 1.0), with: .color(p.color))
+                            }
+                        }
+                    }
+                    .onChange(of: elapsed >= 3.2) { _, finished in
+                        if finished {
+                            isPresented = false
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .onAppear {
+                spawnParticles(in: geo.size)
+                #if os(iOS)
+                let gen = UINotificationFeedbackGenerator()
+                gen.notificationOccurred(.success)
+                #endif
+            }
+        }
+        .ignoresSafeArea()
+    }
+    
+    private func spawnParticles(in size: CGSize) {
+        startTime = Date()
+        var newParticles: [ConfettiParticle] = []
+        
+        let colors: [Color] = [
+            Color(red: 0.98, green: 0.75, blue: 0.18), // Gold
+            Color(red: 0.05, green: 0.75, blue: 0.45), // Emerald Green
+            Color(red: 0.14, green: 0.44, blue: 0.96), // Royal Blue
+            Color(red: 0.95, green: 0.25, blue: 0.55), // Hot Pink
+            Color(red: 0.55, green: 0.27, blue: 0.96), // Purple
+            Color(red: 0.98, green: 0.48, blue: 0.18), // Coral
+            Color(red: 0.02, green: 0.78, blue: 0.88), // Cyan
+            Color(red: 1.00, green: 0.92, blue: 0.23)  // Bright Yellow
+        ]
+        
+        let shapes = ConfettiParticle.ConfettiShape.allCases
+        let particleCount = 85
+        
+        let width = size.width > 0 ? size.width : 390
+        let height = size.height > 0 ? size.height : 844
+        
+        for _ in 0..<particleCount {
+            let startX = CGFloat.random(in: width * 0.15...width * 0.85)
+            let startY = CGFloat.random(in: height * 0.25...height * 0.45)
+            
+            let angle = Double.random(in: -Double.pi * 0.85 ... -Double.pi * 0.15)
+            let speed = CGFloat.random(in: 260...620)
+            let vx = cos(angle) * speed
+            let vy = sin(angle) * speed
+            
+            let shape = shapes.randomElement() ?? .rectangle
+            let particleSize: CGSize = {
+                switch shape {
+                case .rectangle:
+                    return CGSize(width: CGFloat.random(in: 7...12), height: CGFloat.random(in: 6...10))
+                case .circle:
+                    let d = CGFloat.random(in: 6...10)
+                    return CGSize(width: d, height: d)
+                case .strip:
+                    return CGSize(width: CGFloat.random(in: 12...18), height: CGFloat.random(in: 4...6))
+                }
+            }()
+            
+            newParticles.append(ConfettiParticle(
+                startX: startX,
+                startY: startY,
+                vx: vx,
+                vy: vy,
+                gravity: CGFloat.random(in: 550...850),
+                wobbleSpeed: Double.random(in: 4.0...10.0),
+                wobbleAmplitude: CGFloat.random(in: 15...35),
+                rotationSpeed: Double.random(in: -8.0...8.0),
+                initialRotation: Double.random(in: 0...Double.pi * 2),
+                size: particleSize,
+                color: colors.randomElement() ?? .yellow,
+                shape: shape
+            ))
+        }
+        
+        self.particles = newParticles
+    }
+}
+
 
 

@@ -39,6 +39,11 @@
 		AA0000372C5F000100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA0000372C5F000000000001 /* PrivacyInfo.xcprivacy */; };
 		AA0000382C5F000100000001 /* Services/CourseSharingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000382C5F000000000001 /* Services/CourseSharingService.swift */; };
 		AA0000392C5F000100000001 /* Views/CourseAIChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000392C5F000000000001 /* Views/CourseAIChatView.swift */; };
+		AA0000402C5F000100000001 /* Services/PDFHighlightSnapshotEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000402C5F000000000001 /* Services/PDFHighlightSnapshotEngine.swift */; };
+		AA0000422C5F000100000001 /* Services/DataPersistenceBackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000422C5F000000000001 /* Services/DataPersistenceBackupManager.swift */; };
+		AA0000432C5F000100000001 /* Services/ParsedSyllabusCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000432C5F000000000001 /* Services/ParsedSyllabusCache.swift */; };
+		AA0000442C5F000100000001 /* Services/AppReviewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000442C5F000000000001 /* Services/AppReviewManager.swift */; };
+		AA0000412C5F000100000001 /* Resources/Syllabi in Resources */ = {isa = PBXBuildFile; fileRef = AA0000412C5F000000000001 /* Resources/Syllabi */; };
 		AA0000102C5F000100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000102C5F000000000001 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -76,6 +81,11 @@
 		AA0000372C5F000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA0000382C5F000000000001 /* Services/CourseSharingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/CourseSharingService.swift; sourceTree = "<group>"; };
 		AA0000392C5F000000000001 /* Views/CourseAIChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/CourseAIChatView.swift; sourceTree = "<group>"; };
+		AA0000402C5F000000000001 /* Services/PDFHighlightSnapshotEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/PDFHighlightSnapshotEngine.swift; sourceTree = "<group>"; };
+		AA0000422C5F000000000001 /* Services/DataPersistenceBackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DataPersistenceBackupManager.swift; sourceTree = "<group>"; };
+		AA0000432C5F000000000001 /* Services/ParsedSyllabusCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ParsedSyllabusCache.swift; sourceTree = "<group>"; };
+		AA0000442C5F000000000001 /* Services/AppReviewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AppReviewManager.swift; sourceTree = "<group>"; };
+		AA0000412C5F000000000001 /* Resources/Syllabi */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Syllabi; sourceTree = "<group>"; };
 		AA0000102C5F000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA0000112C5F000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -134,6 +144,11 @@
 				AA0000372C5F000000000001 /* PrivacyInfo.xcprivacy */,
 				AA0000382C5F000000000001 /* Services/CourseSharingService.swift */,
 				AA0000392C5F000000000001 /* Views/CourseAIChatView.swift */,
+				AA0000402C5F000000000001 /* Services/PDFHighlightSnapshotEngine.swift */,
+				AA0000422C5F000000000001 /* Services/DataPersistenceBackupManager.swift */,
+				AA0000432C5F000000000001 /* Services/ParsedSyllabusCache.swift */,
+				AA0000442C5F000000000001 /* Services/AppReviewManager.swift */,
+				AA0000412C5F000000000001 /* Resources/Syllabi */,
 				AA0000102C5F000000000001 /* Assets.xcassets */,
 				AA0000112C5F000000000001 /* Info.plist */,
 			);
@@ -207,6 +222,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0000372C5F000100000001 /* PrivacyInfo.xcprivacy in Resources */,
+				AA0000412C5F000100000001 /* Resources/Syllabi in Resources */,
 				AA0000102C5F000100000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -249,6 +265,10 @@
 				AA0000362C5F000100000001 /* Views/InfoCreditsSheetView.swift in Sources */,
 				AA0000382C5F000100000001 /* Services/CourseSharingService.swift in Sources */,
 				AA0000392C5F000100000001 /* Views/CourseAIChatView.swift in Sources */,
+				AA0000402C5F000100000001 /* Services/PDFHighlightSnapshotEngine.swift in Sources */,
+				AA0000422C5F000100000001 /* Services/DataPersistenceBackupManager.swift in Sources */,
+				AA0000432C5F000100000001 /* Services/ParsedSyllabusCache.swift in Sources */,
+				AA0000442C5F000100000001 /* Services/AppReviewManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -371,7 +391,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1.2;
+				CURRENT_PROJECT_VERSION = 1.3;
 				DEVELOPMENT_TEAM = KZ8W2GCVH8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CoursePal/Info.plist;
@@ -384,7 +404,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.coursepal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -399,7 +419,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1.2;
+				CURRENT_PROJECT_VERSION = 1.3;
 				DEVELOPMENT_TEAM = KZ8W2GCVH8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CoursePal/Info.plist;
@@ -412,7 +432,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.coursepal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -41,7 +41,7 @@ public struct SyllabusScanView: View {
                     ProgressView()
                         .scaleEffect(1.4)
                         .tint(.white)
-                    Text("Extracting Syllabus with Vision AI...")
+                    Text("Analyzing syllabus...")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                 }

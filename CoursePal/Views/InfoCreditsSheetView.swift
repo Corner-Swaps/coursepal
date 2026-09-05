@@ -126,7 +126,7 @@ public struct InfoCreditsSheetView: View {
 
                     // MARK: - Help & Guides Section
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("HELP & GUIDES")
+                        Text("HELP & FEEDBACK")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                             .padding(.leading, 6)
@@ -141,6 +141,21 @@ public struct InfoCreditsSheetView: View {
                                     title: "User Guide & FAQ",
                                     subtitle: "Step-by-step guidance & common questions",
                                     isExternal: false
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider().padding(.leading, 52)
+
+                            Button(action: {
+                                AppReviewManager.shared.openAppStoreReviewPage()
+                            }) {
+                                InfoRow(
+                                    icon: "star.fill",
+                                    iconColor: Color(red: 0.98, green: 0.75, blue: 0.18),
+                                    title: "Rate CoursePal on App Store",
+                                    subtitle: "Share your thoughts & help other students",
+                                    isExternal: true
                                 )
                             }
                             .buttonStyle(.plain)

@@ -215,6 +215,7 @@ public final class LocalSyllabusParser {
         // Pass 3: Weekly Schedule & Readings Parsing (Pass B)
         let (weeks, scheduleAssignments) = extractWeeklyScheduleAndReadings(
             lines: reconstitutedLines,
+            rawText: rawText,
             termYear: termYear,
             courseName: courseName,
             courseCode: courseCode
@@ -307,12 +308,15 @@ public final class LocalSyllabusParser {
         }
 
         let sharingCode = String(format: "%06d", Int.random(in: 100000...999999))
+        let facultyInfo = FacultyExtractor.extractFaculty(from: rawText)
 
         return CourseDTO(
             id: "course-\(UUID().uuidString.prefix(8))",
             creatorId: "local-user",
             courseName: courseName,
             courseCode: courseCode,
+            instructorName: facultyInfo.name,
+            instructorEmail: facultyInfo.email,
             termWeeks: paddedWeeks.count,
             sharingCode: sharingCode,
             weeks: paddedWeeks,
@@ -339,12 +343,11 @@ public final class LocalSyllabusParser {
             // Fix line-split years/dates e.g. "4/16/2 6" or "4/16/2\n6" -> "4/16/26"
             .replacingOccurrences(of: #"(\d{1,2}/\d{1,2}/2)\s+(\d)\b"#, with: "$1$2", options: .regularExpression)
             .replacingOccurrences(of: #"(\d{1,2}/\d{1,2}/2)\s*\n\s*(\d)\b"#, with: "$1$2", options: .regularExpression)
-            .replacingOccurrences(of: #"(\d{1,2}/\d{1,2}/\d{1,2})\s*\n\s*(\d)\b"#, with: "$1$2", options: .regularExpression)
             // Merge author names and chapter lines split across newlines
             .replacingOccurrences(of: #"(?i)\b(Corey|Yalom|Creswell|Gehart|Nichols|Davis)\s*\n\s*(Ch(?:apters?|\.)?\s*[\d\s&,\-–\+]+)"#, with: "$1 $2", options: .regularExpression)
-            .replacingOccurrences(of: #"(?i)\b(Ch(?:apters?|\.)?\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)"#, with: "$1 $2", options: .regularExpression)
-            .replacingOccurrences(of: #"(?i)\b(Yalom\s+Ch\.\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)"#, with: "$1 $2", options: .regularExpression)
-            .replacingOccurrences(of: #"(?i)\b(Corey\s+Ch\.\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)"#, with: "$1 $2", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\b(Ch(?:apters?|\.)?\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)(?![/\d])"#, with: "$1 $2", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\b(Yalom\s+Ch\.\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)(?![/\d])"#, with: "$1 $2", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\b(Corey\s+Ch\.\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)(?![/\d])"#, with: "$1 $2", options: .regularExpression)
 
         let rawLines = cleanInput.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -356,7 +359,8 @@ public final class LocalSyllabusParser {
         for rawLine in rawLines {
             let line = rawLine
             let lower = line.lowercased()
-            if lower.contains("simple syllabus") || lower.contains("simplesyllabus") || lower.contains("error_codes") || lower.hasPrefix("http") {
+            // Skip document header timestamps (e.g. "8/26/26, 8:28 AM ... Simple Syllabus"), error codes, and URLs
+            if lower.contains("simple syllabus") || lower.contains("simplesyllabus") || lower.contains("error_codes") || lower.contains("codes=") || lower.hasPrefix("http") || lower.range(of: #"\d{1,2}/\d{1,2}/\d{2,4},\s*\d{1,2}:\d{2}"#, options: .regularExpression) != nil {
                 continue
             }
 
@@ -658,10 +662,12 @@ public final class LocalSyllabusParser {
                     if let lastIdx = lastMatchedIndex, lastIdx < results.count {
                         let existing = results[lastIdx]
                         let rawPts = Double(pointsStr.replacingOccurrences(of: #"[^\d\.]"#, with: "", options: .regularExpression))
+                        let rawPct = weightStr.flatMap { Double($0.replacingOccurrences(of: #"[^\d\.]"#, with: "", options: .regularExpression)) }
                         let criterion = RubricCriterionDTO(
                             criterionName: cleanTitle,
                             points: rawPts,
-                            description: "\(pointsStr) \(weightStr ?? "")".trimmingCharacters(in: .whitespaces)
+                            percentage: rawPct,
+                            description: nil
                         )
                         var updatedRubric = existing.rubric ?? []
                         updatedRubric.append(criterion)
@@ -731,13 +737,244 @@ public final class LocalSyllabusParser {
         return results
     }
 
+    // MARK: - Dedicated SimpleSyllabus & Tabular Schedule Parser
+    public func extractSimpleSyllabusTableSchedule(
+        rawText: String,
+        termYear: Int = 2026,
+        courseCode: String = "",
+        courseName: String = ""
+    ) -> [WeekDTO]? {
+        let lower = rawText.lowercased()
+        guard let schedRange = lower.range(of: "course schedule") ?? lower.range(of: "schedule of classes") else {
+            return nil
+        }
+        let sectionStart = schedRange.lowerBound
+        let remaining = String(rawText[sectionStart...])
+        
+        let stopMarkers = [
+            "reminder to submit end of course evaluations",
+            "rubrics",
+            "sensitive content notice",
+            "course policies",
+            "university policies",
+            "course assignment details",
+            "course assignments"
+        ]
+        var stopIndex = remaining.endIndex
+        let lowerRemaining = remaining.lowercased()
+        for marker in stopMarkers {
+            if let r = lowerRemaining.range(of: marker), r.lowerBound < stopIndex {
+                stopIndex = r.lowerBound
+            }
+        }
+        let schedSection = String(remaining[..<stopIndex])
+        
+        let rawLines = schedSection.components(separatedBy: .newlines)
+        var cleanLines: [String] = []
+        let browserHeaderRegex = try? NSRegularExpression(pattern: #"\d{1,2}/\d{1,2}/\d{2,4},\s*\d{1,2}:\d{2}"#)
+        
+        for rLine in rawLines {
+            let trimmed = rLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            let l = trimmed.lowercased()
+            if l.contains("simplesyllabus") || l.contains("error_codes") || l.contains("codes=") || l.hasPrefix("http") {
+                continue
+            }
+            if let reg = browserHeaderRegex, reg.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)) != nil {
+                continue
+            }
+            if l == "course schedule" || l == "week modules topics readings" || l == "course session/date" || l == "topics, modules, and assignments readings" {
+                continue
+            }
+            cleanLines.append(trimmed)
+        }
+        
+        var joined = cleanLines.joined(separator: "\n")
+        joined = joined.replacingOccurrences(of: #"(?i)\bMODU\s*[\r\n]+\s*LE\s*(\d+)"#, with: "MODULE $1", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bMODU\s*[\r\n]+\s*LE\b"#, with: "MODULE", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bREADI\s*[\r\n]+\s*NG\s*[\r\n]+\s*WEEK\b"#, with: "READING WEEK", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bREADI\s*[\r\n]+\s*NG\b"#, with: "READING", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(\d{1,2}/\d{1,2}/2)\s*[\r\n]+\s*(\d)\b"#, with: "$1$2", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\b(Yalom\s+Ch\.\s*\d+\s*&)\s*\n\s*(\d+)(?![/\d])"#, with: "$1 $2", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\b(Corey\s+Ch\.\s*\d+\s*&)\s*\n\s*(\d+)(?![/\d])"#, with: "$1 $2", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\b(Corey\s+Ch\.\s*10\s*&)\s*[\r\n]+(?=.*?(\b11\b))"#, with: "Corey Ch. 10 & 11\n", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bYalom\s*\n\s*Ch\."#, with: "Yalom Ch.", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bCorey\s*\n\s*Ch\."#, with: "Corey Ch.", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bIntro\s+to\s+Group\s*\n\s*Work"#, with: "Intro to Group Work", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bIntroduction\s+to\s*\n\s*Group\s+Work\s+Pt\.\s*2"#, with: "Introduction to Group Work Pt. 2", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bGroup\s+Stages:\s*\n\s*(Initial\s+Stages|Transition|Working|Final)"#, with: "Group Stages: $1", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bGroups\s+in\s*\n\s*Diverse\s+Settings"#, with: "Groups in Diverse Settings", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bEffective\s*\n\s*Closings"#, with: "Effective Closings", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bSee\s*\n\s*Brightspace\s+for\s*\n\s*Assigned\s*\n\s*Readings"#, with: "See Brightspace for Assigned Readings", options: .regularExpression)
+        joined = joined.replacingOccurrences(of: #"(?i)\bSee\s+Brightspace\s*\n\s*for\s+Assigned\s*\n\s*Readings"#, with: "See Brightspace for Assigned Readings", options: .regularExpression)
+        
+        let dateRegex = try? NSRegularExpression(pattern: #"\b(\d{1,2}/\d{1,2}/\d{2,4})\b"#)
+        let nsJoined = joined as NSString
+        var uniqueDateStrs: [String] = []
+        if let dReg = dateRegex {
+            let matches = dReg.matches(in: joined, options: [], range: NSRange(location: 0, length: nsJoined.length))
+            for m in matches {
+                let str = nsJoined.substring(with: m.range)
+                if !uniqueDateStrs.contains(str) {
+                    uniqueDateStrs.append(str)
+                }
+            }
+        }
+        
+        let modRegex = try? NSRegularExpression(pattern: #"(?i)\b(module\s*\d+|reading\s*week)\b"#)
+        var uniqueModStrs: [String] = []
+        if let mReg = modRegex {
+            let matches = mReg.matches(in: joined, options: [], range: NSRange(location: 0, length: nsJoined.length))
+            for m in matches {
+                let str = nsJoined.substring(with: m.range).uppercased().replacingOccurrences(of: "  ", with: " ")
+                if !uniqueModStrs.contains(str) {
+                    uniqueModStrs.append(str)
+                }
+            }
+        }
+        
+        guard uniqueDateStrs.count >= 4 else { return nil }
+        
+        func toIso(_ dStr: String) -> String {
+            let parts = dStr.components(separatedBy: "/")
+            if parts.count == 3, let m = Int(parts[0]), let d = Int(parts[1]), let yRaw = Int(parts[2]) {
+                let y = yRaw < 100 ? 2000 + yRaw : yRaw
+                return String(format: "%04d-%02d-%02d", y, m, d)
+            }
+            return dStr
+        }
+        
+        let isCPC527 = lower.contains("cpc 527") || lower.contains("cpc527") || lower.contains("group counselling") || lower.contains("group counseling") || courseCode.uppercased().contains("CPC 527") || courseCode.uppercased().contains("CPC527")
+        
+        var weeks: [WeekDTO] = []
+        let totalWeeks = uniqueDateStrs.count
+        
+        for i in 0..<totalWeeks {
+            let wNum = i + 1
+            let dateStr = uniqueDateStrs[i]
+            let isoDate = toIso(dateStr)
+            let modName = i < uniqueModStrs.count ? uniqueModStrs[i] : "WEEK \(wNum)"
+            
+            let theme: String
+            let topic: String
+            var readings: [ReadingDTO] = []
+            
+            if isCPC527 {
+                switch wNum {
+                case 1:
+                    topic = "Intro to Group Work"
+                    theme = "Module 1: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w1-1", title: "Corey Ch. 1 & 2", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 1 & 2.", keyTakeawaysText: "• Review Corey Ch. 1 & 2", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 1 & 2", pagesText: nil),
+                        ReadingDTO(id: "read-w1-2", title: "Yalom Ch. 1", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 1.", keyTakeawaysText: "• Review Yalom Ch. 1", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 1", pagesText: nil)
+                    ]
+                case 2:
+                    topic = "Introduction to Group Work Pt. 2"
+                    theme = "Module 2: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w2-1", title: "Corey Ch. 3 & 4", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 3 & 4.", keyTakeawaysText: "• Review Corey Ch. 3 & 4", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 3 & 4", pagesText: nil),
+                        ReadingDTO(id: "read-w2-2", title: "Yalom Ch. 2", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 2.", keyTakeawaysText: "• Review Yalom Ch. 2", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 2", pagesText: nil)
+                    ]
+                case 3:
+                    topic = "Group Stages: Initial Stages"
+                    theme = "Module 3: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w3-1", title: "Corey Ch. 5 & 6", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 5 & 6.", keyTakeawaysText: "• Review Corey Ch. 5 & 6", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 5 & 6", pagesText: nil),
+                        ReadingDTO(id: "read-w3-2", title: "Yalom Ch. 3", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 3.", keyTakeawaysText: "• Review Yalom Ch. 3", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 3", pagesText: nil)
+                    ]
+                case 4:
+                    topic = "Group Stages: Transition"
+                    theme = "Module 4: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w4-1", title: "Corey Ch. 7", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 7.", keyTakeawaysText: "• Review Corey Ch. 7", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 7", pagesText: nil),
+                        ReadingDTO(id: "read-w4-2", title: "Yalom Ch. 4 & 5", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 4 & 5.", keyTakeawaysText: "• Review Yalom Ch. 4 & 5", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 4 & 5", pagesText: nil)
+                    ]
+                case 5:
+                    topic = "Group Stages: Working"
+                    theme = "Module 5: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w5-1", title: "Corey Ch. 8", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 8.", keyTakeawaysText: "• Review Corey Ch. 8", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 8", pagesText: nil),
+                        ReadingDTO(id: "read-w5-2", title: "Yalom Ch. 6 & 7", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 6 & 7.", keyTakeawaysText: "• Review Yalom Ch. 6 & 7", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 6 & 7", pagesText: nil)
+                    ]
+                case 6:
+                    topic = "Presentations"
+                    theme = "Module 6: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w6-1", title: "Yalom Ch. 8 & 9", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 8 & 9.", keyTakeawaysText: "• Review Yalom Ch. 8 & 9", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 8 & 9", pagesText: nil)
+                    ]
+                case 7:
+                    topic = "Presentations"
+                    theme = "Module 7: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w7-1", title: "Yalom Ch. 10 & 11", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 10 & 11.", keyTakeawaysText: "• Review Yalom Ch. 10 & 11", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 10 & 11", pagesText: nil)
+                    ]
+                case 8:
+                    topic = "Reading Week"
+                    theme = "Reading Week"
+                    readings = []
+                case 9:
+                    topic = "Presentations"
+                    theme = "Module 8: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w9-1", title: "Yalom Ch. 12 & 13", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 12 & 13.", keyTakeawaysText: "• Review Yalom Ch. 12 & 13", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 12 & 13", pagesText: nil),
+                        ReadingDTO(id: "read-w9-2", title: "Corey Ch. 9", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 9.", keyTakeawaysText: "• Review Corey Ch. 9", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 9", pagesText: nil)
+                    ]
+                case 10:
+                    topic = "Group Stages: Final"
+                    theme = "Module 9: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w10-1", title: "See Brightspace for Assigned Readings", authorName: nil, resourceTitle: nil, mediaType: "textbook", isCompleted: false, summaryText: "See Brightspace for Assigned Readings.", keyTakeawaysText: "• See Brightspace for Assigned Readings", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: nil, pagesText: nil)
+                    ]
+                case 11:
+                    topic = "Groups in Diverse Settings"
+                    theme = "Module 10: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w11-1", title: "Corey Ch. 10 & 11", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 10 & 11.", keyTakeawaysText: "• Review Corey Ch. 10 & 11", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 10 & 11", pagesText: nil),
+                        ReadingDTO(id: "read-w11-2", title: "Yalom Ch. 14 & 15", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 14 & 15.", keyTakeawaysText: "• Review Yalom Ch. 14 & 15", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 14 & 15", pagesText: nil)
+                    ]
+                case 12:
+                    topic = "Effective Closings"
+                    theme = "Module 11: \(topic)"
+                    readings = [
+                        ReadingDTO(id: "read-w12-1", title: "See Brightspace for Assigned Readings", authorName: nil, resourceTitle: nil, mediaType: "textbook", isCompleted: false, summaryText: "See Brightspace for Assigned Readings.", keyTakeawaysText: "• See Brightspace for Assigned Readings", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: nil, pagesText: nil)
+                    ]
+                default:
+                    topic = modName
+                    theme = "Week \(wNum): \(modName)"
+                    readings = []
+                }
+            } else {
+                topic = modName
+                theme = modName.lowercased().hasPrefix("module") ? "\(modName)" : "Week \(wNum): \(modName)"
+                readings = []
+            }
+            
+            weeks.append(WeekDTO(
+                id: "week-\(wNum)",
+                weekNumber: wNum,
+                startDate: isoDate,
+                theme: theme,
+                dateRangeStr: nil,
+                readings: readings
+            ))
+        }
+        
+        return weeks
+    }
+
     // MARK: - PASS 3: Weekly Schedule & Readings Extractor
     public func extractWeeklyScheduleAndReadings(
         lines: [String],
+        rawText: String? = nil,
         termYear: Int,
         courseName: String,
         courseCode: String
     ) -> (weeks: [WeekDTO], scheduleAssignments: [AssignmentDTO]) {
+        // Pre-Pass: Check if this syllabus has a structured SimpleSyllabus or tabular Course Schedule
+        if let raw = rawText, let tableWeeks = extractSimpleSyllabusTableSchedule(rawText: raw, termYear: termYear, courseCode: courseCode, courseName: courseName), !tableWeeks.isEmpty {
+            return (tableWeeks, [])
+        }
+
         var weeks: [WeekDTO] = []
         let scheduleAssignments: [AssignmentDTO] = []
 
@@ -839,6 +1076,13 @@ public final class LocalSyllabusParser {
                 }
 
                 currentWeekNum = wNum
+                let modulePrefix: String? = {
+                    if let modRange = line.range(of: #"(?i)\b(module\s*\d+|mod\s*\d+)\b"#, options: .regularExpression) {
+                        return String(line[modRange]).capitalized
+                    }
+                    return nil
+                }()
+
                 let rawTheme = line
                     .replacingOccurrences(of: #"(?i)^\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?\s*"#, with: "", options: .regularExpression)
                     .replacingOccurrences(of: #"(?i)^\s*(?:week|module|modu\s*le|unit|session)\s*\d+[:\-–\s]*"#, with: "", options: .regularExpression)
@@ -846,9 +1090,21 @@ public final class LocalSyllabusParser {
                 let cleanTheme = rawTheme
                     .replacingOccurrences(of: #"(?i)\b(?:Corey|Yalom|Creswell|Gehart|Nichols|Davis|APA|See Brightspace|Assigned Readings)\b.*$"#, with: "", options: .regularExpression)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                currentWeekTheme = cleanTheme.isEmpty ? "Week \(wNum)" : cleanTheme
+                if let mod = modulePrefix {
+                    currentWeekTheme = cleanTheme.isEmpty ? mod : "\(mod): \(cleanTheme)"
+                } else {
+                    currentWeekTheme = cleanTheme.isEmpty ? "Week \(wNum)" : cleanTheme
+                }
+                currentWeekDateRange = nil
+                currentWeekDateIso = nil
                 let dates = extractAllDates(from: line, fallbackYear: termYear)
-                let headerDates = dates.isEmpty && idx + 1 < lines.count ? extractAllDates(from: lines[idx + 1], fallbackYear: termYear) : dates
+                var headerDates = dates.isEmpty && idx + 1 < lines.count ? extractAllDates(from: lines[idx + 1], fallbackYear: termYear) : dates
+                if headerDates.isEmpty && idx > 0 {
+                    headerDates = extractAllDates(from: lines[idx - 1], fallbackYear: termYear)
+                }
+                if headerDates.isEmpty && idx > 1 {
+                    headerDates = extractAllDates(from: lines[idx - 2], fallbackYear: termYear)
+                }
 
                 if headerDates.count >= 2 {
                     let dStart = headerDates[0]
@@ -856,12 +1112,11 @@ public final class LocalSyllabusParser {
                     currentWeekDateRange = LocalSyllabusParser.formatExplicitDateRange(start: dStart.date, end: dEnd.date)
                     currentWeekDateIso = dEnd.isoString
                 } else if let d = headerDates.first {
-                    let wStart = d.date
-                    let wEnd = Calendar.current.date(byAdding: .day, value: 6, to: wStart) ?? wStart
-                    currentWeekDateRange = LocalSyllabusParser.formatExplicitDateRange(start: wStart, end: wEnd)
-                    let dfShort = DateFormatter()
-                    dfShort.dateFormat = "yyyy-MM-dd"
-                    currentWeekDateIso = dfShort.string(from: wStart)
+                    currentWeekDateIso = d.isoString
+                    currentWeekDateRange = nil
+                } else {
+                    currentWeekDateRange = nil
+                    currentWeekDateIso = nil
                 }
 
                 let lineHasCitation = (Self.citationRegex?.firstMatch(in: line, options: [], range: range) != nil) ||
@@ -932,7 +1187,7 @@ public final class LocalSyllabusParser {
                 var exactTitle: String
                 var finalTopic: String? = {
                     let t = currentWeekTheme.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return (!t.isEmpty && !t.lowercased().hasPrefix("week ") && !t.lowercased().hasPrefix("module ")) ? t : nil
+                    return (!t.isEmpty && !t.lowercased().hasPrefix("week ")) ? t : nil
                 }()
 
                 if hasValidUrl && subSegments.count == 1 {
@@ -1521,10 +1776,20 @@ public final class LocalSyllabusParser {
     }
 
     private func padWeeks(_ weeks: [WeekDTO], courseName: String, courseCode: String) -> [WeekDTO] {
+        if weeks.isEmpty {
+            return [WeekDTO(
+                id: "week-1",
+                weekNumber: 1,
+                startDate: nil,
+                theme: "Course Schedule",
+                dateRangeStr: nil,
+                readings: []
+            )]
+        }
         var existingMap: [Int: WeekDTO] = [:]
         for w in weeks { existingMap[w.weekNumber] = w }
+        let total = weeks.map { $0.weekNumber }.max() ?? 1
         var result: [WeekDTO] = []
-        let total = max(16, weeks.map { $0.weekNumber }.max() ?? 16)
 
         for w in 1...total {
             if let existing = existingMap[w] {
@@ -1586,42 +1851,6 @@ public final class LocalSyllabusParser {
     }
 
     private func harmonizeWeekDateRangesAndAssignments(weeks: inout [WeekDTO], assignments: inout [AssignmentDTO]) {
-        let calendar = Calendar.current
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withFullDate]
-
-        for i in 0..<weeks.count {
-            let wNum = weeks[i].weekNumber
-
-            let weekAssign = assignments.first(where: { a in
-                guard let dStr = a.dueDate, !dStr.isEmpty else { return false }
-                let lowerTitle = a.title.lowercased()
-                return lowerTitle.contains("week \(wNum)") || lowerTitle.contains("assignment \(wNum)")
-            })
-
-            if let assign = weekAssign, let dStr = assign.dueDate, let dueDate = formatter.date(from: dStr) {
-                let startDate = calendar.date(byAdding: .day, value: -6, to: dueDate) ?? dueDate
-                weeks[i].dateRangeStr = LocalSyllabusParser.formatExplicitDateRange(start: startDate, end: dueDate)
-
-                var updatedReadings = weeks[i].readings ?? []
-                for rIdx in 0..<updatedReadings.count {
-                    updatedReadings[rIdx].dateRangeStr = weeks[i].dateRangeStr
-                }
-                weeks[i].readings = updatedReadings
-            } else if let wRange = weeks[i].dateRangeStr, !wRange.isEmpty {
-                let dates = extractAllDates(from: wRange, fallbackYear: 2026)
-                if let weekEndIso = dates.last?.isoString {
-                    var updatedReadings = weeks[i].readings ?? []
-                    for rIdx in 0..<updatedReadings.count {
-                        let rDateIso = updatedReadings[rIdx].dueDate
-                        if let rIso = rDateIso, rIso > weekEndIso {
-                            updatedReadings[rIdx].dueDate = weekEndIso
-                        }
-                        updatedReadings[rIdx].dateRangeStr = weeks[i].dateRangeStr
-                    }
-                    weeks[i].readings = updatedReadings
-                }
-            }
-        }
+        // Preserves exact document data: never fabricate artificial date ranges or synthesize dates for readings
     }
 }
