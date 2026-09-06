@@ -57,9 +57,9 @@ public final class LocalSyllabusParser {
         #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b"#,
         #"(?i)^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"#
     ].compactMap { try? NSRegularExpression(pattern: $0, options: []) }
-    private static let citationRegexPattern = #"(?i)([A-Za-z]+(?:\s+[A-Za-z]+)?\s*\(?\s*(?:chapters?|chs?\.?|chap\.?|ch\.?|ch\b)\s*\d{1,3}(?:\s*[-–&,and\+]+\s*\d{1,3})*\)?|(?:chapters?|chs?\.?|chap\.?|ch\.?|ch\b)\s*\d{1,3}(?:\s*[-–&,and\+]+\s*\d{1,3})*|See\s+Brightspace[^\n]*|Reading\s*Week)"#
+    private static let citationRegexPattern = #"(?i)([A-Za-z]+(?:\s+[A-Za-z]+)?\s*\(?\s*(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\.?|ch\b)\s*\d{1,3}(?:\s*[-–&,and\+]+\s*\d{1,3})*\)?|(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\.?|ch\b)\s*\d{1,3}(?:\s*[-–&,and\+]+\s*\d{1,3})*|See\s+Brightspace[^\n]*|Reading\s*Week)"#
     private static let citationRegex = try? NSRegularExpression(pattern: citationRegexPattern, options: [])
-    private static let chapterRegex = try? NSRegularExpression(pattern: #"(?i)\b(chapters?|chs?\.?|chap\.?)\s*(\d+([-\s&,and\+]+\d+)*)\b"#, options: [])
+    private static let chapterRegex = try? NSRegularExpression(pattern: #"(?i)\b(chapters?|chs?\.?|chps?\.?|chap\.?)\s*(\d+([-\s&,and\+]+\d+)*)\b"#, options: [])
     private static let pagesRegex = try? NSRegularExpression(pattern: #"(?i)\b(pages?|pp?\.?)\s*(\d+([-\s&,and\+]+\d+)*)\b"#, options: [])
     private static let dateExtractionRegexes: [NSRegularExpression] = [
         #"(?i)\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b"#,
@@ -504,10 +504,10 @@ public final class LocalSyllabusParser {
             id: UUID().uuidString,
             title: cleanTitle,
             authorName: author,
-            resourceTitle: trimmed,
+            resourceTitle: cleanTitle,
             mediaType: "textbook",
             isCompleted: false,
-            summaryText: trimmed,
+            summaryText: "",
             keyTakeawaysText: "• Key concepts and required foundations from \(cleanTitle)",
             estimatedTimeText: "~45 min read"
         )
@@ -865,48 +865,48 @@ public final class LocalSyllabusParser {
                     topic = "Intro to Group Work"
                     theme = "Module 1: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w1-1", title: "Corey Ch. 1 & 2", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 1 & 2.", keyTakeawaysText: "• Review Corey Ch. 1 & 2", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 1 & 2", pagesText: nil),
-                        ReadingDTO(id: "read-w1-2", title: "Yalom Ch. 1", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 1.", keyTakeawaysText: "• Review Yalom Ch. 1", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 1", pagesText: nil)
+                        ReadingDTO(id: "read-w1-1", title: "Intro to Group Work", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Corey Ch. 1 & 2", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 1 & 2", pagesText: nil),
+                        ReadingDTO(id: "read-w1-2", title: "Therapeutic Factors", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 1", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 1", pagesText: nil)
                     ]
                 case 2:
                     topic = "Introduction to Group Work Pt. 2"
                     theme = "Module 2: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w2-1", title: "Corey Ch. 3 & 4", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 3 & 4.", keyTakeawaysText: "• Review Corey Ch. 3 & 4", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 3 & 4", pagesText: nil),
-                        ReadingDTO(id: "read-w2-2", title: "Yalom Ch. 2", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 2.", keyTakeawaysText: "• Review Yalom Ch. 2", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 2", pagesText: nil)
+                        ReadingDTO(id: "read-w2-1", title: "Introduction to Group Work Pt. 2", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Corey Ch. 3 & 4", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 3 & 4", pagesText: nil),
+                        ReadingDTO(id: "read-w2-2", title: "Therapeutic Factors Pt. 2", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 2", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 2", pagesText: nil)
                     ]
                 case 3:
                     topic = "Group Stages: Initial Stages"
                     theme = "Module 3: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w3-1", title: "Corey Ch. 5 & 6", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 5 & 6.", keyTakeawaysText: "• Review Corey Ch. 5 & 6", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 5 & 6", pagesText: nil),
-                        ReadingDTO(id: "read-w3-2", title: "Yalom Ch. 3", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 3.", keyTakeawaysText: "• Review Yalom Ch. 3", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 3", pagesText: nil)
+                        ReadingDTO(id: "read-w3-1", title: "Group Stages: Initial Stages", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Corey Ch. 5 & 6", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 5 & 6", pagesText: nil),
+                        ReadingDTO(id: "read-w3-2", title: "Therapist Tasks & Techniques", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 3", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 3", pagesText: nil)
                     ]
                 case 4:
                     topic = "Group Stages: Transition"
                     theme = "Module 4: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w4-1", title: "Corey Ch. 7", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 7.", keyTakeawaysText: "• Review Corey Ch. 7", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 7", pagesText: nil),
-                        ReadingDTO(id: "read-w4-2", title: "Yalom Ch. 4 & 5", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 4 & 5.", keyTakeawaysText: "• Review Yalom Ch. 4 & 5", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 4 & 5", pagesText: nil)
+                        ReadingDTO(id: "read-w4-1", title: "Group Stages: Transition", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Corey Ch. 7", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 7", pagesText: nil),
+                        ReadingDTO(id: "read-w4-2", title: "The Here-and-Now", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 4 & 5", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 4 & 5", pagesText: nil)
                     ]
                 case 5:
                     topic = "Group Stages: Working"
                     theme = "Module 5: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w5-1", title: "Corey Ch. 8", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 8.", keyTakeawaysText: "• Review Corey Ch. 8", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 8", pagesText: nil),
-                        ReadingDTO(id: "read-w5-2", title: "Yalom Ch. 6 & 7", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 6 & 7.", keyTakeawaysText: "• Review Yalom Ch. 6 & 7", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 6 & 7", pagesText: nil)
+                        ReadingDTO(id: "read-w5-1", title: "Group Stages: Working", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Corey Ch. 8", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 8", pagesText: nil),
+                        ReadingDTO(id: "read-w5-2", title: "Transference & Transparency", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 6 & 7", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 6 & 7", pagesText: nil)
                     ]
                 case 6:
                     topic = "Presentations"
                     theme = "Module 6: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w6-1", title: "Yalom Ch. 8 & 9", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 8 & 9.", keyTakeawaysText: "• Review Yalom Ch. 8 & 9", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 8 & 9", pagesText: nil)
+                        ReadingDTO(id: "read-w6-1", title: "Presentations", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 8 & 9", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 8 & 9", pagesText: nil)
                     ]
                 case 7:
                     topic = "Presentations"
                     theme = "Module 7: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w7-1", title: "Yalom Ch. 10 & 11", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 10 & 11.", keyTakeawaysText: "• Review Yalom Ch. 10 & 11", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 10 & 11", pagesText: nil)
+                        ReadingDTO(id: "read-w7-1", title: "Presentations", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 10 & 11", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 10 & 11", pagesText: nil)
                     ]
                 case 8:
                     topic = "Reading Week"
@@ -916,27 +916,27 @@ public final class LocalSyllabusParser {
                     topic = "Presentations"
                     theme = "Module 8: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w9-1", title: "Yalom Ch. 12 & 13", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 12 & 13.", keyTakeawaysText: "• Review Yalom Ch. 12 & 13", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 12 & 13", pagesText: nil),
-                        ReadingDTO(id: "read-w9-2", title: "Corey Ch. 9", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 9.", keyTakeawaysText: "• Review Corey Ch. 9", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 9", pagesText: nil)
+                        ReadingDTO(id: "read-w9-1", title: "Presentations", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 12 & 13", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 12 & 13", pagesText: nil),
+                        ReadingDTO(id: "read-w9-2", title: "Presentations", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Corey Ch. 9", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 9", pagesText: nil)
                     ]
                 case 10:
                     topic = "Group Stages: Final"
                     theme = "Module 9: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w10-1", title: "See Brightspace for Assigned Readings", authorName: nil, resourceTitle: nil, mediaType: "textbook", isCompleted: false, summaryText: "See Brightspace for Assigned Readings.", keyTakeawaysText: "• See Brightspace for Assigned Readings", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: nil, pagesText: nil)
+                        ReadingDTO(id: "read-w10-1", title: "See Brightspace for Assigned Readings", authorName: nil, resourceTitle: nil, mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• See Brightspace for Assigned Readings", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: nil, pagesText: nil)
                     ]
                 case 11:
                     topic = "Groups in Diverse Settings"
                     theme = "Module 10: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w11-1", title: "Corey Ch. 10 & 11", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Corey Ch. 10 & 11.", keyTakeawaysText: "• Review Corey Ch. 10 & 11", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 10 & 11", pagesText: nil),
-                        ReadingDTO(id: "read-w11-2", title: "Yalom Ch. 14 & 15", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "Required reading: Yalom Ch. 14 & 15.", keyTakeawaysText: "• Review Yalom Ch. 14 & 15", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 14 & 15", pagesText: nil)
+                        ReadingDTO(id: "read-w11-1", title: "Groups in Diverse Settings", authorName: "Corey", resourceTitle: "Groups: Process and Practice", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Corey Ch. 10 & 11", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 10 & 11", pagesText: nil),
+                        ReadingDTO(id: "read-w11-2", title: "Specialized Formats", authorName: "Yalom", resourceTitle: "The Theory and Practice of Group Psychotherapy", mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• Review Yalom Ch. 14 & 15", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: "Ch. 14 & 15", pagesText: nil)
                     ]
                 case 12:
                     topic = "Effective Closings"
                     theme = "Module 11: \(topic)"
                     readings = [
-                        ReadingDTO(id: "read-w12-1", title: "See Brightspace for Assigned Readings", authorName: nil, resourceTitle: nil, mediaType: "textbook", isCompleted: false, summaryText: "See Brightspace for Assigned Readings.", keyTakeawaysText: "• See Brightspace for Assigned Readings", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: nil, pagesText: nil)
+                        ReadingDTO(id: "read-w12-1", title: "See Brightspace for Assigned Readings", authorName: nil, resourceTitle: nil, mediaType: "textbook", isCompleted: false, summaryText: "", keyTakeawaysText: "• See Brightspace for Assigned Readings", estimatedTimeText: "~40–60 min", videoUrl: nil, dueDate: isoDate, dateRangeStr: nil, relevantTopics: topic, chapterText: nil, pagesText: nil)
                     ]
                 default:
                     topic = modName
@@ -1234,17 +1234,19 @@ public final class LocalSyllabusParser {
                 let mediaTypeStr = (hasValidUrl || lower.contains("watch") ||
                                     lower.contains("ted") || lower.contains("podcast")) ? "video" : "textbook"
 
-                let (extractedAuthor, extractedRes) = extractAuthorAndResource(from: exactTitle)
+                let smartTitle = CourseImporter.cleanAndSummarizeTitle(exactTitle, isReading: true)
+                let finalTitle = smartTitle.isEmpty ? exactTitle : smartTitle
+                let (extractedAuthor, extractedRes) = extractAuthorAndResource(from: finalTitle)
 
                 let readingDTO = ReadingDTO(
                     id: "read-\(UUID().uuidString.prefix(8))",
-                    title: exactTitle,
+                    title: finalTitle,
                     authorName: extractedAuthor,
-                    resourceTitle: extractedRes,
+                    resourceTitle: extractedRes ?? (finalTitle.components(separatedBy: .whitespaces).count <= 5 ? finalTitle : nil),
                     mediaType: mediaTypeStr,
                     isCompleted: false,
-                    summaryText: "Required reading: \(exactTitle).",
-                    keyTakeawaysText: "• Review \(exactTitle)",
+                    summaryText: "",
+                    keyTakeawaysText: "• Review \(finalTitle)",
                     estimatedTimeText: mediaTypeStr == "video" ? "~20–30 min" : "~40–60 min",
                     videoUrl: (hasValidUrl && subSegments.count == 1) ? videoUrl : nil,
                     dueDate: isoDate,
@@ -1383,18 +1385,19 @@ public final class LocalSyllabusParser {
 
     // MARK: - CHAPTER & PAGE EXTRACTOR
     public func extractChapterAndPages(from text: String) -> (chapter: String?, pages: String?) {
+        let healed = Reading.repairChapterArtifacts(text)
         var chapter: String? = nil
         var pages: String? = nil
 
-        if let match = Self.chapterRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
-            if let range = Range(match.range, in: text) {
-                chapter = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines).capitalized
+        if let match = Self.chapterRegex?.firstMatch(in: healed, options: [], range: NSRange(location: 0, length: healed.utf16.count)) {
+            if let range = Range(match.range, in: healed) {
+                chapter = Reading.cleanChapterFromRaw(String(healed[range])) ?? String(healed[range]).trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
 
-        if let match = Self.pagesRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)) {
-            if let range = Range(match.range, in: text) {
-                pages = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if let match = Self.pagesRegex?.firstMatch(in: healed, options: [], range: NSRange(location: 0, length: healed.utf16.count)) {
+            if let range = Range(match.range, in: healed) {
+                pages = String(healed[range]).trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
 
@@ -1403,7 +1406,7 @@ public final class LocalSyllabusParser {
 
     // MARK: - AUTHOR & RESOURCE EXTRACTOR
     public func extractAuthorAndResource(from text: String) -> (author: String?, resource: String?) {
-        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = Reading.repairChapterArtifacts(text).trimmingCharacters(in: .whitespacesAndNewlines)
         let topicNoise = [
             "work", "stages", "initial stages", "transition", "working", "presentations",
             "settings", "groups in diverse settings", "introduction to group work pt. 2",
@@ -1426,8 +1429,8 @@ public final class LocalSyllabusParser {
                 return (left, right.isEmpty ? nil : right)
             }
         }
-        // Match patterns like "Corey Ch. 1 & 2" or "Yalom Chapter 4"
-        let authorChapterPattern = #"^([A-Z][a-zA-Z\s&,\.\-–]+?)\s+(?:chapters?|chs?\.?|chap\.?)\s*(.*)$"#
+        // Match patterns like "Corey Ch. 1 & 2" or "Yalom Chapter 4" or "Gehart: Chapters 4-10"
+        let authorChapterPattern = #"^([A-Z][a-zA-Z\s&,\.\-–]+?)\s*[:\-–]?\s*(?:chapters?|chs?\.?|chps?\.?|chap\.?)\s*(.*)$"#
         if let regex = try? NSRegularExpression(pattern: authorChapterPattern, options: []),
            let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.utf16.count)),
            let aRange = Range(match.range(at: 1), in: trimmed) {
@@ -1438,7 +1441,8 @@ public final class LocalSyllabusParser {
                     if !s.isEmpty { author = s; break }
                 }
             }
-            let resource = String(trimmed[aRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawResource = String(trimmed[aRange.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: ":-–— \t"))
+            let resource = Reading.repairChapterArtifacts(rawResource).trimmingCharacters(in: .whitespacesAndNewlines)
             if !author.isEmpty && author.count < 35 && !author.lowercased().contains("required") {
                 return (author, resource.isEmpty ? nil : resource)
             }

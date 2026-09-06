@@ -39,7 +39,7 @@ public struct JoinCourseView: View {
                         .font(.cpItemTitle)
                         .foregroundColor(.secondary)
 
-                    TextField("e.g. A1B2C3D4E5F6", text: $sharingCode)
+                    TextField("e.g. 849204", text: $sharingCode)
                         .font(.cpDescriptionBold)
                         #if os(iOS)
                         .textInputAutocapitalization(.characters)
@@ -121,11 +121,11 @@ public struct JoinCourseView: View {
 
         let descriptor = FetchDescriptor<Course>()
         let existingCourses = (try? modelContext.fetch(descriptor)) ?? []
-        if let _ = existingCourses.first(where: {
-            $0.courseCode?.uppercased() == clean || $0.sharingCode.uppercased() == clean
+        if let existing = existingCourses.first(where: {
+            $0.courseCode?.uppercased() == clean || $0.sharingCode.uppercased() == clean || (!digitsOnly.isEmpty && $0.sharingCode == digitsOnly)
         }) {
             isJoining = false
-            presentationMode.wrappedValue.dismiss()
+            errorMessage = "You are already enrolled in '\(existing.courseName)'!"
             return
         }
 

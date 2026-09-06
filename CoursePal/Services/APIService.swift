@@ -27,7 +27,7 @@ public struct RubricCriterionDTO: Codable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.criterionName = (try container.decodeIfPresent(String.self, forKey: .criterionName)) ?? "Criterion"
+        self.criterionName = (try container.decodeIfPresent(String.self, forKey: .criterionName)) ?? "Item"
         if let pDouble = try? container.decodeIfPresent(Double.self, forKey: .points) {
             self.points = pDouble
         } else if let pInt = try? container.decodeIfPresent(Int.self, forKey: .points) {
@@ -320,7 +320,10 @@ public struct SyllabusPayload: Codable {
             }
         }
 
-        func parseWeekNum(from str: String) -> Int {
+        func parseWeekNum(from str: String?) -> Int {
+            guard let str = str?.trimmingCharacters(in: .whitespacesAndNewlines), !str.isEmpty else {
+                return 1
+            }
             let lower = str.lowercased()
             if lower.contains("reading week") || lower.contains("spring break") {
                 return 8
@@ -342,15 +345,26 @@ public struct SyllabusPayload: Codable {
         }
 
         for r in readings {
-            let weekNum = parseWeekNum(from: r.weekOrModule)
-            let lowerTitle = r.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let weekOrMod = r.weekOrModule ?? ""
+            let weekNum: Int = {
+                let parsed = parseWeekNum(from: weekOrMod)
+                if parsed > 0 { return parsed }
+                if let d = r.date {
+                    let fromDate = parseWeekNum(from: d)
+                    if fromDate > 0 { return fromDate }
+                }
+                return 1
+            }()
+            let rawReadingTitle = (r.title ?? "Reading").trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowerTitle = rawReadingTitle.lowercased()
             let lowerTopic = (r.topic ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            let lowerMod = r.weekOrModule.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowerMod = weekOrMod.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // If this item is merely a schedule break (e.g. Reading Week or Spring Break) without an actual book/chapters:
-            let isBreak = lowerTitle.contains("reading week") || lowerTitle.contains("spring break") || lowerTopic.contains("reading week") || lowerMod.contains("reading week")
+            // If this item is merely a schedule break (e.g. Reading Week or Spring Break or Flex Week) without an actual book/chapters:
+            let isBreak = lowerTitle.contains("reading week") || lowerTitle.contains("spring break") || lowerTitle.contains("flex week") || lowerTopic.contains("reading week") || lowerTopic.contains("flex week") || lowerMod.contains("reading week") || lowerMod.contains("flex week")
             let hasNoBook = (r.authors == nil || r.authors!.isEmpty) && (r.chaptersOrPages == nil || r.chaptersOrPages!.isEmpty)
             if isBreak && hasNoBook {
+                let breakTitle = (lowerTitle.contains("flex week") || lowerTopic.contains("flex week") || lowerMod.contains("flex week")) ? "Flex Week" : "Reading Week"
                 let breakItem = ItemDTO(
                     title: "",
                     authorName: nil,
@@ -364,7 +378,7 @@ public struct SyllabusPayload: Codable {
                     weekNumber: weekNum,
                     dueDateIso: r.date,
                     mediaUrl: nil,
-                    relevantTopics: "Reading Week",
+                    relevantTopics: breakTitle,
                     chapterText: nil,
                     pagesText: nil
                 )
@@ -378,24 +392,36 @@ public struct SyllabusPayload: Codable {
             var pgText: String? = nil
             if let cp = r.chaptersOrPages?.trimmingCharacters(in: .whitespacesAndNewlines), !cp.isEmpty {
                 if cp.lowercased().contains("ch") || cp.lowercased().contains("chap") {
-                    chText = cp
+                    chText = Reading.cleanChapterFromRaw(cp) ?? cp
                 } else if cp.lowercased().contains("pp") || cp.lowercased().contains("page") || cp.range(of: #"\d+\s*[-–]\s*\d+"#, options: .regularExpression) != nil {
                     pgText = cp
                 } else {
-                    chText = cp
+                    chText = Reading.cleanChapterFromRaw(cp) ?? cp
                 }
             }
 
-            var readingTitle = r.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let distilledReadingTitle = Reading.distillSmartReadingTitle(rawReadingTitle)
+            var readingTitle = distilledReadingTitle
             var readingDesc: String? = nil
+
+            let authLower = (cleanAuthors ?? "").lowercased()
+            let lowerReadingTitle = readingTitle.lowercased()
+            if lowerReadingTitle == authLower || ["reading", "readings", "assigned readings", "assigned reading"].contains(lowerReadingTitle) {
+                if let t = r.topic?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
+                    let distilledTopic = Reading.distillSmartReadingTitle(t)
+                    if distilledTopic != "Reading" && !distilledTopic.isEmpty {
+                        readingTitle = distilledTopic
+                    }
+                }
+            }
+
             if lowerTitle.contains("see brightspace") || lowerTitle.contains("assigned readings") || lowerTitle.contains("refer to portal") || lowerTitle.contains("check brightspace") || lowerTitle.contains("see canvas") {
                 readingTitle = "Assigned Readings"
-                readingDesc = r.title.trimmingCharacters(in: .whitespacesAndNewlines)
             }
 
             let combinedReadingTopics: String? = {
                 var parts: [String] = []
-                let wOrM = r.weekOrModule.trimmingCharacters(in: .whitespacesAndNewlines)
+                let wOrM = weekOrMod.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !wOrM.isEmpty { parts.append(wOrM) }
                 if let t = r.topic?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty, !wOrM.lowercased().contains(t.lowercased()) {
                     parts.append(t)
@@ -406,7 +432,7 @@ public struct SyllabusPayload: Codable {
             let item = ItemDTO(
                 title: readingTitle,
                 authorName: (cleanAuthors?.isEmpty ?? true) ? nil : cleanAuthors,
-                resourceTitle: readingTitle,
+                resourceTitle: (r.resourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? r.resourceTitle : nil,
                 category: "Reading",
                 subType: "TEXTBOOK",
                 description: readingDesc,
@@ -415,7 +441,7 @@ public struct SyllabusPayload: Codable {
                 percentage: nil,
                 weekNumber: weekNum,
                 dueDateIso: r.date,
-                mediaUrl: r.mediaUrl ?? URLHelper.extractFirstURL(from: r.title + " " + (r.chaptersOrPages ?? "") + " " + (r.topic ?? "")),
+                mediaUrl: r.mediaUrl ?? URLHelper.extractFirstURL(from: (r.title ?? "") + " " + (r.chaptersOrPages ?? "") + " " + (r.topic ?? "")),
                 relevantTopics: combinedReadingTopics,
                 chapterText: chText,
                 pagesText: pgText
@@ -424,25 +450,27 @@ public struct SyllabusPayload: Codable {
         }
 
         for a in assignments {
+            let weekOrMod = a.weekOrModule ?? ""
+            let assignTitle = (a.title ?? "Assignment").trimmingCharacters(in: .whitespacesAndNewlines)
             let weekNum: Int = {
-                let fromModule = parseWeekNum(from: a.weekOrModule)
-                if fromModule > 1 && fromModule <= 16 { return fromModule }
+                let fromModule = parseWeekNum(from: weekOrMod)
+                if fromModule > 0 && fromModule <= 16 { return fromModule }
                 if let rawDue = a.rawDueDate, !rawDue.isEmpty {
                     let fromDue = parseWeekNum(from: rawDue)
-                    if fromDue > 1 && fromDue <= 16 { return fromDue }
+                    if fromDue > 0 && fromDue <= 16 { return fromDue }
                 }
-                return fromModule
+                return 1
             }()
-            let catUpper = a.category.uppercased()
+            let catUpper = (a.category ?? "ASSIGNMENT").uppercased()
             let subType = catUpper.isEmpty ? "ASSIGNMENT" : catUpper
 
             let fullInstructions = (a.instructions?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                ? "Due: \(a.rawDueDate ?? a.weekOrModule)"
+                ? "Due: \(a.rawDueDate ?? (weekOrMod.isEmpty ? "Scheduled" : weekOrMod))"
                 : a.instructions!
             let rubricBreakdown = a.rubric?.joined(separator: "\n")
 
             let item = ItemDTO(
-                title: a.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                title: assignTitle,
                 authorName: nil,
                 resourceTitle: nil,
                 category: "Assignment",
@@ -453,8 +481,8 @@ public struct SyllabusPayload: Codable {
                 percentage: a.weight,
                 weekNumber: weekNum,
                 dueDateIso: a.rawDueDate,
-                mediaUrl: a.mediaUrl ?? URLHelper.extractFirstURL(from: a.title + " " + (a.instructions ?? "")),
-                relevantTopics: a.weekOrModule,
+                mediaUrl: a.mediaUrl ?? URLHelper.extractFirstURL(from: assignTitle + " " + (a.instructions ?? "")),
+                relevantTopics: weekOrMod.isEmpty ? nil : weekOrMod,
                 chapterText: nil,
                 pagesText: nil
             )
@@ -481,13 +509,14 @@ public struct SyllabusPayload: Codable {
 }
 
 public struct ParsedReading: Codable {
-    public let weekOrModule: String
+    public let weekOrModule: String?
     public let topic: String?
-    public let title: String
+    public let title: String?
     public let authors: String?
     public let chaptersOrPages: String?
     public let date: String?
     public let mediaUrl: String?
+    public let resourceTitle: String?
 
     enum CodingKeys: String, CodingKey {
         case weekOrModule = "weekOrModule"
@@ -497,9 +526,10 @@ public struct ParsedReading: Codable {
         case chaptersOrPages = "chaptersOrPages"
         case date = "date"
         case mediaUrl = "mediaUrl"
+        case resourceTitle = "resourceTitle"
     }
 
-    public init(weekOrModule: String, topic: String? = nil, title: String, authors: String? = nil, chaptersOrPages: String? = nil, date: String? = nil, mediaUrl: String? = nil) {
+    public init(weekOrModule: String? = nil, topic: String? = nil, title: String? = nil, authors: String? = nil, chaptersOrPages: String? = nil, date: String? = nil, mediaUrl: String? = nil, resourceTitle: String? = nil) {
         self.weekOrModule = weekOrModule
         self.topic = topic
         self.title = title
@@ -507,13 +537,14 @@ public struct ParsedReading: Codable {
         self.chaptersOrPages = chaptersOrPages
         self.date = date
         self.mediaUrl = mediaUrl
+        self.resourceTitle = resourceTitle
     }
 }
 
 public struct ParsedAssignment: Codable {
-    public let weekOrModule: String
-    public let title: String
-    public let category: String
+    public let weekOrModule: String?
+    public let title: String?
+    public let category: String?
     public let rawDueDate: String?
     public let weight: String?
     public let points: String?
@@ -534,9 +565,9 @@ public struct ParsedAssignment: Codable {
     }
 
     public init(
-        weekOrModule: String,
-        title: String,
-        category: String = "ASSIGNMENT",
+        weekOrModule: String? = nil,
+        title: String? = nil,
+        category: String? = "ASSIGNMENT",
         rawDueDate: String? = nil,
         weight: String? = nil,
         points: String? = nil,
@@ -1180,39 +1211,44 @@ public final class APIService: ObservableObject {
         let modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
 
         let systemInstructions = """
-        You are an academic syllabus extraction engine. Extract all weekly readings and deliverables into the specified JSON format.
+        You are a universal academic syllabus extraction engine. Extract all weekly readings, lecture topics, and deliverables/assignments into the specified JSON format.
 
-        EXTRACTION RULES:
+        UNIVERSAL EXTRACTION RULES:
         0. FACULTY & INSTRUCTOR DETAILS:
-           - "instructorName": Full name and credentials of the primary faculty, professor, or instructor if stated in the document (e.g., "Dr. Alireza Sedghi Taromi, PhD" or "Marie-Pier Gilbert"). If none found, null.
+           - "instructorName": Full name and credentials of the primary faculty, professor, or instructor if stated in the syllabus text (e.g., "Dr. Alireza Sedghi Taromi, PhD" or "Marie-Pier Gilbert"). If none found, null.
            - "instructorEmail": Email address of the faculty member or instructor if stated (e.g., "sedghitaromialireza@cityu.edu"). If none found, null.
 
         1. COURSE TITLE:
-           - Extract the course name and code (e.g., "CPC 527: Group Counselling Psychology") ONLY into "courseTitle".
+           - Extract the course name and code (e.g., "CPC 512: Family Systems Approaches to Counselling") ONLY into "courseTitle".
            - NEVER prefix or include the course name inside individual reading or assignment titles.
 
-        2. READINGS BREAKDOWN & TOPICS:
-           - CRITICAL: If a week or module lists multiple textbooks, authors, or articles (e.g., "Corey Ch. 1 & 2" AND "Yalom Ch. 1"), output EACH textbook or article as a SEPARATE object in the "readings" array! Never merge multiple books together into one object.
-           - "topic": The weekly session, module, or lecture topic from the schedule table (e.g. "Intro to Group Work", "Introduction to Group Work Pt. 2", "Group Stages: Initial Stages", "Transition", "Working", "Presentations", "Reading Week", "Groups in Diverse Settings", "Effective Closings").
-           - "title": Clean, concise title of the reading, book, or article verbatim as listed in the syllabus schedule (e.g., "Corey", "Yalom", or "Creswell & Creswell"). CRITICAL: DO NOT inject, hallucinate, or append extra subtitles, book descriptions, or phrases like "Process and Practice", "Theory and Practice", or edition details unless they are literally written in the schedule table row. Keep it simply the concise title or author.
-           - "authors": Specific author for that reading (e.g., "Corey" or "Yalom").
-           - "chaptersOrPages": The exact chapter or page numbers for that specific reading (e.g., "Ch. 1 & 2", "Ch. 1", "Ch. 3 & 4").
-           - "weekOrModule": Designated schedule week and/or module (e.g., "Module 1", "Week 1", "Week 2 - Module 2"). CRITICAL: If the document explicitly designates modules in the schedule, include "Module X". BUT NEVER put "Module" or assume modules if the course schedule only uses Weeks and does not explicitly have modules in the syllabus document.
-           - "date": Date listed in the table (e.g., "4/2/26").
-           - "mediaUrl": Any direct URL, web link, DOI, or portal link directly associated with this reading if present in the document, else null.
+        2. CHRONOLOGICAL SCHEDULE ANCHOR:
+           - If the syllabus contains an introductory module/curriculum overview map followed by an actual chronological course schedule (e.g. Weeks 1-12 with dates), anchor all weekly items to the CHRONOLOGICAL SCHEDULE so that every week and calendar date is preserved.
 
-        3. DELIVERABLES & DETAILED RUBRIC CRITERIA:
-           - Extract every assignment, presentation, paper, or participation deliverable from BOTH the Overview and "Course Assignment Details" / "Grading Criteria" sections.
-           - "title": Clean assignment title (e.g., "Group Therapy Reflection Paper").
-           - "weight": Weight of final grade (e.g., "25%", "40%").
+        3. READINGS BREAKDOWN & TOPICS:
+           - CRITICAL: If a week or module lists multiple textbooks, authors, or articles (e.g., "Corey Ch. 1 & 2" AND "Yalom Ch. 1", or "Gehart chapter 5" AND "Articles"), output EACH textbook or article as a SEPARATE object in the "readings" array! Never merge multiple books together into one object.
+           - "weekOrModule": Designated schedule week and/or module (e.g., "Week 1", "Week 2", "Module 1"). CRITICAL: If the document explicitly designates modules in the schedule, include "Module X". BUT NEVER put "Module" if the course schedule only uses Weeks.
+           - "date": Date or date range listed in the table (e.g., "July 2/3", "4/2/26").
+           - "topic": The weekly session, module, or lecture topics taught during that class from the schedule table (e.g. "Creating a caring community; Introduction to Family Systems; Course overview").
+           - "title": Specific reading name, chapter designation, or article title as given in the readings (e.g. "Chapters 1-3", "Chapter 5", "Articles", "Review sample comprehensive exam cases"). CRITICAL: If the reading is a chapter, always write out "Chapter" (for single, e.g. "Chapter 1") or "Chapters" (for multiple/range, e.g. "Chapters 1 & 2", "Chapters 1-3"). NEVER abbreviate as "ch", "ch.", "chp", or "chp.".
+           - "authors": Specific author for that reading if mentioned (e.g., "Gehart", "Corey", "Yalom"). If none, null.
+           - "resourceTitle": Book, textbook, or publication title if explicitly named in the syllabus, else null.
+           - "chaptersOrPages": The exact chapter or page numbers for that specific reading. Always write out "Chapter" or "Chapters" (e.g., "Chapter 1", "Chapters 1 & 2", "Chapters 1-3", "pp. 25-50"). Never abbreviate as "ch" or "chp".
+           - "mediaUrl": Any direct URL, web link, DOI, or portal link directly associated with this reading if present in the document, else null.
+           - For non-instructional weeks like "Reading Week" (No classes), "Spring Break", or "Flex Week", create an entry with title "Reading Week" or "Flex Week", topic "Reading Week" or "Flex Week", and date.
+
+        4. DELIVERABLES & DETAILED RUBRIC CRITERIA:
+           - Extract every assignment, presentation, paper, exam, or deliverable from BOTH the schedule table (e.g. "Due: Family Mapping Papers", "in-class case conceptualization worth 20%") AND any "Course Assignment Details" / "Grading Criteria" sections.
+           - "title": Clean assignment title (e.g., "Family Mapping Papers", "In-Class Case Conceptualization", "Group Therapy Reflection Paper").
+           - "weekOrModule": Designated schedule week and/or module where it is due or scheduled (e.g., "Week 5", "Week 10", "Module 6").
+           - "rawDueDate": Due date from the schedule table or details (e.g. "July 30/31", "September 3/4", "5/7/26").
+           - "weight": Weight of final grade (e.g., "20%", "25%", "40%").
            - "points": Total points possible (e.g., "100 Points").
-           - "instructions": The full, detailed description and requirements from the assignment details section (e.g. page count, formatting requirements, required topics, number of sources).
-           - "rubric": Extract all grading criteria items as an array of strings (e.g. ["Organization and Coherence: 10 Points (10%)", "Evidence and Support: 20 Points (20%)", "Analysis and use of Course Concepts: 20 Points (20%)", "Professional Ethics: 20 Points (20%)", "Cultural Competence: 20 Points (20%)", "Self-reflection: 10 Points (10%)"]).
-           - "weekOrModule": Designated schedule week and/or module where it is due or scheduled (e.g., "Module 6", "Module 9", "Week 6"). If the document explicitly designates modules in the schedule, include "Module X". BUT do not put "Module" if the syllabus document only uses weeks. Never use generic headers like "Overview" or "Final" if a specific week/module/date is indicated.
-           - "rawDueDate": Due date from the schedule table (e.g. "5/7/26", "6/4/26", "6/11/26").
+           - "instructions": The full, detailed description and requirements from the assignment details or schedule.
+           - "rubric": Extract all grading criteria items as an array of strings.
            - "mediaUrl": Any direct URL, web link, portal link, or submission link directly associated with this assignment if present in the document, else null.
 
-        4. OUTPUT:
+        5. OUTPUT:
            - Return valid JSON matching the schema with zero introductory or closing markdown text.
         """
 
@@ -1227,15 +1263,16 @@ public final class APIService: ObservableObject {
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "weekOrModule": ["type": "STRING", "description": "Designated week and/or module (e.g. 'Module 1', 'Week 1', 'Week 1 - Module 1')"],
+                            "weekOrModule": ["type": "STRING", "nullable": true, "description": "Designated week and/or module (e.g. 'Module 1', 'Week 1', 'Week 1 - Module 1')"],
                             "topic": ["type": "STRING", "nullable": true, "description": "Weekly session or lecture topic (e.g. 'Intro to Group Work', 'Presentations')"],
-                            "title": ["type": "STRING", "description": "The specific book/paper title or topic, NOT the course name"],
-                            "authors": ["type": "STRING", "nullable": true, "description": "e.g. 'Corey', 'Yalom'"],
-                            "chaptersOrPages": ["type": "STRING", "nullable": true, "description": "e.g. 'Ch. 1-3', 'pp. 25-50'"],
-                            "date": ["type": "STRING", "nullable": true],
+                            "title": ["type": "STRING", "description": "Reading name or chapter (e.g. 'Chapters 1-3', 'Articles', 'Reading Week')"],
+                            "authors": ["type": "STRING", "nullable": true, "description": "Author name(s) (e.g. 'Gehart')"],
+                            "resourceTitle": ["type": "STRING", "nullable": true, "description": "Book or publication title if stated in the syllabus, else null"],
+                            "chaptersOrPages": ["type": "STRING", "nullable": true, "description": "e.g. 'Chapters 1-3', 'pp. 25-50'"],
+                            "date": ["type": "STRING", "nullable": true, "description": "Date or date range (e.g. 'July 2/3')"],
                             "mediaUrl": ["type": "STRING", "nullable": true, "description": "Direct URL or web link for the reading/resource if present"]
                         ],
-                        "required": ["weekOrModule", "title"]
+                        "required": ["title"]
                     ]
                 ],
                 "assignments": [
@@ -1243,9 +1280,9 @@ public final class APIService: ObservableObject {
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "weekOrModule": ["type": "STRING", "description": "The explicit week and/or module it is due (e.g. 'Module 6', 'Week 6')"],
+                            "weekOrModule": ["type": "STRING", "nullable": true, "description": "The explicit week and/or module it is due (e.g. 'Module 6', 'Week 6')"],
                             "title": ["type": "STRING", "description": "Deliverable name (e.g. 'Group Therapy Reflection Paper')"],
-                            "category": ["type": "STRING", "description": "e.g. 'PAPER', 'PRESENTATION', 'REPORT', 'PARTICIPATION'"],
+                            "category": ["type": "STRING", "nullable": true, "description": "e.g. 'PAPER', 'PRESENTATION', 'REPORT', 'PARTICIPATION'"],
                             "rawDueDate": ["type": "STRING", "nullable": true, "description": "e.g. '5/7/26', '6/4/26'"],
                             "weight": ["type": "STRING", "nullable": true, "description": "e.g. '25%'"],
                             "points": ["type": "STRING", "nullable": true, "description": "e.g. '100 Points'"],
@@ -1257,7 +1294,7 @@ public final class APIService: ObservableObject {
                             ],
                             "mediaUrl": ["type": "STRING", "nullable": true, "description": "Direct URL or web link for the assignment if present"]
                         ],
-                        "required": ["weekOrModule", "title", "category"]
+                        "required": ["title"]
                     ]
                 ]
             ],
@@ -1397,7 +1434,7 @@ public final class APIService: ObservableObject {
     public func parseSyllabusText(_ rawText: String) async throws -> CourseDTO {
         let keyToUse = activeAPIKey
         guard !keyToUse.isEmpty else {
-            throw NSError(domain: "APIService", code: 401, userInfo: [NSLocalizedDescriptionKey: "API Key Missing: Please enter your Gemini API key in settings."])
+            throw NSError(domain: "APIService", code: 401, userInfo: [NSLocalizedDescriptionKey: "AI Service Unavailable: Please check your network connection or restart CoursePal."])
         }
         print("[APIService] Calling Gemini Cloud AI with active API key (\(keyToUse.prefix(6))...)")
         return try await parseSyllabusWithGemini(rawText, apiKey: keyToUse)
@@ -1406,8 +1443,8 @@ public final class APIService: ObservableObject {
     public static func preprocessSyllabusText(_ rawText: String) -> String {
         // If text was already section-filtered by DocumentExtractor, preserve all harvested schedule pages
         if rawText.contains("--- Page ") {
-            if rawText.count > 35000 {
-                return String(rawText.prefix(35000))
+            if rawText.count > 250000 {
+                return String(rawText.prefix(250000))
             }
             return rawText
         }
@@ -1441,7 +1478,11 @@ public final class APIService: ObservableObject {
 
             // Check if entering a boilerplate policy section
             if boilerplateHeaders.contains(where: { lower.contains($0) }) {
-                if !lower.contains("assignment") && !lower.contains("deliverable") && !lower.contains("schedule") {
+                let hasSyllabusDeliverables = lower.contains("assignment") || lower.contains("deliverable") ||
+                                              lower.contains("schedule") || lower.contains("rubric") ||
+                                              lower.contains("grading criteria") || lower.contains("reading") ||
+                                              lower.contains("points") || lower.contains("weight")
+                if !hasSyllabusDeliverables {
                     inBoilerplate = true
                 }
             }
@@ -1450,7 +1491,9 @@ public final class APIService: ObservableObject {
             let isScheduleKeyword = lower.contains("week ") || lower.contains("module ") || lower.contains("schedule") ||
                                    lower.contains("reading") || lower.contains("assignment") || lower.contains("due date") ||
                                    lower.contains("chapter") || lower.contains("pages") || lower.contains("presentation") ||
-                                   lower.contains("paper") || lower.contains("quiz") || lower.contains("exam") || lower.contains("project")
+                                   lower.contains("paper") || lower.contains("quiz") || lower.contains("exam") ||
+                                   lower.contains("project") || lower.contains("grading") || lower.contains("rubric") ||
+                                   lower.contains("criteria")
 
             if isScheduleKeyword {
                 inBoilerplate = false
@@ -1464,8 +1507,8 @@ public final class APIService: ObservableObject {
         }
 
         let condensed = relevantLines.joined(separator: "\n")
-        if condensed.count > 35000 {
-            return String(condensed.prefix(35000))
+        if condensed.count > 250000 {
+            return String(condensed.prefix(250000))
         }
         return condensed.isEmpty ? rawText : condensed
     }
@@ -1478,39 +1521,44 @@ public final class APIService: ObservableObject {
         print("📦 [NETWORK] Text payload size: \(processedText.count) chars (compressed from \(rawText.count))")
 
         let systemInstructions = """
-        You are an academic syllabus extraction engine. Extract all weekly readings and deliverables into the specified JSON format.
+        You are a universal academic syllabus extraction engine. Extract all weekly readings, lecture topics, and deliverables/assignments into the specified JSON format.
 
-        EXTRACTION RULES:
+        UNIVERSAL EXTRACTION RULES:
         0. FACULTY & INSTRUCTOR DETAILS:
            - "instructorName": Full name and credentials of the primary faculty, professor, or instructor if stated in the syllabus text (e.g., "Dr. Alireza Sedghi Taromi, PhD" or "Marie-Pier Gilbert"). If none found, null.
            - "instructorEmail": Email address of the faculty member or instructor if stated (e.g., "sedghitaromialireza@cityu.edu"). If none found, null.
 
         1. COURSE TITLE:
-           - Extract the course name and code (e.g., "CPC 527: Group Counselling Psychology") ONLY into "courseTitle".
+           - Extract the course name and code (e.g., "CPC 512: Family Systems Approaches to Counselling") ONLY into "courseTitle".
            - NEVER prefix or include the course name inside individual reading or assignment titles.
 
-        2. READINGS BREAKDOWN & TOPICS:
-           - CRITICAL: If a week or module lists multiple textbooks, authors, or articles (e.g., "Corey Ch. 1 & 2" AND "Yalom Ch. 1"), output EACH textbook or article as a SEPARATE object in the "readings" array! Never merge multiple books together into one object.
-           - "topic": The weekly session, module, or lecture topic from the schedule table (e.g. "Intro to Group Work", "Introduction to Group Work Pt. 2", "Group Stages: Initial Stages", "Transition", "Working", "Presentations", "Reading Week", "Groups in Diverse Settings", "Effective Closings").
-           - "title": Clean, concise title of the reading, book, or article verbatim as listed in the syllabus schedule (e.g., "Corey", "Yalom", or "Creswell & Creswell"). CRITICAL: DO NOT inject, hallucinate, or append extra subtitles, book descriptions, or phrases like "Process and Practice", "Theory and Practice", or edition details unless they are literally written in the schedule table row. Keep it simply the concise title or author.
-           - "authors": Specific author for that reading (e.g., "Corey" or "Yalom").
-           - "chaptersOrPages": The exact chapter or page numbers for that specific reading (e.g., "Ch. 1 & 2", "Ch. 1", "Ch. 3 & 4").
-           - "weekOrModule": Designated schedule week and/or module (e.g., "Module 1", "Week 1", "Week 2 - Module 2"). CRITICAL: If the document explicitly designates modules in the schedule, include "Module X". BUT NEVER put "Module" or assume modules if the course schedule only uses Weeks and does not explicitly have modules in the syllabus document.
-           - "date": Date listed in the table (e.g., "4/2/26").
-           - "mediaUrl": Any direct URL, web link, DOI, or portal link directly associated with this reading if present in the document, else null.
+        2. CHRONOLOGICAL SCHEDULE ANCHOR:
+           - If the syllabus contains an introductory module/curriculum overview map followed by an actual chronological course schedule (e.g. Weeks 1-12 with dates), anchor all weekly items to the CHRONOLOGICAL SCHEDULE so that every week and calendar date is preserved.
 
-        3. DELIVERABLES & DETAILED RUBRIC CRITERIA:
-           - Extract every assignment, presentation, paper, or participation deliverable from BOTH the Overview and "Course Assignment Details" / "Grading Criteria" sections.
-           - "title": Clean assignment title (e.g., "Group Therapy Reflection Paper").
-           - "weight": Weight of final grade (e.g., "25%", "40%").
+        3. READINGS BREAKDOWN & TOPICS:
+           - CRITICAL: If a week or module lists multiple textbooks, authors, or articles (e.g., "Corey Ch. 1 & 2" AND "Yalom Ch. 1", or "Gehart chapter 5" AND "Articles"), output EACH textbook or article as a SEPARATE object in the "readings" array! Never merge multiple books together into one object.
+           - "weekOrModule": Designated schedule week and/or module (e.g., "Week 1", "Week 2", "Module 1"). CRITICAL: If the document explicitly designates modules in the schedule, include "Module X". BUT NEVER put "Module" if the course schedule only uses Weeks.
+           - "date": Date or date range listed in the table (e.g., "July 2/3", "4/2/26").
+           - "topic": The weekly session, module, or lecture topics taught during that class from the schedule table (e.g. "Creating a caring community; Introduction to Family Systems; Course overview").
+           - "title": Specific reading name, chapter designation, or article title as given in the readings (e.g. "Chapters 1-3", "Chapter 5", "Articles", "Review sample comprehensive exam cases"). CRITICAL: If the reading refers to chapters, always write out "Chapter" (for single, e.g. "Chapter 1") or "Chapters" (for multiple/range, e.g. "Chapters 1 & 2", "Chapters 1-3"). NEVER abbreviate as "ch", "ch.", "chp", or "chp.".
+           - "authors": Specific author for that reading if mentioned (e.g., "Gehart", "Corey", "Yalom"). If none, null.
+           - "resourceTitle": Book, textbook, or publication title if explicitly named in the syllabus, else null.
+           - "chaptersOrPages": The exact chapter or page numbers for that specific reading. Always write out "Chapter" or "Chapters" (e.g., "Chapter 1", "Chapters 1 & 2", "Chapters 1-3", "pp. 25-50"). Never abbreviate as "ch" or "chp".
+           - "mediaUrl": Any direct URL, web link, DOI, or portal link directly associated with this reading if present in the document, else null.
+           - For non-instructional weeks like "Reading Week" (No classes), "Spring Break", or "Flex Week", create an entry with title "Reading Week" or "Flex Week", topic "Reading Week" or "Flex Week", and date.
+
+        4. DELIVERABLES & DETAILED RUBRIC CRITERIA:
+           - Extract every assignment, presentation, paper, exam, or deliverable from BOTH the schedule table (e.g. "Due: Family Mapping Papers", "in-class case conceptualization worth 20%") AND any "Course Assignment Details" / "Grading Criteria" sections.
+           - "title": Clean assignment title (e.g., "Family Mapping Papers", "In-Class Case Conceptualization", "Group Therapy Reflection Paper").
+           - "weekOrModule": Designated schedule week and/or module where it is due or scheduled (e.g., "Week 5", "Week 10", "Module 6").
+           - "rawDueDate": Due date from the schedule table or details (e.g. "July 30/31", "September 3/4", "5/7/26").
+           - "weight": Weight of final grade (e.g., "20%", "25%", "40%").
            - "points": Total points possible (e.g., "100 Points").
-           - "instructions": The full, detailed description and requirements from the assignment details section (e.g. page count, formatting requirements, required topics, number of sources).
-           - "rubric": Extract all grading criteria items as an array of strings (e.g. ["Organization and Coherence: 10 Points (10%)", "Evidence and Support: 20 Points (20%)", "Analysis and use of Course Concepts: 20 Points (20%)", "Professional Ethics: 20 Points (20%)", "Cultural Competence: 20 Points (20%)", "Self-reflection: 10 Points (10%)"]).
-           - "weekOrModule": Designated schedule week and/or module where it is due or scheduled (e.g., "Module 6", "Module 9", "Week 6"). If the document explicitly designates modules in the schedule, include "Module X". BUT do not put "Module" if the syllabus document only uses weeks. Never use generic headers like "Overview" or "Final" if a specific week/module/date is indicated.
-           - "rawDueDate": Due date from the schedule table (e.g. "5/7/26", "6/4/26", "6/11/26").
+           - "instructions": The full, detailed description and requirements from the assignment details or schedule.
+           - "rubric": Extract all grading criteria items as an array of strings.
            - "mediaUrl": Any direct URL, web link, portal link, or submission link directly associated with this assignment if present in the document, else null.
 
-        4. OUTPUT:
+        5. OUTPUT:
            - Return valid JSON matching the schema with zero introductory or closing markdown text.
         """
 
@@ -1525,15 +1573,16 @@ public final class APIService: ObservableObject {
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "weekOrModule": ["type": "STRING", "description": "Designated week and/or module (e.g. 'Module 1', 'Week 1', 'Week 1 - Module 1')"],
-                            "topic": ["type": "STRING", "nullable": true, "description": "Weekly session or lecture topic (e.g. 'Intro to Group Work', 'Presentations')"],
-                            "title": ["type": "STRING", "description": "The specific book/paper title or topic, NOT the course name"],
-                            "authors": ["type": "STRING", "nullable": true, "description": "e.g. 'Corey', 'Yalom'"],
-                            "chaptersOrPages": ["type": "STRING", "nullable": true, "description": "e.g. 'Ch. 1-3', 'pp. 25-50'"],
-                            "date": ["type": "STRING", "nullable": true],
+                            "weekOrModule": ["type": "STRING", "nullable": true, "description": "Designated week and/or module (e.g. 'Week 1', 'Module 1')"],
+                            "topic": ["type": "STRING", "nullable": true, "description": "Weekly session or lecture topics"],
+                            "title": ["type": "STRING", "description": "Reading name or chapter (e.g. 'Chapters 1-3', 'Articles', 'Reading Week')"],
+                            "authors": ["type": "STRING", "nullable": true, "description": "Author name(s) (e.g. 'Gehart')"],
+                            "resourceTitle": ["type": "STRING", "nullable": true, "description": "Book or publication title if stated in the syllabus, else null"],
+                            "chaptersOrPages": ["type": "STRING", "nullable": true, "description": "e.g. 'Chapters 1-3', 'pp. 25-50'"],
+                            "date": ["type": "STRING", "nullable": true, "description": "Date or date range (e.g. 'July 2/3')"],
                             "mediaUrl": ["type": "STRING", "nullable": true, "description": "Direct URL or web link for the reading/resource if present"]
                         ],
-                        "required": ["weekOrModule", "title"]
+                        "required": ["title"]
                     ]
                 ],
                 "assignments": [
@@ -1541,9 +1590,9 @@ public final class APIService: ObservableObject {
                     "items": [
                         "type": "OBJECT",
                         "properties": [
-                            "weekOrModule": ["type": "STRING", "description": "The explicit week and/or module it is due (e.g. 'Module 6', 'Week 6')"],
+                            "weekOrModule": ["type": "STRING", "nullable": true, "description": "The explicit week and/or module it is due (e.g. 'Module 6', 'Week 6')"],
                             "title": ["type": "STRING", "description": "Deliverable name (e.g. 'Group Therapy Reflection Paper')"],
-                            "category": ["type": "STRING", "description": "e.g. 'PAPER', 'PRESENTATION', 'REPORT', 'PARTICIPATION'"],
+                            "category": ["type": "STRING", "nullable": true, "description": "e.g. 'PAPER', 'PRESENTATION', 'REPORT', 'PARTICIPATION'"],
                             "rawDueDate": ["type": "STRING", "nullable": true, "description": "e.g. '5/7/26', '6/4/26'"],
                             "weight": ["type": "STRING", "nullable": true, "description": "e.g. '25%'"],
                             "points": ["type": "STRING", "nullable": true, "description": "e.g. '100 Points'"],
@@ -1555,7 +1604,7 @@ public final class APIService: ObservableObject {
                             ],
                             "mediaUrl": ["type": "STRING", "nullable": true, "description": "Direct URL or web link for the assignment if present"]
                         ],
-                        "required": ["weekOrModule", "title", "category"]
+                        "required": ["title"]
                     ]
                 ]
             ],
@@ -1679,7 +1728,7 @@ public final class APIService: ObservableObject {
     public func parseSyllabusImageData(_ imageData: Data) async throws -> CourseDTO {
         let keyToUse = activeAPIKey
         guard !keyToUse.isEmpty else {
-            throw NSError(domain: "APIService", code: 401, userInfo: [NSLocalizedDescriptionKey: "API Key Missing: Please enter your Gemini API key in settings."])
+            throw NSError(domain: "APIService", code: 401, userInfo: [NSLocalizedDescriptionKey: "AI Service Unavailable: Please check your network connection or restart CoursePal."])
         }
         print("[APIService] Calling Gemini Cloud Vision AI with active API key...")
         return try await parseSyllabusImageWithGemini(imageData, mimeType: "image/jpeg", apiKey: keyToUse)
@@ -1719,7 +1768,7 @@ public final class APIService: ObservableObject {
             3. WEEKS & READINGS (EVERY SINGLE CHAPTER / ARTICLE / MEDIA):
                - Group into weeks (week_number 1, 2, ... 16).
                - Every distinct reading or book MUST be its own separate atomic item. If multiple readings are on one line, split them into separate reading entries.
-               - "title": Full official exact title verbatim as written in the syllabus document without shortening or truncating.
+               - "title": Smart, concise noun phrase only (strictly 2 to 5 words, e.g. "Research Design", "Comprehensive Exam Cases", "Gehart"). NEVER put full instruction sentences, action verbs ("Review...", "Read..."), or LMS shell directions in "title". Put full sentences in "summary_text".
                - "author_name": Primary author(s) or null.
                - "resource_title": Book or resource title or null.
                - "media_type": "textbook", "article", "video", or "podcast".

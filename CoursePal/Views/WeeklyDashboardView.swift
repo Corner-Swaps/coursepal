@@ -79,7 +79,7 @@ public struct ReadingTitleCleaner {
     /// Cleans reading titles by stripping out "Week 1", "Week 2", "Week N", "Week N Core Concepts", 
     /// "C Week N Core Concepts", and leading "Chapter N Textbook & Lecture Notes: " prefixes.
     public static func cleanTitle(_ title: String) -> String {
-        var clean = title
+        var clean = Reading.repairChapterArtifacts(title)
 
         // 1. Strip leading "Chapter N Textbook & Lecture Notes: " if present
         clean = clean.replacingOccurrences(of: #"(?i)^chapter\s*\d+([\s&,\-–]+\d+)?\s*textbook\s*&\s*lecture\s*notes:\s*"#, with: "Textbook & Lecture Notes: ", options: .regularExpression)
@@ -396,6 +396,56 @@ public struct WeeklyDashboardView: View {
         return nil
     }
 
+    private func weekDateDisplayString(for weekNum: Int) -> String? {
+        let weekReadings = readingsByWeek[weekNum] ?? []
+
+        // 1. Concrete dueDate on any reading in this week formatted as "Friday, July 10"
+        if let due = weekReadings.compactMap({ $0.dueDate }).first {
+            let formatter = DateFormatter()
+            let calendar = Calendar.current
+            let itemYear = calendar.component(.year, from: due)
+            let currentYear = calendar.component(.year, from: Date())
+            formatter.dateFormat = (itemYear != currentYear) ? "EEEE, MMMM d, yyyy" : "EEEE, MMMM d"
+            return formatter.string(from: due)
+        }
+
+        // 2. dateRangeStr on reading or week, stripping any leading "Due " prefix
+        if let range = weekDateRange(for: weekNum), !range.isEmpty {
+            let clean = range.replacingOccurrences(of: #"(?i)^due\s*[:\-–]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            return clean.isEmpty ? nil : clean
+        }
+
+        // 3. Week startDate if available
+        if let w = allWeeks.first(where: { $0.weekNumber == weekNum }), let sDate = w.startDate {
+            let formatter = DateFormatter()
+            let calendar = Calendar.current
+            let itemYear = calendar.component(.year, from: sDate)
+            let currentYear = calendar.component(.year, from: Date())
+            formatter.dateFormat = (itemYear != currentYear) ? "EEEE, MMMM d, yyyy" : "EEEE, MMMM d"
+            return formatter.string(from: sDate)
+        }
+
+        return nil
+    }
+
+    private func shouldShowDueDateInCard(for reading: Reading, inWeek weekNum: Int) -> Bool {
+        guard let readingDue = reading.dueDate else { return false }
+        guard let weekDateText = weekDateDisplayString(for: weekNum) else { return true }
+
+        let formatter = DateFormatter()
+        let calendar = Calendar.current
+        let itemYear = calendar.component(.year, from: readingDue)
+        let currentYear = calendar.component(.year, from: Date())
+        formatter.dateFormat = (itemYear != currentYear) ? "EEEE, MMMM d, yyyy" : "EEEE, MMMM d"
+        let readingDateText = formatter.string(from: readingDue)
+
+        // Hide due date on individual card if it matches the week header date to avoid displaying it twice
+        if readingDateText == weekDateText {
+            return false
+        }
+        return true
+    }
+
     // MARK: - Static Formatters (Zero allocations per render)
     private static let dayNameFormatter: DateFormatter = {
         let df = DateFormatter()
@@ -599,8 +649,12 @@ public struct WeeklyDashboardView: View {
                             // Left Hero Date (Tuesday 4) - Tapping filters/unfilters
                             Button(action: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
-                                    isDateFilterActive = true
-                                    selectedWeekFilter = 0
+                                    if isDateFilterActive {
+                                        isDateFilterActive = false
+                                    } else {
+                                        isDateFilterActive = true
+                                        selectedWeekFilter = 0
+                                    }
                                 }
                             }) {
                                 VStack(spacing: 2) {
@@ -927,18 +981,25 @@ public struct WeeklyDashboardView: View {
 
                                             if let mod = weekModuleMention(for: weekNum), !mod.isEmpty {
                                                 Text(mod)
-                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
                                                     .foregroundColor(.white)
-                                                    .padding(.horizontal, 8)
-                                                    .padding(.vertical, 3)
+                                                    .lineLimit(nil)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                                    .padding(.horizontal, 9)
+                                                    .padding(.vertical, 4)
                                                     .background(Color(red: 0.45, green: 0.50, blue: 0.58))
-                                                    .clipShape(Capsule())
+                                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                             }
 
-                                            if let range = weekDateRange(for: weekNum), !range.isEmpty {
-                                                Text(range)
-                                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                            if let dateStr = weekDateDisplayString(for: weekNum) {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "calendar")
+                                                        .font(.system(size: 11))
+                                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                                    Text(dateStr)
+                                                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                                }
                                             }
 
                                             Spacer()
@@ -963,6 +1024,7 @@ public struct WeeklyDashboardView: View {
                                         ForEach(weekReadings) { reading in
                                             WeekReadingCardView(
                                                 reading: reading,
+                                                showDueDate: shouldShowDueDateInCard(for: reading, inWeek: weekNum),
                                                 onToggle: { toggleReading(reading) },
                                                 onInfo: { selectedReadingForInfo = reading },
                                                 onCourseTap: {
@@ -1162,7 +1224,7 @@ public struct WeeklyDashboardView: View {
                                         ForEach(deletedReadings) { reading in
                                             HStack(spacing: 10) {
                                                 VStack(alignment: .leading, spacing: 3) {
-                                                    Text(reading.title)
+                                                    Text(reading.displayTitleWithChapter)
                                                         .font(.system(size: 14, weight: .bold))
                                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                         .lineLimit(2)
@@ -1413,6 +1475,7 @@ public struct WeekFilterChip: View {
 
 public struct WeekReadingCardView: View {
     public let reading: Reading
+    public var showDueDate: Bool = true
     public let onToggle: () -> Void
     public let onInfo: () -> Void
     public let onCourseTap: () -> Void
@@ -1423,7 +1486,7 @@ public struct WeekReadingCardView: View {
     }
 
     private var displayTitle: String {
-        var raw = reading.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var raw = Reading.repairChapterArtifacts(reading.title).trimmingCharacters(in: .whitespacesAndNewlines)
         let cCode = reading.courseCode ?? reading.week?.course?.courseCode
         let cName = reading.week?.course?.courseName
 
@@ -1489,23 +1552,7 @@ public struct WeekReadingCardView: View {
 
                 // Reading Title with Chapter before name, in black
                 let titleColor = reading.isCompleted ? CoursePalTheme.textMuted : Color(red: 0.08, green: 0.12, blue: 0.22)
-                let fullTitleString: String = {
-                    if let ch = reading.cleanChapterText, !ch.isEmpty {
-                        let lowerTitle = displayTitle.lowercased()
-                        let lowerCh = ch.lowercased()
-                        if lowerTitle.hasPrefix("chapter") || lowerTitle.hasPrefix("ch.") || lowerTitle.hasPrefix("ch ") {
-                            let strippedTitle = displayTitle.replacingOccurrences(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*[\d\s,&–\-and]+\s*[:\-–·•.]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !strippedTitle.isEmpty {
-                                return "\(ch) · \(strippedTitle)"
-                            }
-                            return ch
-                        }
-                        if !lowerTitle.contains(lowerCh) {
-                            return "\(ch) · \(displayTitle)"
-                        }
-                    }
-                    return displayTitle
-                }()
+                let fullTitleString = reading.displayTitleWithChapter
 
                 Text(fullTitleString)
                     .font(.cpItemTitle)
@@ -1514,23 +1561,17 @@ public struct WeekReadingCardView: View {
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
 
-                // Subtitle: Authors · Pages (Cleaned of stray colons/semicolons, NO chapters underneath)
+                // Subtitle: Author's Book Title · Author's Name · Pages
                 if let subtitle = reading.authorAndPagesSubtitle, !subtitle.isEmpty {
-                    if !displayTitle.lowercased().contains(subtitle.lowercased()) && !subtitle.lowercased().contains(displayTitle.lowercased()) {
-                        Text(subtitle)
-                            .font(.cpDescriptionMedium)
-                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            .lineLimit(2)
-                    } else if let auth = reading.authorName, !auth.isEmpty, !displayTitle.lowercased().contains(auth.lowercased()) {
-                        Text(auth)
-                            .font(.cpDescriptionMedium)
-                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                            .lineLimit(2)
-                    }
+                    Text(subtitle)
+                        .font(.cpDescriptionMedium)
+                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
                 }
 
                 // Date Display (Clean calendar date without redundant "Due" or "Week X")
-                if let explicitDate = reading.dueDate {
+                if showDueDate, let explicitDate = reading.dueDate {
                     let dateText: String = {
                         let formatter = DateFormatter()
                         let calendar = Calendar.current
@@ -1768,10 +1809,11 @@ public struct EditReadingSheet: View {
                             }
                         } else {
                             ForEach(0..<topicInputs.count, id: \.self) { idx in
-                                HStack(spacing: 8) {
+                                HStack(alignment: .top, spacing: 10) {
                                     Text("\(idx + 1) -")
-                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                        .padding(.top, 2)
 
                                     TextField("Topic description...", text: Binding(
                                         get: { idx < topicInputs.count ? topicInputs[idx] : "" },
@@ -1782,10 +1824,27 @@ public struct EditReadingSheet: View {
                                                 reading.relevantTopics = nonEmpty.isEmpty ? nil : nonEmpty.joined(separator: ", ")
                                             }
                                         }
-                                    ))
+                                    ), axis: .vertical)
                                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                    .lineLimit(nil)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                    if idx < topicInputs.count && !topicInputs[idx].isEmpty {
+                                        Button {
+                                            topicInputs.remove(at: idx)
+                                            let nonEmpty = topicInputs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                                            reading.relevantTopics = nonEmpty.isEmpty ? nil : nonEmpty.joined(separator: ", ")
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(Color(red: 0.70, green: 0.75, blue: 0.82))
+                                                .font(.system(size: 16))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.top, 2)
+                                    }
                                 }
+                                .padding(.vertical, 8)
                             }
 
                             Button {
@@ -1970,7 +2029,18 @@ public struct EditReadingSheet: View {
                     topicInputs = []
                 }
                 topicsInput = reading.relevantTopics ?? ""
-                let rawNotes = reading.summaryText
+                let rawNotes: String = {
+                    let raw = reading.summaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let lower = raw.lowercased()
+                    if lower.hasPrefix("required reading") ||
+                       lower.hasPrefix("see brightspace") ||
+                       raw == reading.title ||
+                       lower.contains("corey ch.") ||
+                       lower.contains("yalom ch.") {
+                        return ""
+                    }
+                    return raw
+                }()
                 notesInput = rawNotes
                 noteInputs = rawNotes.components(separatedBy: .newlines)
                     .map { $0.replacingOccurrences(of: #"^[•\-\*▪●]\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -2147,7 +2217,7 @@ public struct UnifiedCompletedFolderSheet: View {
                                             dismiss()
                                         }) {
                                             VStack(alignment: .leading, spacing: 2) {
-                                                Text(reading.title)
+                                                Text(reading.displayTitleWithChapter)
                                                     .font(.system(size: 14, weight: .bold))
                                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                     .strikethrough()
@@ -2372,7 +2442,7 @@ public struct UnifiedTrashFolderSheet: View {
                             ForEach(deletedReadings) { reading in
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(reading.title)
+                                        Text(reading.displayTitleWithChapter)
                                             .font(.system(size: 14, weight: .bold))
                                         let readWeekNum = reading.week?.weekNumber ?? 0
                                         let readWeekSuffix = readWeekNum > 0 ? " · Week \(readWeekNum)" : ""

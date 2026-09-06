@@ -208,7 +208,7 @@ struct CoursePalApp: App {
                     }
                 }
 
-                let moduleBackfillKey = "hasBackfilledModulesAndChapters_v6"
+                let moduleBackfillKey = "hasBackfilledModulesAndChapters_v11"
                 if !UserDefaults.standard.bool(forKey: moduleBackfillKey) {
                     UserDefaults.standard.set(true, forKey: moduleBackfillKey)
                     for course in courses {
@@ -256,6 +256,30 @@ struct CoursePalApp: App {
                                     }
                                 }
 
+                                // Heal chapter OCR artifacts in titles, chapterText, and resourceTitle
+                                if let ch = reading.chapterText {
+                                    let healedCh = Reading.repairChapterArtifacts(ch)
+                                    let cleanCh = Reading.cleanChapterFromRaw(healedCh) ?? healedCh
+                                    if cleanCh != ch {
+                                        reading.chapterText = cleanCh
+                                        modified = true
+                                    }
+                                }
+
+                                if let res = reading.resourceTitle {
+                                    let healedRes = Reading.repairChapterArtifacts(res)
+                                    if healedRes != res {
+                                        reading.resourceTitle = healedRes
+                                        modified = true
+                                    }
+                                }
+
+                                let healedTitle = Reading.repairChapterArtifacts(reading.title)
+                                if healedTitle != reading.title {
+                                    reading.title = healedTitle
+                                    modified = true
+                                }
+
                                 // Chapter extraction from reading.title if reading.chapterText is empty
                                 if (reading.chapterText ?? "").isEmpty {
                                     let (ch, pg) = LocalSyllabusParser.shared.extractChapterAndPages(from: reading.title)
@@ -267,6 +291,22 @@ struct CoursePalApp: App {
                                     if (reading.pagesText ?? "").isEmpty, let pg = pg, !pg.isEmpty {
                                         reading.pagesText = pg
                                         modified = true
+                                    }
+                                }
+
+                                // If chapterText is present, strip duplicate chapter mentions from title and resourceTitle
+                                if let ch = reading.cleanChapterText, !ch.isEmpty {
+                                    let strippedT = Reading.stripChapterMentions(from: reading.title)
+                                    if strippedT != reading.title && !strippedT.isEmpty {
+                                        reading.title = strippedT
+                                        modified = true
+                                    }
+                                    if let res = reading.resourceTitle, !res.isEmpty {
+                                        let strippedR = Reading.stripChapterMentions(from: res)
+                                        if strippedR != res && !strippedR.isEmpty {
+                                            reading.resourceTitle = strippedR
+                                            modified = true
+                                        }
                                     }
                                 }
                             }
@@ -291,8 +331,237 @@ struct CoursePalApp: App {
 
                         if modified {
                             try? context.save()
-                            print("📦 [MODULE BACKFILL v6] Successfully backfilled modules and chapters for \(course.courseName)")
+                            print("📦 [MODULE BACKFILL v11] Successfully backfilled modules and chapters for \(course.courseName)")
                         }
+                    }
+                }
+
+                let healAllReadingsPassKey = "hasHealedAllReadingsDatabaseWide_v11"
+                if !UserDefaults.standard.bool(forKey: healAllReadingsPassKey) {
+                    UserDefaults.standard.set(true, forKey: healAllReadingsPassKey)
+                    let allReadDesc = FetchDescriptor<Reading>()
+                    if let allReadings = try? context.fetch(allReadDesc) {
+                        var anyFixed = false
+                        for r in allReadings {
+                            var rMod = false
+                            if let ch = r.chapterText {
+                                let healedCh = Reading.repairChapterArtifacts(ch)
+                                let cleanCh = Reading.cleanChapterFromRaw(healedCh) ?? healedCh
+                                if cleanCh != ch {
+                                    r.chapterText = cleanCh
+                                    rMod = true
+                                }
+                            }
+                            if let res = r.resourceTitle {
+                                let healedRes = Reading.repairChapterArtifacts(res)
+                                if healedRes != res {
+                                    r.resourceTitle = healedRes
+                                    rMod = true
+                                }
+                            }
+                            let healedT = Reading.repairChapterArtifacts(r.title)
+                            if healedT != r.title {
+                                r.title = healedT
+                                rMod = true
+                            }
+                            if (r.chapterText ?? "").isEmpty {
+                                let (extCh, extPg) = LocalSyllabusParser.shared.extractChapterAndPages(from: r.title)
+                                if let extCh = extCh, !extCh.isEmpty {
+                                    r.chapterText = extCh
+                                    rMod = true
+                                }
+                                if (r.pagesText ?? "").isEmpty, let extPg = extPg, !extPg.isEmpty {
+                                    r.pagesText = extPg
+                                    rMod = true
+                                }
+                            }
+                            if let ch = r.cleanChapterText, !ch.isEmpty {
+                                let strippedT = Reading.stripChapterMentions(from: r.title)
+                                if strippedT != r.title && !strippedT.isEmpty {
+                                    r.title = strippedT
+                                    rMod = true
+                                }
+                                if let res = r.resourceTitle, !res.isEmpty {
+                                    let strippedR = Reading.stripChapterMentions(from: res)
+                                    if strippedR != res && !strippedR.isEmpty {
+                                        r.resourceTitle = strippedR
+                                        rMod = true
+                                    }
+                                }
+                            }
+                            if rMod {
+                                anyFixed = true
+                            }
+                        }
+                        if anyFixed {
+                            try? context.save()
+                            print("🛡️ [MIGRATION v11] Successfully healed all database reading titles and chapters.")
+                        }
+                    }
+                }
+
+                let smartDistillReadingsPassKey = "hasSmartDistilledReadingTitles_v12"
+                if !UserDefaults.standard.bool(forKey: smartDistillReadingsPassKey) {
+                    UserDefaults.standard.set(true, forKey: smartDistillReadingsPassKey)
+                    let allReadDesc = FetchDescriptor<Reading>()
+                    if let allReadings = try? context.fetch(allReadDesc) {
+                        var anyFixed = false
+                        for r in allReadings {
+                            var rMod = false
+                            
+                            // 1. If chapter is missing, try to extract before shortening
+                            if (r.chapterText ?? "").isEmpty {
+                                if let ch = r.cleanChapterText, !ch.isEmpty {
+                                    r.chapterText = ch
+                                    rMod = true
+                                }
+                            }
+                            
+                            // 2. Distill reading title
+                            let oldTitle = r.title
+                            let cleanT = Reading.distillSmartReadingTitle(oldTitle)
+                            if cleanT != oldTitle && cleanT != "Reading" {
+                                r.title = cleanT
+                                rMod = true
+                            }
+                            
+                            // 3. Distill resourceTitle
+                            if let res = r.resourceTitle, !res.isEmpty {
+                                let cleanRes = Reading.distillSmartReadingTitle(res)
+                                if cleanRes != res && cleanRes != "Reading" {
+                                    r.resourceTitle = cleanRes
+                                    rMod = true
+                                }
+                            }
+                            
+                            // 4. Strip chapter from title if chapter is present
+                            if let ch = r.cleanChapterText, !ch.isEmpty {
+                                let strippedT = Reading.stripChapterMentions(from: r.title)
+                                if strippedT != r.title && !strippedT.isEmpty {
+                                    r.title = strippedT
+                                    rMod = true
+                                }
+                                if let res = r.resourceTitle, !res.isEmpty {
+                                    let strippedR = Reading.stripChapterMentions(from: res)
+                                    if strippedR != res && !strippedR.isEmpty {
+                                        r.resourceTitle = strippedR
+                                        rMod = true
+                                    }
+                                }
+                            }
+                            
+                            if rMod {
+                                anyFixed = true
+                            }
+                        }
+                        if anyFixed {
+                            try? context.save()
+                            print("🛡️ [MIGRATION v12] Successfully smart-distilled all database reading titles and chapters.")
+                        }
+                    }
+                }
+
+                let cleanChapterDuplicatesPassKey = "hasCleanedChapterDuplicates_v14"
+                if !UserDefaults.standard.bool(forKey: cleanChapterDuplicatesPassKey) {
+                    UserDefaults.standard.set(true, forKey: cleanChapterDuplicatesPassKey)
+                    let allReadDesc = FetchDescriptor<Reading>()
+                    if let allReadings = try? context.fetch(allReadDesc) {
+                        var anyFixed = false
+                        for r in allReadings {
+                            var rMod = false
+                            if let ch = r.chapterText {
+                                let healedCh = Reading.repairChapterArtifacts(ch)
+                                if let cleanCh = Reading.cleanChapterFromRaw(healedCh), cleanCh != ch {
+                                    r.chapterText = cleanCh
+                                    rMod = true
+                                }
+                            } else if let ch = r.cleanChapterText {
+                                r.chapterText = ch
+                                rMod = true
+                            }
+                            if let ch = r.cleanChapterText, !ch.isEmpty {
+                                let stripped = Reading.stripChapterMentions(from: r.title)
+                                if stripped != r.title {
+                                    r.title = stripped.isEmpty ? ch : stripped
+                                    rMod = true
+                                }
+                            }
+                            if rMod { anyFixed = true }
+                        }
+                        if anyFixed {
+                            try? context.save()
+                            print("🛡️ [MIGRATION v14] Cleaned chapter duplicates database-wide.")
+                        }
+                    }
+                }
+
+                let blankNotesPassKey = "hasMigratedBlankNotes_v13"
+                if !UserDefaults.standard.bool(forKey: blankNotesPassKey) {
+                    UserDefaults.standard.set(true, forKey: blankNotesPassKey)
+                    var didModify = false
+                    
+                    // 1. Wipe automated syllabus summarizations / titles from all readings
+                    let allReadDesc = FetchDescriptor<Reading>()
+                    if let allReadings = try? context.fetch(allReadDesc) {
+                        for r in allReadings {
+                            let raw = r.summaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let lower = raw.lowercased()
+                            if lower.hasPrefix("required reading") ||
+                               lower.hasPrefix("see brightspace") ||
+                               raw == r.title ||
+                               (r.resourceTitle != nil && raw == r.resourceTitle!) ||
+                               lower.contains("corey ch.") ||
+                               lower.contains("yalom ch.") ||
+                               lower.contains("required reading:") ||
+                               lower.contains("required reading for") {
+                                r.summaryText = ""
+                                didModify = true
+                            }
+                        }
+                    }
+                    
+                    // 2. Clear notes on all assignments if they match fullInstructions or syllabus parser output
+                    let allAssignDesc = FetchDescriptor<Assignment>()
+                    if let allAssignments = try? context.fetch(allAssignDesc) {
+                        for a in allAssignments {
+                            if let notes = a.noteText {
+                                let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if let full = a.fullInstructions?.trimmingCharacters(in: .whitespacesAndNewlines), trimmed == full {
+                                    a.noteText = nil
+                                    didModify = true
+                                } else if trimmed.contains("Parsed from syllabus") {
+                                    a.noteText = nil
+                                    didModify = true
+                                }
+                            }
+                        }
+                    }
+                    
+                    if didModify {
+                        try? context.save()
+                        print("✨ [MIGRATION v13] Successfully cleared automated syllabus summarizations from Notes across all records.")
+                    }
+                }
+
+                let authorAndResourceMigrationKey = "hasMigratedAuthorAndResourceTitles_v15"
+                if !UserDefaults.standard.bool(forKey: authorAndResourceMigrationKey) {
+                    UserDefaults.standard.set(true, forKey: authorAndResourceMigrationKey)
+                    var didModify = false
+                    let allReadDesc = FetchDescriptor<Reading>()
+                    if let allReadings = try? context.fetch(allReadDesc) {
+                        for r in allReadings {
+                            // Clean author prefix from title if authorName is set
+                            if let auth = r.authorName, !auth.isEmpty {
+                                let cleaned = r.title.replacingOccurrences(of: #"(?i)^\Q"# + auth + #"\E\s*[:\-–\.]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !cleaned.isEmpty && cleaned != r.title {
+                                    r.title = cleaned
+                                    didModify = true
+                                }
+                            }
+                        }
+                    }
+                    if didModify {
+                        try? context.save()
                     }
                 }
 
@@ -397,6 +666,32 @@ struct CoursePalApp: App {
                             try? context.save()
                             print("🔄 [CPC 527 SYNC v10] Successfully updated 12 exact document schedule dates for \(course.courseName)")
                         }
+                    }
+                }
+
+                let migrateReadingTitlesKey = "hasMigratedTopicTitles_v11"
+                if !UserDefaults.standard.bool(forKey: migrateReadingTitlesKey) {
+                    UserDefaults.standard.set(true, forKey: migrateReadingTitlesKey)
+                    var didModify = false
+                    for course in courses {
+                        for week in course.weeks {
+                            for reading in week.readings {
+                                let distilled = Reading.distillSmartReadingTitle(reading.title)
+                                let auth = reading.authorName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                                let isAuthorOrGeneric = distilled.lowercased() == auth.lowercased() ||
+                                    ["reading", "assigned readings", "corey", "yalom"].contains(distilled.lowercased()) ||
+                                    distilled.lowercased().hasPrefix("corey ch") ||
+                                    distilled.lowercased().hasPrefix("yalom ch")
+                                if isAuthorOrGeneric, let topic = reading.extractTopicFromContext(), !topic.isEmpty {
+                                    reading.title = topic
+                                    didModify = true
+                                }
+                            }
+                        }
+                    }
+                    if didModify {
+                        try? context.save()
+                        print("✨ [MIGRATION v11] Successfully migrated author-based reading titles to actual syllabus topics.")
                     }
                 }
 

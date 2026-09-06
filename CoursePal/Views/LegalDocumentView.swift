@@ -8,11 +8,15 @@ public struct LegalDocumentView: View {
         self._selectedTab = State(initialValue: initialTab)
     }
 
+    private var appVersionString: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3"
+    }
+
     private var navigationTitleText: String {
         switch selectedTab {
         case "terms": return "Terms of Service"
         case "privacy": return "Privacy Policy"
-        case "version": return "Version 1.1"
+        case "version": return "Version \(appVersionString)"
         default: return "Legal"
         }
     }
@@ -24,7 +28,7 @@ public struct LegalDocumentView: View {
                 Picker("Legal Document", selection: $selectedTab) {
                     Text("Terms").tag("terms")
                     Text("Privacy").tag("privacy")
-                    Text("Version 1.1").tag("version")
+                    Text("Version \(appVersionString)").tag("version")
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 16)
@@ -231,10 +235,10 @@ public struct LegalDocumentView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("CoursePal v1.1")
+                        Text("CoursePal v\(appVersionString)")
                             .font(.system(size: 20, weight: .bold, design: .rounded))
                             .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                        Text("Official Production Release • August 2026")
+                        Text("Official Production Release • September 2026")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                     }

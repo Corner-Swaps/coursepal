@@ -134,13 +134,13 @@ public struct MainTabView: View {
                         Button(action: { selectedTab = "invite" }) {
                             VStack(spacing: 3) {
                                 Image(systemName: "person.2.fill")
-                                    .font(.system(size: 18, weight: selectedTab == "invite" ? .bold : .medium))
+                                    .font(.system(size: 18, weight: (selectedTab == "invite" || selectedTab == "share") ? .bold : .medium))
                                     .frame(width: 24, height: 22)
                                 Text("Invite")
-                                    .font(.system(size: 10, weight: selectedTab == "invite" ? .bold : .medium))
+                                    .font(.system(size: 10, weight: (selectedTab == "invite" || selectedTab == "share") ? .bold : .medium))
                                     .frame(height: 12)
                             }
-                            .foregroundColor(selectedTab == "invite" ? activeThemeColor : Color(red: 0.45, green: 0.52, blue: 0.62))
+                            .foregroundColor((selectedTab == "invite" || selectedTab == "share") ? activeThemeColor : Color(red: 0.45, green: 0.52, blue: 0.62))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 6)
                         }
@@ -183,7 +183,7 @@ public struct MainTabView: View {
                     .offset(y: -18)
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, -18)
+                .padding(.bottom, -13)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
@@ -371,7 +371,7 @@ public struct AddTaskModalView: View {
     @State private var itemCategory: Int = 0 // 0: Assignment, 1: Reading
     @State private var selectedCourse: Course? = nil
     @State private var weekNumber: Int = 1
-    @State private var dueDate: Date = Date().addingTimeInterval(86400 * 7)
+    @State private var dueDate: Date = Calendar.current.startOfDay(for: Date().addingTimeInterval(86400 * 7))
     @State private var pointsPossibleVal: Int = 100
     @State private var gradeWeightPercent: Int = 10
     @State private var selectedMediaType: MediaType = .textbook
@@ -398,18 +398,14 @@ public struct AddTaskModalView: View {
                     TextField(itemCategory == 1 ? "Reading Title (e.g. Chapter 1 Sexuality)" : "Assignment Title (e.g. Research Study Design)", text: $taskTitle)
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
 
-                    if !courses.isEmpty {
-                        Picker("Course Name", selection: $selectedCourse) {
-                            Text("Unassigned").tag(Course?.none)
-                            ForEach(courses) { course in
-                                let display = (course.courseCode != nil && !course.courseCode!.isEmpty && course.courseCode != course.courseName)
-                                    ? "\(course.courseCode!): \(course.courseName)"
-                                    : course.courseName
-                                Text(display).tag(Course?.some(course))
-                            }
+                    Picker("Course", selection: $selectedCourse) {
+                        Text("No Course Selected").tag(nil as Course?)
+                        ForEach(courses) { c in
+                            Text(c.courseName).tag(c as Course?)
                         }
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                     }
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .pickerStyle(.menu)
                 }
 
                 // Section 2: Week & Due Date Schedule
@@ -422,8 +418,14 @@ public struct AddTaskModalView: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .pickerStyle(.menu)
 
-                    DatePicker("Due Date", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("Due Date", selection: $dueDate, displayedComponents: [.date])
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .onChange(of: dueDate) { _, newDate in
+                            let normalized = Calendar.current.startOfDay(for: newDate)
+                            if dueDate != normalized {
+                                dueDate = normalized
+                            }
+                        }
                 }
 
                 // Section 3: Dynamic Fields Relevant to Item Type
@@ -535,7 +537,7 @@ public struct AddTaskModalView: View {
                 courseCode: "GEN 101",
                 hexColor: "#2563EB",
                 termWeeks: 16,
-                sharingCode: "GEN-101"
+                sharingCode: String(format: "%06d", Int.random(in: 100000...999999))
             )
             for w in 1...16 {
                 let wk = Week(weekNumber: w, theme: "Week \(w) Overview")
@@ -558,6 +560,7 @@ public struct AddTaskModalView: View {
 
         let cleanNotes = notesText.trimmingCharacters(in: .whitespaces)
         let cleanUrl = videoUrlText.trimmingCharacters(in: .whitespaces)
+        let cleanDueDate = Calendar.current.startOfDay(for: dueDate)
 
         if itemCategory == 1 {
             // Save Reading
@@ -567,11 +570,11 @@ public struct AddTaskModalView: View {
                 title: title,
                 mediaType: mediaType,
                 isCompleted: false,
-                summaryText: cleanNotes.isEmpty ? "Required reading for \(title)." : cleanNotes,
+                summaryText: cleanNotes,
                 keyTakeawaysText: "• Review \(title)",
                 estimatedTimeText: mediaType == .video ? "~20–30 min" : "~40–60 min",
                 videoUrl: validUrl,
-                dueDate: dueDate,
+                dueDate: cleanDueDate,
                 courseCode: activeCourse.courseCode
             )
             newReading.week = targetWeek
@@ -582,7 +585,7 @@ public struct AddTaskModalView: View {
             let newAssignment = Assignment(
                 title: title,
                 weekNumber: weekNumber,
-                dueDate: dueDate,
+                dueDate: cleanDueDate,
                 pointsPossible: "\(pointsPossibleVal) Points",
                 noteText: cleanNotes.isEmpty ? nil : cleanNotes,
                 isCompleted: false,
@@ -656,7 +659,7 @@ public struct UploadDocModalView: View {
                 // Choice 1: Select PDF File
                 Button(action: {
                     if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        uploadErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
+                        uploadErrorMessage = "AI Service Unavailable: Please check your network connection or restart CoursePal."
                         showingUploadErrorAlert = true
                     } else {
                         showingFileImporter = true
@@ -922,7 +925,6 @@ public struct AddCourseModalView: View {
     @State private var courseName: String = ""
     @State private var courseDescription: String = ""
     @State private var selectedColorHex: String = "#DC2626"
-    @State private var pastedSyllabusText: String = ""
     @State private var attachedFileName: String? = nil
     @State private var fileContentText: String? = nil
     @State private var attachedFileData: Data? = nil
@@ -930,30 +932,10 @@ public struct AddCourseModalView: View {
     @State private var parsedPreviewDTO: CourseDTO? = nil
 
     @State private var showingFileImporter: Bool = false
-    @State private var showingCameraScanner: Bool = false
     @State private var showingVaultSelector: Bool = false
     @State private var selectedVaultDocIDs: Set<PersistentIdentifier> = []
     @State private var showValidationHighlight: Bool = false
-    @State private var showTopBubble: Bool = false
-    @State private var topBubbleText: String = "Required"
-    @State private var bubbleDismissTask: Task<Void, Never>? = nil
     @FocusState private var isFieldFocused: Bool
-
-    private func triggerTopBubble(_ text: String = "Required") {
-        bubbleDismissTask?.cancel()
-        topBubbleText = text
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-            showTopBubble = true
-        }
-        bubbleDismissTask = Task {
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
-            if !Task.isCancelled {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    showTopBubble = false
-                }
-            }
-        }
-    }
 
     @State private var isProcessingCourse: Bool = false
     @State private var processingStatusText: String = "Analyzing uploaded documents & syllabus..."
@@ -962,13 +944,12 @@ public struct AddCourseModalView: View {
     @State private var addCourseErrorMessage: String = ""
 
     private var chooseBadgeText: String {
-        vaultDocs.isEmpty ? "CHOOSE 1 OF 3" : "CHOOSE 1 OF 4"
+        vaultDocs.isEmpty ? "UPLOAD PDF" : "CHOOSE 1 OF 2"
     }
 
     private var hasSyllabusSource: Bool {
         let hasPdf = (attachedFileName != nil && !attachedFileName!.isEmpty) || (fileContentText != nil && !fileContentText!.isEmpty)
-        let hasPaste = !pastedSyllabusText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return hasPdf || hasPaste
+        return hasPdf
     }
 
     private var canSave: Bool {
@@ -1000,41 +981,83 @@ public struct AddCourseModalView: View {
                             Text("Course Name")
                             if showValidationHighlight && courseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Spacer()
-                                Text("REQUIRED")
-                                    .font(.system(size: 9, weight: .bold))
+                                Text("Required")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
                                     .foregroundColor(.white)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
                                     .background(Color(red: 0.93, green: 0.27, blue: 0.27))
-                                    .cornerRadius(6)
+                                    .clipShape(Capsule())
                             }
                         }) {
-                            TextField("Course Name (e.g., CPC 527)", text: $courseName)
-                                .focused($isFieldFocused)
-                                .submitLabel(.done)
-                                .onSubmit { isFieldFocused = false }
-                                .onChange(of: courseName) { _, newValue in
-                                    if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        showTopBubble = false
-                                        if hasSyllabusSource {
-                                            showValidationHighlight = false
+                            let isNameMissing = showValidationHighlight && courseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+                            HStack {
+                                TextField("Course Name (e.g., CPC 527)", text: $courseName)
+                                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                                    .focused($isFieldFocused)
+                                    .submitLabel(.done)
+                                    .onSubmit { isFieldFocused = false }
+                                    .onChange(of: courseName) { _, newValue in
+                                        if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            if hasSyllabusSource {
+                                                showValidationHighlight = false
+                                            }
                                         }
                                     }
+
+                                if !courseName.isEmpty {
+                                    Button(action: { courseName = "" }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundColor(Color(red: 0.70, green: 0.75, blue: 0.82))
+                                            .font(.system(size: 16))
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(showValidationHighlight && courseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color(red: 0.93, green: 0.27, blue: 0.27) : Color.clear, lineWidth: 1.5)
-                                        .padding(-4)
-                                )
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                isNameMissing ? Color(red: 0.93, green: 0.27, blue: 0.27).opacity(0.08) : Color(red: 0.96, green: 0.97, blue: 0.99)
+                            )
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .stroke(isNameMissing ? Color(red: 0.93, green: 0.27, blue: 0.27) : Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: isNameMissing ? 1.5 : 1)
+                            )
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                         }
                         .id("courseNameSection")
 
-                Section("Course Description") {
-                    TextField("Course Description", text: $courseDescription)
-                        .focused($isFieldFocused)
-                        .submitLabel(.done)
-                        .onSubmit { isFieldFocused = false }
-                }
+                        Section("Course Description") {
+                            HStack {
+                                TextField("Course Description", text: $courseDescription)
+                                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                                    .focused($isFieldFocused)
+                                    .submitLabel(.done)
+                                    .onSubmit { isFieldFocused = false }
+
+                                if !courseDescription.isEmpty {
+                                    Button(action: { courseDescription = "" }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundColor(Color(red: 0.70, green: 0.75, blue: 0.82))
+                                            .font(.system(size: 16))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color(red: 0.89, green: 0.91, blue: 0.94), lineWidth: 1)
+                            )
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        }
 
                 Section("Course Brand Color (12 Options)") {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 10) {
@@ -1166,7 +1189,7 @@ public struct AddCourseModalView: View {
                     HStack(spacing: 12) {
                         Button(action: {
                             if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                addCourseErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
+                                addCourseErrorMessage = "AI Service Unavailable: Please check your network connection or restart CoursePal."
                                 showingAddCourseAlert = true
                             } else {
                                 showingFileImporter = true
@@ -1362,74 +1385,6 @@ public struct AddCourseModalView: View {
                     }
                 }
 
-                // SCAN SYLLABUS WITH CAMERA
-                Section(header: HStack {
-                    Text("Camera Scan")
-                    Spacer()
-                    if !hasSyllabusSource {
-                        Text(chooseBadgeText)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(Color(red: 0.88, green: 0.40, blue: 0.12))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color(red: 0.88, green: 0.40, blue: 0.12).opacity(0.12))
-                            .cornerRadius(6)
-                    }
-                }) {
-                    Button(action: { showingCameraScanner = true }) {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(red: 0.06, green: 0.73, blue: 0.50))
-                                    .frame(width: 34, height: 34)
-                                Image(systemName: "camera.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-                            Text("Scan Syllabus with Camera")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                            Spacer()
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // COPY & PASTE SYLLABUS OUTLINE
-                let hasPaste = !pastedSyllabusText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                Section(header: HStack {
-                    Text("Paste Outline")
-                    Spacer()
-                    if hasPaste {
-                        Text("PASTED")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color(red: 0.06, green: 0.73, blue: 0.50))
-                            .cornerRadius(6)
-                    } else if !hasSyllabusSource {
-                        Text(chooseBadgeText)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(Color(red: 0.88, green: 0.40, blue: 0.12))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color(red: 0.88, green: 0.40, blue: 0.12).opacity(0.12))
-                            .cornerRadius(6)
-                    }
-                }) {
-                    TextEditor(text: $pastedSyllabusText)
-                    .focused($isFieldFocused)
-                    .frame(minHeight: 120)
-                    .onChange(of: pastedSyllabusText) { _, newValue in
-                        if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            if !courseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                showValidationHighlight = false
-                                showTopBubble = false
-                            }
-                        }
-                    }
-                }
             }
             .scrollDismissesKeyboard(.immediately)
             .simultaneousGesture(
@@ -1440,34 +1395,6 @@ public struct AddCourseModalView: View {
                     #endif
                 }
             )
-
-            if showTopBubble {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 12, weight: .bold))
-                    Text(topBubbleText)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(
-                    Capsule()
-                        .fill(Color(red: 0.93, green: 0.27, blue: 0.27))
-                        .shadow(color: Color.black.opacity(0.20), radius: 8, x: 0, y: 3)
-                )
-                .padding(.top, 8)
-                .transition(.asymmetric(
-                    insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.92)),
-                    removal: .move(edge: .top).combined(with: .opacity)
-                ))
-                .zIndex(999)
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showTopBubble = false
-                    }
-                }
-            }
         }
         .navigationTitle("Create New Course")
         #if os(iOS)
@@ -1493,27 +1420,12 @@ public struct AddCourseModalView: View {
                     let trimmedName = courseName.trimmingCharacters(in: .whitespacesAndNewlines)
                     let hasSource = hasSyllabusSource
 
-                    if trimmedName.isEmpty && !hasSource {
-                        #if os(iOS)
-                        UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        #endif
-                        isFieldFocused = false
-                        triggerTopBubble("Required")
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-                            showValidationHighlight = true
-                            scrollProxy.scrollTo("courseNameSection", anchor: .top)
-                        }
-                        return
-                    }
-
                     if trimmedName.isEmpty {
                         #if os(iOS)
                         UINotificationFeedbackGenerator().notificationOccurred(.warning)
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         #endif
                         isFieldFocused = false
-                        triggerTopBubble("Required")
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                             showValidationHighlight = true
                             scrollProxy.scrollTo("courseNameSection", anchor: .top)
@@ -1527,9 +1439,6 @@ public struct AddCourseModalView: View {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         #endif
                         isFieldFocused = false
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showTopBubble = false
-                        }
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                             showValidationHighlight = true
                             scrollProxy.scrollTo("uploadClassMaterialSection", anchor: .top)
@@ -1664,15 +1573,6 @@ public struct AddCourseModalView: View {
                     }
                 }
             }
-            #if os(iOS)
-            .fullScreenCover(isPresented: $showingCameraScanner) {
-                SyllabusScanView()
-            }
-            #else
-            .sheet(isPresented: $showingCameraScanner) {
-                SyllabusScanView()
-            }
-            #endif
             }
         }
     }
@@ -1686,7 +1586,6 @@ public struct AddCourseModalView: View {
         }
         if name.isEmpty && !hasSyllabusSource {
             withAnimation { showValidationHighlight = true }
-            triggerTopBubble("Required")
             return
         }
         if name.isEmpty {
@@ -1700,7 +1599,6 @@ public struct AddCourseModalView: View {
         let filesToUpload = uploadedFilesList
         let pData = attachedFileData
         let fName = attachedFileName
-        let pastedText = pastedSyllabusText
         let finalColor = selectedColorHex
         let desc = courseDescription
 
@@ -1758,18 +1656,13 @@ public struct AddCourseModalView: View {
                     let fname = fName ?? "syllabus.pdf"
                     let stagedURL = PersistentFileStager.stage(data: pData, filename: fname)
                     uploadURLs.append(stagedURL)
-                } else if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    if let tData = pastedText.data(using: .utf8) {
-                        let stagedURL = PersistentFileStager.stage(data: tData, filename: "pasted_outline.txt")
-                        uploadURLs.append(stagedURL)
-                    }
                 }
 
                 if !uploadURLs.isEmpty {
                     SyllabusUploadManager.shared.startUpload(urls: uploadURLs, targetCourse: newCourse, modelContext: modelContext)
                 } else {
                     let fname = fName ?? "\(newCourse.courseCode ?? "Course")_Syllabus.txt"
-                    let textToWrite = pastedText.isEmpty ? "Syllabus Course Materials for \(newCourse.courseName)" : pastedText
+                    let textToWrite = "Syllabus Course Materials for \(newCourse.courseName)"
                     if let tData = textToWrite.data(using: .utf8) {
                         let stagedURL = PersistentFileStager.stage(data: tData, filename: fname)
                         SyllabusUploadManager.shared.startUpload(urls: [stagedURL], targetCourse: newCourse, modelContext: modelContext)

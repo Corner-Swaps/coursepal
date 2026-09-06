@@ -15,16 +15,21 @@ public struct GradeWeightTrackerView: View {
     }
 
     private var rawTotalWeightPercentage: Int {
-        var total = 0
+        var total: Double = 0
         for assign in allAssignments {
-            if let pts = assign.pointsPossible {
-                let digits = pts.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                if let val = Int(digits) {
+            if let wt = assign.weightPercentage {
+                let clean = wt.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if let val = Double(clean) {
                     total += val
+                } else {
+                    let digits = wt.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                    if let val = Double(digits) {
+                        total += val
+                    }
                 }
             }
         }
-        return total
+        return Int(round(total))
     }
 
     private var totalWeightPercentage: Int {
@@ -32,16 +37,21 @@ public struct GradeWeightTrackerView: View {
     }
 
     private var completedWeightPercentage: Int {
-        var total = 0
+        var total: Double = 0
         for assign in allAssignments where assign.isCompleted {
-            if let pts = assign.pointsPossible {
-                let digits = pts.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                if let val = Int(digits) {
+            if let wt = assign.weightPercentage {
+                let clean = wt.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if let val = Double(clean) {
                     total += val
+                } else {
+                    let digits = wt.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                    if let val = Double(digits) {
+                        total += val
+                    }
                 }
             }
         }
-        return min(100, total)
+        return min(100, Int(round(total)))
     }
 
     private var courseColor: Color {

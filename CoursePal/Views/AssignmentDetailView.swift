@@ -22,6 +22,7 @@ public struct AssignmentDetailView: View {
     @State private var completedMilestones: Set<Int> = []
     @State private var isGeneratingMilestones: Bool = false
     @State private var showingEditSheet: Bool = false
+    @State private var noteTextState: String = ""
 
     public init(assignment: Assignment) {
         self.assignment = assignment
@@ -30,6 +31,7 @@ public struct AssignmentDetailView: View {
         _weekTextState = State(initialValue: "\(initW)")
         _moduleTextState = State(initialValue: assignment.moduleMention ?? "")
         _dueDateState = State(initialValue: assignment.dueDate ?? Date())
+        _noteTextState = State(initialValue: assignment.noteText ?? "")
         _cachedCourseStartDate = State(initialValue: assignment.course?.weeks.compactMap({ $0.startDate }).min() ?? assignment.course?.earliestItemDate)
         if let mod = assignment.moduleMention, let match = mod.range(of: #"\d+"#, options: .regularExpression), let num = Int(mod[match]) {
             _selectedModuleNum = State(initialValue: num)
@@ -162,7 +164,7 @@ public struct AssignmentDetailView: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 
             if cleanTitle.isEmpty {
-                cleanTitle = "Criterion"
+                cleanTitle = "Item"
             }
             
             result.append((title: cleanTitle, points: ptsStr, percentage: pctStr))
@@ -212,29 +214,101 @@ public struct AssignmentDetailView: View {
                 Spacer()
             }
 
-            HStack(alignment: .center, spacing: 8) {
-                Text(displayTitle)
-                    .font(.cpPageTitle)
-                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+            let topicTag: String? = assignment.moduleMention ?? assignment.course?.weeks.first(where: { $0.weekNumber == assignment.weekNumber })?.theme
 
-                if assignment.weekNumber > 0 {
-                    Text("Week \(assignment.weekNumber)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color(red: 0.45, green: 0.50, blue: 0.58))
-                        .clipShape(Capsule())
+            VStack(alignment: .leading, spacing: 8) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(displayTitle)
+                            .font(.cpPageTitle)
+                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+
+                        if let weight = assignment.weightPercentage, !weight.isEmpty {
+                            let cleanWeight = weight.contains("%") ? weight : "\(weight)%"
+                            Text(cleanWeight)
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                .clipShape(Capsule())
+                        }
+
+                        if assignment.weekNumber > 0 {
+                            Text("Week \(assignment.weekNumber)")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                .clipShape(Capsule())
+                        }
+
+                        if let mod = topicTag, !mod.isEmpty, mod.count <= 14 {
+                            Text(mod)
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(displayTitle)
+                            .font(.cpPageTitle)
+                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        HStack(spacing: 8) {
+                            if let weight = assignment.weightPercentage, !weight.isEmpty {
+                                let cleanWeight = weight.contains("%") ? weight : "\(weight)%"
+                                Text(cleanWeight)
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color(red: 0.14, green: 0.44, blue: 0.96))
+                                    .clipShape(Capsule())
+                            }
+
+                            if assignment.weekNumber > 0 {
+                                Text("Week \(assignment.weekNumber)")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                    .clipShape(Capsule())
+                            }
+
+                            if let mod = topicTag, !mod.isEmpty, mod.count <= 14 {
+                                Text(mod)
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
                 }
 
-                if let mod = assignment.moduleMention, !mod.isEmpty {
+                // If topic / module is long, render as a bigger pill so the entire title is fully visible
+                if let mod = topicTag, !mod.isEmpty, mod.count > 14 {
                     Text(mod)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
+                        .lineLimit(nil)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
                         .background(Color(red: 0.45, green: 0.50, blue: 0.58))
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
             }
 
@@ -248,7 +322,7 @@ public struct AssignmentDetailView: View {
                 Spacer()
 
                 HStack(spacing: 5) {
-                    Image(systemName: "calendar.badge.clock")
+                    Image(systemName: "calendar")
                         .font(.system(size: 12, weight: .bold))
                     if let due = assignment.dueDate {
                         Text(WeekDateConverter.formattedDueDate(for: due, weekNumber: assignment.weekNumber))
@@ -364,28 +438,33 @@ public struct AssignmentDetailView: View {
                                         set: { newDate in
                                             guard !isSyncing else { return }
                                             isSyncing = true
-                                            assignment.dueDate = newDate
-                                            dueDateState = newDate
+                                            let cleanDate = Calendar.current.startOfDay(for: newDate)
+                                            assignment.dueDate = cleanDate
+                                            dueDateState = cleanDate
                                             if let firstDate = cachedCourseStartDate {
-                                                let derivedW = WeekDateConverter.deriveWeekNumber(for: newDate, courseStartDate: firstDate)
+                                                let derivedW = WeekDateConverter.deriveWeekNumber(for: cleanDate, courseStartDate: firstDate)
                                                 selectedWeekNum = derivedW
                                                 weekTextState = "\(derivedW)"
                                                 assignment.weekNumber = derivedW
                                             } else {
-                                                let w = WeekDateConverter.weekNumber(for: newDate)
+                                                let w = WeekDateConverter.weekNumber(for: cleanDate)
                                                 selectedWeekNum = w
                                                 weekTextState = "\(w)"
                                                 assignment.weekNumber = w
                                             }
+                                            try? modelContext.save()
+                                            DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                                             // Module is untouched
                                             isSyncing = false
                                         }
-                                    ), displayedComponents: [.date, .hourAndMinute])
+                                    ), displayedComponents: [.date])
                                     .labelsHidden()
                                     .font(.cpDescriptionMedium)
 
                                     Button {
                                         assignment.dueDate = nil
+                                        try? modelContext.save()
+                                        DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                                     } label: {
                                         Image(systemName: "xmark.circle.fill")
                                             .foregroundColor(.gray)
@@ -395,7 +474,7 @@ public struct AssignmentDetailView: View {
                                 }
                             } else {
                                 Button {
-                                    let newD = Date()
+                                    let newD = Calendar.current.startOfDay(for: Date())
                                     assignment.dueDate = newD
                                     dueDateState = newD
                                     if let firstDate = cachedCourseStartDate {
@@ -409,6 +488,8 @@ public struct AssignmentDetailView: View {
                                         weekTextState = "\(w)"
                                         assignment.weekNumber = w
                                     }
+                                    try? modelContext.save()
+                                    DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
                                 } label: {
                                     Text("No date set (+ Add)")
                                         .font(.cpDescriptionBold)
@@ -490,161 +571,92 @@ public struct AssignmentDetailView: View {
                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                         }
 
-                        // Top Row: Grade Weight & Total Points Pills
-                        HStack(spacing: 12) {
-                            if let weight = assignment.weightPercentage, !weight.isEmpty {
-                                HStack(spacing: 10) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color(red: 0.90, green: 0.92, blue: 0.95))
-                                            .frame(width: 30, height: 30)
-                                        Image(systemName: "percent")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                    }
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text("Grade Weight")
-                                            .font(.cpDescription)
-                                            .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                        Text(weight)
-                                            .font(.cpItemTitle)
-                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                    }
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color(red: 0.95, green: 0.96, blue: 0.98))
-                                .cornerRadius(14)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
-                                )
+                        // Top Row: Total Points Pill
+                        HStack(spacing: 10) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(red: 0.90, green: 0.92, blue: 0.95))
+                                    .frame(width: 30, height: 30)
+                                Image(systemName: "number")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                             }
-
-                            HStack(spacing: 10) {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color(red: 0.90, green: 0.92, blue: 0.95))
-                                        .frame(width: 30, height: 30)
-                                    Image(systemName: "star.fill")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-                                }
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text("Total Points")
-                                        .font(.cpDescription)
-                                        .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
-                                    Text(assignment.pointsPossible ?? "100 Points")
-                                        .font(.cpItemTitle)
-                                        .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Total Points")
+                                    .font(.cpDescription)
+                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                Text(assignment.pointsPossible ?? "100 Points")
+                                    .font(.cpItemTitle)
+                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(red: 0.95, green: 0.96, blue: 0.98))
-                            .cornerRadius(14)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
-                            )
+                            Spacer()
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(red: 0.95, green: 0.96, blue: 0.98))
+                        .cornerRadius(14)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
+                        )
 
                         // Rubric Items - Dedicated Pill Row for Each Item
                         if !rubricItems.isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Rubric Criteria")
-                                    .font(.cpDescriptionBold)
-                                    .foregroundColor(Color(red: 0.40, green: 0.48, blue: 0.58))
+                            VStack(spacing: 8) {
+                                ForEach(rubricItems.indices, id: \.self) { idx in
+                                    let item = rubricItems[idx]
+                                    HStack(alignment: .center, spacing: 8) {
+                                        Text("\(idx + 1) -")
+                                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
 
-                                VStack(spacing: 8) {
-                                    ForEach(rubricItems.indices, id: \.self) { idx in
-                                        let item = rubricItems[idx]
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            // Row 1: Number + Criterion Title
-                                            HStack(alignment: .center, spacing: 8) {
-                                                Text("\(idx + 1) -")
-                                                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                        Text(item.title)
+                                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                                            .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
-                                                Text(item.title)
-                                                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                        Spacer()
 
-                                                Spacer()
-                                            }
-
-                                            // Row 2: Points & Percentage Badges (No descriptions/instructions)
-                                            if !item.points.isEmpty || !item.percentage.isEmpty {
-                                                HStack(spacing: 8) {
-                                                    if !item.points.isEmpty {
-                                                        let cleanPts: String = {
-                                                            let raw = item.points.replacingOccurrences(of: "pts", with: "", options: .caseInsensitive)
-                                                                .replacingOccurrences(of: "pt", with: "", options: .caseInsensitive)
-                                                                .trimmingCharacters(in: .whitespacesAndNewlines)
-                                                            return raw.isEmpty ? item.points : "\(raw) pts"
-                                                        }()
-                                                        Text(cleanPts)
-                                                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                                                            .foregroundColor(Color(red: 0.15, green: 0.20, blue: 0.30))
-                                                            .padding(.horizontal, 9)
-                                                            .padding(.vertical, 4)
-                                                            .background(Color(red: 0.92, green: 0.94, blue: 0.97))
-                                                            .cornerRadius(8)
-                                                            .overlay(
-                                                                RoundedRectangle(cornerRadius: 8)
-                                                                    .stroke(Color(red: 0.88, green: 0.90, blue: 0.93), lineWidth: 1)
-                                                            )
-                                                    }
-
-                                                    if !item.percentage.isEmpty {
-                                                        let cleanPct: String = {
-                                                            let raw = item.percentage.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-                                                            return raw.isEmpty ? item.percentage : "\(raw)%"
-                                                        }()
-                                                        Text(cleanPct)
-                                                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                                                            .foregroundColor(Color(red: 0.15, green: 0.20, blue: 0.30))
-                                                            .padding(.horizontal, 9)
-                                                            .padding(.vertical, 4)
-                                                            .background(Color(red: 0.92, green: 0.94, blue: 0.97))
-                                                            .cornerRadius(8)
-                                                            .overlay(
-                                                                RoundedRectangle(cornerRadius: 8)
-                                                                    .stroke(Color(red: 0.88, green: 0.90, blue: 0.93), lineWidth: 1)
-                                                            )
-                                                    }
-                                                }
-                                                .padding(.leading, 24)
-                                            }
+                                        if !item.points.isEmpty {
+                                            let cleanPts: String = {
+                                                let raw = item.points.replacingOccurrences(of: "pts", with: "", options: .caseInsensitive)
+                                                    .replacingOccurrences(of: "pt", with: "", options: .caseInsensitive)
+                                                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                                                return raw.isEmpty ? item.points : "\(raw) pts"
+                                            }()
+                                            Text(cleanPts)
+                                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                                .foregroundColor(Color(red: 0.15, green: 0.20, blue: 0.30))
+                                                .padding(.horizontal, 9)
+                                                .padding(.vertical, 4)
+                                                .background(Color(red: 0.92, green: 0.94, blue: 0.97))
+                                                .cornerRadius(8)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .stroke(Color(red: 0.88, green: 0.90, blue: 0.93), lineWidth: 1)
+                                                )
                                         }
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 10)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color(red: 0.97, green: 0.98, blue: 0.99))
-                                        .cornerRadius(12)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
-                                        )
                                     }
-                                }
-                            }
-                        } else if let rawRubric = assignment.pointsBreakdown, !rawRubric.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Rubric Details")
-                                    .font(.cpDescriptionBold)
-                                    .foregroundColor(Color(red: 0.40, green: 0.48, blue: 0.58))
-                                Text(rawRubric)
-                                    .font(.cpDescription)
-                                    .foregroundColor(Color(red: 0.20, green: 0.25, blue: 0.35))
-                                    .lineSpacing(4)
-                                    .padding(12)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(Color(red: 0.97, green: 0.98, blue: 0.99))
                                     .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
+                                    )
+                                }
                             }
+                        } else if let rawRubric = assignment.pointsBreakdown, !rawRubric.isEmpty {
+                            Text(rawRubric)
+                                .font(.cpDescription)
+                                .foregroundColor(Color(red: 0.20, green: 0.25, blue: 0.35))
+                                .lineSpacing(4)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+                                .cornerRadius(12)
                         }
                     }
                     .padding(18)
@@ -684,7 +696,7 @@ public struct AssignmentDetailView: View {
 
                         if aiMilestones.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Let Gemini AI break down this \(assignment.weightPercentage ?? "course") assignment into actionable, step-by-step milestones to help you stay on track.")
+                                Text("Let AI break down this assignment into actionable, step-by-step milestones to help you stay on track.")
                                     .font(.system(size: 13))
                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                 Button(action: { generateRoadmap() }) {
@@ -746,52 +758,42 @@ public struct AssignmentDetailView: View {
                     .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
 
                     // MARK: - Notes Section
-                    let noteParagraphs: [String] = {
-                        let raw = (assignment.noteText ?? assignment.fullInstructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !raw.isEmpty, !raw.contains("Parsed from syllabus") else { return [] }
-                        let formatted = formatNoteContent(raw)
-                        let paragraphs = formatted.components(separatedBy: "\n\n")
-                            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                            .filter { !$0.isEmpty }
-                        return paragraphs.isEmpty ? [raw] : paragraphs
-                    }()
-
-                    if !noteParagraphs.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "note.text")
-                                    .foregroundColor(Color(red: 0.55, green: 0.27, blue: 0.96))
-                                Text("Notes")
-                                    .font(.cpItemTitle)
-                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                            }
-
-                            // The actual taller note pill with paragraph separation inside
-                            VStack(alignment: .leading, spacing: 14) {
-                                ForEach(noteParagraphs.indices, id: \.self) { idx in
-                                    Text(noteParagraphs[idx])
-                                        .font(.system(size: 15, weight: .regular, design: .rounded))
-                                        .foregroundColor(Color(red: 0.12, green: 0.16, blue: 0.24))
-                                        .lineSpacing(6)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 18)
-                            .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading) // Taller note pill
-                            .background(Color(red: 0.97, green: 0.98, blue: 0.99))
-                            .cornerRadius(16)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
-                            )
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "note.text")
+                                .foregroundColor(Color(red: 0.55, green: 0.27, blue: 0.96))
+                            Text("Notes")
+                                .font(.cpItemTitle)
+                                .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                            Spacer()
                         }
-                        .padding(18)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white)
-                        .cornerRadius(20)
-                        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+
+                        TextField("Add note or instruction...", text: Binding(
+                            get: { noteTextState },
+                            set: { newVal in
+                                noteTextState = newVal
+                                let clean = newVal.trimmingCharacters(in: .whitespacesAndNewlines)
+                                assignment.noteText = clean.isEmpty ? nil : clean
+                                try? modelContext.save()
+                            }
+                        ), axis: .vertical)
+                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                        .lineSpacing(6)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 16)
+                        .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
+                        .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+                        .cornerRadius(16)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color(red: 0.90, green: 0.92, blue: 0.95), lineWidth: 1)
+                        )
                     }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
+                    .cornerRadius(20)
+                    .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
 
                     // MARK: - Relevant Topics & Module Context Section
                     VStack(alignment: .leading, spacing: 12) {
@@ -816,15 +818,17 @@ public struct AssignmentDetailView: View {
                             }
                         }
 
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 10) {
                             ForEach(Array(assignment.computedTopics.enumerated()), id: \.offset) { idx, topic in
-                                HStack(spacing: 8) {
+                                HStack(alignment: .top, spacing: 8) {
                                     Text("\(idx + 1) -")
                                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                                         .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
                                     Text(topic)
                                         .font(.system(size: 15, weight: .medium, design: .rounded))
                                         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                        .lineLimit(nil)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                             }
                         }
@@ -865,38 +869,35 @@ public struct AssignmentDetailView: View {
                                         }
 
                                         VStack(alignment: .leading, spacing: 3) {
-                                            let fullReadingTitleString: String = {
-                                                if let ch = reading.cleanChapterText, !ch.isEmpty {
-                                                    let lowerTitle = reading.title.lowercased()
-                                                    let lowerCh = ch.lowercased()
-                                                    if lowerTitle.hasPrefix("chapter") || lowerTitle.hasPrefix("ch.") || lowerTitle.hasPrefix("ch ") {
-                                                        let strippedTitle = reading.title.replacingOccurrences(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*[\d\s,&–\-and]+\s*[:\-–·•.]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-                                                        if !strippedTitle.isEmpty {
-                                                            return "\(ch) · \(strippedTitle)"
-                                                        }
-                                                        return ch
-                                                    }
-                                                    if !lowerTitle.contains(lowerCh) {
-                                                        return "\(ch) · \(reading.title)"
-                                                    }
-                                                }
-                                                return reading.title
-                                            }()
+                                            let fullReadingTitleString: String = reading.displayTitleWithChapter
 
                                             Text(fullReadingTitleString)
                                                 .font(.cpItemTitle)
                                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
                                                 .lineLimit(2)
 
-                                            if let pages = reading.pagesText, !pages.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            if let subtitle = reading.authorAndPagesSubtitle, !subtitle.isEmpty {
+                                                Text(subtitle)
+                                                    .font(.cpDescriptionMedium)
+                                                    .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
+                                                    .lineLimit(2)
+                                            } else if let pages = reading.pagesText, !pages.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                                 let cleanPages = pages.trimmingCharacters(in: .whitespacesAndNewlines)
                                                 let pageLabel = cleanPages.lowercased().contains("pp") ? cleanPages : "pp. \(cleanPages)"
                                                 Text(pageLabel)
                                                     .font(.cpDescriptionMedium)
                                                     .foregroundColor(Color(red: 0.14, green: 0.44, blue: 0.96))
                                             }
-                                            if !reading.summaryText.isEmpty {
-                                                Text(reading.summaryText)
+                                            let cleanReadingSummary: String = {
+                                                let raw = reading.summaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                                let lower = raw.lowercased()
+                                                if lower.hasPrefix("required reading") || lower.hasPrefix("see brightspace") || raw == reading.title || lower.contains("corey ch.") || lower.contains("yalom ch.") {
+                                                    return ""
+                                                }
+                                                return raw
+                                            }()
+                                            if !cleanReadingSummary.isEmpty {
+                                                Text(cleanReadingSummary)
                                                     .font(.cpDescription)
                                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                                                     .lineLimit(2)
@@ -979,8 +980,17 @@ public struct AssignmentDetailView: View {
                         .font(.system(size: 15, weight: .bold))
                 }
             }
-            .sheet(isPresented: $showingEditSheet) {
+            .sheet(isPresented: $showingEditSheet, onDismiss: {
+                noteTextState = assignment.noteText ?? ""
+            }) {
                 EditAssignmentSheet(assignment: assignment)
+            }
+            .onAppear {
+                noteTextState = assignment.noteText ?? ""
+            }
+            .onDisappear {
+                try? modelContext.save()
+                DataPersistenceBackupManager.shared.scheduleAutoBackup(modelContext: modelContext)
             }
         }
     }

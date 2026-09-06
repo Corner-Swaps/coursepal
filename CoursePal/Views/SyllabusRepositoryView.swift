@@ -610,9 +610,9 @@ public struct SyllabusRepositoryView: View {
                                          CourseSyllabusCardRow(
                                              course: course,
                                              onAddDocument: {
-                                                if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                                    repositoryErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
-                                                    showingRepositoryErrorAlert = true
+                                                 if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                                     repositoryErrorMessage = "AI Service Unavailable: Please check your network connection or restart CoursePal."
+                                                     showingRepositoryErrorAlert = true
                                                 } else {
                                                     selectedCourseForAddDoc = course
                                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -858,7 +858,7 @@ public struct SyllabusRepositoryView: View {
         print("🔘 [UI BUTTON TAP] User tapped Import PDF in Repository. Initiating live network pipeline...")
 
         if APIService.shared.activeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            repositoryErrorMessage = "API Key Missing: Please enter your Gemini API key in settings."
+            repositoryErrorMessage = "AI Service Unavailable: Please check your network connection or restart CoursePal."
             showingRepositoryErrorAlert = true
             return
         }
@@ -2095,7 +2095,10 @@ public struct EditReadingModalView: View {
     public init(reading: Reading) {
         self.reading = reading
         _title = State(initialValue: reading.title)
-        _summary = State(initialValue: reading.summaryText)
+        let raw = reading.summaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = raw.lowercased()
+        let cleanSummary = (lower.hasPrefix("required reading") || lower.hasPrefix("see brightspace") || raw == reading.title || lower.contains("corey ch.") || lower.contains("yalom ch.")) ? "" : raw
+        _summary = State(initialValue: cleanSummary)
     }
 
     public var body: some View {

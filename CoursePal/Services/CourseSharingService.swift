@@ -101,8 +101,8 @@ public final class CourseSharingService {
     public func generateShareMessage(for course: Course) -> String {
         let code = course.sharingCode.isEmpty ? (course.courseCode ?? "CRS") : course.sharingCode
         let link = generateShareLink(for: course).absoluteString
-        let readingsCount = course.weeks.reduce(0) { $0 + $1.readings.count }
-        let assignmentsCount = course.assignments.count
+        let readingsCount = course.weeks.reduce(0) { $0 + $1.readings.filter { !$0.isDeleted }.count }
+        let assignmentsCount = course.assignments.filter { !$0.isDeleted }.count
 
         return """
         Join '\(course.courseName)' on CoursePal!

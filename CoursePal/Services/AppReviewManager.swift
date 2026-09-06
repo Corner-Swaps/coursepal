@@ -10,20 +10,21 @@ import UIKit
 ///
 /// Features:
 /// 1. Launch Tracking (`UserDefaults`):
-///    - Tracks total lifetime launches from the original download.
+///    - Tracks total lifetime app launches from the original download (100% on-device, zero API or network tracking).
 ///    - Detects and preserves original install date (using the app's Document container creation date
 ///      for existing users updating, or current date on first launch).
 ///    - Tracks version-specific launches and update timestamp whenever a new app version is detected.
-/// 2. Milestone Triggers:
-///    - Existing Users: Triggers if lifetime launches >= 15, OR version launches >= 15, OR days since original install >= 15, OR days since update >= 15.
-///    - New Users: Triggers if lifetime launches >= 15, OR days since install >= 15.
+/// 2. Strict Milestone Triggers:
+///    - The user MUST open/launch the app at least 15 times before the review pop-up can appear under any circumstances.
+///    - Time elapsed alone (e.g. days since install or update) will never trigger the review dialog if the user
+///      has not launched the app at least 15 times.
 /// 3. Session Timing:
 ///    - Once criteria are satisfied on launch or foregrounding, waits exactly 11 seconds before presenting
-///      the StoreKit review dialog, allowing the user to settle comfortably into their session.
+///      the StoreKit review dialog, allowing the user to settle comfortably into their session without interrupting workflow.
 /// 4. Submission Lock vs. Dismissal Re-Prompting:
 ///    - Only permanently disables review prompts if the user has actually submitted a review (`AppReview_HasSubmittedReview = true`).
 ///    - If dismissed ("Not Now") or not submitted, does not permanently lock the user out.
-///    - Re-prompts again only after 15 more app opens have occurred OR 15 days have elapsed since the last prompt.
+///    - Re-prompts again only after at least 15 MORE app launches have occurred AND at least 15 days have elapsed since the last prompt.
 /// 5. StoreKit Presentation:
 ///    - Uses `AppStore.requestReview(in: windowScene)` on iOS 16+ (falling back to `SKStoreReviewController` on earlier versions)
 ///      targeting the active foreground `UIWindowScene`.
@@ -32,6 +33,14 @@ import UIKit
 @MainActor
 public final class AppReviewManager: ObservableObject {
     public static let shared = AppReviewManager()
+
+    // MARK: - Threshold Configuration
+    /// The user MUST open/launch the app at least this many times before the review pop-up can ever appear.
+    public static let minimumLifetimeUsesRequired: Int = 15
+    /// If dismissed without submitting, require at least this many additional app opens before re-prompting.
+    public static let minimumUsesBetweenPrompts: Int = 15
+    /// If dismissed without submitting, require at least this many days before re-prompting.
+    public static let minimumDaysBetweenPrompts: Int = 15
 
     // MARK: - UserDefaults Keys
     public enum Keys {
@@ -63,8 +72,12 @@ public final class AppReviewManager: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
 
-        // 1. Check permanent submission lock
-        let submitted = defaults.bool(forKey: Keys.hasSubmittedReview)
+        // 1. Triple-check permanent submission lock across memory, UserDefaults, and persistent disk marker
+        let submitted = Self.isReviewSubmittedPersistently()
+        if submitted {
+            defaults.set(true, forKey: Keys.hasSubmittedReview)
+            Self.writePersistentMarker()
+        }
 
         // 2. Original install date (detect from document container if first time)
         let resolvedInstallDate: Date
@@ -141,6 +154,34 @@ public final class AppReviewManager: ObservableObject {
         return Date()
     }
 
+    // MARK: - Persistent Lockout Disk Marker
+    private static var reviewSubmittedMarkerURL: URL? {
+        guard let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        return docDir.appendingPathComponent(".coursepal_review_submitted")
+    }
+
+    /// Triple-checks whether a review has been submitted across memory, UserDefaults, and persistent disk marker.
+    public static func isReviewSubmittedPersistently() -> Bool {
+        if UserDefaults.standard.bool(forKey: Keys.hasSubmittedReview) {
+            return true
+        }
+        guard let url = reviewSubmittedMarkerURL else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    private static func writePersistentMarker() {
+        guard let url = reviewSubmittedMarkerURL else { return }
+        let markerContent = "ReviewSubmitted:\(Date().timeIntervalSince1970)\n"
+        try? markerContent.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func removePersistentMarker() {
+        guard let url = reviewSubmittedMarkerURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
     private static func bundleVersionString() -> String {
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -179,36 +220,34 @@ public final class AppReviewManager: ObservableObject {
     }
 
     /// Evaluates all Apple Guideline 5.6.1 and milestone criteria to determine if a review prompt should be triggered.
+    /// Strictly requires the user to have used the app at least 15 times before the pop-up can appear.
     public var shouldRequestReview: Bool {
-        // 1. Permanent lockout: Only if user has actually submitted a review
-        guard !hasSubmittedReview else {
+        // 1. Permanent lockout: Triple-checked across in-memory state, UserDefaults, and persistent disk marker
+        guard !hasSubmittedReview &&
+              !UserDefaults.standard.bool(forKey: Keys.hasSubmittedReview) &&
+              !Self.isReviewSubmittedPersistently() else {
             return false
         }
 
-        // 2. Dismissal Re-Prompting Rule:
-        // If previously prompted, only re-prompt if 15 more app opens have occurred OR 15 days have elapsed
+        // 2. Strict usage requirement: The user MUST use the app at least 15 times before the review prompt can ever appear.
+        guard lifetimeLaunchCount >= Self.minimumLifetimeUsesRequired else {
+            return false
+        }
+
+        // 3. Dismissal Re-Prompting Rule:
+        // If previously prompted, only re-prompt if at least 15 MORE app uses have occurred
+        // AND at least 15 days have elapsed since the last prompt.
         if let daysSincePrompt = daysSinceLastPrompt {
             let launchesSincePrompt = launchesSinceLastPrompt
-            let satisfiesRePromptCadence = (launchesSincePrompt >= 15) || (daysSincePrompt >= 15)
-            if !satisfiesRePromptCadence {
+            guard launchesSincePrompt >= Self.minimumUsesBetweenPrompts else {
+                return false
+            }
+            guard daysSincePrompt >= Self.minimumDaysBetweenPrompts else {
                 return false
             }
         }
 
-        // 3. Milestone Triggers:
-        if isExistingUser {
-            // Existing Users: lifetime launches >= 15 OR launches since update >= 15 OR days since install >= 15 OR days since update >= 15
-            let satisfied = (lifetimeLaunchCount >= 15) ||
-                            (versionLaunchCount >= 15) ||
-                            (daysSinceOriginalInstall >= 15) ||
-                            (daysSinceCurrentVersionUpdate >= 15)
-            return satisfied
-        } else {
-            // New Users: lifetime launches >= 15 OR days since install >= 15
-            let satisfied = (lifetimeLaunchCount >= 15) ||
-                            (daysSinceOriginalInstall >= 15)
-            return satisfied
-        }
+        return true
     }
 
     // MARK: - Public Launch & Lifecycle Actions
@@ -226,7 +265,7 @@ public final class AppReviewManager: ObservableObject {
         let currentBundleVersion = Self.bundleVersionString()
         let storedVersion = defaults.string(forKey: Keys.currentVersion)
 
-        // Increment lifetime launches
+        // Increment lifetime launches / uses
         lifetimeLaunchCount += 1
         defaults.set(lifetimeLaunchCount, forKey: Keys.lifetimeLaunchCount)
 
@@ -247,6 +286,11 @@ public final class AppReviewManager: ObservableObject {
         print("📊 [AppReviewManager] Launch tracked: Lifetime=\(lifetimeLaunchCount), Version=\(versionLaunchCount), DaysInstall=\(daysSinceOriginalInstall), DaysUpdate=\(daysSinceCurrentVersionUpdate), ExistingUser=\(isExistingUser)")
 
         checkAndRequestReviewIfAppropriate()
+    }
+
+    /// Called when the app transitions into the background.
+    public func handleAppBackground() {
+        cancelScheduledPrompt()
     }
 
     /// Called when the app transitions into the foreground (e.g. from background).
@@ -304,6 +348,14 @@ public final class AppReviewManager: ObservableObject {
 
     private func presentStoreKitReview() {
         #if os(iOS)
+        // Triple-check: permanently blocked if review has already been submitted
+        guard !hasSubmittedReview,
+              !UserDefaults.standard.bool(forKey: Keys.hasSubmittedReview),
+              !Self.isReviewSubmittedPersistently() else {
+            print("🔒 [AppReviewManager] Blocked StoreKit review presentation: review has already been submitted.")
+            return
+        }
+
         guard let windowScene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive }) else {
@@ -338,7 +390,8 @@ public final class AppReviewManager: ObservableObject {
         cancelScheduledPrompt()
         hasSubmittedReview = true
         UserDefaults.standard.set(true, forKey: Keys.hasSubmittedReview)
-        print("🌟 [AppReviewManager] Review submitted confirmed. Review prompts are now permanently locked.")
+        Self.writePersistentMarker()
+        print("🌟 [AppReviewManager] Review submitted confirmed. Review prompts are permanently locked out forever.")
     }
 
     /// Opens the official App Store product page directly to the Write Review sheet,
@@ -370,6 +423,8 @@ public final class AppReviewManager: ObservableObject {
         defaults.removeObject(forKey: Keys.lastPromptDate)
         defaults.removeObject(forKey: Keys.lastPromptLaunchCount)
 
+        Self.removePersistentMarker()
+
         self.hasSubmittedReview = false
         self.lifetimeLaunchCount = 0
         self.versionLaunchCount = 0
@@ -394,15 +449,23 @@ public struct AppReviewLifecycleModifier: ViewModifier {
                 AppReviewManager.shared.trackAppLaunchAndCheck()
             }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
+                switch newPhase {
+                case .active:
                     AppReviewManager.shared.handleAppForeground()
-                } else if newPhase == .background || newPhase == .inactive {
+                case .background:
+                    AppReviewManager.shared.handleAppBackground()
+                case .inactive:
                     AppReviewManager.shared.cancelScheduledPrompt()
+                @unknown default:
+                    break
                 }
             }
             #if os(iOS)
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 AppReviewManager.shared.handleAppForeground()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                AppReviewManager.shared.handleAppBackground()
             }
             #endif
     }

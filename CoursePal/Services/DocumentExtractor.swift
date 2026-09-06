@@ -106,68 +106,9 @@ public struct DocumentExtractor {
         return nil
     }
 
-    /// Intelligently harvests Course Header, Assignment Details, and Schedule Tables from multi-page PDFs
-    /// while filtering out pure university boilerplate policies (Title IX, campus safety, Here2Talk).
+    /// Intelligently extracts the full syllabus document text across all pages.
     public static func extractTargetedSyllabusText(from url: URL) -> String? {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-
-        let ext = url.pathExtension.lowercased()
-        if ext != "pdf" {
-            return extractText(from: url)
-        }
-
-        guard let pdfDoc = PDFDocument(url: url), pdfDoc.pageCount > 0 else {
-            return extractText(from: url)
-        }
-
-        if pdfDoc.pageCount <= 6 {
-            return extractText(from: url)
-        }
-
-        var selectedPages: [(pageNum: Int, text: String)] = []
-        let boilerplateSignatures = [
-            "title ix", "campus safety", "disability support", "here2talk", "mental health resources",
-            "hallmarks of maturity", "sensitive content notice", "student code of conduct", "nondiscrimination",
-            "library services", "online tutoring", "academic integrity policy"
-        ]
-
-        let scheduleKeywords = [
-            "course schedule", "week ", "module ", "readings", "overview of required assignments",
-            "grading criteria", "course assignment details", "due date", "topics", "deliverable",
-            "final grade", "points possible"
-        ]
-
-        for i in 0..<pdfDoc.pageCount {
-            guard let page = pdfDoc.page(at: i), let raw = page.string?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
-                continue
-            }
-            let lower = raw.lowercased()
-
-            // Always include Page 1 & 2 for Course Title, Code, Credits, and Faculty Info
-            if i < 2 {
-                selectedPages.append((i + 1, raw))
-                continue
-            }
-
-            let hasSchedule = scheduleKeywords.contains { lower.contains($0) }
-            let hasBoilerplate = boilerplateSignatures.contains { lower.contains($0) }
-
-            // If it has critical schedule or assignment keywords, KEEP IT (even if it mentions boilerplate)
-            if hasSchedule {
-                selectedPages.append((i + 1, raw))
-            } else if !hasBoilerplate && (lower.contains("ch.") || lower.contains("chapter") || lower.contains("textbook") || lower.contains("% of grade") || lower.contains("assignment")) {
-                selectedPages.append((i + 1, raw))
-            }
-        }
-
-        if selectedPages.isEmpty {
-            return extractText(from: url)
-        }
-
-        let formatted = selectedPages.map { "--- Page \($0.pageNum) ---\n\($0.text)" }.joined(separator: "\n\n")
-        let cleaned = sanitizeText(formatted)
-        return cleaned.isEmpty ? extractText(from: url) : cleaned
+        return extractText(from: url)
     }
 
     public static func extractTextFromData(_ data: Data, fileName: String) -> String? {
@@ -254,44 +195,91 @@ public struct DocumentExtractor {
             rawXml = s
         }
 
-        // Convert Word XML structure to clean multi-line formatted text:
-        // 1. Replace cell boundaries </w:tc> with " | "
-        // 2. Replace row boundaries </w:tr> and paragraph boundaries </w:p> with "\n"
-        let processedXml = rawXml
-            .replacingOccurrences(of: "</w:tc>", with: " | ")
-            .replacingOccurrences(of: "</w:tr>", with: "\n")
-            .replacingOccurrences(of: "</w:p>", with: "\n")
+        final class DocxXMLParserDelegate: NSObject, XMLParserDelegate {
+            var output = ""
+            var currentParagraph = ""
+            var currentCell = ""
+            var currentRowCells: [String] = []
+            var isInCell = false
+            var isInText = false
+            var inTable = false
 
-        // Extract text inside <w:t> tags while keeping line structure
-        guard let regex = Self.wtTagRegex else {
-            let clean = processedXml.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
-            return clean.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        let lines = processedXml.components(separatedBy: CharacterSet.newlines)
-        var lineResults: [String] = []
-
-        for line in lines {
-            let maxLen = min((line as NSString).length, 100000)
-            let matches = regex.matches(in: line, options: [], range: NSRange(location: 0, length: maxLen))
-            var lineWords: [String] = []
-            for match in matches {
-                if match.numberOfRanges > 1 {
-                    let matchedText = (line as NSString).substring(with: match.range(at: 1))
-                    let clean = sanitizeText(matchedText)
-                    if !clean.isEmpty {
-                        lineWords.append(clean)
-                    }
+            func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+                let tag = elementName.lowercased()
+                if tag == "w:tbl" || tag == "tbl" {
+                    inTable = true
+                } else if tag == "w:tr" || tag == "tr" {
+                    currentRowCells = []
+                } else if tag == "w:tc" || tag == "tc" {
+                    isInCell = true
+                    currentCell = ""
+                } else if tag == "w:p" || tag == "p" {
+                    currentParagraph = ""
+                } else if tag == "w:t" || tag == "t" {
+                    isInText = true
+                } else if tag == "w:tab" || tag == "tab" {
+                    currentParagraph += " "
+                } else if tag == "w:br" || tag == "br" {
+                    currentParagraph += " "
                 }
             }
-            let lineStr = lineWords.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !lineStr.isEmpty {
-                lineResults.append(lineStr)
+
+            func parser(_ parser: XMLParser, foundCharacters string: String) {
+                if isInText {
+                    currentParagraph += string
+                }
+            }
+
+            func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+                let tag = elementName.lowercased()
+                if tag == "w:t" || tag == "t" {
+                    isInText = false
+                } else if tag == "w:p" || tag == "p" {
+                    let pText = currentParagraph.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !pText.isEmpty {
+                        if isInCell {
+                            if !currentCell.isEmpty {
+                                currentCell += "; "
+                            }
+                            currentCell += pText
+                        } else {
+                            output += pText + "\n"
+                        }
+                    }
+                    currentParagraph = ""
+                } else if tag == "w:tc" || tag == "tc" {
+                    isInCell = false
+                    let cellClean = currentCell.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                    currentRowCells.append(cellClean)
+                    currentCell = ""
+                } else if tag == "w:tr" || tag == "tr" {
+                    let rowText = currentRowCells.joined(separator: " | ")
+                    if !rowText.trimmingCharacters(in: CharacterSet(charactersIn: " |-\t\n")).isEmpty {
+                        output += rowText + "\n"
+                    }
+                    currentRowCells = []
+                } else if tag == "w:tbl" || tag == "tbl" {
+                    inTable = false
+                    output += "\n"
+                }
             }
         }
 
-        let result = lineResults.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        return result.isEmpty ? nil : result
+        let parser = XMLParser(data: Data(rawXml.utf8))
+        let delegate = DocxXMLParserDelegate()
+        parser.delegate = delegate
+        if parser.parse() {
+            let result = delegate.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !result.isEmpty {
+                return result
+            }
+        }
+
+        // Fallback if XMLParser encounters malformed XML
+        let stripped = rawXml.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped.isEmpty ? nil : stripped
     }
 
     public static func sanitizeText(_ str: String) -> String {
@@ -302,6 +290,15 @@ public struct DocumentExtractor {
             .replacingOccurrences(of: #"&gt;"#, with: ">")
             .replacingOccurrences(of: #"&apos;"#, with: "'")
         clean = clean.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
+        // Heal split chapter OCR / PDF text artifacts
+        clean = clean.replacingOccurrences(of: #"(?i)\bc[\s\xa0]+hapters\b"#, with: "chapters", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"(?i)\bc[\s\xa0]+hapter\b"#, with: "chapter", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"(?i)\bch[\s\xa0]+apters\b"#, with: "chapters", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"(?i)\bch[\s\xa0]+apter\b"#, with: "chapter", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"(?i)\bchap[\s\xa0]+ters\b"#, with: "chapters", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"(?i)\bchap[\s\xa0]+ter\b"#, with: "chapter", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"(?i)\bchapter[\s\xa0]+s\b"#, with: "chapters", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"(?i)\bc[\s\xa0]+h\.?\s*(?=\d)"#, with: "Ch. ", options: .regularExpression)
         let cleanScalars = clean.unicodeScalars.filter { scalar in
             (scalar.value >= 32 && scalar.value <= 126) || scalar.value == 10 || scalar.value == 13
         }
@@ -316,15 +313,18 @@ public struct DocumentExtractor {
     }
 
     // MARK: - Targeted Schedule Page Image Extraction
-    public static func extractSchedulePageImages(from pdfData: Data, maxPages: Int = 8) -> [(data: Data, pageNum: Int)] {
+    public static func extractSchedulePageImages(from pdfData: Data, maxPages: Int = 16) -> [(data: Data, pageNum: Int)] {
         guard let pdfDoc = PDFDocument(data: pdfData), pdfDoc.pageCount > 0 else { return [] }
         let totalPages = pdfDoc.pageCount
 
         let tableKeywords = [
-            "week modules topics readings", "course schedule", "module 1", "module 2", "readings", "corey", "yalom"
+            "course schedule", "weekly schedule", "schedule of classes", "course calendar", "topics & readings",
+            "week modules topics readings", "module 1", "module 2", "week 1", "week 2", "readings", "textbook",
+            "required reading", "assigned readings", "class schedule"
         ]
         let assignmentKeywords = [
-            "overview of required assignments", "course assignment details", "grading criteria"
+            "overview of required assignments", "course assignment details", "grading criteria", "course requirements",
+            "deliverables", "evaluation", "due date", "grade distribution", "rubric", "points possible"
         ]
 
         var pageScores: [(pageIndex: Int, score: Int)] = []

@@ -22,7 +22,7 @@ public final class ParsedSyllabusCache: @unchecked Sendable {
 
     /// Computes a deterministic SHA-256 hash for raw file data, text, or filename.
     public func hashKey(forData data: Data?, text: String?, fileName: String?) -> String? {
-        let versionPrefix = "v6_"
+        let versionPrefix = "v7_"
         if let data = data, !data.isEmpty {
             let digest = SHA256.hash(data: data)
             return versionPrefix + digest.map { String(format: "%02x", $0) }.joined()

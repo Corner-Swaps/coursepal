@@ -12,11 +12,15 @@ public struct InfoCreditsSheetView: View {
 
     public init() {}
 
+    private var appVersionString: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3"
+    }
+
     public var body: some View {
         NavigationStack {
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 20) {
-                    // App Logo & Header
+                VStack(spacing: 24) {
+                    // MARK: - Header with App Icon
                     VStack(spacing: 8) {
                         AppIconLogoView(size: 80)
                             .padding(.top, 10)
@@ -25,7 +29,7 @@ public struct InfoCreditsSheetView: View {
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
 
-                        Text("Version 1.1")
+                        Text("Version \(appVersionString)")
                             .font(.system(size: 13, weight: .semibold, design: .monospaced))
                             .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
 
@@ -108,7 +112,7 @@ public struct InfoCreditsSheetView: View {
                                 InfoRow(
                                     icon: "sparkles",
                                     iconColor: Color(red: 0.55, green: 0.27, blue: 0.96),
-                                    title: "Version 1.1",
+                                    title: "Version \(appVersionString)",
                                     subtitle: "Release highlights & system capabilities",
                                     isExternal: false
                                 )
@@ -470,6 +474,10 @@ public struct VersionReleaseSheetView: View {
 
     public init() {}
 
+    private var appVersionString: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3"
+    }
+
     public var body: some View {
         NavigationStack {
             ScrollView(.vertical, showsIndicators: true) {
@@ -486,10 +494,10 @@ public struct VersionReleaseSheetView: View {
                             }
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("CoursePal v1.1")
+                                Text("CoursePal v\(appVersionString)")
                                     .font(.system(size: 20, weight: .bold, design: .rounded))
                                     .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                Text("Official Production Release • August 2026")
+                                Text("Official Production Release • September 2026")
                                     .font(.system(size: 11.5, weight: .medium))
                                     .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
                             }

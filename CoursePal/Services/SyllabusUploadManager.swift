@@ -320,30 +320,16 @@ public final class SyllabusUploadManager {
 
             var parsedDTO: CourseDTO? = nil
 
-            // ── CHECK 0: Fast Pre-Parsed Syllabus Cache (Instant O(1) Local Resolution) ──
-            if let cached = ParsedSyllabusCache.shared.get(forData: fileData, text: extractedText, fileName: cleanFileName) {
-                print("⚡️ [CACHE HIT] Found pre-parsed CourseDTO for '\(cleanFileName)'. Bypassing Gemini API roundtrip!")
-                parsedDTO = cached
-            } else if let matchingCourse = dbCourses.first(where: { c in
-                c.syllabusDocs.contains {
-                    let dNorm = $0.docTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                    let fNorm = ($0.fileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                    return dNorm == normUrlName || fNorm == normUrlName
-                }
-            }), !matchingCourse.weeks.isEmpty || !matchingCourse.assignments.isEmpty {
-                print("⚡️ [DATABASE HIT] Found existing Course with syllabus items for '\(cleanFileName)'. Reconstructing DTO instantly!")
-                let reconstructed = matchingCourse.toCourseDTO()
-                ParsedSyllabusCache.shared.save(dto: reconstructed, forData: fileData, text: extractedText, fileName: cleanFileName)
-                parsedDTO = reconstructed
-            }
+            // Always run fresh live AI parsing when a document is uploaded
+            print("🚀 [UPLOAD] Processing document '\(cleanFileName)' via live Gemini AI extraction pipeline...")
 
             if Task.isCancelled { return }
 
             if let cid = targetCourse?.id {
-                self.courseUploadStatuses[cid] = parsedDTO != nil ? "Attaching pre-parsed syllabus..." : "Analyzing syllabus..."
+                self.courseUploadStatuses[cid] = "Analyzing syllabus..."
             }
 
-            // 1. PRIMARY ROUTE A: Ultra-Fast Token-Efficient Text Route (Uses ~600 tokens total via Gemini 3.5 Flash-Lite)
+            // 1. PRIMARY ROUTE A: Ultra-Fast Token-Efficient Text Route
             if parsedDTO == nil, !Task.isCancelled, NetworkMonitor.shared.isOnline, let text = extractedText, text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 100 {
                 self.statusText = "Analyzing syllabus..."
                 if let cid = targetCourse?.id {

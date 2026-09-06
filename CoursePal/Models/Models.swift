@@ -541,23 +541,65 @@ public final class Reading {
         return "#7C3AED"
     }
 
+    // MARK: - Chapter Artifact Repair & Formatting
+    public static func repairChapterArtifacts(_ text: String) -> String {
+        var str = text
+        // 1. "c hapters" -> "chapters", "c hapter" -> "chapter"
+        str = str.replacingOccurrences(of: #"(?i)\bc[\s\xa0]+hapters\b"#, with: "chapters", options: .regularExpression)
+        str = str.replacingOccurrences(of: #"(?i)\bc[\s\xa0]+hapter\b"#, with: "chapter", options: .regularExpression)
+        // 2. "ch apters" -> "chapters", "ch apter" -> "chapter"
+        str = str.replacingOccurrences(of: #"(?i)\bch[\s\xa0]+apters\b"#, with: "chapters", options: .regularExpression)
+        str = str.replacingOccurrences(of: #"(?i)\bch[\s\xa0]+apter\b"#, with: "chapter", options: .regularExpression)
+        // 3. "chap ters" -> "chapters", "chap ter" -> "chapter"
+        str = str.replacingOccurrences(of: #"(?i)\bchap[\s\xa0]+ters\b"#, with: "chapters", options: .regularExpression)
+        str = str.replacingOccurrences(of: #"(?i)\bchap[\s\xa0]+ter\b"#, with: "chapter", options: .regularExpression)
+        // 4. "chapter s" -> "chapters"
+        str = str.replacingOccurrences(of: #"(?i)\bchapter[\s\xa0]+s\b"#, with: "chapters", options: .regularExpression)
+        // 5. "c h" or "c h." before digit -> "Ch. "
+        str = str.replacingOccurrences(of: #"(?i)\bc[\s\xa0]+h\.?\s*(?=\d)"#, with: "Ch. ", options: .regularExpression)
+        return str
+    }
+
     public static func expandChapterToFullWord(_ text: String?) -> String? {
         guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
-        var result = t
-        if let r = result.range(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*"#, options: .regularExpression) {
-            result = result.replacingCharacters(in: r, with: "Chapter ")
-        } else if result.range(of: #"^\d+"#, options: .regularExpression) != nil {
-            result = "Chapter " + result
-        } else {
-            result = result.replacingOccurrences(of: #"(?i)\b(?:chapters?|chaps?\.?|chs?\.?)\s*"#, with: "Chapter ", options: .regularExpression)
+        if let cleaned = cleanChapterFromRaw(t) {
+            return cleaned
         }
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        return expandChapterInSentence(t)
+    }
+
+    public static func expandChapterInSentence(_ text: String) -> String {
+        var result = repairChapterArtifacts(text)
+        let pattern = #"(?i)\b(chapters?|chaps?\.?|chps?\.?|chs?\.?)\s*(\d+(?:[\s,&–\-]+(?:\b(?:and|to)\b\s*)?\d+)*)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return result }
+        let nsString = result as NSString
+        let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: nsString.length))
+        for match in matches.reversed() {
+            let fullRange = match.range
+            let kwRange = match.range(at: 1)
+            let numRange = match.range(at: 2)
+            let kw = nsString.substring(with: kwRange).lowercased()
+            let nums = nsString.substring(with: numRange)
+            let isPlural = kw.hasPrefix("chapters") || kw.hasPrefix("chs") || kw.hasPrefix("chps") || kw.hasPrefix("chaps") ||
+                           nums.range(of: #"[&\-,–—]|\band\b|\bto\b"#, options: .regularExpression) != nil
+            let replacement = "\(isPlural ? "Chapters" : "Chapter") \(nums)"
+            result = (result as NSString).replacingCharacters(in: fullRange, with: replacement)
+        }
+        return result
+    }
+
+    public static func isChapterOnly(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        if stripChapterMentions(from: trimmed).isEmpty { return true }
+        let pattern = #"(?i)^\s*[:\-–·•]?\s*(?:chapters?|chaps?\.?|chps?\.?|chs?\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)+[:\-–·•.]*\s*$"#
+        return trimmed.range(of: pattern, options: .regularExpression) != nil
     }
 
     public var chapterAndPagesDisplay: String? {
         var parts: [String] = []
         if let ch = chapterText, !ch.trimmingCharacters(in: .whitespaces).isEmpty {
-            let fullCh = Reading.expandChapterToFullWord(ch) ?? ch
+            let fullCh = Reading.cleanChapterFromRaw(ch) ?? ch
             parts.append(fullCh)
         }
         if let pg = pagesText, !pg.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -576,16 +618,16 @@ public final class Reading {
             }
         }
         
-        let titleHasChapter = lowerTitle.range(of: #"(?i)\b(chapters?|chs?\.?)\s*\d+"#, options: .regularExpression) != nil
+        let titleHasChapter = lowerTitle.range(of: #"(?i)\b(chapters?|chaps?\.?|chps?\.?|chs?\.?)\s*\d+"#, options: .regularExpression) != nil
         
         if let ch = chapterText?.trimmingCharacters(in: .whitespacesAndNewlines), !ch.isEmpty {
             var cleanCh = ch.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
             if titleHasChapter {
                 // Strip out chapter mentions from ch since title already has it
-                cleanCh = cleanCh.replacingOccurrences(of: #"(?i)\b(chapters?|chs?\.?)\s*\d+([\s&,\-–]+\d+)?\s*[:•·\-–]*\s*"#, with: "", options: .regularExpression)
+                cleanCh = cleanCh.replacingOccurrences(of: #"(?i)\b(chapters?|chaps?\.?|chps?\.?|chs?\.?)\s*\d+([\s&,\-–]+\d+)?\s*[:•·\-–]*\s*"#, with: "", options: .regularExpression)
                     .replacingOccurrences(of: #"^[:;\-\s•·]+|[:;\-\s•·]+$"#, with: "", options: .regularExpression)
             } else {
-                cleanCh = Reading.expandChapterToFullWord(cleanCh) ?? cleanCh
+                cleanCh = Reading.cleanChapterFromRaw(cleanCh) ?? cleanCh
             }
             if !cleanCh.isEmpty && !lowerTitle.contains(cleanCh.lowercased()) {
                 parts.append(cleanCh)
@@ -607,15 +649,47 @@ public final class Reading {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    public static func cleanChapterFromRaw(_ raw: String?) -> String? {
+        guard let found = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !found.isEmpty else { return nil }
+        var cleanCh = repairChapterArtifacts(found)
+        cleanCh = cleanCh.replacingOccurrences(of: #"^[:;\-\s•·]+|[:;\-\s•·]+$"#, with: "", options: .regularExpression)
+
+        // Strict chapter match: must consist of chapter keyword + digits/ranges, or just digits/ranges
+        let isOnlyChapterPattern = #"(?i)^\s*[:\-–·•]?\s*(?:chapters?|chaps?\.?|chps?\.?|chs?\.?)\s*(\d+(?:[\s,&–\-]+(?:\b(?:and|to)\b\s*)?\d+)*)\s*[:\-–·•.]*\s*$"#
+        let digitsOnlyPattern = #"^\s*(\d+(?:[\s,&–\-]+(?:\b(?:and|to)\b\s*)?\d+)*)\s*$"#
+
+        var digitsAndDetails: String? = nil
+        let isPluralWord = cleanCh.range(of: #"(?i)\b(?:chapters|chaps|chps|chs)\b"#, options: .regularExpression) != nil
+
+        if let regex = try? NSRegularExpression(pattern: isOnlyChapterPattern, options: []),
+           let match = regex.firstMatch(in: cleanCh, options: [], range: NSRange(location: 0, length: cleanCh.utf16.count)),
+           let range = Range(match.range(at: 1), in: cleanCh) {
+            digitsAndDetails = String(cleanCh[range]).trimmingCharacters(in: CharacterSet(charactersIn: ":;•·-–— \t."))
+        } else if let regex = try? NSRegularExpression(pattern: digitsOnlyPattern, options: []),
+                  let match = regex.firstMatch(in: cleanCh, options: [], range: NSRange(location: 0, length: cleanCh.utf16.count)),
+                  let range = Range(match.range(at: 1), in: cleanCh) {
+            digitsAndDetails = String(cleanCh[range]).trimmingCharacters(in: CharacterSet(charactersIn: ":;•·-–— \t."))
+        }
+
+        guard let digits = digitsAndDetails, !digits.isEmpty else { return nil }
+
+        let isPlural = isPluralWord || digits.range(of: #"[&\-,–—]|\band\b|\bto\b"#, options: .regularExpression) != nil
+        return "\(isPlural ? "Chapters" : "Chapter") \(digits)"
+    }
+
     public var cleanChapterText: String? {
         var rawCh: String? = nil
         
         if let ch = chapterText?.trimmingCharacters(in: .whitespacesAndNewlines), !ch.isEmpty {
             rawCh = ch
-        } else if let match = title.range(of: #"(?i)\s*[\(\[]\s*((?:chapters?|chaps?\.?|chs?\.?)\s*\d+[\s&,\-–\d]*)\s*[\)\]]"#, options: .regularExpression) {
+        } else if let match = title.range(of: #"(?i)\s*[\(\[]\s*((?:chapters?|chaps?\.?|chps?\.?|chs?\.?|c[\s\xa0]+hapters?|ch[\s\xa0]+apters?)\s*\d+[\s&,\-–\d]*)\s*[\)\]]"#, options: .regularExpression) {
             rawCh = String(title[match]).replacingOccurrences(of: #"[()\[\]]"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-        } else if let match = title.range(of: #"(?i)\s*[:\-–]\s*((?:chapters?|chaps?\.?|chs?\.?)\s*\d+[\s&,\-–\d]*)$"#, options: .regularExpression) {
+        } else if let match = title.range(of: #"(?i)\s*[:\-–]?\s*\b((?:chapters?|chaps?\.?|chps?\.?|chs?\.?|c[\s\xa0]+hapters?|ch[\s\xa0]+apters?)\s*\d+[\s&,\-–\d]*)$"#, options: .regularExpression) {
             rawCh = String(title[match]).replacingOccurrences(of: #"^[:\-–\s]+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let match = title.range(of: #"(?i)^\s*((?:chapters?|chaps?\.?|chps?\.?|chs?\.?|c[\s\xa0]+hapters?|ch[\s\xa0]+apters?)\s*\d+[\s&,\-–\d]*)\b"#, options: .regularExpression) {
+            rawCh = String(title[match]).replacingOccurrences(of: #"^[:\-–\s]+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let res = resourceTitle, let match = res.range(of: #"(?i)\s*[:\-–]?\s*\b((?:chapters?|chaps?\.?|chps?\.?|chs?\.?|c[\s\xa0]+hapters?|ch[\s\xa0]+apters?)\s*\d+[\s&,\-–\d]*)$"#, options: .regularExpression) {
+            rawCh = String(res[match]).replacingOccurrences(of: #"^[:\-–\s]+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
         } else if !summaryText.isEmpty {
             let (extCh, _) = LocalSyllabusParser.shared.extractChapterAndPages(from: summaryText)
             if let extCh = extCh, !extCh.isEmpty {
@@ -626,53 +700,95 @@ public final class Reading {
             if !clean.isEmpty { rawCh = clean }
         }
         
-        guard let found = rawCh?.trimmingCharacters(in: .whitespacesAndNewlines), !found.isEmpty else {
-            return nil
-        }
-        
-        let cleanCh = found.replacingOccurrences(of: #"^[:;\-\s•·]+|[:;\-\s•·]+$"#, with: "", options: .regularExpression)
-        var digitsAndDetails = cleanCh.replacingOccurrences(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"^[:;\-\s•·.]+|[:;\-\s•·.]+$"#, with: "", options: .regularExpression)
-        
-        if digitsAndDetails.isEmpty {
-            digitsAndDetails = cleanCh
-        }
-        
-        return "Chapter \(digitsAndDetails)"
+        return Reading.cleanChapterFromRaw(rawCh)
+    }
+
+    public static func stripChapterMentions(from title: String) -> String {
+        let healed = repairChapterArtifacts(title)
+        let chapterPattern = #"(?i)\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chps?\.?|chs?\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)+\s*[:\-–·•.]*\s*"#
+        var stripped = healed.replacingOccurrences(of: chapterPattern, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ":;•·-–— \t."))
+        stripped = stripped.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped
     }
 
     public var displayTitleWithChapter: String {
-        let cleanTitle = cleanDisplayTitle
-        if let ch = cleanChapterText, !ch.isEmpty {
-            let lowerTitle = cleanTitle.lowercased()
-            let lowerCh = ch.lowercased()
-            if lowerTitle.hasPrefix("chapter") || lowerTitle.hasPrefix("ch.") || lowerTitle.hasPrefix("ch ") {
-                let strippedTitle = cleanTitle.replacingOccurrences(of: #"(?i)^\s*(?:chapters?|chaps?\.?|chs?\.?)\s*[\d\s,&–\-and]+\s*[:\-–·•.]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !strippedTitle.isEmpty {
-                    return "\(ch) · \(strippedTitle)"
-                }
-                return ch
+        let healedTitle = Reading.repairChapterArtifacts(cleanDisplayTitle).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let ch = cleanChapterText, !ch.isEmpty else {
+            if let expanded = Reading.cleanChapterFromRaw(healedTitle) {
+                return expanded
             }
-            if !lowerTitle.contains(lowerCh) {
-                return "\(ch) · \(cleanTitle)"
+            return Reading.expandChapterInSentence(healedTitle)
+        }
+        
+        let strippedTitle = Reading.stripChapterMentions(from: healedTitle)
+        
+        if strippedTitle.isEmpty ||
+           strippedTitle.lowercased() == ch.lowercased() ||
+           Reading.cleanChapterFromRaw(strippedTitle) == ch ||
+           Reading.isChapterOnly(strippedTitle) ||
+           (authorName != nil && strippedTitle.lowercased() == authorName!.lowercased()) {
+            return ch
+        }
+        
+        return "\(ch) · \(strippedTitle)"
+    }
+
+    public var effectiveAuthorName: String? {
+        if let auth = authorName?.trimmingCharacters(in: .whitespacesAndNewlines), !auth.isEmpty {
+            return auth
+        }
+        return nil
+    }
+
+    public var effectiveResourceTitle: String? {
+        if let res = resourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !res.isEmpty {
+            var cleanRes = res.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
+            if let auth = effectiveAuthorName, !auth.isEmpty {
+                cleanRes = cleanRes.replacingOccurrences(of: #"(?i)^\Q"# + auth + #"\E\s*[:\-–\.]*\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                if cleanRes.lowercased() == auth.lowercased() {
+                    cleanRes = ""
+                }
+            }
+            let lowerRes = cleanRes.lowercased()
+            let lowerClean = cleanDisplayTitle.lowercased()
+            if !cleanRes.isEmpty &&
+               lowerRes != "reading" &&
+               !Reading.isChapterOnly(cleanRes) &&
+               !lowerRes.hasPrefix("chapter") &&
+               !lowerRes.hasPrefix("ch.") &&
+               !lowerRes.hasPrefix("chp") &&
+               !lowerClean.contains(lowerRes) &&
+               lowerRes != lowerClean {
+                return cleanRes
             }
         }
-        return cleanTitle
+        return nil
     }
 
     public var authorAndPagesSubtitle: String? {
         var parts: [String] = []
-        let lowerTitle = title.lowercased()
-        if let auth = authorName?.trimmingCharacters(in: .whitespacesAndNewlines), !auth.isEmpty {
+        let lowerClean = cleanDisplayTitle.lowercased()
+        
+        // 1. Author's book / resource title (e.g. "Mastering Competencies in Family Therapy", "Groups: Process and Practice")
+        if let bTitle = effectiveResourceTitle, !bTitle.isEmpty {
+            if !lowerClean.contains(bTitle.lowercased()) {
+                parts.append(bTitle)
+            }
+        }
+        
+        // 2. Author's name (e.g. "Gehart", "Corey")
+        if let auth = effectiveAuthorName, !auth.isEmpty {
             let cleanAuth = auth.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
-            if !cleanAuth.isEmpty && !lowerTitle.contains(cleanAuth.lowercased()) {
+            if !cleanAuth.isEmpty && !lowerClean.contains(cleanAuth.lowercased()) && !parts.contains(where: { $0.lowercased().contains(cleanAuth.lowercased()) }) {
                 parts.append(cleanAuth)
             }
         }
         
+        // 3. Pages (e.g. "pp. 1-25")
         if let pg = pagesText?.trimmingCharacters(in: .whitespacesAndNewlines), !pg.isEmpty {
             var cleanPg = pg.replacingOccurrences(of: #"^[:;\-\s]+|[:;\-\s]+$"#, with: "", options: .regularExpression)
-            if !cleanPg.isEmpty && !lowerTitle.contains(cleanPg.lowercased()) && !parts.contains(where: { $0.lowercased().contains(cleanPg.lowercased()) }) {
+            if !cleanPg.isEmpty && !lowerClean.contains(cleanPg.lowercased()) && !parts.contains(where: { $0.lowercased().contains(cleanPg.lowercased()) }) {
                 if !cleanPg.lowercased().hasPrefix("pp") && !cleanPg.lowercased().hasPrefix("p.") && cleanPg.range(of: #"^\d+"#, options: .regularExpression) != nil {
                     cleanPg = "pp. \(cleanPg)"
                 }
@@ -786,53 +902,189 @@ public final class Reading {
         return nil
     }
 
-    public var cleanDisplayTitle: String {
-        if let res = resourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !res.isEmpty {
-            if let auth = authorName?.trimmingCharacters(in: .whitespacesAndNewlines), !auth.isEmpty {
-                if res.lowercased().contains(auth.lowercased()) {
-                    return res
-                } else {
-                    return "\(auth): \(res)"
+    public static func distillSmartReadingTitle(_ rawTitle: String) -> String {
+        var title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.isEmpty { return "Reading" }
+        
+        // 1. Repair chapter OCR artifacts first
+        title = repairChapterArtifacts(title)
+        
+        // 2. Strip XML/HTML tags
+        title = title.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+        
+        // 3. Strip table header words if present
+        let headerNoise = #"(?i)^\s*(?:modules|topics|related readings|course session/date|topics,\s*modules,\s*and\s*assignments|readings)+\s*[:\-–]*\s*"#
+        title = title.replacingOccurrences(of: headerNoise, with: "", options: .regularExpression)
+        
+        // 4. Strip course code prefixes like "CPC 527: " or "CPC 514 - "
+        title = title.replacingOccurrences(of: #"^[A-Z]{2,5}\s*\d{3,4}[A-Z]?\s*[:\-–\.]*\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
+
+        // 5. Citation extraction: if APA-style citation with year e.g. "Nichols, M. P. (2014). The Essentials..."
+        if let yearRange = title.range(of: #"\(\s*\d{4}\s*\)\.?\s*"#, options: .regularExpression) {
+            let afterYear = String(title[yearRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if let firstPart = afterYear.components(separatedBy: CharacterSet(charactersIn: ".(")).first?.trimmingCharacters(in: .whitespacesAndNewlines), firstPart.count >= 3 {
+                title = firstPart
+            }
+        }
+
+        // 6. Strip LMS / portal / shell location phrases
+        let locationSuffixes = [
+            #"(?i)\s+(?:in|on|via|from|at|through)\s+(?:the\s+)?(?:[A-Za-z0-9\s_-]+)?(?:course\s*shell|general\s*course\s*shell|brightspace|canvas|blackboard|moodle|portal|class\s*shell|course\s*site|d2l)\b.*$"#,
+            #"(?i)\s+(?:in|on|via|from|at)\s+(?:van\s+general\s+course\s+shell)\b.*$"#
+        ]
+        for loc in locationSuffixes {
+            title = title.replacingOccurrences(of: loc, with: "", options: .regularExpression)
+        }
+
+        // 7. Strip preparatory / discussion suffixes
+        let prepSuffixes = [
+            #"(?i)\s+(?:in\s+preparation\s+for|prior\s+to\s+class|before\s+class|for\s+class\s+discussion|for\s+discussion|in\s+preparation|in\s+advance)\b.*$"#
+        ]
+        for prep in prepSuffixes {
+            title = title.replacingOccurrences(of: prep, with: "", options: .regularExpression)
+        }
+
+        // 8. Strip instructional imperative verbs at start
+        let imperativePrefixes = [
+            #"(?i)^\s*(?:please\s+)?(?:review|read\s+and\s+review|read|study|complete\s+the\s+reading\s+of|complete\s+the\s+reading\s+on|complete\s+reading\s+of|complete\s+reading|complete|prepare\s+for|examine|access\s+and\s+read|consult)\s+(?:sample\s+|the\s+|all\s+|assigned\s+|required\s+)?"#,
+            #"(?i)^\s*(?:required|assigned|weekly)\s+readings?\s*[:\-–]*\s*"#,
+            #"(?i)^\s*readings?\s*[:\-–]*\s*"#,
+            #"(?i)^\s*(?:read|watch|listen|required|module\s*\d+|unit\s*\d+|week\s*\d+)\s*[:\-–]*\s*"#
+        ]
+        for imp in imperativePrefixes {
+            title = title.replacingOccurrences(of: imp, with: "", options: .regularExpression)
+        }
+
+        // 9. If title has author + chapter + topic mention e.g. "Corey Chapters 1 & 2 on the therapeutic..."
+        // Extract the actual topic after "on", "about", or "regarding"
+        let topicAfterOn = #"(?i)^.*?\b(?:chapters?|chaps?\.?|chps?\.?|chs?\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)+\s*(?:on|about|regarding)\s+(.+)$"#
+        if let regex = try? NSRegularExpression(pattern: topicAfterOn),
+           let match = regex.firstMatch(in: title, options: [], range: NSRange(location: 0, length: title.utf16.count)),
+           match.numberOfRanges > 1,
+           let r = Range(match.range(at: 1), in: title) {
+            let extracted = String(title[r]).trimmingCharacters(in: CharacterSet(charactersIn: " :;•·-–—\t"))
+            if !extracted.isEmpty && extracted.count >= 3 {
+                title = extracted
+            }
+        }
+
+        // 10. Strip chapter mentions from the title itself so displayTitleWithChapter handles chapter cleanly
+        let chPattern = #"(?i)\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chps?\.?|chs?\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)+\s*[:\-–·•.]*\s*"#
+        let chStripped = title.replacingOccurrences(of: chPattern, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ":;•·-–— \t."))
+        if !chStripped.isEmpty && chStripped.count >= 2 {
+            title = chStripped
+        }
+
+        // 11. Handle articles
+        if title.lowercased() == "articles" || title.lowercased() == "article" {
+            title = "Required Articles"
+        }
+
+        // 12. Strip known extra subtitles only when preceded by colon/dash
+        let extraSubtitlesToStrip = [
+            #"(?i)\s*[-–:]+\s*(?:Groups\s*[-–:]*\s*)?(?:Process\s+(?:and|&)\s+Practice)\b"#,
+            #"(?i)\s*[-–:]+\s*(?:Theory\s+(?:and|&)\s+Practice(?:\s+of\s+Group\s+Psychotherapy)?)\b"#,
+            #"(?i)\s*[-–:]+\s*(?:Qualitative,?\s+quantitative,?\s+and\s+mixed\s+methods\s+approaches.*)$"#
+        ]
+        for pat in extraSubtitlesToStrip {
+            title = title.replacingOccurrences(of: pat, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // 13. Strip trailing prepositions/conjunctions & orphan punctuation
+        let trailingNoise = #"(?i)\s+(?:in|on|at|for|to|with|and|&|of|the|a|an|from|by)\s*$"#
+        for _ in 0..<3 {
+            title = title.replacingOccurrences(of: trailingNoise, with: "", options: .regularExpression)
+                .trimmingCharacters(in: CharacterSet(charactersIn: ":;•·-–— \t./,"))
+        }
+
+        // 14. Cap length to 7 words max if still too long (preserves multi-word topics)
+        let words = title.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        if words.count > 7 {
+            var trimmedWords = Array(words.prefix(7))
+            let stopWords = ["in", "on", "at", "for", "to", "with", "and", "&", "of", "the", "a", "an", "from", "by"]
+            while let last = trimmedWords.last, stopWords.contains(last.lowercased()) {
+                trimmedWords.removeLast()
+            }
+            title = trimmedWords.joined(separator: " ")
+        }
+
+        // 15. Capitalize first letter of each word or Title Case
+        if title.lowercased() == "see brightspace for assigned readings" || title.lowercased() == "assigned readings" {
+            title = "Assigned Readings"
+        } else {
+            let minorWords = ["a", "an", "the", "and", "but", "or", "for", "nor", "on", "at", "to", "from", "by", "in", "of"]
+            let parts = title.components(separatedBy: .whitespaces)
+            let capitalized = parts.enumerated().map { idx, word -> String in
+                let lower = word.lowercased()
+                if idx > 0 && minorWords.contains(lower) {
+                    return lower
+                }
+                return word.prefix(1).uppercased() + word.dropFirst()
+            }
+            title = capitalized.joined(separator: " ")
+        }
+
+        return title.isEmpty ? "Reading" : title
+    }
+
+    public func extractTopicFromContext() -> String? {
+        var raw: String? = nil
+        if let explicit = relevantTopics?.trimmingCharacters(in: .whitespacesAndNewlines), !explicit.isEmpty {
+            raw = explicit
+        } else if let wTheme = week?.theme?.trimmingCharacters(in: .whitespacesAndNewlines), !wTheme.isEmpty {
+            raw = wTheme
+        }
+        guard let topicRaw = raw, !topicRaw.isEmpty else { return nil }
+
+        var topic = topicRaw
+        topic = topic.replacingOccurrences(of: #"(?i)^(?:module|week|session|unit)\s*\d+[\s:\-–·•]+"#, with: "", options: .regularExpression)
+        topic = topic.trimmingCharacters(in: CharacterSet(charactersIn: "•·-–— \t\n:"))
+        let components = topic.components(separatedBy: "•")
+        for comp in components {
+            let trimmed = comp.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && trimmed.range(of: #"(?i)^(?:week|module|session|unit)\s*\d+$"#, options: .regularExpression) == nil {
+                let distilled = Reading.distillSmartReadingTitle(trimmed)
+                if distilled != "Reading" && !distilled.isEmpty {
+                    return distilled
                 }
             }
-            return res
         }
+        let distilled = Reading.distillSmartReadingTitle(topic)
+        return (distilled == "Reading" || distilled.isEmpty) ? nil : distilled
+    }
 
-        var raw = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    public var cleanDisplayTitle: String {
+        let distilled = Reading.distillSmartReadingTitle(title)
+        let auth = authorName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let authLower = auth.lowercased()
+        let isJustAuthorOrGeneric = distilled.lowercased() == authLower ||
+            ["reading", "readings", "assigned readings", "assigned reading"].contains(distilled.lowercased())
 
-        // 1. Strip XML tags
-        raw = raw.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
-
-        // 2. Strip table header words if present in title
-        let headerNoise = #"(?i)^\s*(?:modules|topics|related readings|course session/date|topics,\s*modules,\s*and\s*assignments|readings)+\s*"#
-        raw = raw.replacingOccurrences(of: headerNoise, with: "", options: .regularExpression)
-
-        // 3. Extract citation if citation pattern is matched (e.g. "Gehart (Chapters 1-3)" out of "Module 1 Systems Theory... Gehart (Chapters 1-3)")
-        let citationPattern = #"(?i)\b((?:Gehart|Nichols|Davis|[A-Z][a-z]+)?\s*\(?\s*(?:chapters?|ch\.?|chap\.?)\s*\d+[^)]*\)?|\barticles?\b)"#
-        if let regex = try? NSRegularExpression(pattern: citationPattern),
-           let match = regex.firstMatch(in: raw, options: [], range: NSRange(location: 0, length: raw.utf16.count)),
-           let citationRange = Range(match.range, in: raw) {
-            let citation = String(raw[citationRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if citation.lowercased() == "articles" || citation.lowercased() == "article" {
-                return "Required Articles"
+        if isJustAuthorOrGeneric {
+            // Priority 1: Fallback to the schedule topic from the details page
+            if let topicTitle = extractTopicFromContext(), !topicTitle.isEmpty {
+                return topicTitle
             }
-            return citation
+            // Priority 2: Fallback to resource title if descriptive
+            if let res = resourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !res.isEmpty {
+                let distilledRes = Reading.distillSmartReadingTitle(res)
+                if distilledRes != "Reading" && distilledRes.lowercased() != authLower {
+                    return distilledRes
+                }
+            }
         }
 
-        // 4. Strip prefix noise
-        raw = raw.replacingOccurrences(of: #"(?i)^\s*(?:readings?|read|watch|listen|required|module\s*\d+|unit\s*\d+|week\s*\d+)\s*[:\-–]*\s*"#, with: "", options: .regularExpression)
-
-        // 5. Clean punctuation & remnants
-        raw = raw.replacingOccurrences(of: #"\s*[:;\-–]\s*$"#, with: "", options: .regularExpression)
-        raw = raw.replacingOccurrences(of: #"^\s*[:;\-–]\s*"#, with: "", options: .regularExpression)
-
-        // 6. Cap words to max 6
-        let words = raw.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        if words.count > 6 {
-            return words.prefix(6).joined(separator: " ")
+        // If title still starts with author surname followed by colon/dash (e.g. "Corey: ..."), strip the author prefix
+        if !auth.isEmpty && distilled.lowercased().hasPrefix(authLower) {
+            let prefixPattern = #"(?i)^\s*"# + NSRegularExpression.escapedPattern(for: auth) + #"[\s:\-–·•]+"#
+            let strippedAuth = distilled.replacingOccurrences(of: prefixPattern, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !strippedAuth.isEmpty && strippedAuth.count >= 3 {
+                return strippedAuth
+            }
         }
 
-        return raw.isEmpty ? "Reading" : raw
+        return distilled
     }
 }
 
@@ -1716,8 +1968,12 @@ public struct CourseImporter {
     }
 
     public static func cleanAndSummarizeTitle(_ rawTitle: String, isReading: Bool, courseCode: String? = nil, courseName: String? = nil) -> String {
-        var title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        if title.isEmpty { return isReading ? "Reading" : "Assignment" }
+        if isReading {
+            return Reading.distillSmartReadingTitle(rawTitle)
+        }
+
+        var title = Reading.repairChapterArtifacts(rawTitle).trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.isEmpty { return "Assignment" }
 
         // Strip specific course code / name if provided
         if let code = courseCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
@@ -2358,7 +2614,10 @@ public struct CourseImporter {
                 })
                 if let existing = existingReading {
                     print("ℹ️ [RE-UPLOAD CLAUSE] Reading '\(item.title)' already exists in Week \(weekNum). Updating in place.")
-                    existing.summaryText = item.description ?? ""
+                    let existingLower = existing.summaryText.lowercased()
+                    if existingLower.hasPrefix("required reading") || existingLower.hasPrefix("see brightspace") || existing.summaryText == existing.title || existingLower.contains("corey ch.") || existingLower.contains("yalom ch.") {
+                        existing.summaryText = ""
+                    }
                     if let media = item.mediaUrl, !media.isEmpty { existing.videoUrl = media }
                     if let auth = item.authorName { existing.authorName = auth }
                     if let res = item.resourceTitle { existing.resourceTitle = res }
@@ -2389,7 +2648,7 @@ public struct CourseImporter {
                         mediaType: mediaType,
                         isCompleted: false,
                         isDeleted: false,
-                        summaryText: item.description ?? "",
+                        summaryText: "",
                         keyTakeawaysText: takeawaysText,
                         estimatedTimeText: estimatedTimeStr,
                         videoUrl: videoUrl,

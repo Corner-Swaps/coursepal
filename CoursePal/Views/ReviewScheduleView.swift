@@ -157,13 +157,8 @@ public struct ReviewScheduleView: View {
             )
         }
 
-        // Generate a unique sharing code from course name initials
-        let initials = courseName
-            .components(separatedBy: .whitespaces)
-            .compactMap { $0.first.map { String($0).uppercased() } }
-            .prefix(3)
-            .joined()
-        let uniqueSharing = "\(initials.isEmpty ? "CRS" : initials)-\(Int.random(in: 1000...9999))"
+        // Generate a standard 6-digit numeric sharing code
+        let uniqueSharing = String(format: "%06d", Int.random(in: 100000...999999))
 
         return CourseDTO(
             id: UUID().uuidString,

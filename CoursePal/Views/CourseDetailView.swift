@@ -51,7 +51,7 @@ public struct CourseDetailView: View {
                                     Text("Ask Course AI")
                                         .font(.system(size: 15, weight: .bold, design: .rounded))
                                         .foregroundColor(Color(red: 0.1, green: 0.14, blue: 0.24))
-                                    Text("GEMINI")
+                                    Text("AI")
                                         .font(.system(size: 9, weight: .black, design: .rounded))
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
@@ -174,7 +174,7 @@ public struct CourseDetailView: View {
                             .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
 
                         VStack(spacing: 8) {
-                            ForEach(course.assignments.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) })) { assign in
+                            ForEach(course.assignments.filter { !$0.isDeleted }.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) })) { assign in
                                 EditableAssignmentRow(assignment: assign)
                             }
 
@@ -202,7 +202,7 @@ public struct CourseDetailView: View {
                     }
 
                     // MARK: - 4. Course Readings Section
-                    let allReadingsForCourse = course.weeks.flatMap { $0.readings }
+                    let allReadingsForCourse = course.weeks.flatMap { $0.readings }.filter { !$0.isDeleted }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Readings")
                             .font(.cpItemTitle)

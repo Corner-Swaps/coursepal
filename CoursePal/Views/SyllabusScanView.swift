@@ -79,9 +79,7 @@ public struct SyllabusScanView: View {
                 allowedContentTypes: DocumentExtractor.supportedContentTypes,
                 allowsMultipleSelection: true
             ) { result in
-                if case .success(let urls) = result, !urls.isEmpty {
-                    handlePDFUploads(urls)
-                }
+                handleFileImportResult(result)
             }
         }
         #endif
@@ -110,9 +108,9 @@ public struct SyllabusScanView: View {
         }
     }
 
-    private func handlePDFUploads(_ urls: [URL]) {
-        guard let firstURL = urls.first else {
-            errorMessage = "Could not read PDF document."
+    private func handleFileImportResult(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let firstURL = urls.first else {
+            errorMessage = "Could not read document."
             return
         }
 
@@ -125,19 +123,50 @@ public struct SyllabusScanView: View {
         let extractedText = DocumentExtractor.extractText(from: firstURL) ?? ""
         if accessed { firstURL.stopAccessingSecurityScopedResource() }
 
-        Task {
-            if let pData = pdfData, !pData.isEmpty {
-                if let dto = try? await APIService.shared.parsePDFDocumentData(pData) {
-                    parsedCourseDTO = dto
-                    isParsing = false
-                    return
+        Task { @MainActor in
+            let trimmedText = extractedText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // 1. PRIMARY ROUTE A: High-Fidelity Gemini AI Text Parser (Fast, 100% of all pages, no page limits)
+            if trimmedText.count >= 100, NetworkMonitor.shared.isOnline {
+                rawSyllabusText = trimmedText
+                do {
+                    let dto = try await APIService.shared.parseSyllabusText(trimmedText)
+                    let itemsCount = (dto.items?.count ?? 0) + (dto.assignments?.count ?? 0) + (dto.weeks?.flatMap { $0.readings ?? [] }.count ?? 0)
+                    if itemsCount > 0 {
+                        parsedCourseDTO = dto
+                        isParsing = false
+                        return
+                    }
+                } catch {
+                    print("⚠️ [SyllabusScanView] Gemini text parse error: \(error.localizedDescription). Proceeding to vision/local fallback...")
                 }
             }
-            if !extractedText.isEmpty {
-                let dto = LocalSyllabusParser.shared.parseText(extractedText)
+
+            // 2. PRIMARY ROUTE B: Multimodal Gemini Vision Route (For Pure Scans / Photos without Text Layer)
+            if let pData = pdfData, !pData.isEmpty, NetworkMonitor.shared.isOnline {
+                do {
+                    let dto = try await APIService.shared.parsePDFDocumentData(pData)
+                    let itemsCount = (dto.items?.count ?? 0) + (dto.assignments?.count ?? 0) + (dto.weeks?.flatMap { $0.readings ?? [] }.count ?? 0)
+                    if itemsCount > 0 {
+                        parsedCourseDTO = dto
+                        if !trimmedText.isEmpty {
+                            rawSyllabusText = trimmedText
+                        }
+                        isParsing = false
+                        return
+                    }
+                } catch {
+                    print("⚠️ [SyllabusScanView] Gemini vision parse error: \(error.localizedDescription). Proceeding to local offline fallback...")
+                }
+            }
+
+            // 3. OFFLINE / EMERGENCY FALLBACK: Native On-Device Parser
+            if !trimmedText.isEmpty {
+                rawSyllabusText = trimmedText
+                let dto = LocalSyllabusParser.shared.parseText(trimmedText)
                 parsedCourseDTO = dto
             } else {
-                errorMessage = "Could not parse PDF content."
+                errorMessage = "Could not parse document content. Please try pasting the text manually."
             }
             isParsing = false
         }
@@ -164,7 +193,12 @@ public struct SyllabusScanView: View {
             if !combinedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 rawSyllabusText = combinedText
                 if let dto = try? await APIService.shared.parseSyllabusText(combinedText) {
-                    parsedCourseDTO = dto
+                    let itemsCount = (dto.items?.count ?? 0) + (dto.assignments?.count ?? 0) + (dto.weeks?.flatMap { $0.readings ?? [] }.count ?? 0)
+                    if itemsCount > 0 {
+                        parsedCourseDTO = dto
+                    } else {
+                        parsedCourseDTO = LocalSyllabusParser.shared.parseText(combinedText)
+                    }
                 } else {
                     parsedCourseDTO = LocalSyllabusParser.shared.parseText(combinedText)
                 }
@@ -194,9 +228,9 @@ public struct SyllabusScanView: View {
         let docTitle = "\(dto.courseCode ?? "Course")_Syllabus"
         let syllabusDoc = SyllabusDocument(
             docTitle: "\(dto.courseCode ?? "CRS"): \(dto.courseName) Syllabus",
-            officeHoursText: "Refer to original syllabus document",
-            instructorContact: "Instructor details in original syllabus document",
-            gradingPolicyText: "Grading policy per original syllabus document",
+            officeHoursText: dto.officeHours,
+            instructorContact: dto.instructorName != nil ? [dto.instructorName, dto.instructorEmail].compactMap { $0 }.joined(separator: " • ") : nil,
+            gradingPolicyText: nil,
             fileName: "\(docTitle).txt",
             rawFileData: rawData,
             uploadedAt: Date()

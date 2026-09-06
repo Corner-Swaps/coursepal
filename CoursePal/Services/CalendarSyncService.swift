@@ -17,7 +17,11 @@ public final class CalendarSyncService: ObservableObject {
 
     public func checkAuthorizationStatus() {
         let status = EKEventStore.authorizationStatus(for: .event)
-        self.isAuthorized = (status == .authorized || status == .fullAccess)
+        if #available(iOS 17.0, *) {
+            self.isAuthorized = (status == .fullAccess)
+        } else {
+            self.isAuthorized = (status == .authorized)
+        }
     }
 
     public func requestAccess() async -> Bool {
