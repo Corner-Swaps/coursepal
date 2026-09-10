@@ -26,7 +26,7 @@ import {
   Animated
 } from 'react-native';
 import { CoursePalTheme } from '../constants/theme';
-import { haptics } from '../services/haptics';
+import { haptics } from '../services/HapticsService';
 
 export interface PrecisionSliderProps {
   value: number;

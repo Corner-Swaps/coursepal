@@ -13,7 +13,7 @@ import { CoursePalTheme } from './src/constants/theme';
 import { CoursePalProvider, useCoursePal, TabKey } from './src/context/CoursePalContext';
 import {
   MainTabBar,
-  ConfettiCelebrationView,
+  ConfettiCelebration,
   FuzzedScrollBottomFade
 } from './src/components';
 import {
@@ -160,7 +160,7 @@ function MainAppView() {
         />
 
         {/* Confetti Celebration Overlay */}
-        <ConfettiCelebrationView
+        <ConfettiCelebration
           active={showConfetti}
           particleCount={50}
           onAnimationComplete={dismissConfetti}

@@ -6,8 +6,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { audio } from '../src/services/audio';
-import { haptics } from '../src/services/haptics';
+import { audio } from '../src/services/AudioEngineService';
+import { haptics } from '../src/services/HapticsService';
 import { getSoundscapeById } from '../src/utils/soundCatalog';
 import { timerReducer, initialTimerState } from '../src/utils/timerReducer';
 

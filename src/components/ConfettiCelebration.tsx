@@ -14,11 +14,13 @@ import {
   ConfettiParticleState
 } from '../utils/mathPhysics';
 
-export interface ConfettiCelebrationViewProps {
+export interface ConfettiCelebrationProps {
   active?: boolean;
   onFinished?: () => void;
   style?: StyleProp<ViewStyle>;
 }
+
+export type ConfettiCelebrationViewProps = ConfettiCelebrationProps;
 
 interface ParticleInstance {
   id: number;
@@ -29,7 +31,7 @@ interface ParticleInstance {
   physics: ConfettiParticleState;
 }
 
-export const ConfettiCelebrationView: React.FC<ConfettiCelebrationViewProps> = ({
+export const ConfettiCelebration: React.FC<ConfettiCelebrationProps> = ({
   active = true,
   onFinished,
   style
@@ -166,6 +168,8 @@ export const ConfettiCelebrationView: React.FC<ConfettiCelebrationViewProps> = (
     </View>
   );
 };
+
+export const ConfettiCelebrationView = ConfettiCelebration;
 
 const styles = StyleSheet.create({
   canvas: {

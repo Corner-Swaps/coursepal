@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { audio } from '../services/audio';
+import { audio } from '../services/AudioEngineService';
 import { SoundscapeTrack, SoundscapeId, AudioPlaybackState } from '../types/audio';
 import { getSoundscapeById } from '../utils/soundCatalog';
 

@@ -22,7 +22,7 @@ import {
   StyleProp,
   ViewStyle
 } from 'react-native';
-import { haptics } from '../services/haptics';
+import { haptics } from '../services/HapticsService';
 
 export interface SlideUpModalProps {
   visible: boolean;

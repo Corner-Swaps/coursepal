@@ -7,7 +7,7 @@
     "start": "expo start",
     "ios": "expo run:ios",
     "test": "jest --verbose",
-    "test:gemini": "npx tsx scripts/testGemini.ts",
+    "test:gemini": "npx tsx scripts/test-gemini.ts",
     "typecheck": "tsc --noEmit",
     "android": "expo run:android"
   },

@@ -4,8 +4,8 @@ import multer from 'multer';
 import crypto from 'crypto';
 import path from 'path';
 import { query, generateSharingCode, memoryDb } from './db';
-import { parseSyllabusDocument } from './services/syllabusParser';
-import { NeuralDocumentEngine } from './services/neuralDocumentEngine';
+import { parseSyllabusDocument } from './services/SyllabusParserService';
+import { NeuralDocumentEngine } from './services/NeuralEngineService';
 
 const app = express();
 const host = process.env.HOST || '0.0.0.0';

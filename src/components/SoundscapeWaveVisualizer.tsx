@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { CoursePalTheme } from '../constants/theme';
-import { haptics } from '../services/haptics';
+import { haptics } from '../services/HapticsService';
 
 export interface SoundscapeWaveVisualizerProps {
   width?: number;

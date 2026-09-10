@@ -1,4 +1,4 @@
-import { parseSyllabusDocument, formatReadingTitle5to6Words } from '../services/syllabusParser';
+import { parseSyllabusDocument, formatReadingTitle5to6Words } from '../services/SyllabusParserService';
 import { generateSharingCode } from '../db';
 import app from '../server';
 import crypto from 'crypto';

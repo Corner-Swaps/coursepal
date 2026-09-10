@@ -4,7 +4,7 @@
  */
 
 import { useCallback } from 'react';
-import { haptics, HapticImpactStyle } from '../services/haptics';
+import { haptics, HapticImpactStyle } from '../services/HapticsService';
 
 export function useHaptics() {
   const selection = useCallback(() => {

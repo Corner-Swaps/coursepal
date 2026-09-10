@@ -19,8 +19,9 @@ backend/
 │   │   ├── index.ts              # PostgreSQL pool with resilient in-memory fallback
 │   │   └── schema.sql            # Relational database schema for courses & users
 │   ├── services/
-│   │   ├── syllabusParser.ts     # Multi-model Gemini AI parser with Zod schema validation
-│   │   └── neuralDocumentEngine.ts # 64-D random projection semantic text search engine
+│   │   ├── index.ts              # Unified service exports barrel
+│   │   ├── SyllabusParserService.ts # Multi-model Gemini AI parser with Zod schema validation
+│   │   └── NeuralEngineService.ts   # 64-D random projection semantic text search engine
 │   ├── tests/
 │   │   ├── api.test.ts           # 20-test academic engine integration suite
 │   │   └── neural.test.ts        # Neural vector learning & semantic query tests

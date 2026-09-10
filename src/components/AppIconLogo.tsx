@@ -8,12 +8,14 @@ import React from 'react';
 import { View, Image, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { ImageAssets } from '../assets';
 
-export interface AppIconLogoViewProps {
+export interface AppIconLogoProps {
   size?: number;
   style?: StyleProp<ViewStyle>;
 }
 
-export const AppIconLogoView: React.FC<AppIconLogoViewProps> = ({
+export type AppIconLogoViewProps = AppIconLogoProps;
+
+export const AppIconLogo: React.FC<AppIconLogoProps> = ({
   size = 80,
   style
 }) => {
@@ -53,6 +55,8 @@ export const AppIconLogoView: React.FC<AppIconLogoViewProps> = ({
     </View>
   );
 };
+
+export const AppIconLogoView = AppIconLogo;
 
 const styles = StyleSheet.create({
   container: {

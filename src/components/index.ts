@@ -2,12 +2,12 @@
  * Atomic & Dynamic Vector UI Component Exports
  */
 
-export * from './AppIconLogoView';
+export * from './AppIconLogo';
 export * from './ContinuousProgressRing';
 export * from './ContinuousProgressBar';
 export * from './UploadProgressBanner';
 export * from './HighlighterText';
-export * from './ConfettiCelebrationView';
+export * from './ConfettiCelebration';
 export * from './MainTabBar';
 export * from './FuzzedScrollMask';
 export * from './SoundscapeWaveVisualizer';

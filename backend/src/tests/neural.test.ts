@@ -1,4 +1,4 @@
-import { NeuralDocumentEngine } from '../services/neuralDocumentEngine';
+import { NeuralDocumentEngine } from '../services/NeuralEngineService';
 
 console.log('====================================================');
 console.log('  CoursePal Neural Net Document Learning Engine Tests');

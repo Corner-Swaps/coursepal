@@ -1,11 +1,14 @@
 import React from 'react';
 import {
+  AppIconLogo,
   AppIconLogoView,
   ContinuousProgressRing,
   ContinuousProgressBar,
   UploadProgressBanner,
   HighlighterText,
-  MainTabBar
+  MainTabBar,
+  ConfettiCelebration,
+  ConfettiCelebrationView
 } from '../src/components';
 
 describe('Atomic UI Components', () => {
@@ -24,6 +27,10 @@ describe('Atomic UI Components', () => {
       expect(element.props.size).toBeUndefined();
       const defaultSize = 80;
       expect(defaultSize * 0.22).toBeCloseTo(17.6, 2);
+    });
+
+    it('provides AppIconLogo alias matching AppIconLogoView', () => {
+      expect(AppIconLogo).toBe(AppIconLogoView);
     });
   });
 
@@ -97,6 +104,18 @@ describe('Atomic UI Components', () => {
       expect(element.props.selectedTab).toBe('readings');
       expect(element.props.onSelectTab).toBe(onSelect);
       expect(element.props.onPressCenterPlus).toBe(onPlus);
+    });
+  });
+
+  describe('ConfettiCelebration', () => {
+    it('provides ConfettiCelebration alias matching ConfettiCelebrationView', () => {
+      expect(ConfettiCelebration).toBe(ConfettiCelebrationView);
+    });
+
+    it('instantiates ConfettiCelebration element with default props', () => {
+      const element = React.createElement(ConfettiCelebration, { active: false });
+      expect(element).toBeDefined();
+      expect(element.props.active).toBe(false);
     });
   });
 });

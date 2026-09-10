@@ -24,7 +24,7 @@ import {
   GestureResponderEvent
 } from 'react-native';
 import { CoursePalTheme } from '../constants/theme';
-import { haptics } from '../services/haptics';
+import { haptics } from '../services/HapticsService';
 
 export interface BottomSheetPanContainerProps {
   children?: React.ReactNode;
