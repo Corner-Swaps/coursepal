@@ -18,7 +18,9 @@ describe('Phase 4: Native Audio Engine, Haptic Smoothing & Background Execution'
 
   describe('Audio Session & Background Audio Capabilities', () => {
     it('verifies CoursePal/Info.plist contains UIBackgroundModes with audio', () => {
-      const plistPath = path.join(__dirname, '../CoursePal/Info.plist');
+      const plistPath = fs.existsSync(path.join(__dirname, '../ios/CoursePal/Info.plist'))
+        ? path.join(__dirname, '../ios/CoursePal/Info.plist')
+        : path.join(__dirname, '../CoursePal/Info.plist');
       expect(fs.existsSync(plistPath)).toBe(true);
       const content = fs.readFileSync(plistPath, 'utf8');
 
