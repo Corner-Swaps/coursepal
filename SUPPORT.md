@@ -1,25 +1,30 @@
 # CoursePal Support & Contact
 
-Welcome to CoursePal Support! We are here to help you get the best experience out of CoursePal.
+Welcome to CoursePal Support! We are here to ensure you have a seamless, productive experience with CoursePal.
 
-## 📬 Contact Support
+## 📬 Contact Support & Help Center
 
-If you have any questions, feedback, or need assistance with CoursePal, please get in touch with our support team:
+If you have any questions, feedback, feature requests, or require assistance with CoursePal, please get in touch with us:
 
 - **Email Support**: [goloubov@gmail.com](mailto:goloubov@gmail.com)
+- **Support & Legal Center**: [https://corner-swaps.github.io/coursepal/](https://corner-swaps.github.io/coursepal/)
+- **Privacy Policy**: [https://corner-swaps.github.io/coursepal/privacy.html](https://corner-swaps.github.io/coursepal/privacy.html)
+- **Terms of Service**: [https://corner-swaps.github.io/coursepal/terms.html](https://corner-swaps.github.io/coursepal/terms.html)
 - **Official Repository**: [https://github.com/Corner-Swaps/coursepal](https://github.com/Corner-Swaps/coursepal)
+- **Current App Version**: **1.4.0**
 
 ## ❓ Frequently Asked Questions (FAQ)
 
 ### How does CoursePal import my syllabus?
-CoursePal uses intelligent document processing to parse your syllabus PDF or text document, automatically organizing your assignments, textbook readings, and weekly course schedule into an interactive dashboard.
+CoursePal uses Gemini AI and on-device intelligent parsing to read your syllabus PDF, text file, or photo scan, automatically organizing your weekly themes, required readings, homework deadlines, and grade weights.
 
 ### Is my data private?
-Yes! CoursePal stores your schedules, course details, and progress locally on your device. Your academic data is completely private to you.
+Yes. CoursePal operates under a strict Local-First model. Your syllabi, course schedules, and study progress remain encrypted locally on your personal device. We never sell or monetize personal academic records.
 
 ### What file formats are supported?
-CoursePal supports PDF documents and text files containing course schedules and syllabus details.
+CoursePal supports digital PDF documents, camera document scans, and plain text syllabus files.
 
 ---
 
 *Thank you for using CoursePal!*
+

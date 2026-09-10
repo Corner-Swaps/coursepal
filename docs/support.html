@@ -247,7 +247,7 @@
             <ul>
                 <li><strong>Syllabus Document Parsing:</strong> Processes syllabus text and document scans to identify weekly course modules, required textbook readings, assignment due dates, point weightings, and exam schedules.</li>
                 <li><strong>Native iOS Calendar Integration:</strong> Exports scheduled assignment deadlines directly to your native Apple Calendar and Reminders app.</li>
-                <li><strong>Local-First Storage:</strong> Stores course schedules, progress, and custom notes on-device using encrypted SwiftData storage within the iOS application sandbox.</li>
+                <li><strong>Local-First Storage:</strong> Stores course schedules, progress, and custom notes on-device using encrypted local storage within the application sandbox.</li>
                 <li><strong>Course Code Sharing:</strong> Allows students to generate alphanumeric invite codes to share structured course schedules with classmates.</li>
             </ul>
 
@@ -374,7 +374,7 @@
             <div class="notice-box">
                 <strong>PRIVACY COMMITMENTS:</strong>
                 <ul style="margin-top: 6px; margin-bottom: 0;">
-                    <li><strong>100% Local-First Sandbox:</strong> Course data, notes, assignments, and reading progress are stored locally on your device via SwiftData.</li>
+                    <li><strong>100% Local-First Sandbox:</strong> Course data, notes, assignments, and reading progress are stored locally on your device in an encrypted on-device sandbox.</li>
                     <li><strong>Zero Foundation Model Training:</strong> Your private course documents and syllabi are never used to train public or foundation AI models.</li>
                     <li><strong>No Data Monetization:</strong> We do not sell, rent, license, or monetize your personal data to data brokers or advertising networks.</li>
                     <li><strong>No Tracking SDKs:</strong> Zero cross-app tracking SDKs, marketing beacons, or commercial analytics trackers.</li>
@@ -382,7 +382,7 @@
             </div>
 
             <h3>1. Local-First On-Device Architecture</h3>
-            <p>CoursePal operates on-device. When you create courses, track reading progress, add homework tasks, or write study notes, that information is stored directly in your device's local SwiftData database, protected by Apple's hardware-level AES-256 data protection. We do not operate a centralized cloud database storing your private student records.</p>
+            <p>CoursePal operates on-device. When you create courses, track reading progress, add homework tasks, or write study notes, that information is stored directly in your device's local encrypted sandbox storage, protected by Apple's hardware-level AES-256 data protection. We do not operate a centralized cloud database storing your private student records.</p>
 
             <h3>2. AI Syllabus Processing and Zero Model Training Guarantee</h3>
             <p>When you choose to parse a syllabus document using automated AI:</p>
