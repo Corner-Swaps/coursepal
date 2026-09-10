@@ -1,0 +1,63 @@
+name: 🐛 Bug Report
+description: File a bug report to help us improve CoursePal
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue with CoursePal! Please provide clear details below.
+  - type: input
+    id: version
+    attributes:
+      label: CoursePal Version
+      placeholder: "e.g. 1.4.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - "iOS"
+        - "Android"
+        - "Web / Backend"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device & OS
+      placeholder: "e.g. iPhone 16 Pro Max, iOS 18.0"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear explanation of what went wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Open CoursePal
+        2. Upload syllabus PDF '...'
+        3. Observe parsing behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: syllabus_context
+    attributes:
+      label: Syllabus Context / Error Logs
+      description: Relevant syllabus text snippet or console logs (do not include sensitive personal data).
