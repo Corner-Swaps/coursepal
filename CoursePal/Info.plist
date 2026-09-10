@@ -38,6 +38,10 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>CoursePal needs camera access so you can scan physical syllabus documents to build your course schedule automatically.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

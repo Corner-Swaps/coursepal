@@ -1771,6 +1771,10 @@ public struct EditAssignmentSheet: View {
             ZStack {
                 Color(red: 0.95, green: 0.96, blue: 0.98)
                     .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        KeyboardDismissHelper.dismissKeyboard()
+                    }
 
                 Form {
                     // Section 1: Title & Course Name
@@ -1870,10 +1874,6 @@ public struct EditAssignmentSheet: View {
                                 VStack(spacing: 8) {
                                     ForEach(0..<rubricItemsState.count, id: \.self) { idx in
                                         HStack(alignment: .center, spacing: 8) {
-                                            Text("\(idx + 1) -")
-                                                .font(.system(size: 14, weight: .bold, design: .rounded))
-                                                .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-
                                             TextField("Item name (e.g. Analysis)...", text: Binding(
                                                 get: { idx < rubricItemsState.count ? rubricItemsState[idx].title : "" },
                                                 set: { newVal in
@@ -1887,8 +1887,12 @@ public struct EditAssignmentSheet: View {
 
                                             Spacer()
 
-                                            // Points Input Pill next to title
-                                            HStack(spacing: 3) {
+                                            // On the left of the numbers: the pts, then the numbers
+                                            HStack(spacing: 4) {
+                                                Text("pts")
+                                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+
                                                 TextField("0", text: Binding(
                                                     get: {
                                                         guard idx < rubricItemsState.count else { return "" }
@@ -1899,30 +1903,17 @@ public struct EditAssignmentSheet: View {
                                                     },
                                                     set: { newVal in
                                                         if idx < rubricItemsState.count {
-                                                            rubricItemsState[idx].points = newVal.replacingOccurrences(of: "pts", with: "", options: .caseInsensitive)
-                                                                .replacingOccurrences(of: "pt", with: "", options: .caseInsensitive)
-                                                                .trimmingCharacters(in: .whitespaces)
+                                                            let filtered = newVal.filter { "0123456789.".contains($0) }
+                                                            rubricItemsState[idx].points = filtered
                                                         }
                                                     }
                                                 ))
-                                                .keyboardType(.numbersAndPunctuation)
-                                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                .keyboardType(.decimalPad)
+                                                .font(.system(size: 14, weight: .bold, design: .rounded))
                                                 .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
-                                                .multilineTextAlignment(.trailing)
-                                                .frame(width: 34)
-
-                                                Text("pts")
-                                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+                                                .multilineTextAlignment(.leading)
+                                                .frame(minWidth: 28, maxWidth: 46)
                                             }
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 5)
-                                            .background(Color(red: 0.95, green: 0.96, blue: 0.98))
-                                            .cornerRadius(8)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(Color(red: 0.88, green: 0.90, blue: 0.93), lineWidth: 1)
-                                            )
 
                                             Button {
                                                 if idx < rubricItemsState.count {

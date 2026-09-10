@@ -18,45 +18,64 @@ extension View {
 }
 
 public enum KeyboardDismissHelper {
+    public static func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows {
+                window.endEditing(true)
+            }
+        }
+    }
+
     public static func setupGlobalDismissGesture() {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
-        for window in windowScene.windows {
-            let hasRecognizer = window.gestureRecognizers?.contains(where: { $0 is GlobalKeyboardDismissGestureRecognizer }) ?? false
-            if !hasRecognizer {
-                let tap = GlobalKeyboardDismissGestureRecognizer(target: window, action: #selector(UIView.endEditing(_:)))
-                tap.cancelsTouchesInView = false
-                window.addGestureRecognizer(tap)
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        for scene in scenes {
+            for window in scene.windows {
+                let hasRecognizer = window.gestureRecognizers?.contains(where: { $0 is GlobalKeyboardDismissGestureRecognizer }) ?? false
+                if !hasRecognizer {
+                    let tap = GlobalKeyboardDismissGestureRecognizer()
+                    window.addGestureRecognizer(tap)
+                }
             }
         }
     }
 }
 
 private class GlobalKeyboardDismissGestureRecognizer: UITapGestureRecognizer, UIGestureRecognizerDelegate {
-    override init(target: Any?, action: Selector?) {
-        super.init(target: target, action: action)
+    init() {
+        super.init(target: nil, action: nil)
         self.cancelsTouchesInView = false
         self.delegate = self
+        self.addTarget(self, action: #selector(handleTap))
+    }
+
+    @objc private func handleTap() {
+        // Drop/minimize keyboard immediately across all windows, scenes, and sheets
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows {
+                window.endEditing(true)
+            }
+        }
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard let touchView = touch.view else { return true }
 
-        if touchView is UITextField || touchView is UITextView || NSStringFromClass(type(of: touchView)).contains("Text") {
+        // If user tapped directly inside a textfield or textview, do not dismiss so focus can change cleanly
+        if touchView is UITextField || touchView is UITextView {
             return false
         }
 
-        var curr: UIView? = touchView
+        var curr: UIView? = touchView.superview
         while let v = curr {
-            let cls = NSStringFromClass(type(of: v))
-            if cls.contains("Sheet") || cls.contains("Presentation") || cls.contains("Modal") || cls.contains("Popover") {
-                return false
-            }
-            if let nextResponder = v.next as? UIViewController, nextResponder.presentingViewController != nil {
+            if v is UITextField || v is UITextView {
                 return false
             }
             curr = v.superview
         }
 
+        // Tap is outside any text field (letters or numbers) - dismiss/drop keyboard!
         return true
     }
 

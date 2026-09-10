@@ -607,10 +607,6 @@ public struct AssignmentDetailView: View {
                                 ForEach(rubricItems.indices, id: \.self) { idx in
                                     let item = rubricItems[idx]
                                     HStack(alignment: .center, spacing: 8) {
-                                        Text("\(idx + 1) -")
-                                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                                            .foregroundColor(Color(red: 0.35, green: 0.42, blue: 0.52))
-
                                         Text(item.title)
                                             .font(.system(size: 14, weight: .bold, design: .rounded))
                                             .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
@@ -622,19 +618,17 @@ public struct AssignmentDetailView: View {
                                                 let raw = item.points.replacingOccurrences(of: "pts", with: "", options: .caseInsensitive)
                                                     .replacingOccurrences(of: "pt", with: "", options: .caseInsensitive)
                                                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                                                return raw.isEmpty ? item.points : "\(raw) pts"
+                                                return raw.isEmpty ? item.points : raw
                                             }()
-                                            Text(cleanPts)
-                                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                                .foregroundColor(Color(red: 0.15, green: 0.20, blue: 0.30))
-                                                .padding(.horizontal, 9)
-                                                .padding(.vertical, 4)
-                                                .background(Color(red: 0.92, green: 0.94, blue: 0.97))
-                                                .cornerRadius(8)
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 8)
-                                                        .stroke(Color(red: 0.88, green: 0.90, blue: 0.93), lineWidth: 1)
-                                                )
+                                            HStack(spacing: 4) {
+                                                Text("pts")
+                                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                                    .foregroundColor(Color(red: 0.45, green: 0.52, blue: 0.62))
+
+                                                Text(cleanPts)
+                                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                    .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.22))
+                                            }
                                         }
                                     }
                                     .padding(.horizontal, 14)
@@ -964,6 +958,7 @@ public struct AssignmentDetailView: View {
                 .padding(.vertical, 18)
             }
             .background(Color(red: 0.95, green: 0.96, blue: 0.98))
+            .dismissKeyboardOnTap()
             .navigationTitle("Assignment Details")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
