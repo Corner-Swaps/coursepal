@@ -8,9 +8,14 @@ Icon?
 ehthumbs.db
 Thumbs.db
 
-# Node / Backend
+# Marketing Assets & Screenshots
+Apple Store PIc/
+
+# Node / Expo / Cross-Platform
 node_modules/
 dist/
+coverage/
+.expo/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -21,12 +26,18 @@ yarn-error.log*
 .env.production.local
 *.log
 
-# Xcode / iOS
+# Xcode / React Native iOS
 build/
+ios/build/
+ios/build_device/
+ios/Pods/
+ios/DerivedData/
 DerivedData/
 xcuserdata/
 *.xcuserdatad/
 *.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
 project.xcworkspace/xcuserdata/
 project.xcworkspace/xcshareddata/SwiftPM/Package.resolved
 *.mode1v3
@@ -39,3 +50,4 @@ project.xcworkspace/xcshareddata/SwiftPM/Package.resolved
 *.swiftsourceinfo
 *.swiftmodule
 *.abi.json
+

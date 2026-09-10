@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "CoursePal",
+    "slug": "coursepal",
+    "version": "1.4.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/images/AppIcon-1024.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#F2F5FA"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.coursepal.app",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSCameraUsageDescription": "CoursePal needs camera access so you can scan physical syllabus documents to build your course schedule automatically.",
+        "NSPhotoLibraryUsageDescription": "CoursePal needs photo library access to import syllabus images.",
+        "NSCalendarsFullAccessUsageDescription": "CoursePal needs calendar access to schedule assignment due dates and reading schedules into your Apple Calendar.",
+        "NSRemindersFullAccessUsageDescription": "CoursePal needs reminders access to alert you before upcoming assignment deadlines."
+      }
+    },
+    "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
+}
