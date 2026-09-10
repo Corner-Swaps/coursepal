@@ -196,7 +196,7 @@ Late Assignments
 
 async function runTests() {
   console.log('====================================================');
-  console.log('  ClassPal 20-Test Academic Engine Test Suite');
+  console.log('  CoursePal 20-Test Academic Engine Test Suite');
   console.log('====================================================\n');
 
   let passedCount = 0;
@@ -298,7 +298,7 @@ async function runTests() {
     if (routeLayer) {
       const resMock: any = {
         json: (data: any) => {
-          healthOk = data.status === 'ok' && data.service.includes('ClassPal');
+          healthOk = data.status === 'ok' && (data.service.includes('CoursePal') || data.service.includes('ClassPal'));
         }
       };
       routeLayer.route.stack[0].handle({}, resMock, () => {});

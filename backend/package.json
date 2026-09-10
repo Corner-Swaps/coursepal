@@ -1,13 +1,15 @@
 {
-  "name": "classpal-backend",
+  "name": "coursepal-backend",
   "version": "2.0.0",
-  "description": "Antigravity 2.0 Backend Service for ClassPal Syllabus Parser",
+  "description": "CoursePal Academic Intelligence & Syllabus API Service",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/server.js",
-    "test": "NODE_ENV=test tsx src/tests/api.test.ts"
+    "test": "NODE_ENV=test tsx src/tests/api.test.ts",
+    "test:neural": "NODE_ENV=test tsx src/tests/neural.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

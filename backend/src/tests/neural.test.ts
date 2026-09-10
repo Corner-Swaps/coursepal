@@ -1,7 +1,7 @@
 import { NeuralDocumentEngine } from '../services/neuralDocumentEngine';
 
 console.log('====================================================');
-console.log('  ClassPal Neural Net Document Learning Engine Tests');
+console.log('  CoursePal Neural Net Document Learning Engine Tests');
 console.log('====================================================\n');
 
 const engine = NeuralDocumentEngine.getInstance();

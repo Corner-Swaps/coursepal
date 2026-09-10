@@ -19,7 +19,7 @@ const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ClassPal Antigravity 2.0 API', version: '2.0.0' });
+  res.json({ status: 'ok', service: 'CoursePal Academic Intelligence API', version: '2.0.0' });
 });
 
 // Neural Net API Routes
@@ -609,7 +609,7 @@ app.post('/api/notes', async (req, res) => {
 
 if (process.env.NODE_ENV !== 'test') {
   app.listen(port, host, () => {
-    console.log(`[ClassPal Server] Running on http://${host}:${port}`);
+    console.log(`[CoursePal Server] Running on http://${host}:${port}`);
   });
 }
 
