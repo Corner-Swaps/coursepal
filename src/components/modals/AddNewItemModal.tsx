@@ -3,16 +3,16 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import {
   GraduationCapFillIcon,
   ChevronRightIcon,
-  BookFillIcon,
-  ChecklistIcon
+  BookFillIcon
 } from '../SvgIcons';
 import { SlideUpModal } from '../SlideUpModal';
 
 interface AddNewItemModalProps {
   visible: boolean;
   onClose: () => void;
-  onAddReading: () => void;
-  onAddAssignment: () => void;
+  onAddReading?: () => void;
+  onAddAssignment?: () => void;
+  onAddReadingOrAssignment?: () => void;
   onCreateCourse: () => void;
 }
 
@@ -21,8 +21,20 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
   onClose,
   onAddReading,
   onAddAssignment,
+  onAddReadingOrAssignment,
   onCreateCourse
 }) => {
+  const handleAddReadingOrAssignment = () => {
+    onClose();
+    if (onAddReadingOrAssignment) {
+      onAddReadingOrAssignment();
+    } else if (onAddAssignment) {
+      onAddAssignment();
+    } else if (onAddReading) {
+      onAddReading();
+    }
+  };
+
   return (
     <SlideUpModal
       visible={visible}
@@ -35,57 +47,9 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
         <Text style={styles.subtitle}>Select what you would like to add</Text>
       </View>
 
-      {/* Action Cards: Reading, Assignment, Create Course */}
+      {/* Action Cards: 1. Create New Course, 2. Add Reading or Assignment */}
       <View style={styles.optionsContainer}>
-        {/* Card 1: Add Reading */}
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => {
-            onClose();
-            onAddReading();
-          }}
-          activeOpacity={0.8}
-          testID="modal-choice-add-reading"
-        >
-          <View style={styles.blueIconSquare}>
-            <BookFillIcon size={20} color="#FFFFFF" />
-          </View>
-
-          <View style={styles.optionTextCol}>
-            <Text style={styles.optionTitle}>Add Reading</Text>
-            <Text style={styles.optionDesc}>
-              Add textbook chapter, article, or video reading
-            </Text>
-          </View>
-
-          <ChevronRightIcon size={13} color="#73859E" />
-        </TouchableOpacity>
-
-        {/* Card 2: Add Assignment */}
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => {
-            onClose();
-            onAddAssignment();
-          }}
-          activeOpacity={0.8}
-          testID="modal-choice-add-assignment"
-        >
-          <View style={styles.amberIconSquare}>
-            <ChecklistIcon size={20} color="#FFFFFF" />
-          </View>
-
-          <View style={styles.optionTextCol}>
-            <Text style={styles.optionTitle}>Add Assignment</Text>
-            <Text style={styles.optionDesc}>
-              Add homework, lab report, quiz, or project
-            </Text>
-          </View>
-
-          <ChevronRightIcon size={13} color="#73859E" />
-        </TouchableOpacity>
-
-        {/* Card 3: Create New Course */}
+        {/* Card 1: Create New Course (First item) */}
         <TouchableOpacity
           style={styles.optionCard}
           onPress={() => {
@@ -102,7 +66,28 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
           <View style={styles.optionTextCol}>
             <Text style={styles.optionTitle}>Create New Course</Text>
             <Text style={styles.optionDesc}>
-              Create course with custom brand color & schedule
+              Set up course with custom brand color & syllabus
+            </Text>
+          </View>
+
+          <ChevronRightIcon size={13} color="#73859E" />
+        </TouchableOpacity>
+
+        {/* Card 2: Add Reading or Assignment (Unified Single Pill) */}
+        <TouchableOpacity
+          style={styles.optionCard}
+          onPress={handleAddReadingOrAssignment}
+          activeOpacity={0.8}
+          testID="modal-choice-add-task"
+        >
+          <View style={styles.blueIconSquare}>
+            <BookFillIcon size={20} color="#FFFFFF" />
+          </View>
+
+          <View style={styles.optionTextCol}>
+            <Text style={styles.optionTitle}>Add Reading or Assignment</Text>
+            <Text style={styles.optionDesc}>
+              Add textbook reading, homework, quiz, or project
             </Text>
           </View>
 

@@ -143,15 +143,11 @@ function MainAppView() {
         <AddNewItemModal
           visible={showAddChoiceModal}
           onClose={() => setShowAddChoiceModal(false)}
-          onAddReading={() => {
-            setSelectedCategoryForAddTask('reading');
-            setShowAddTaskModal(true);
-          }}
-          onAddAssignment={() => {
-            setSelectedCategoryForAddTask('assignment');
-            setShowAddTaskModal(true);
-          }}
           onCreateCourse={() => setShowAddCourseModal(true)}
+          onAddReadingOrAssignment={() => {
+            setSelectedCategoryForAddTask(selectedTab === 'readings' ? 'reading' : 'assignment');
+            setShowAddTaskModal(true);
+          }}
         />
 
         <AddTaskModal
