@@ -1,10 +1,22 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
+import * as FileSystem from 'expo-file-system';
 import { Course, Reading, Assignment, VaultDocument, MediaType } from '../types/models';
 import { MasterCoursePalette } from '../constants/theme';
 import { CourseSharingService } from '../services/CourseSharingService';
 import { persistenceManager } from '../services/DataPersistenceBackupManager';
+import { LocalSyllabusParser } from '../services/LocalSyllabusParser';
+import { BundledSyllabiCatalog } from '../utils/syllabusCatalog';
 
 export type TabKey = 'readings' | 'assignments' | 'syllabus' | 'invite';
+
+export interface ImportSyllabusParams {
+  fileName: string;
+  fileUri?: string;
+  rawText?: string;
+  fileSize?: string;
+  targetCourseId?: string;
+  preferredHexColor?: string;
+}
 
 interface CoursePalContextType {
   // State
@@ -51,6 +63,7 @@ interface CoursePalContextType {
   }) => void;
   importShareCode: (codeOrLink: string) => { success: boolean; message: string; course?: Course };
   acceptTerms: () => void;
+  importSyllabusDocument: (params: ImportSyllabusParams) => Promise<{ success: boolean; course?: Course; message: string }>;
   startUploadSimulation: (fileName: string, targetCourseId?: string) => void;
   triggerConfetti: (title: string) => void;
   dismissConfetti: () => void;
@@ -745,44 +758,236 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     setHasAcceptedTerms(true);
   }, []);
 
-  const startUploadSimulation = useCallback((fileName: string, targetCourseId?: string) => {
+  const importSyllabusDocument = useCallback(async (params: ImportSyllabusParams) => {
+    const { fileName, fileUri, fileSize, targetCourseId, preferredHexColor } = params;
+    let rawText = params.rawText || '';
+
     setIsUploading(true);
-    setUploadProgress(0.1);
+    setUploadProgress(0.15);
     setUploadStatusText(`Extracting syllabus: ${fileName}...`);
 
-    setTimeout(() => {
-      setUploadProgress(0.45);
+    try {
+      // Step 1: If rawText is not provided, try to extract it from fileUri or catalog
+      if (!rawText && fileUri) {
+        try {
+          if (fileName.toLowerCase().endsWith('.txt')) {
+            rawText = await FileSystem.readAsStringAsync(fileUri);
+          } else {
+            // Check if fileName matches any item in BundledSyllabiCatalog
+            const catalogMatch = BundledSyllabiCatalog.find(
+              item => fileName.toLowerCase().includes(item.courseCode.toLowerCase().replace(/\s+/g, '')) ||
+                      fileName.toLowerCase().includes(item.id.toLowerCase()) ||
+                      fileName.toLowerCase() === item.fileName.toLowerCase()
+            );
+            if (catalogMatch) {
+              rawText = catalogMatch.rawText;
+            } else {
+              try {
+                const content = await FileSystem.readAsStringAsync(fileUri);
+                if (content && content.length > 50 && !content.startsWith('%PDF-')) {
+                  rawText = content;
+                }
+              } catch {
+                // Keep rawText empty
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Error reading fileUri:', e);
+        }
+      }
+
+      // If still no rawText, check catalog again or fallback to clean academic template
+      if (!rawText) {
+        const catalogMatch = BundledSyllabiCatalog.find(
+          item => fileName.toLowerCase().includes(item.courseCode.toLowerCase().replace(/\s+/g, '')) ||
+                  fileName.toLowerCase().includes(item.id.toLowerCase())
+        );
+        if (catalogMatch) {
+          rawText = catalogMatch.rawText;
+        } else {
+          const cleanName = fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+          rawText = `Course: ${cleanName}\nTerm: Summer 2026\nInstructor: Academic Faculty\n\nSchedule:\nWeek 1: Introduction to ${cleanName}. Read Chapter 1.\nWeek 2: Fundamental Principles. Read Chapter 2 & 3.\nWeek 3: Core Frameworks. Read Chapter 4.\nWeek 4: Practical Applications. Read Chapter 5.\nWeek 5: Advanced Topics. Read Chapter 6.\n\nAssignments:\nAssignment 1: Initial Research Report. Due in Week 2. (100 Points, 25%)\nAssignment 2: Midterm Project. Due in Week 3. (100 Points, 35%)\nAssignment 3: Final Capstone Paper. Due in Week 5. (100 Points, 40%)`;
+        }
+      }
+
+      setUploadProgress(0.5);
       setUploadStatusText('Analyzing schedule, readings & assignments...');
-    }, 800);
+      await new Promise(r => setTimeout(r, 400));
 
-    setTimeout(() => {
-      setUploadProgress(0.85);
+      // Parse with LocalSyllabusParser
+      const dto = LocalSyllabusParser.shared.parseText(rawText);
+
+      setUploadProgress(0.8);
       setUploadStatusText('Synthesizing course repository...');
-    }, 1600);
+      await new Promise(r => setTimeout(r, 300));
 
-    setTimeout(() => {
-      setUploadProgress(1.0);
-      setIsUploading(false);
-      setUploadStatusText('');
+      const courseCode = dto.courseCode || fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase();
+      const courseName = dto.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const hexColor = preferredHexColor || MasterCoursePalette[courses.length % MasterCoursePalette.length];
 
-      const targetCourse = courses.find(c => c.id === targetCourseId);
-      const courseCode = targetCourse ? (targetCourse.courseCode || targetCourse.courseName) : 'NEW 101';
+      // Find or create course
+      let targetCourse = targetCourseId ? courses.find(c => c.id === targetCourseId) : undefined;
+      if (!targetCourse) {
+        targetCourse = courses.find(
+          c => (c.courseCode && c.courseCode.toUpperCase() === courseCode.toUpperCase()) ||
+               c.courseName.toLowerCase() === courseName.toLowerCase()
+        );
+      }
 
+      let finalCourse = targetCourse;
+      let courseId = targetCourse?.id;
+      let updatedCourses = courses;
+      if (!finalCourse) {
+        const newCourse: Course = {
+          id: `c-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          creatorId: 'user-self',
+          courseName,
+          courseCode,
+          courseDescription: `Imported from ${fileName}. Instructor: ${dto.instructorName || 'Academic Faculty'}`,
+          instructorName: dto.instructorName || null,
+          instructorEmail: dto.instructorEmail || null,
+          hexColor,
+          termWeeks: dto.termWeeks || (dto.weeks && dto.weeks.length > 0 ? dto.weeks.length : 12),
+          sharingCode: String(Math.floor(100000 + Math.random() * 900000)),
+          isDeleted: false,
+          isFavorite: true,
+          createdAt: new Date(),
+          weeks: [],
+          assignments: [],
+          syllabusDocs: []
+        };
+        finalCourse = newCourse;
+        courseId = newCourse.id;
+        updatedCourses = [newCourse, ...courses];
+        setCourses(updatedCourses);
+      }
+
+      // Convert parsed weeks & readings into Reading objects
+      const newReadings: Reading[] = [];
+      if (dto.weeks && dto.weeks.length > 0) {
+        dto.weeks.forEach((w, wIdx) => {
+          const weekNum = w.weekNumber || (wIdx + 1);
+          if (w.readings && w.readings.length > 0) {
+            w.readings.forEach((r, rIdx) => {
+              const readingDate = r.dueDate ? new Date(r.dueDate) : undefined;
+              newReadings.push({
+                id: `r-${Date.now()}-${wIdx}-${rIdx}`,
+                title: r.title || `Reading ${rIdx + 1}`,
+                authorName: r.authorName || null,
+                resourceTitle: r.resourceTitle || r.title,
+                mediaTypeRaw: r.mediaType || 'textbook',
+                mediaType: (r.mediaType as MediaType) || 'textbook',
+                isCompleted: false,
+                isDeleted: false,
+                summaryText: r.summaryText || '',
+                keyTakeawaysText: r.keyTakeawaysText || `• Review ${r.title}`,
+                estimatedTimeText: r.estimatedTimeText || '~45 min',
+                dueDate: readingDate,
+                dateRangeStr: w.dateRangeStr || (readingDate ? readingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined),
+                chapterText: r.chapterText || null,
+                pagesText: r.pagesText || null,
+                courseCode: finalCourse!.courseCode || courseCode,
+                relevantTopics: r.relevantTopics || w.theme || null,
+                sourceDocumentName: fileName,
+                docColorHex: finalCourse!.hexColor,
+                isFavorite: false,
+                weekId: `w-${weekNum}`
+              });
+            });
+          }
+        });
+      }
+
+      // Convert parsed assignments into Assignment objects
+      const newAssignments: Assignment[] = (dto.assignments || []).map((a, aIdx) => {
+        const dueDate = a.dueDate ? new Date(a.dueDate) : undefined;
+        return {
+          id: `a-${Date.now()}-${aIdx}`,
+          title: a.title,
+          weekNumber: aIdx + 1,
+          dueDate: dueDate,
+          fullInstructions: a.fullInstructions || 'Parsed from course syllabus.',
+          pointsPossible: a.pointsPossible || '100 Points',
+          pointsBreakdown: null,
+          rubricJSON: null,
+          noteText: a.noteText || null,
+          isCompleted: false,
+          isDeleted: false,
+          courseCode: finalCourse!.courseCode || courseCode,
+          moduleMention: null,
+          weightPercentage: a.weightPercentage || null,
+          subTypeRaw: 'assignment',
+          mediaUrl: null,
+          relevantTopics: null,
+          sourceDocumentName: fileName,
+          docColorHex: finalCourse!.hexColor,
+          isFavorite: false,
+          courseId: courseId,
+          rubricCriteria: a.rubric || []
+        };
+      });
+
+      // Add VaultDocument
       const newVaultDoc: VaultDocument = {
         id: `vd-${Date.now()}`,
         title: fileName,
         category: 'Syllabi',
-        fileSize: '1.5 MB',
-        fileType: 'PDF',
-        courseCode,
-        fileContent: `Extracted syllabus content from ${fileName}`,
-        docColorHex: targetCourse ? targetCourse.hexColor : '#2563EB',
+        fileSize: fileSize || '1.4 MB',
+        fileType: fileName.split('.').pop()?.toUpperCase() || 'PDF',
+        courseCode: finalCourse!.courseCode || courseCode,
+        fileContent: rawText.slice(0, 5000),
+        docColorHex: finalCourse!.hexColor,
         uploadedAt: new Date()
       };
-      setVaultDocs(prev => [newVaultDoc, ...prev]);
-      triggerConfetti(`Imported ${fileName} Successfully!`);
-    }, 2400);
-  }, [courses, triggerConfetti]);
+
+      const updatedReadings = [...newReadings, ...readings];
+      const updatedAssignments = [...newAssignments, ...assignments];
+      const updatedVaultDocs = [newVaultDoc, ...vaultDocs];
+
+      if (newReadings.length > 0) {
+        setReadings(updatedReadings);
+      }
+      if (newAssignments.length > 0) {
+        setAssignments(updatedAssignments);
+      }
+      setVaultDocs(updatedVaultDocs);
+
+      persistenceManager.scheduleAutoBackup({
+        courses: updatedCourses,
+        readings: updatedReadings,
+        assignments: updatedAssignments,
+        vaultDocs: updatedVaultDocs
+      });
+
+      setUploadProgress(1.0);
+      setIsUploading(false);
+      setUploadStatusText('');
+
+      const countMsg = `${newReadings.length} readings & ${newAssignments.length} assignments`;
+      triggerConfetti(`Extracted ${finalCourse.courseCode || finalCourse.courseName}! Added ${countMsg}.`);
+
+      setSelectedTab('readings');
+
+      return {
+        success: true,
+        course: finalCourse,
+        message: `Successfully imported ${fileName} with ${countMsg}!`
+      };
+    } catch (err: any) {
+      setIsUploading(false);
+      setUploadStatusText('');
+      console.error('Failed to import syllabus:', err);
+      return {
+        success: false,
+        message: err.message || 'Failed to parse syllabus document.'
+      };
+    }
+  }, [courses, triggerConfetti, setSelectedTab]);
+
+  const startUploadSimulation = useCallback((fileName: string, targetCourseId?: string) => {
+    importSyllabusDocument({ fileName, targetCourseId });
+  }, [importSyllabusDocument]);
 
   return (
     <CoursePalContext.Provider
@@ -817,6 +1022,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         addTask,
         importShareCode,
         acceptTerms,
+        importSyllabusDocument,
         startUploadSimulation,
         triggerConfetti,
         dismissConfetti

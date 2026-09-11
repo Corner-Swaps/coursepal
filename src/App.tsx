@@ -14,7 +14,8 @@ import { CoursePalProvider, useCoursePal, TabKey } from './context/CoursePalCont
 import {
   MainTabBar,
   ConfettiCelebration,
-  FuzzedScrollBottomFade
+  FuzzedScrollBottomFade,
+  UploadProgressBanner
 } from './components';
 import {
   ReadingsScreen,
@@ -26,7 +27,8 @@ import {
   AddNewItemModal,
   AddTaskModal,
   AddCourseModal,
-  CourseFilterModal
+  CourseFilterModal,
+  UploadDocumentModal
 } from './components/modals';
 
 export default function App() {
@@ -44,13 +46,16 @@ function MainAppView() {
     selectedTab,
     setSelectedTab,
     showConfetti,
-    dismissConfetti
+    dismissConfetti,
+    isUploading,
+    uploadStatusText
   } = useCoursePal();
 
   // Modals state
   const [showAddChoiceModal, setShowAddChoiceModal] = useState<boolean>(false);
   const [showAddTaskModal, setShowAddTaskModal] = useState<boolean>(false);
   const [showAddCourseModal, setShowAddCourseModal] = useState<boolean>(false);
+  const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
   const [selectedCourseForAddTask, setSelectedCourseForAddTask] = useState<string | undefined>(undefined);
 
@@ -131,12 +136,23 @@ function MainAppView() {
           ]}
         />
 
+        {/* Floating Upload Status Banner */}
+        {isUploading && (
+          <View style={[styles.floatingUploadBannerContainer, { top: insets.top + 8 }]}>
+            <UploadProgressBanner
+              title={uploadStatusText || 'Analyzing syllabus document...'}
+              visible={isUploading}
+            />
+          </View>
+        )}
+
         {/* MARK: - Modals */}
         <AddNewItemModal
           visible={showAddChoiceModal}
           onClose={() => setShowAddChoiceModal(false)}
           onCreateCourse={() => setShowAddCourseModal(true)}
           onAddTask={() => setShowAddTaskModal(true)}
+          onUploadDocument={() => setShowUploadModal(true)}
         />
 
         <AddTaskModal
@@ -152,6 +168,11 @@ function MainAppView() {
           visible={showAddCourseModal}
           onClose={() => setShowAddCourseModal(false)}
           onCourseCreated={() => setSelectedTab('syllabus')}
+        />
+
+        <UploadDocumentModal
+          visible={showUploadModal}
+          onClose={() => setShowUploadModal(false)}
         />
 
         <CourseFilterModal
@@ -203,5 +224,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 50
+  },
+  floatingUploadBannerContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 999,
+    alignItems: 'center'
   }
 });

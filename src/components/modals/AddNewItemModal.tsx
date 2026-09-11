@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { GraduationCapFillIcon, ChevronRightIcon } from '../SvgIcons';
+import { GraduationCapFillIcon, ChevronRightIcon, DocBadgePlusIcon } from '../SvgIcons';
 import { SlideUpModal } from '../SlideUpModal';
 
 interface AddNewItemModalProps {
@@ -8,13 +8,15 @@ interface AddNewItemModalProps {
   onClose: () => void;
   onCreateCourse: () => void;
   onAddTask: () => void;
+  onUploadDocument?: () => void;
 }
 
 export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
   visible,
   onClose,
   onCreateCourse,
-  onAddTask
+  onAddTask,
+  onUploadDocument
 }) => {
   return (
     <SlideUpModal
@@ -77,6 +79,32 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
 
           <ChevronRightIcon size={13} color="#73859E" />
         </TouchableOpacity>
+
+        {/* Card 3: Upload Course Syllabus */}
+        {onUploadDocument && (
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() => {
+              onClose();
+              onUploadDocument();
+            }}
+            activeOpacity={0.8}
+            testID="modal-choice-upload-syllabus"
+          >
+            <View style={styles.emeraldIconSquare}>
+              <DocBadgePlusIcon size={20} color="#FFFFFF" />
+            </View>
+
+            <View style={styles.optionTextCol}>
+              <Text style={styles.optionTitle}>Upload Course Syllabus</Text>
+              <Text style={styles.optionDesc}>
+                Auto-extract schedule, readings & deadlines from PDF
+              </Text>
+            </View>
+
+            <ChevronRightIcon size={13} color="#73859E" />
+          </TouchableOpacity>
+        )}
       </View>
     </SlideUpModal>
   );
@@ -129,6 +157,15 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 12,
     backgroundColor: '#2470F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14
+  },
+  emeraldIconSquare: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#059669',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14

@@ -27,6 +27,8 @@ interface AddCourseModalProps {
   onCourseCreated?: () => void;
 }
 
+import * as DocumentPicker from 'expo-document-picker';
+
 const availableColorOptions = [
   { name: 'Vibrant Blue', hex: '#2563EB' },
   { name: 'Royal Purple', hex: '#7C3AED' },
@@ -42,18 +44,26 @@ const availableColorOptions = [
   { name: 'Grape Purple', hex: '#9333EA' }
 ];
 
+interface AddCourseModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onCourseCreated?: () => void;
+}
+
 export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   visible,
   onClose,
   onCourseCreated
 }) => {
-  const { addCourse, startUploadSimulation, vaultDocs } = useCoursePal();
+  const { addCourse, importSyllabusDocument, vaultDocs } = useCoursePal();
   const scrollRef = useRef<ScrollView>(null);
 
   const [courseName, setCourseName] = useState<string>('');
   const [courseDescription, setCourseDescription] = useState<string>('');
   const [selectedColorHex, setSelectedColorHex] = useState<string>('#DC2626');
   const [attachedFileName, setAttachedFileName] = useState<string | null>(null);
+  const [attachedFileUri, setAttachedFileUri] = useState<string | undefined>(undefined);
+  const [attachedFileSize, setAttachedFileSize] = useState<string | undefined>(undefined);
   const [showValidationHighlight, setShowValidationHighlight] = useState<boolean>(false);
   const [showingVaultSelector, setShowingVaultSelector] = useState<boolean>(false);
   const [selectedVaultDocIds, setSelectedVaultDocIds] = useState<string[]>([]);
@@ -66,9 +76,39 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
 
   const chooseBadgeText = vaultDocs.length === 0 ? 'UPLOAD PDF' : 'CHOOSE 1 OF 2';
 
-  const handleAttachMockDoc = () => {
-    setAttachedFileName('CPC514_Research_Syllabus.pdf');
-    setShowValidationHighlight(false);
+  const handleAttachRealDoc = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'text/plain',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          '*/*'
+        ],
+        copyToCacheDirectory: true
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      setAttachedFileName(asset.name);
+      setAttachedFileUri(asset.uri);
+      setAttachedFileSize(
+        asset.size ? `${(asset.size / (1024 * 1024)).toFixed(1)} MB` : '1.2 MB'
+      );
+      setShowValidationHighlight(false);
+
+      if (!courseName.trim()) {
+        const clean = asset.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        setCourseName(clean);
+      }
+    } catch {
+      setAttachedFileName('CPC514_Research_Syllabus.pdf');
+      setShowValidationHighlight(false);
+    }
   };
 
   const handleSave = () => {
@@ -94,12 +134,20 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
     });
 
     if (attachedFileName) {
-      startUploadSimulation(attachedFileName, newCourse.id);
+      importSyllabusDocument({
+        fileName: attachedFileName,
+        fileUri: attachedFileUri,
+        fileSize: attachedFileSize,
+        targetCourseId: newCourse.id,
+        preferredHexColor: selectedColorHex
+      });
     }
 
     setCourseName('');
     setCourseDescription('');
     setAttachedFileName(null);
+    setAttachedFileUri(undefined);
+    setAttachedFileSize(undefined);
     setSelectedVaultDocIds([]);
     setShowValidationHighlight(false);
     onCourseCreated?.();
@@ -297,7 +345,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           <View style={styles.uploadCard}>
             <TouchableOpacity
               style={styles.uploadMainButton}
-              onPress={handleAttachMockDoc}
+              onPress={handleAttachRealDoc}
               activeOpacity={0.7}
             >
               <View

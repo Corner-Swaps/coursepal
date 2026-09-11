@@ -37,7 +37,8 @@ import {
   DocumentPreviewModal,
   CourseDetailModal,
   EditAssignmentModal,
-  ReadingDetailModal
+  ReadingDetailModal,
+  UploadDocumentModal
 } from '../components/modals';
 import {
   formatDisplayTitleWithChapter,
@@ -73,10 +74,17 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
   const [activeMenuCourse, setActiveMenuCourse] = useState<Course | null>(null);
 
   // Modals state
+  const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
+  const [uploadTargetCourseId, setUploadTargetCourseId] = useState<string | undefined>(undefined);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
   const [editingReading, setEditingReading] = useState<Reading | null>(null);
   const [previewDoc, setPreviewDoc] = useState<VaultDocument | null>(null);
+
+  const handleOpenUpload = (targetCourseId?: string) => {
+    setUploadTargetCourseId(targetCourseId);
+    setShowUploadModal(true);
+  };
 
   const activeCourses = courses.filter(c => !c.isDeleted);
 
@@ -152,6 +160,16 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
               {vaultDocs.length} document{vaultDocs.length === 1 ? '' : 's'} stored in syllabus
             </Text>
           </View>
+
+          <TouchableOpacity
+            style={styles.headerUploadButton}
+            onPress={() => handleOpenUpload()}
+            activeOpacity={0.8}
+            testID="syllabus-header-upload-btn"
+          >
+            <DocBadgePlusIcon size={16} color="#FFFFFF" />
+            <Text style={styles.headerUploadText}>Upload</Text>
+          </TouchableOpacity>
         </View>
 
         {/* MARK: - Vault Category Filter Bar (Courses First, Documents Second) */}
@@ -503,9 +521,28 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.emptyDesc}>
                   Upload your course syllabi or extra reading materials to view them here.
                 </Text>
+                <TouchableOpacity
+                  style={styles.addCourseButton}
+                  onPress={() => handleOpenUpload()}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.addCourseButtonText}>Upload Syllabus Document</Text>
+                </TouchableOpacity>
               </View>
             ) : (
-              vaultDocs.map(doc => {
+              <>
+                <TouchableOpacity
+                  style={styles.uploadDocBannerRow}
+                  onPress={() => handleOpenUpload()}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.uploadDocBannerIcon}>
+                    <DocBadgePlusIcon size={16} color="#2563EB" />
+                  </View>
+                  <Text style={styles.uploadDocBannerText}>Upload Another Syllabus Document</Text>
+                </TouchableOpacity>
+
+                {vaultDocs.map(doc => {
                 return (
                   <View key={doc.id} style={styles.docCard}>
                     <TouchableOpacity
@@ -546,9 +583,10 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                     </TouchableOpacity>
                   </View>
                 );
-              })
-            )}
-          </View>
+              })}
+            </>
+          )}
+        </View>
         )}
       </ScrollView>
 
@@ -626,7 +664,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 onPress={() => {
                   const c = activeMenuCourse;
                   setActiveMenuCourse(null);
-                  startUploadSimulation(`${c.courseCode || 'Course'}_Syllabus.pdf`, c.id);
+                  handleOpenUpload(c.id);
                 }}
                 activeOpacity={0.8}
               >
@@ -718,6 +756,15 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         document={previewDoc}
         onClose={() => setPreviewDoc(null)}
       />
+
+      <UploadDocumentModal
+        visible={showUploadModal}
+        targetCourseId={uploadTargetCourseId}
+        onClose={() => {
+          setShowUploadModal(false);
+          setUploadTargetCourseId(undefined);
+        }}
+      />
     </View>
   );
 };
@@ -737,11 +784,60 @@ const styles = StyleSheet.create({
     paddingBottom: 140
   },
   headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 12
   },
-  headerLeftCol: {},
+  headerLeftCol: {
+    flex: 1
+  },
+  headerUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    gap: 5,
+    shadowColor: CoursePalTheme.accentBlue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  headerUploadText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  uploadDocBannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderStyle: 'dashed',
+    padding: 12,
+    marginBottom: 12,
+    gap: 10
+  },
+  uploadDocBannerIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  uploadDocBannerText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#1D4ED8'
+  },
   pageTitle: {
     fontSize: 21.5,
     fontWeight: '700',

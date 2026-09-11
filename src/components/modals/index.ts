@@ -10,3 +10,4 @@ export { AssignmentDetailModal } from './AssignmentDetailModal';
 export { EditAssignmentModal } from './EditAssignmentModal';
 export { ReadingDetailModal } from './ReadingDetailModal';
 export { CourseDetailModal } from './CourseDetailModal';
+export { UploadDocumentModal } from './UploadDocumentModal';
