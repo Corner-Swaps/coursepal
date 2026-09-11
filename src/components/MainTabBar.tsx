@@ -50,7 +50,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
         >
           <View style={styles.tabIconWrapper}>
             <ClearBookIcon
-              size={22}
+              size={23.5}
               color={selectedTab === 'readings' ? CoursePalTheme.accentBlue : '#73859E'}
             />
           </View>
@@ -73,7 +73,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
         >
           <View style={styles.tabIconWrapper}>
             <CalendarIcon
-              size={22}
+              size={23.5}
               color={selectedTab === 'assignments' ? CoursePalTheme.accentBlue : '#73859E'}
             />
           </View>
@@ -99,7 +99,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
         >
           <View style={styles.tabIconWrapper}>
             <GraduationCapFillIcon
-              size={22}
+              size={23.5}
               color={selectedTab === 'syllabus' ? CoursePalTheme.accentBlue : '#73859E'}
             />
           </View>
@@ -122,7 +122,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
         >
           <View style={styles.tabIconWrapper}>
             <PersonFillIcon
-              size={22}
+              size={23.5}
               color={selectedTab === 'invite' ? CoursePalTheme.accentBlue : '#73859E'}
             />
           </View>
@@ -146,7 +146,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
         testID="tab-center-plus"
       >
         <View style={styles.floatingPlusInnerCircle}>
-          <PlusIcon size={22} color="#FFFFFF" strokeWidth={2.8} />
+          <PlusIcon size={23.5} color="#FFFFFF" strokeWidth={2.8} />
         </View>
       </TouchableOpacity>
     </View>
@@ -188,8 +188,8 @@ const styles = StyleSheet.create({
     paddingVertical: 2
   },
   tabIconWrapper: {
-    width: 26,
-    height: 26,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -224,9 +224,9 @@ const styles = StyleSheet.create({
     elevation: 10
   },
   floatingPlusInnerCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: CoursePalTheme.accentBlue,
     alignItems: 'center',
     justifyContent: 'center'

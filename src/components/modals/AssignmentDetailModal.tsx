@@ -249,10 +249,10 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
     saveAllChanges({ rubricCriteria: updated });
   };
 
-  const handleUpdateCriterionPercentage = (idx: number, text: string) => {
-    const clean = text.replace(/[^0-9.]/g, '');
-    const num = parseFloat(clean);
-    const updated = rubricItems.map((item, i) => (i === idx ? { ...item, percentage: isNaN(num) ? 0 : num } : item));
+  const handleRubricPointsStep = (idx: number, delta: number) => {
+    const current = rubricItems[idx]?.points ?? 0;
+    const next = Math.max(0, current + delta);
+    const updated = rubricItems.map((item, i) => (i === idx ? { ...item, points: next } : item));
     setRubricItems(updated);
     saveAllChanges({ rubricCriteria: updated });
   };
@@ -324,22 +324,8 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={true}
           >
-            {/* MARK: - Header Banner (Clean Title & Genuine Pills Only) */}
+            {/* MARK: - Header Banner */}
             <View style={styles.headerBannerCard}>
-              <View style={styles.headerPillsRow}>
-                {validCourseCode && (
-                  <View style={[styles.courseCodePill, { backgroundColor: `${courseColor}22` }]}>
-                    <Text style={[styles.courseCodePillText, { color: courseColor }]}>{validCourseCode}</Text>
-                  </View>
-                )}
-
-                <View style={styles.subTypeBadge}>
-                  <DocRichtextFillIcon size={12} color="#2470F5" />
-                  <Text style={styles.subTypeBadgeText}>
-                    {(assignment.subTypeRaw || 'PAPER').toUpperCase()}
-                  </Text>
-                </View>
-              </View>
 
               {/* Title Input */}
               <View style={styles.titleSection}>
@@ -546,26 +532,33 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                       placeholderTextColor="#94A3B8"
                     />
 
-                    {/* Percentage Box */}
-                    <View style={styles.rubricInputPill}>
-                      <TextInput
-                        style={styles.rubricNumInput}
-                        value={item.percentage != null ? `${item.percentage}` : '0'}
-                        keyboardType="numeric"
-                        onChangeText={t => handleUpdateCriterionPercentage(idx, t)}
-                      />
-                      <Text style={styles.rubricUnitLabel}>%</Text>
-                    </View>
+                    {/* Points Stepper: [ − ] [ X pts ] [ + ] */}
+                    <View style={styles.rubricStepperRow}>
+                      <TouchableOpacity
+                        style={styles.rubricStepperBtn}
+                        onPress={() => handleRubricPointsStep(idx, -5)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.rubricStepperBtnText}>−</Text>
+                      </TouchableOpacity>
 
-                    {/* Points Box */}
-                    <View style={styles.rubricInputPill}>
-                      <TextInput
-                        style={styles.rubricNumInput}
-                        value={item.points != null ? `${item.points}` : '0'}
-                        keyboardType="numeric"
-                        onChangeText={t => handleUpdateCriterionPoints(idx, t)}
-                      />
-                      <Text style={styles.rubricUnitLabel}>pts</Text>
+                      <View style={styles.rubricPointsPill}>
+                        <TextInput
+                          style={styles.rubricNumInput}
+                          value={item.points != null ? `${item.points}` : '0'}
+                          keyboardType="numeric"
+                          onChangeText={t => handleUpdateCriterionPoints(idx, t)}
+                        />
+                        <Text style={styles.rubricUnitLabel}>pts</Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.rubricStepperBtn}
+                        onPress={() => handleRubricPointsStep(idx, 5)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.rubricStepperBtnText}>+</Text>
+                      </TouchableOpacity>
                     </View>
 
                     {/* Delete Item Button */}
@@ -911,6 +904,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#141F38'
+  },
+  rubricStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  rubricStepperBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#EEF2F6',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  rubricStepperBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2470F5'
+  },
+  rubricPointsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    minWidth: 54,
+    justifyContent: 'center',
+    gap: 2
   },
   rubricInputPill: {
     flexDirection: 'row',

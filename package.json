@@ -9,6 +9,7 @@
     "test": "jest --verbose",
     "test:gemini": "npx tsx scripts/test-gemini.ts",
     "typecheck": "tsc --noEmit",
+    "deploy:device": "bash scripts/deploy_device.sh",
     "android": "expo run:android"
   },
   "dependencies": {

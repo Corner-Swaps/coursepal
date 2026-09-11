@@ -44,8 +44,8 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
 
   const selectedDayNumber = selectedDate.getDate();
 
-  // Generate 7-column calendar grid for currentMonthDate
-  const daysInMonth = useMemo(() => {
+  // Generate 7-column calendar grid rows for currentMonthDate
+  const calendarRows = useMemo(() => {
     const year = currentMonthDate.getFullYear();
     const month = currentMonthDate.getMonth();
     const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 = Sun
@@ -58,7 +58,15 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
     for (let d = 1; d <= totalDays; d++) {
       days.push(new Date(year, month, d));
     }
-    return days;
+    while (days.length % 7 !== 0) {
+      days.push(null);
+    }
+
+    const rows: (Date | null)[][] = [];
+    for (let i = 0; i < days.length; i += 7) {
+      rows.push(days.slice(i, i + 7));
+    }
+    return rows;
   }, [currentMonthDate]);
 
   const isSameDay = (d1: Date, d2: Date) => {
@@ -135,58 +143,63 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
             ))}
           </View>
 
-          {/* Day Grid */}
+          {/* Day Grid: Structured 7-Day Rows */}
           <View style={styles.daysGrid}>
-            {daysInMonth.map((dateObj, idx) => {
-              if (!dateObj) {
-                return <View key={`empty-${idx}`} style={styles.dayCell} />;
-              }
+            {calendarRows.map((row, rowIdx) => (
+              <View key={`cal-row-${rowIdx}`} style={styles.calendarRow}>
+                {row.map((dateObj, colIdx) => {
+                  const cellKey = `cell-${rowIdx}-${colIdx}`;
+                  if (!dateObj) {
+                    return <View key={cellKey} style={styles.dayCell} />;
+                  }
 
-              const isSelected = isDateFilterActive && isSameDay(dateObj, selectedDate);
-              const dateKey = formatDateKey(dateObj);
-              const colors = itemDatesWithColors.get(dateKey) || [];
+                  const isSelected = isDateFilterActive && isSameDay(dateObj, selectedDate);
+                  const dateKey = formatDateKey(dateObj);
+                  const colors = itemDatesWithColors.get(dateKey) || [];
 
-              return (
-                <TouchableOpacity
-                  key={`day-${dateKey}`}
-                  style={styles.dayCell}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    onSelectDate(dateObj);
-                  }}
-                >
-                  <View
-                    style={[
-                      styles.dayCircle,
-                      isSelected && styles.dayCircleSelected
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.dayNumberText,
-                        isSelected && styles.dayNumberTextSelected
-                      ]}
+                  return (
+                    <TouchableOpacity
+                      key={cellKey}
+                      style={styles.dayCell}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        onSelectDate(dateObj);
+                      }}
                     >
-                      {dateObj.getDate()}
-                    </Text>
-                  </View>
+                      <View
+                        style={[
+                          styles.dayCircle,
+                          isSelected && styles.dayCircleSelected
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.dayNumberText,
+                            isSelected && styles.dayNumberTextSelected
+                          ]}
+                        >
+                          {dateObj.getDate()}
+                        </Text>
+                      </View>
 
-                  {/* Dot Indicators */}
-                  <View style={styles.dotRow}>
-                    {colors.length > 0 ? (
-                      colors.slice(0, 3).map((c, cIdx) => (
-                        <View
-                          key={`dot-${cIdx}`}
-                          style={[styles.colorDot, { backgroundColor: c }]}
-                        />
-                      ))
-                    ) : (
-                      <View style={styles.emptyDotSpacer} />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                      {/* Dot Indicators */}
+                      <View style={styles.dotRow}>
+                        {colors.length > 0 ? (
+                          colors.slice(0, 3).map((c, cIdx) => (
+                            <View
+                              key={`dot-${cIdx}`}
+                              style={[styles.colorDot, { backgroundColor: c }]}
+                            />
+                          ))
+                        ) : (
+                          <View style={styles.emptyDotSpacer} />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
           </View>
         </View>
       </View>
@@ -267,14 +280,18 @@ const styles = StyleSheet.create({
     color: '#596B85'
   },
   daysGrid: {
+    width: '100%'
+  },
+  calendarRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap'
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 2
   },
   dayCell: {
-    width: '14.28%',
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 2
+    justifyContent: 'center'
   },
   dayCircle: {
     width: 28,

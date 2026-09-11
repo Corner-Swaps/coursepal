@@ -87,6 +87,16 @@ export const InlineCalendarPicker: React.FC<InlineCalendarPickerProps> = ({
   for (let d = 1; d <= daysInMonth; d++) {
     gridCells.push(d);
   }
+  // Pad trailing days to complete full weeks of 7
+  while (gridCells.length % 7 !== 0) {
+    gridCells.push(null);
+  }
+
+  // Chunk into 7-day rows
+  const calendarRows: (number | null)[][] = [];
+  for (let i = 0; i < gridCells.length; i += 7) {
+    calendarRows.push(gridCells.slice(i, i + 7));
+  }
 
   return (
     <View style={styles.container}>
@@ -124,38 +134,43 @@ export const InlineCalendarPicker: React.FC<InlineCalendarPickerProps> = ({
         ))}
       </View>
 
-      {/* Days Grid */}
+      {/* Days Grid: Chunked by 7-day Rows */}
       <View style={styles.daysGrid}>
-        {gridCells.map((dayNum, cellIdx) => {
-          if (dayNum === null) {
-            return <View key={`empty-${cellIdx}`} style={styles.dayCell} />;
-          }
+        {calendarRows.map((row, rowIdx) => (
+          <View key={`cal-row-${rowIdx}`} style={styles.calendarRow}>
+            {row.map((dayNum, colIdx) => {
+              const cellKey = `cell-${rowIdx}-${colIdx}`;
+              if (dayNum === null) {
+                return <View key={cellKey} style={styles.dayCell} />;
+              }
 
-          const selected = isSelected(dayNum);
-          const currentDay = isToday(dayNum);
+              const selected = isSelected(dayNum);
+              const currentDay = isToday(dayNum);
 
-          return (
-            <TouchableOpacity
-              key={`day-${cellIdx}`}
-              style={[
-                styles.dayCell,
-                selected && [styles.dayCellSelected, { backgroundColor: accentColor }]
-              ]}
-              onPress={() => handleDayPress(dayNum)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.dayText,
-                  currentDay && styles.dayTextToday,
-                  selected && styles.dayTextSelected
-                ]}
-              >
-                {dayNum}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+              return (
+                <TouchableOpacity
+                  key={cellKey}
+                  style={[
+                    styles.dayCell,
+                    selected && [styles.dayCellSelected, { backgroundColor: accentColor }]
+                  ]}
+                  onPress={() => handleDayPress(dayNum)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.dayText,
+                      currentDay && styles.dayTextToday,
+                      selected && styles.dayTextSelected
+                    ]}
+                  >
+                    {dayNum}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ))}
       </View>
 
       {/* Quick Presets Row */}
@@ -226,16 +241,20 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase'
   },
   daysGrid: {
+    width: '100%'
+  },
+  calendarRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap'
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 2
   },
   dayCell: {
-    width: `${100 / 7}%`,
+    flex: 1,
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
-    marginVertical: 2
+    borderRadius: 20
   },
   dayCellSelected: {
     borderRadius: 20

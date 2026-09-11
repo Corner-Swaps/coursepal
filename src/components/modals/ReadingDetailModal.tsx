@@ -287,26 +287,8 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={true}
           >
-            {/* MARK: - Header Banner (Clean Title & Chapter Pill) */}
+            {/* MARK: - Header Banner */}
             <View style={styles.headerBannerCard}>
-              <View style={styles.headerPillsRow}>
-                {derivedChapter ? (
-                  <View style={[styles.courseCodePill, { backgroundColor: `${courseColor}22` }]}>
-                    <Text style={[styles.courseCodePillText, { color: courseColor }]}>{derivedChapter}</Text>
-                  </View>
-                ) : validCourseCode ? (
-                  <View style={[styles.courseCodePill, { backgroundColor: `${courseColor}22` }]}>
-                    <Text style={[styles.courseCodePillText, { color: courseColor }]}>{validCourseCode}</Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.mediaBadge}>
-                  <BookFillIcon size={12} color="#2470F5" />
-                  <Text style={styles.mediaBadgeText}>
-                    {(mediaType || 'TEXTBOOK').toUpperCase()}
-                  </Text>
-                </View>
-              </View>
 
               {/* Title Input */}
               <View style={styles.titleSection}>

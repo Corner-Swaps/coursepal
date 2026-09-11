@@ -174,15 +174,40 @@ export function formatDisplayTitleWithChapter(
   // Extract substantive topic by stripping all chapter mentions and noise
   let substantiveTitle = stripChapterMentions(deduplicateRepeatedPhrases(distillSmartReadingTitle(rawTitle)));
 
-  // If author is duplicated in substantive title (e.g. "Corey" or "Yalom"), strip it
-  if (authorName && substantiveTitle.toLowerCase() === authorName.toLowerCase()) {
-    substantiveTitle = '';
+  if (canonicalChapter) {
+    // 1. Strip leading list numbers, e.g. "3. Family Therapy...", "3: overview", "10."
+    substantiveTitle = substantiveTitle.replace(/^\d+[:.\s–-]+/, '').trim();
+
+    // 2. Strip trailing list numbers, e.g. "Family Therapy 3", "overview 3"
+    substantiveTitle = substantiveTitle.replace(/[:.\s–-]+\d+$/, '').trim();
+
+    // 3. If substantiveTitle is purely numbers/punctuation, discard it
+    if (/^[\d\s:.\-–—]+$/.test(substantiveTitle)) {
+      substantiveTitle = '';
+    }
+
+    // 4. Strip textbook/generic noise words
+    substantiveTitle = substantiveTitle.replace(/\b(?:textbooks?|readings?|required|optional)\b/gi, '').trim();
+    substantiveTitle = substantiveTitle.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
   }
 
-  // Strip generic textbook noise if chapter exists or if title contains more specific text
-  if (canonicalChapter) {
-    substantiveTitle = substantiveTitle.replace(/\b(?:textbooks?|readings?|required)\b/gi, '').trim();
+  // If author is inside substantive title (e.g. "Gehart" or "Corey" or "Yalom"), strip it
+  if (authorName && authorName.trim()) {
+    const authParts = authorName.trim().split(/[\s,&]+/).filter(w => w.length >= 3);
+    for (const ap of authParts) {
+      const reg = new RegExp(`\\b${ap}\\b`, 'gi');
+      substantiveTitle = substantiveTitle.replace(reg, '').trim();
+    }
     substantiveTitle = substantiveTitle.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+  }
+
+  // If substantive title is just a truncated fragment like "overview" or "an overview"
+  if (
+    substantiveTitle.toLowerCase() === 'overview' ||
+    substantiveTitle.toLowerCase() === 'an overview' ||
+    substantiveTitle.toLowerCase() === 'introduction'
+  ) {
+    substantiveTitle = '';
   }
 
   const normSubstantive = substantiveTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -247,6 +272,30 @@ export function formatAuthorAndPagesSubtitle(
   if (resource && resource.trim()) {
     let cleanRes = stripChapterMentions(deduplicateRepeatedPhrases(resource.trim()));
     cleanRes = cleanRes.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+
+    // Discard pure digits / colons (e.g. "4: 10" or "3" or "10")
+    if (/^[\d\s:.\-–—]+$/.test(cleanRes)) {
+      cleanRes = '';
+    }
+
+    // Strip author name if contained inside cleanRes (e.g. "overview Gehart 3" -> "overview 3")
+    if (author && author.trim()) {
+      const authParts = author.trim().split(/[\s,&]+/).filter(w => w.length >= 3);
+      for (const ap of authParts) {
+        const reg = new RegExp(`\\b${ap}\\b`, 'gi');
+        cleanRes = cleanRes.replace(reg, '').trim();
+      }
+    }
+
+    // Strip stray numbers from cleanRes (e.g. "overview 3" -> "overview")
+    cleanRes = cleanRes.replace(/^\d+[:.\s–-]+|[:.\s–-]+\d+$/g, '').trim();
+    cleanRes = cleanRes.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+
+    // Discard fragments like "overview" or "an overview"
+    if (cleanRes.toLowerCase() === 'overview' || cleanRes.toLowerCase() === 'an overview') {
+      cleanRes = '';
+    }
+
     const lowerRes = cleanRes.toLowerCase();
     const lowerDisplay = (displayTitle || '').toLowerCase();
     const lowerCourse = (courseName || '').toLowerCase();
@@ -267,6 +316,10 @@ export function formatAuthorAndPagesSubtitle(
   if (author && author.trim()) {
     let cleanAuth = stripChapterMentions(author.trim());
     cleanAuth = cleanAuth.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+    // Discard pure digits / colons
+    if (/^[\d\s:.\-–—]+$/.test(cleanAuth)) {
+      cleanAuth = '';
+    }
     if (cleanAuth) {
       const lowerAuth = cleanAuth.toLowerCase();
       const alreadyInParts = parts.some(p => p.toLowerCase().includes(lowerAuth));

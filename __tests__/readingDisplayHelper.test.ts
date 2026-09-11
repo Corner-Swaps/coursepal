@@ -185,6 +185,49 @@ describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
       );
       expect(displaySubtitle).toBe('Family Therapy: An Overview · Goldenberg & Goldenberg · pp. 95–130');
     });
+
+    it('cleans Gehart list artifacts like Chapters 1-3 · 3 and Chapters 4-10 · 10', () => {
+      expect(
+        formatDisplayTitleWithChapter({
+          title: 'Chapters 1–3 · 3',
+          chapterText: 'Chapters 1-3',
+          resourceTitle: 'Family Therapy: An Overview',
+          authorName: 'Gehart'
+        })
+      ).toBe('Chapters 1–3');
+
+      expect(
+        formatDisplayTitleWithChapter({
+          title: 'Chapters 4–10 · 10',
+          chapterText: 'Chapters 4-10',
+          resourceTitle: 'Family Therapy: An Overview',
+          authorName: 'Gehart'
+        })
+      ).toBe('Chapters 4–10');
+
+      expect(
+        formatDisplayTitleWithChapter({
+          title: 'Chapters 1–3 · 3: overview Gehart',
+          chapterText: 'Chapters 1-3',
+          resourceTitle: 'Family Therapy: An Overview',
+          authorName: 'Gehart'
+        })
+      ).toBe('Chapters 1–3');
+    });
+
+    it('cleans corrupted subtitle fragments like "overview Gehart 3" and "4: 10 · Gehart"', () => {
+      const sub1 = formatAuthorAndPagesSubtitle({
+        authorName: 'Gehart',
+        resourceTitle: 'overview Gehart 3'
+      });
+      expect(sub1).toBe('Gehart');
+
+      const sub2 = formatAuthorAndPagesSubtitle({
+        authorName: 'Gehart',
+        resourceTitle: '4: 10'
+      });
+      expect(sub2).toBe('Gehart');
+    });
   });
 
   describe('parseSafeDate & formatAssignmentDueDate', () => {

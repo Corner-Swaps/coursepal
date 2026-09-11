@@ -832,8 +832,21 @@ export class LocalSyllabusParser {
         }
 
         const lowerTitle = exactTitle.toLowerCase();
-        const rejectedTitles = ['assignment', 'assignments', 'requirements', 'date content requirements', 'in class assignment', 'modules topics', 'topics', 'readings', 'related readings'];
-        if (rejectedTitles.includes(lowerTitle) || exactTitle.length < 3) continue;
+        const rejectedTitles = [
+          'assignment', 'assignments', 'requirements', 'date content requirements',
+          'in class assignment', 'modules topics', 'topics', 'readings', 'related readings',
+          'required reading', 'required readings', 'required reading & core materials',
+          'required readings & core materials', 'assigned reading', 'assigned readings',
+          'core materials', 'reading list', 'textbooks', 'required texts', 'course readings'
+        ];
+        if (
+          rejectedTitles.includes(lowerTitle) ||
+          exactTitle.length < 3 ||
+          lowerTitle.includes('required reading & core materials') ||
+          lowerTitle.includes('required readings & core materials') ||
+          lowerTitle === 'reading' ||
+          lowerTitle === 'readings'
+        ) continue;
 
         const dates = this.extractAllDates(line, termYear);
         const isoDate = dates.length > 0 ? dates[0].isoString : currentWeekDateIso;

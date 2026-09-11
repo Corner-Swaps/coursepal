@@ -138,7 +138,7 @@ function MainAppView() {
           onPressCenterPlus={() => setShowAddChoiceModal(true)}
           style={[
             styles.floatingTabBar,
-            { bottom: insets.bottom > 0 ? 18 : 10 }
+            { bottom: insets.bottom > 0 ? 25 : 17 }
           ]}
         />
 
