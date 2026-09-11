@@ -16,9 +16,9 @@ import {
 import { CoursePalTheme } from '../constants/theme';
 import { Typography } from '../constants/typography';
 import {
-  BookFillIcon,
+  GlassesFillIcon,
   CalendarIcon,
-  FolderFillIcon,
+  GraduationCapFillIcon,
   PersonFillIcon,
   PlusIcon
 } from './SvgIcons';
@@ -49,7 +49,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
           testID="tab-readings"
         >
           <View style={styles.tabIconWrapper}>
-            <BookFillIcon
+            <GlassesFillIcon
               size={22}
               color={selectedTab === 'readings' ? CoursePalTheme.accentBlue : '#73859E'}
             />
@@ -98,7 +98,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
           testID="tab-syllabus"
         >
           <View style={styles.tabIconWrapper}>
-            <FolderFillIcon
+            <GraduationCapFillIcon
               size={22}
               color={selectedTab === 'syllabus' ? CoursePalTheme.accentBlue : '#73859E'}
             />

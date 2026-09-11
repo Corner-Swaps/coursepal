@@ -16,6 +16,16 @@ export const BookFillIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5'
   </Svg>
 );
 
+export const GlassesFillIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx="7" cy="13.5" r="4.2" stroke={color} strokeWidth="2.3" />
+    <Circle cx="17" cy="13.5" r="4.2" stroke={color} strokeWidth="2.3" />
+    <Path d="M11.2 12.2c.5-.7 1.1-.7 1.6 0" stroke={color} strokeWidth="2.3" strokeLinecap="round" />
+    <Path d="M2.8 9.5l2.2 2" stroke={color} strokeWidth="2.2" strokeLinecap="round" />
+    <Path d="M21.2 9.5l-2.2 2" stroke={color} strokeWidth="2.2" strokeLinecap="round" />
+  </Svg>
+);
+
 export const BookClosedFillIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5' }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path
@@ -443,3 +453,25 @@ export const Person3FillIcon: React.FC<IconProps> = ({ size = 16, color = '#2470
     <Path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
   </Svg>
 );
+
+export const ExclamationTriangleFillIcon: React.FC<IconProps> = ({ size = 16, color = '#EA580C' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M12 2L1 21h22L12 2zm0 4.5l8.5 13.5H3.5L12 6.5zM11 10h2v4h-2v-4zm0 6h2v2h-2v-2z"
+      fill={color}
+    />
+  </Svg>
+);
+
+export const ArrowRightIcon: React.FC<IconProps> = ({ size = 14, color = '#FFFFFF', strokeWidth = 2.4 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M5 12h14M13 5l7 7-7 7"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+

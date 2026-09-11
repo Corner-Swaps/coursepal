@@ -18,8 +18,7 @@ import {
 import { useCoursePal } from '../context/CoursePalContext';
 import { CoursePalTheme } from '../constants/theme';
 import {
-  BookFillIcon,
-  BookClosedFillIcon,
+  GraduationCapFillIcon,
   DocFillIcon,
   ChevronRightIcon,
   TrashIcon,
@@ -177,7 +176,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
             activeOpacity={0.8}
             testID="syllabus-courses-tab"
           >
-            <BookClosedFillIcon
+            <GraduationCapFillIcon
               size={22}
               color={selectedCategory === 'syllabi' ? CoursePalTheme.accentBlue : '#596B85'}
             />
@@ -235,21 +234,11 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
           /* Courses List */
           <View style={styles.listContainer}>
             {activeCourses.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <View style={styles.emptyIconCircle}>
-                  <BookFillIcon size={24} color={CoursePalTheme.accentBlue} />
-                </View>
-                <Text style={styles.emptyTitle}>No Courses Created</Text>
-                <Text style={styles.emptyDesc}>
-                  Uploaded syllabi will automatically create and name your courses here.
+              <View style={styles.emptyCenterContainer}>
+                <Text style={styles.emptyCenterTitle}>No Courses</Text>
+                <Text style={styles.emptyCenterDesc}>
+                  There are no courses uploaded yet.
                 </Text>
-                <TouchableOpacity
-                  style={styles.addCourseButton}
-                  onPress={onOpenAddCourseModal}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.addCourseButtonText}>Create New Course</Text>
-                </TouchableOpacity>
               </View>
             ) : (
               activeCourses.map(course => {
@@ -512,21 +501,11 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
           /* Documents List */
           <View style={styles.listContainer}>
             {vaultDocs.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <View style={styles.emptyIconCircle}>
-                  <DocFillIcon size={24} color={CoursePalTheme.accentBlue} />
-                </View>
-                <Text style={styles.emptyTitle}>No Documents Uploaded</Text>
-                <Text style={styles.emptyDesc}>
-                  Upload your course syllabi or extra reading materials to view them here.
+              <View style={styles.emptyCenterContainer}>
+                <Text style={styles.emptyCenterTitle}>No Documents</Text>
+                <Text style={styles.emptyCenterDesc}>
+                  There are no syllabus documents uploaded yet.
                 </Text>
-                <TouchableOpacity
-                  style={styles.addCourseButton}
-                  onPress={() => handleOpenUpload()}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.addCourseButtonText}>Upload Syllabus Document</Text>
-                </TouchableOpacity>
               </View>
             ) : (
               <>
@@ -827,6 +806,27 @@ const styles = StyleSheet.create({
     marginHorizontal: 18,
     marginTop: 16,
     gap: 12
+  },
+  emptyCenterContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 90,
+    paddingHorizontal: 24
+  },
+  emptyCenterTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#596B85',
+    marginBottom: 6,
+    textAlign: 'center'
+  },
+  emptyCenterDesc: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: '#8E9BAE',
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 260
   },
   emptyCard: {
     backgroundColor: '#FFFFFF',

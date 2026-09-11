@@ -20,6 +20,7 @@ export interface BackupPayload {
 class DataPersistenceBackupManager {
   private static instance: DataPersistenceBackupManager;
   private backupFileName = 'CoursePal_AutoBackup.json';
+  private termsFileName = 'CoursePal_TermsAccepted.json';
   private backupTimer: NodeJS.Timeout | null = null;
   private isSaving = false;
   private pendingData: {
@@ -41,6 +42,11 @@ class DataPersistenceBackupManager {
   private get backupFilePath(): string {
     const dir = FileSystem.documentDirectory || '';
     return `${dir}${this.backupFileName}`;
+  }
+
+  private get termsFilePath(): string {
+    const dir = FileSystem.documentDirectory || '';
+    return `${dir}${this.termsFileName}`;
   }
 
   /**
@@ -186,6 +192,42 @@ class DataPersistenceBackupManager {
       return parsed;
     } catch (err) {
       return null;
+    }
+  }
+
+  /**
+   * Checks whether the user has previously accepted the Terms & Conditions
+   */
+  public async loadTermsAccepted(): Promise<boolean> {
+    try {
+      if (!FileSystem.documentDirectory) return false;
+      const info = await FileSystem.getInfoAsync(this.termsFilePath);
+      if (!info.exists) return false;
+      const content = await FileSystem.readAsStringAsync(this.termsFilePath, {
+        encoding: FileSystem.EncodingType.UTF8
+      });
+      if (!content || content.trim().length === 0) return false;
+      const parsed = JSON.parse(content);
+      return Boolean(parsed?.accepted);
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /**
+   * Persists terms acceptance to disk
+   */
+  public async saveTermsAccepted(): Promise<boolean> {
+    try {
+      if (!FileSystem.documentDirectory) return false;
+      await FileSystem.writeAsStringAsync(
+        this.termsFilePath,
+        JSON.stringify({ accepted: true, timestamp: Date.now() }),
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
+      return true;
+    } catch (err) {
+      return false;
     }
   }
 }

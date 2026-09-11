@@ -28,7 +28,8 @@ import {
   AddCourseModal,
   CourseFilterModal,
   UploadDocumentModal,
-  FocusStudyModal
+  FocusStudyModal,
+  WelcomeTermsModal
 } from './components/modals';
 
 export default function App() {
@@ -48,7 +49,9 @@ function MainAppView() {
     showConfetti,
     dismissConfetti,
     isUploading,
-    uploadStatusText
+    uploadStatusText,
+    hasAcceptedTerms,
+    acceptTerms
   } = useCoursePal();
 
   // Modals state
@@ -181,6 +184,12 @@ function MainAppView() {
         <FocusStudyModal
           visible={showFocusModal}
           onClose={() => setShowFocusModal(false)}
+        />
+
+        {/* First-Launch Legal & Welcome Terms Modal */}
+        <WelcomeTermsModal
+          visible={!hasAcceptedTerms}
+          onAccept={acceptTerms}
         />
 
         {/* Confetti Celebration Overlay */}

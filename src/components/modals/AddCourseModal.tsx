@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  ScrollView
+  ScrollView,
+  Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCoursePal } from '../../context/CoursePalContext';
@@ -71,6 +72,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   if (!visible) return null;
 
   const hasSyllabusSource = !!(attachedFileName && attachedFileName.length > 0);
+  const canSave = courseName.trim().length > 0 && hasSyllabusSource;
   const isNameMissing = showValidationHighlight && !courseName.trim();
   const isDocMissing = showValidationHighlight && !hasSyllabusSource;
 
@@ -100,29 +102,25 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
         asset.size ? `${(asset.size / (1024 * 1024)).toFixed(1)} MB` : '1.2 MB'
       );
       setShowValidationHighlight(false);
-
-      if (!courseName.trim()) {
-        const clean = asset.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-        setCourseName(clean);
-      }
-    } catch {
-      setAttachedFileName('CPC514_Research_Syllabus.pdf');
-      setShowValidationHighlight(false);
+    } catch (err) {
+      console.warn('Document picker cancelled or failed:', err);
     }
   };
 
   const handleSave = () => {
     const trimmedName = courseName.trim();
 
-    if (!trimmedName) {
+    if (!trimmedName || !hasSyllabusSource) {
       setShowValidationHighlight(true);
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
-      return;
-    }
-
-    if (!hasSyllabusSource) {
-      setShowValidationHighlight(true);
-      scrollRef.current?.scrollToEnd({ animated: true });
+      if (!trimmedName) {
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      } else {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }
+      Alert.alert(
+        'Required Information Missing',
+        'Please enter a course name and upload a syllabus document before saving.'
+      );
       return;
     }
 
@@ -195,10 +193,10 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           <TouchableOpacity
             onPress={handleSave}
             style={[styles.navButton, styles.actionButton]}
-            activeOpacity={0.7}
+            activeOpacity={canSave ? 0.7 : 0.4}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Text style={styles.saveText}>Save</Text>
+            <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Save</Text>
           </TouchableOpacity>
         </View>
 
@@ -558,6 +556,10 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: '#2470F5'
+  },
+  saveTextDisabled: {
+    color: '#8E9BAE',
+    opacity: 0.4
   },
   scrollContent: {
     flex: 1

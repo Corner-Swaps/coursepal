@@ -136,7 +136,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const [hasAcceptedTerms, setHasAcceptedTerms] = useState<boolean>(true);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState<boolean>(false);
   const [showConfetti, setShowConfetti] = useState<boolean>(false);
   const [confettiTitle, setConfettiTitle] = useState<string>('');
 
@@ -151,9 +151,15 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const isInitialMount = useRef(true);
 
-  // Restore latest backup from disk on app launch
+  // Restore latest backup and terms acceptance status from disk on app launch
   useEffect(() => {
     let isMounted = true;
+
+    persistenceManager.loadTermsAccepted().then(accepted => {
+      if (!isMounted) return;
+      setHasAcceptedTerms(accepted);
+    });
+
     persistenceManager.loadLatestBackup().then(backup => {
       if (!isMounted) return;
       if (backup) {
@@ -545,6 +551,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const acceptTerms = useCallback(() => {
     setHasAcceptedTerms(true);
+    persistenceManager.saveTermsAccepted();
   }, []);
 
   const importSyllabusDocument = useCallback(async (params: ImportSyllabusParams) => {
