@@ -39,7 +39,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
   style
 }) => {
   return (
-    <View style={[styles.wrapper, style]} testID="main-tab-bar-container">
+    <View style={[styles.wrapper, style]} testID="main-tab-bar-container" pointerEvents="box-none">
       <View style={styles.pillContainer}>
         {/* Tab 1: Readings */}
         <TouchableOpacity
@@ -88,7 +88,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
         </TouchableOpacity>
 
         {/* Slot 3: Spacer for Elevated Plus Button */}
-        <View style={styles.centerSpacer} />
+        <View style={styles.centerSpacer} pointerEvents="none" />
 
         {/* Tab 4: Syllabus */}
         <TouchableOpacity
@@ -141,7 +141,8 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
       <TouchableOpacity
         style={styles.floatingPlusOuterRing}
         onPress={onPressCenterPlus}
-        activeOpacity={0.85}
+        activeOpacity={0.8}
+        hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
         testID="tab-center-plus"
       >
         <View style={styles.floatingPlusInnerCircle}>
@@ -155,6 +156,9 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
 const styles = StyleSheet.create({
   wrapper: {
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: 74,
+    paddingTop: 18,
     marginHorizontal: 16,
     marginBottom: 0
   },
@@ -206,7 +210,7 @@ const styles = StyleSheet.create({
   },
   floatingPlusOuterRing: {
     position: 'absolute',
-    top: -18,
+    top: 0,
     width: 56,
     height: 56,
     borderRadius: 28,

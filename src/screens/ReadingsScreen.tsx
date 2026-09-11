@@ -16,7 +16,8 @@ import {
   TrashIcon,
   MagnifyingGlassIcon,
   XMarkCircleFillIcon,
-  CalendarIcon
+  CalendarIcon,
+  DocBadgePlusIcon
 } from '../components/SvgIcons';
 import { Course, Reading } from '../types/models';
 import { ReadingDetailModal } from '../components/modals';
@@ -28,9 +29,13 @@ import {
 
 interface ReadingsScreenProps {
   onOpenFilterModal: () => void;
+  onOpenUploadModal?: () => void;
 }
 
-export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModal }) => {
+export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({
+  onOpenFilterModal,
+  onOpenUploadModal
+}) => {
   const {
     courses,
     readings,
@@ -186,6 +191,19 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         </View>
 
         <View style={styles.topRightPills}>
+          {/* Upload Pill */}
+          {onOpenUploadModal && (
+            <TouchableOpacity
+              style={styles.actionPillUpload}
+              onPress={onOpenUploadModal}
+              activeOpacity={0.7}
+              testID="readings-upload-button"
+            >
+              <DocBadgePlusIcon size={16} color="#FFFFFF" />
+              <Text style={styles.uploadPillText}>Upload</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Filter Pill */}
           <TouchableOpacity
             style={[
@@ -547,7 +565,27 @@ const styles = StyleSheet.create({
   topRightPills: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6
+  },
+  actionPillUpload: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderRadius: 14,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    minHeight: 34,
+    shadowColor: CoursePalTheme.accentBlue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
     gap: 5
+  },
+  uploadPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF'
   },
   actionPillFilter: {
     alignItems: 'center',

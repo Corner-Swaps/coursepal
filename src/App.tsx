@@ -79,7 +79,10 @@ function MainAppView() {
             ]}
             pointerEvents={selectedTab === 'readings' ? 'auto' : 'none'}
           >
-            <ReadingsScreen onOpenFilterModal={() => setShowFilterModal(true)} />
+            <ReadingsScreen
+              onOpenFilterModal={() => setShowFilterModal(true)}
+              onOpenUploadModal={() => setShowUploadModal(true)}
+            />
           </View>
 
           {/* Tab 2: Assignments */}
@@ -90,7 +93,10 @@ function MainAppView() {
             ]}
             pointerEvents={selectedTab === 'assignments' ? 'auto' : 'none'}
           >
-            <AssignmentsScreen onOpenFilterModal={() => setShowFilterModal(true)} />
+            <AssignmentsScreen
+              onOpenFilterModal={() => setShowFilterModal(true)}
+              onOpenUploadModal={() => setShowUploadModal(true)}
+            />
           </View>
 
           {/* Tab 3: Syllabus */}

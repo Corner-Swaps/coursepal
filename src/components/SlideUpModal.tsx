@@ -13,7 +13,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
-  Modal,
   Animated,
   PanResponder,
   TouchableWithoutFeedback,
@@ -152,59 +151,57 @@ export const SlideUpModal: React.FC<SlideUpModalProps> = ({
   if (!isRendered) return null;
 
   return (
-    <Modal
-      transparent
-      visible={isRendered}
-      animationType="none"
-      onRequestClose={() => triggerDismiss()}
+    <View
+      style={styles.outerContainer}
       testID={testID}
+      pointerEvents={isDismissing.current ? 'none' : 'box-none'}
     >
-      <View style={styles.outerContainer}>
-        {/* Stationary Dimmed Backdrop that Fades In / Out */}
-        <TouchableWithoutFeedback onPress={() => triggerDismiss()}>
-          <Animated.View
-            style={[
-              styles.backdrop,
-              {
-                opacity: backdropOpacity
-              }
-            ]}
-            testID="slide-up-modal-backdrop"
-          />
-        </TouchableWithoutFeedback>
-
-        {/* Sheet Card Translating Up / Down */}
+      {/* Stationary Dimmed Backdrop that Fades In / Out */}
+      <TouchableWithoutFeedback onPress={() => triggerDismiss()}>
         <Animated.View
           style={[
-            styles.modalCard,
-            contentStyle,
+            styles.backdrop,
             {
-              transform: [{ translateY }]
+              opacity: backdropOpacity
             }
           ]}
-          testID="slide-up-modal-card"
-        >
-          {/* Drag Handle Touch Area with PanResponder */}
-          <View
-            {...panResponder.panHandlers}
-            style={styles.dragHandleContainer}
-            hitSlop={{ top: 16, bottom: 16, left: 32, right: 32 }}
-            testID="slide-up-drag-handle"
-          >
-            {showDragHandle && <View style={styles.dragHandlePill} />}
-          </View>
+          testID="slide-up-modal-backdrop"
+        />
+      </TouchableWithoutFeedback>
 
-          {/* Modal Content */}
-          {children}
-        </Animated.View>
-      </View>
-    </Modal>
+      {/* Sheet Card Translating Up / Down */}
+      <Animated.View
+        style={[
+          styles.modalCard,
+          contentStyle,
+          {
+            transform: [{ translateY }]
+          }
+        ]}
+        testID="slide-up-modal-card"
+      >
+        {/* Drag Handle Touch Area with PanResponder */}
+        <View
+          {...panResponder.panHandlers}
+          style={styles.dragHandleContainer}
+          hitSlop={{ top: 16, bottom: 16, left: 32, right: 32 }}
+          testID="slide-up-drag-handle"
+        >
+          {showDragHandle && <View style={styles.dragHandlePill} />}
+        </View>
+
+        {/* Modal Content */}
+        {children}
+      </Animated.View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   outerContainer: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    elevation: 9999,
     justifyContent: 'flex-end'
   },
   backdrop: {

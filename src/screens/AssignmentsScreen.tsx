@@ -16,7 +16,8 @@ import {
   TrashIcon,
   MagnifyingGlassIcon,
   XMarkCircleFillIcon,
-  CalendarIcon
+  CalendarIcon,
+  DocBadgePlusIcon
 } from '../components/SvgIcons';
 import { Assignment } from '../types/models';
 import { AssignmentDetailModal, EditAssignmentModal } from '../components/modals';
@@ -24,9 +25,13 @@ import { formatWeekHeaderDate } from '../utils/readingDisplayHelper';
 
 interface AssignmentsScreenProps {
   onOpenFilterModal: () => void;
+  onOpenUploadModal?: () => void;
 }
 
-export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilterModal }) => {
+export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({
+  onOpenFilterModal,
+  onOpenUploadModal
+}) => {
   const {
     courses,
     assignments,
@@ -162,6 +167,19 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         </View>
 
         <View style={styles.topRightPills}>
+          {/* Upload Pill */}
+          {onOpenUploadModal && (
+            <TouchableOpacity
+              style={styles.actionPillUpload}
+              onPress={onOpenUploadModal}
+              activeOpacity={0.7}
+              testID="assignments-upload-button"
+            >
+              <DocBadgePlusIcon size={16} color="#FFFFFF" />
+              <Text style={styles.uploadPillText}>Upload</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Filter Pill */}
           <TouchableOpacity
             style={[
@@ -520,7 +538,27 @@ const styles = StyleSheet.create({
   topRightPills: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6
+  },
+  actionPillUpload: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderRadius: 14,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    minHeight: 34,
+    shadowColor: CoursePalTheme.accentBlue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
     gap: 5
+  },
+  uploadPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF'
   },
   actionPillFilter: {
     alignItems: 'center',
