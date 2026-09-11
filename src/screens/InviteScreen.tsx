@@ -24,7 +24,7 @@ import { InfoCreditsModal } from '../components/modals/InfoCreditsModal';
 export const InviteScreen: React.FC = () => {
   const { courses, importShareCode } = useCoursePal();
 
-  const [selectedCategory, setSelectedCategory] = useState<'share' | 'join'>('share');
+  const [selectedCategory, setSelectedCategory] = useState<'share' | 'join' | 'legal'>('share');
   const [inputCode, setInputCode] = useState<string>('');
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [isSuccessNotice, setIsSuccessNotice] = useState<boolean>(true);
@@ -90,7 +90,7 @@ export const InviteScreen: React.FC = () => {
         </View>
       )}
 
-      {/* MARK: - Category Filter Bar (Share Codes vs Join Course) */}
+      {/* MARK: - Category Filter Bar (Share Codes vs Join Course vs About & Legal) */}
       <View style={styles.filterBarContainer}>
         {/* Tile 1: Share Codes */}
         <TouchableOpacity
@@ -103,7 +103,7 @@ export const InviteScreen: React.FC = () => {
           testID="invite-share-tab"
         >
           <QRCodeIcon
-            size={22}
+            size={18}
             color={selectedCategory === 'share' ? CoursePalTheme.accentBlue : '#596B85'}
           />
           <Text
@@ -111,8 +111,9 @@ export const InviteScreen: React.FC = () => {
               styles.filterTileText,
               selectedCategory === 'share' && styles.filterTileTextActive
             ]}
+            numberOfLines={1}
           >
-            Share Codes ({activeCourses.length})
+            Share ({activeCourses.length})
           </Text>
         </TouchableOpacity>
 
@@ -127,7 +128,7 @@ export const InviteScreen: React.FC = () => {
           testID="invite-join-tab"
         >
           <JoinArrowDownIcon
-            size={22}
+            size={18}
             color={selectedCategory === 'join' ? '#8C45F5' : '#596B85'}
           />
           <Text
@@ -135,8 +136,34 @@ export const InviteScreen: React.FC = () => {
               styles.filterTileText,
               selectedCategory === 'join' && styles.filterTileTextActive
             ]}
+            numberOfLines={1}
           >
             Join Course
+          </Text>
+        </TouchableOpacity>
+
+        {/* Tile 3: About & Legal */}
+        <TouchableOpacity
+          style={[
+            styles.filterTile,
+            selectedCategory === 'legal' && styles.filterTileActive
+          ]}
+          onPress={() => setSelectedCategory('legal')}
+          activeOpacity={0.8}
+          testID="invite-legal-tab"
+        >
+          <ShieldLockIcon
+            size={18}
+            color={selectedCategory === 'legal' ? '#059669' : '#596B85'}
+          />
+          <Text
+            style={[
+              styles.filterTileText,
+              selectedCategory === 'legal' && styles.filterTileTextActive
+            ]}
+            numberOfLines={1}
+          >
+            About & Legal
           </Text>
         </TouchableOpacity>
       </View>
@@ -191,28 +218,8 @@ export const InviteScreen: React.FC = () => {
               </View>
             ))
           )}
-
-          {/* MARK: - About & Legal Card (Exclusively in Share Codes) */}
-          <View style={styles.aboutCardContainer}>
-            <TouchableOpacity
-              style={styles.aboutCard}
-              onPress={() => setShowInfoSheet(true)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.aboutIconCircle}>
-                <ShieldLockIcon size={18} color={CoursePalTheme.accentBlue} />
-              </View>
-
-              <View style={styles.aboutTextCol}>
-                <Text style={styles.aboutTitle}>About & Legal</Text>
-                <Text style={styles.aboutDesc}>Privacy policy, terms of service & support</Text>
-              </View>
-
-              <ChevronRightIcon size={13} color="#73859E" />
-            </TouchableOpacity>
-          </View>
         </View>
-      ) : (
+      ) : selectedCategory === 'join' ? (
         // Join Course Section
         <View style={styles.joinContainer}>
           <Text style={styles.joinSectionHeader}>JOIN A COURSE</Text>
@@ -241,6 +248,73 @@ export const InviteScreen: React.FC = () => {
             >
               <Text style={styles.joinSubmitButtonText}>Join Course</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        // About & Legal Section
+        <View style={styles.legalSectionContainer}>
+          <View style={styles.aboutHeaderBanner}>
+            <View style={styles.aboutShieldBadge}>
+              <ShieldLockIcon size={24} color={CoursePalTheme.accentBlue} />
+            </View>
+            <Text style={styles.aboutHeaderTitle}>CoursePal Legal & Privacy</Text>
+            <Text style={styles.aboutHeaderDesc}>
+              Designed with private on-device storage. Review our academic disclaimer, complete limitation of liability, and privacy terms.
+            </Text>
+          </View>
+
+          {/* Action Cards */}
+          <TouchableOpacity
+            style={styles.legalOptionCard}
+            onPress={() => setShowInfoSheet(true)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.legalIconCircle, { backgroundColor: 'rgba(36, 112, 245, 0.12)' }]}>
+              <ShieldLockIcon size={18} color="#2470F5" />
+            </View>
+            <View style={styles.legalTextCol}>
+              <Text style={styles.legalTitle}>Terms of Service & Disclaimer</Text>
+              <Text style={styles.legalDesc}>Academic disclaimer, verification duty & hold harmless</Text>
+            </View>
+            <ChevronRightIcon size={13} color="#73859E" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.legalOptionCard}
+            onPress={() => setShowInfoSheet(true)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.legalIconCircle, { backgroundColor: 'rgba(5, 150, 105, 0.12)' }]}>
+              <ShieldLockIcon size={18} color="#059669" />
+            </View>
+            <View style={styles.legalTextCol}>
+              <Text style={styles.legalTitle}>Privacy Policy</Text>
+              <Text style={styles.legalDesc}>100% on-device sandbox, zero selling & zero AI training</Text>
+            </View>
+            <ChevronRightIcon size={13} color="#73859E" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.legalOptionCard}
+            onPress={() => setShowInfoSheet(true)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.legalIconCircle, { backgroundColor: 'rgba(140, 69, 245, 0.12)' }]}>
+              <ShieldLockIcon size={18} color="#8C45F5" />
+            </View>
+            <View style={styles.legalTextCol}>
+              <Text style={styles.legalTitle}>About CoursePal & Support</Text>
+              <Text style={styles.legalDesc}>Version 1.4.0, contact & engineering architecture</Text>
+            </View>
+            <ChevronRightIcon size={13} color="#73859E" />
+          </TouchableOpacity>
+
+          {/* Academic Duty Note Pill */}
+          <View style={styles.academicWarningCard}>
+            <Text style={styles.academicWarningTitle}>Official Syllabus Primacy Notice</Text>
+            <Text style={styles.academicWarningBody}>
+              CoursePal is an auxiliary student aid. Your university syllabus, instructor communications, and LMS (Canvas, Blackboard, Brightspace, Moodle) remain the sole authoritative records. Always cross-verify deliverables with your official syllabus.
+            </Text>
           </View>
         </View>
       )}
@@ -542,5 +616,106 @@ const styles = StyleSheet.create({
     color: '#596B85',
     textAlign: 'center',
     maxWidth: 240
+  },
+  legalSectionContainer: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    gap: 12
+  },
+  aboutHeaderBanner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E3E8F0',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+    alignItems: 'center',
+    marginBottom: 4
+  },
+  aboutShieldBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(36, 112, 245, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10
+  },
+  aboutHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#141F38',
+    marginBottom: 6,
+    textAlign: 'center'
+  },
+  aboutHeaderDesc: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: '#596B85',
+    textAlign: 'center',
+    lineHeight: 19
+  },
+  legalOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E3E8F0',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+    gap: 12
+  },
+  legalIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  legalTextCol: {
+    flex: 1
+  },
+  legalTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#141F38'
+  },
+  legalDesc: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#596B85',
+    marginTop: 2,
+    lineHeight: 16
+  },
+  academicWarningCard: {
+    backgroundColor: 'rgba(36, 112, 245, 0.06)',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(36, 112, 245, 0.15)',
+    marginTop: 6
+  },
+  academicWarningTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#2470F5',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3
+  },
+  academicWarningBody: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#3B4B68',
+    lineHeight: 18
   }
 });

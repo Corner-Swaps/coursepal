@@ -23,12 +23,10 @@ import { Reading, Course, MediaType } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
 import {
   XMarkCircleFillIcon,
-  PlusCircleFillIcon,
-  ArrowPathIcon,
-  TrashIcon,
-  CheckmarkCircleFillIcon
+  PlusCircleFillIcon
 } from '../SvgIcons';
 import { cleanChapterFromRaw, parseSafeDate, formatDisplayTitleWithChapter } from '../../utils/readingDisplayHelper';
+import { InlineCalendarPicker } from '../InlineCalendarPicker';
 
 export interface ReadingDetailModalProps {
   visible: boolean;
@@ -56,6 +54,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   const [moduleInput, setModuleInput] = useState<string>('');
   const [hasDueDate, setHasDueDate] = useState<boolean>(false);
   const [dueDate, setDueDate] = useState<Date>(new Date());
+  const [showCalendar, setShowCalendar] = useState<boolean>(false);
   const [chapterInput, setChapterInput] = useState<string>('');
   const [topicInputs, setTopicInputs] = useState<string[]>([]);
   const [mediaType, setMediaType] = useState<MediaType>('textbook');
@@ -205,18 +204,30 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
             {/* MARK: - Section 2: Schedule */}
             <Text style={styles.sectionHeaderTitle}>Schedule</Text>
             <View style={styles.sectionCard}>
-              {/* Week Row */}
+              {/* Week Row with Toggle / Stepper */}
               <View style={styles.formRow}>
                 <Text style={styles.rowLabel}>Week</Text>
-                <TextInput
-                  style={styles.rowValueInput}
-                  value={`${weekNumber}`}
-                  keyboardType="number-pad"
-                  onChangeText={t => {
-                    const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
-                    setWeekNumber(isNaN(n) ? 1 : n);
-                  }}
-                />
+                <View style={styles.stepperContainer}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => setWeekNumber(prev => Math.max(1, prev - 1))}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepperBtnText}>−</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.stepperValueBox}>
+                    <Text style={styles.stepperValueText}>Week {weekNumber}</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => setWeekNumber(prev => Math.min(52, prev + 1))}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepperBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.rowDivider} />
@@ -239,7 +250,10 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                 <Text style={styles.rowLabel}>Due Date</Text>
                 <Switch
                   value={hasDueDate}
-                  onValueChange={setHasDueDate}
+                  onValueChange={v => {
+                    setHasDueDate(v);
+                    if (!v) setShowCalendar(false);
+                  }}
                   trackColor={{ false: '#E2E8F0', true: '#34C759' }}
                   thumbColor="#FFFFFF"
                 />
@@ -249,12 +263,26 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               {hasDueDate && (
                 <>
                   <View style={styles.rowDivider} />
-                  <View style={styles.formRow}>
+                  <TouchableOpacity
+                    style={styles.formRow}
+                    onPress={() => setShowCalendar(prev => !prev)}
+                    activeOpacity={0.7}
+                  >
                     <Text style={styles.rowLabel}>Select Date</Text>
-                    <View style={styles.dateCapsule}>
+                    <View style={styles.dateCapsuleInteractive}>
                       <Text style={styles.dateCapsuleText}>{formattedDate}</Text>
+                      <Text style={styles.dateCapsuleAction}>{showCalendar ? 'Done' : 'Change'}</Text>
                     </View>
-                  </View>
+                  </TouchableOpacity>
+
+                  {showCalendar && (
+                    <InlineCalendarPicker
+                      selectedDate={dueDate}
+                      onSelectDate={d => {
+                        setDueDate(d);
+                      }}
+                    />
+                  )}
                 </>
               )}
             </View>
@@ -299,32 +327,37 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* MARK: - Section 5: Media Type */}
+            {/* MARK: - Section 5: Media Type (Compact Pills) */}
             <Text style={styles.sectionHeaderTitle}>Media Type</Text>
-            <View style={styles.sectionCard}>
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Type</Text>
-                <TouchableOpacity
-                  style={styles.mediaTypeSelector}
-                  onPress={() => {
-                    const types: MediaType[] = ['textbook', 'video', 'podcast', 'article'];
-                    const nextIdx = (types.indexOf(mediaType) + 1) % types.length;
-                    setMediaType(types[nextIdx]);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.mediaTypeSelectorText}>
-                    {mediaType === 'textbook'
-                      ? 'Textbook'
-                      : mediaType === 'video'
-                      ? 'Video'
-                      : mediaType === 'podcast'
-                      ? 'Podcast'
-                      : 'Article / Paper'}{' '}
-                    ⇅
-                  </Text>
-                </TouchableOpacity>
-              </View>
+            <View style={styles.mediaTypeRow}>
+              {(['textbook', 'article', 'video', 'podcast'] as MediaType[]).map(t => {
+                const isSelected = mediaType === t;
+                const label =
+                  t === 'textbook'
+                    ? 'Textbook'
+                    : t === 'article'
+                    ? 'Article'
+                    : t === 'video'
+                    ? 'Video'
+                    : 'Podcast';
+                return (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.mediaTypePill, isSelected && styles.mediaTypePillActive]}
+                    onPress={() => setMediaType(t)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.mediaTypePillText,
+                        isSelected && styles.mediaTypePillTextActive
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {/* MARK: - Section 6: Resource Link */}
@@ -368,60 +401,6 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                 <Text style={styles.addItemButtonText}>Add Note</Text>
               </TouchableOpacity>
             </View>
-
-            {/* Complete Toggle Button */}
-            {onToggleComplete && (
-              <TouchableOpacity
-                style={[
-                  styles.completeButton,
-                  reading.isCompleted && styles.completeButtonDone
-                ]}
-                onPress={() => onToggleComplete(reading.id)}
-                activeOpacity={0.8}
-              >
-                <CheckmarkCircleFillIcon size={18} color={reading.isCompleted ? '#059669' : '#FFFFFF'} />
-                <Text
-                  style={[
-                    styles.completeButtonText,
-                    reading.isCompleted && styles.completeButtonTextDone
-                  ]}
-                >
-                  {reading.isCompleted ? 'Completed' : 'Mark as Complete'}
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Delete or Restore Reading Button */}
-            {reading.isDeleted ? (
-              <TouchableOpacity
-                style={styles.restoreDetailButton}
-                onPress={() => {
-                  if (onSave) {
-                    onSave({
-                      ...reading,
-                      isDeleted: false
-                    });
-                  }
-                  onClose();
-                }}
-                activeOpacity={0.7}
-              >
-                <ArrowPathIcon size={16} color={CoursePalTheme.accentBlue} />
-                <Text style={styles.restoreDetailButtonText}>Restore to Active Schedule</Text>
-              </TouchableOpacity>
-            ) : onDeleteReading ? (
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => {
-                  onDeleteReading(reading.id);
-                  onClose();
-                }}
-                activeOpacity={0.7}
-              >
-                <TrashIcon size={15} color="#D94033" />
-                <Text style={styles.deleteButtonText}>Move to Trash</Text>
-              </TouchableOpacity>
-            ) : null}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -620,14 +599,80 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: CoursePalTheme.accentBlue
   },
-  mediaTypeSelector: {
-    paddingVertical: 6,
-    paddingHorizontal: 10
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    padding: 3
   },
-  mediaTypeSelectorText: {
-    fontSize: 15,
-    fontWeight: '600',
+  stepperBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1
+  },
+  stepperBtnText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue,
+    lineHeight: 19
+  },
+  stepperValueBox: {
+    paddingHorizontal: 12
+  },
+  stepperValueText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#081324'
+  },
+  dateCapsuleInteractive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8
+  },
+  dateCapsuleAction: {
+    fontSize: 12,
+    fontWeight: '700',
     color: CoursePalTheme.accentBlue
+  },
+  mediaTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 2
+  },
+  mediaTypePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  mediaTypePillActive: {
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderColor: CoursePalTheme.accentBlue
+  },
+  mediaTypePillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#596B85'
+  },
+  mediaTypePillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700'
   },
   noteItemCard: {
     backgroundColor: '#F8FAFD',

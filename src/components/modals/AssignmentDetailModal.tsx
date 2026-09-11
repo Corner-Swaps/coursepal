@@ -22,29 +22,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Assignment, Course, RubricCriterion } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
 import {
-  CalendarIcon,
-  CheckmarkCircleFillIcon,
-  PencilSquareIcon,
-  TrashIcon,
-  ArrowPathIcon,
-  SparklesIcon,
-  WandAndStarsIcon,
-  NumberIcon,
-  DocTextFillIcon,
-  DocRichtextFillIcon,
-  PlayTvFillIcon,
-  WaveformPathEcgIcon,
-  Person3FillIcon,
-  RectangleInsetTopLeftFilledIcon,
-  DocFillIcon,
-  LinkCircleFillIcon,
+  XMarkCircleFillIcon,
+  PlusCircleFillIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   PlayCircleFillIcon,
-  ArrowUpRightIcon,
-  CheckmarkIcon,
-  ChartPieFillIcon
+  ArrowUpRightIcon
 } from '../SvgIcons';
 import { parseSafeDate, formatAssignmentDueDate } from '../../utils/readingDisplayHelper';
 import { APIService } from '../../services/APIService';
+import { InlineCalendarPicker } from '../InlineCalendarPicker';
 
 interface AssignmentDetailModalProps {
   visible: boolean;
@@ -80,7 +67,8 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   const courseTitleStr = matchedCourse?.courseName || assignment.courseCode || 'Assignment';
 
   const [titleTextState, setTitleTextState] = useState<string>(assignment.title || '');
-  const [notes, setNotes] = useState<string>(assignment.noteText || '');
+  const [showCalendar, setShowCalendar] = useState<boolean>(false);
+  const [noteInputs, setNoteInputs] = useState<string[]>([]);
   const [completedMilestones, setCompletedMilestones] = useState<Set<number>>(new Set());
   const [isGeneratingMilestones, setIsGeneratingMilestones] = useState<boolean>(false);
   const [weekTextState, setWeekTextState] = useState<string>(String(assignment.weekNumber || 1));
@@ -88,10 +76,47 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
   useEffect(() => {
     setTitleTextState(assignment.title || '');
-    setNotes(assignment.noteText || '');
     setWeekTextState(String(assignment.weekNumber || 1));
     setModuleTextState(assignment.moduleMention || assignment.relevantTopics || '');
+
+    const parsedNotes = (assignment.noteText || '')
+      .split('\n')
+      .map(n => n.replace(/^[•\-\*▪●]\s*/, '').trim())
+      .filter(n => n.length > 0);
+    setNoteInputs(parsedNotes);
   }, [assignment]);
+
+  const handleWeekStep = (delta: number) => {
+    const currentW = parseInt(weekTextState, 10) || 1;
+    const nextW = Math.max(1, Math.min(52, currentW + delta));
+    setWeekTextState(String(nextW));
+    onUpdateAssignment({
+      ...assignment,
+      weekNumber: nextW
+    });
+  };
+
+  const handleAddNote = () => {
+    setNoteInputs(prev => [...prev, '']);
+  };
+
+  const handleRemoveNote = (idx: number) => {
+    const updated = noteInputs.filter((_, i) => i !== idx);
+    setNoteInputs(updated);
+    onUpdateAssignment({
+      ...assignment,
+      noteText: updated.filter(n => n.trim().length > 0).join('\n')
+    });
+  };
+
+  const handleUpdateNote = (idx: number, text: string) => {
+    const updated = noteInputs.map((n, i) => (i === idx ? text : n));
+    setNoteInputs(updated);
+    onUpdateAssignment({
+      ...assignment,
+      noteText: updated.filter(n => n.trim().length > 0).join('\n')
+    });
+  };
 
   const handleTitleChange = (text: string) => {
     setTitleTextState(text);
@@ -163,39 +188,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
     ];
   }, [assignment.rubricCriteria, assignment.pointsBreakdown]);
 
-  // SubType icon helper matching Swift Models.swift
-  const renderSubTypeIcon = () => {
-    const raw = (assignment.subTypeRaw || '').toUpperCase();
-    switch (raw) {
-      case 'TEXTBOOK':
-        return <DocTextFillIcon size={12} color="#2470F5" />;
-      case 'ARTICLE':
-        return <DocTextFillIcon size={12} color="#2470F5" />;
-      case 'VIDEO':
-        return <PlayTvFillIcon size={12} color="#2470F5" />;
-      case 'PODCAST':
-        return <WaveformPathEcgIcon size={12} color="#2470F5" />;
-      case 'IN_CLASS':
-        return <Person3FillIcon size={12} color="#2470F5" />;
-      case 'PAPER':
-        return <DocRichtextFillIcon size={12} color="#2470F5" />;
-      case 'PRESENTATION':
-        return <RectangleInsetTopLeftFilledIcon size={12} color="#2470F5" />;
-      case 'EXAM':
-      case 'QUIZ':
-        return <PencilSquareIcon size={12} color="#2470F5" />;
-      default:
-        return <DocFillIcon size={12} color="#2470F5" />;
-    }
-  };
 
-  const handleNotesChange = (text: string) => {
-    setNotes(text);
-    onUpdateAssignment({
-      ...assignment,
-      noteText: text
-    });
-  };
 
   const handleWeekChange = (text: string) => {
     const digits = text.replace(/[^0-9]/g, '');
@@ -331,7 +324,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
         >
           {/* MARK: - Header Banner */}
           <View style={styles.headerBannerCard}>
-            {/* Assignment Title (Directly Editable) & Badges */}
+            {/* Assignment Title (Directly Editable) */}
             <View style={styles.titleSection}>
               <TextInput
                 style={styles.assignmentTitleInput}
@@ -344,59 +337,93 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                 blurOnSubmit={true}
               />
 
-              <View style={styles.capsuleBadgesRow}>
-                {cleanWeightStr && (
-                  <View style={styles.weightCapsule}>
-                    <Text style={styles.weightCapsuleText}>{cleanWeightStr}</Text>
-                  </View>
-                )}
-
-                {assignment.moduleMention ? (
+              {assignment.moduleMention ? (
+                <View style={styles.capsuleBadgesRow}>
                   <View style={styles.moduleCapsule}>
                     <Text style={styles.moduleCapsuleText}>{assignment.moduleMention}</Text>
                   </View>
-                ) : null}
-              </View>
+                </View>
+              ) : null}
             </View>
 
-            {/* Bottom Row: Course Name & Due Date */}
-            <View style={styles.headerBottomRow}>
-              {courseTitleStr !== courseCodeStr && (
+            {/* Bottom Row: Course Name */}
+            {courseTitleStr !== courseCodeStr && (
+              <View style={styles.headerBottomRow}>
                 <Text style={styles.courseSubtitleText} numberOfLines={1}>
                   {courseTitleStr}
                 </Text>
-              )}
-
-              <View style={styles.dueDateBadge}>
-                <CalendarIcon size={12} color="#D94033" />
-                <Text style={styles.dueDateBadgeText}>
-                  {formatAssignmentDueDate(assignment.dueDate) || 'Due Date'}
-                </Text>
               </View>
-            </View>
+            )}
           </View>
 
           {/* MARK: - Due Date Card */}
           <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionIconCircle}>
-                <CalendarIcon size={14} color="#2470F5" />
-              </View>
+            <View style={styles.sectionHeaderClean}>
               <Text style={styles.sectionCardTitle}>Due Date</Text>
             </View>
 
-            <View style={styles.dueDateRow}>
-              <CalendarIcon size={15} color="#596B85" />
-              <Text style={styles.dueDateValueText}>{formattedDueDateStr}</Text>
+            {/* Week Stepper & Toggle Row */}
+            <View style={styles.weekToggleRow}>
+              <Text style={styles.weekToggleLabel}>Schedule Week</Text>
+              <View style={styles.stepperContainer}>
+                <TouchableOpacity
+                  style={styles.stepperBtn}
+                  onPress={() => handleWeekStep(-1)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.stepperBtnText}>−</Text>
+                </TouchableOpacity>
+
+                <View style={styles.stepperValueBox}>
+                  <Text style={styles.stepperValueText}>Week {weekTextState}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.stepperBtn}
+                  onPress={() => handleWeekStep(1)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.stepperBtnText}>+</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+
+            <View style={styles.rowDivider} />
+
+            {/* Due Date Row (Tap to change date) */}
+            <TouchableOpacity
+              style={styles.dueDateSelectRow}
+              onPress={() => setShowCalendar(prev => !prev)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.dueDateTextGroup}>
+                <Text style={styles.dueDateLabel}>Due Date</Text>
+                <Text style={styles.dueDateValueText}>{formattedDueDateStr}</Text>
+              </View>
+              <View style={styles.changeDatePill}>
+                <Text style={styles.changeDatePillText}>
+                  {showCalendar ? 'Done' : 'Change Date'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Interactive Calendar Date Picker */}
+            {showCalendar && (
+              <InlineCalendarPicker
+                selectedDate={parseSafeDate(assignment.dueDate) || new Date()}
+                onSelectDate={d => {
+                  onUpdateAssignment({
+                    ...assignment,
+                    dueDate: d
+                  });
+                }}
+              />
+            )}
           </View>
 
           {/* MARK: - Instructions Card */}
           <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionIconCircle}>
-                <DocTextFillIcon size={14} color="#2470F5" />
-              </View>
+            <View style={styles.sectionHeaderClean}>
               <Text style={styles.sectionCardTitle}>Instructions</Text>
             </View>
             <Text style={styles.instructionsBodyText}>
@@ -406,18 +433,12 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
           {/* MARK: - Points Breakdown & Rubric */}
           <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionIconCircle}>
-                <ChartPieFillIcon size={14} color="#2470F5" />
-              </View>
+            <View style={styles.sectionHeaderClean}>
               <Text style={styles.sectionCardTitle}>Points Breakdown</Text>
             </View>
 
             {/* Total Points Pill */}
             <View style={styles.totalPointsPill}>
-              <View style={styles.numberIconCircle}>
-                <NumberIcon size={12} color="#596B85" />
-              </View>
               <View style={styles.totalPointsTextCol}>
                 <Text style={styles.totalPointsLabel}>Total Points</Text>
                 <Text style={styles.totalPointsValue}>
@@ -455,30 +476,41 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
             </View>
           </View>
 
-          {/* MARK: - Personal Notes */}
+          {/* MARK: - Personal Notes (Matching ReadingDetailModal) */}
           <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionIconCircle}>
-                <PencilSquareIcon size={14} color="#2470F5" />
-              </View>
+            <View style={styles.sectionHeaderClean}>
               <Text style={styles.sectionCardTitle}>Personal Notes</Text>
             </View>
-            <TextInput
-              style={styles.notesInput}
-              multiline
-              numberOfLines={4}
-              placeholder="Add personal thoughts, project links, or references..."
-              placeholderTextColor="#8E9BAE"
-              value={notes}
-              onChangeText={handleNotesChange}
-            />
+
+            {noteInputs.map((note, idx) => (
+              <View key={`note-${idx}`} style={styles.noteItemCard}>
+                <View style={styles.noteItemHeader}>
+                  <Text style={styles.topicPrefix}>{idx + 1} -</Text>
+                  <TextInput
+                    style={styles.noteTextInput}
+                    value={note}
+                    onChangeText={t => handleUpdateNote(idx, t)}
+                    placeholder="Add personal thoughts, project links, or references..."
+                    placeholderTextColor="#8E9BAE"
+                    multiline
+                  />
+                  <TouchableOpacity onPress={() => handleRemoveNote(idx)} style={styles.removeTopicButton}>
+                    <XMarkCircleFillIcon size={16} color="#B0BAC9" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+
+            <TouchableOpacity onPress={handleAddNote} style={styles.addItemButton} activeOpacity={0.7}>
+              <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
+              <Text style={styles.addItemButtonText}>Add Note</Text>
+            </TouchableOpacity>
           </View>
 
           {/* MARK: - Attached Media / Resource Link */}
           {assignment.mediaUrl && assignment.mediaUrl.trim().length > 0 && (
             <View style={styles.sectionCard}>
-              <View style={styles.sectionHeaderRow}>
-                <LinkCircleFillIcon size={18} color="#2470F5" />
+              <View style={styles.sectionHeaderClean}>
                 <Text style={styles.sectionCardTitle}>Attached Media / Resource Link</Text>
               </View>
               <TouchableOpacity
@@ -703,6 +735,131 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2
   },
+  sectionHeaderClean: {
+    marginBottom: 14
+  },
+  weekToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6
+  },
+  weekToggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#121C33'
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    padding: 3
+  },
+  stepperBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1
+  },
+  stepperBtnText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2470F5',
+    lineHeight: 20
+  },
+  stepperValueBox: {
+    paddingHorizontal: 12
+  },
+  stepperValueText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#121C33'
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 10
+  },
+  dueDateSelectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6
+  },
+  dueDateTextGroup: {
+    flex: 1
+  },
+  dueDateLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#596B85',
+    marginBottom: 2
+  },
+  dueDateValueText: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#121C33'
+  },
+  changeDatePill: {
+    backgroundColor: 'rgba(36, 112, 245, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8
+  },
+  changeDatePillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2470F5'
+  },
+  noteItemCard: {
+    backgroundColor: '#F8FAFD',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginVertical: 5
+  },
+  noteItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10
+  },
+  topicPrefix: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#596B85',
+    marginTop: 2
+  },
+  noteTextInput: {
+    flex: 1,
+    fontSize: 14.5,
+    color: '#121C33',
+    lineHeight: 21,
+    paddingVertical: 0
+  },
+  removeTopicButton: {
+    padding: 4
+  },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    marginTop: 4
+  },
+  addItemButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: CoursePalTheme.accentBlue
+  },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -748,23 +905,7 @@ const styles = StyleSheet.create({
     color: '#121C33',
     paddingVertical: 0
   },
-  dueDateDisplayBox: {
-    backgroundColor: '#F5F7FA',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10
-  },
-  dueDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 2
-  },
-  dueDateValueText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#121C33'
-  },
+
   instructionsBodyText: {
     fontSize: 14.5,
     fontWeight: '400',

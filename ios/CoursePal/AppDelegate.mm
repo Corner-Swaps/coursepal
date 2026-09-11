@@ -97,49 +97,59 @@ RCT_EXPORT_METHOD(extractText:(NSString *)filePath
     }
 
     NSURL *url = nil;
-    if ([filePath hasPrefix:@"file://"]) {
-      url = [NSURL URLWithString:filePath];
-      if (!url || ![[NSFileManager defaultManager] fileExistsAtPath:url.path]) {
-        NSString *unescaped = [filePath stringByRemovingPercentEncoding];
-        if (unescaped) {
-          if ([unescaped hasPrefix:@"file://"]) {
-            url = [NSURL fileURLWithPath:[unescaped substringFromIndex:7]];
-          } else {
-            url = [NSURL fileURLWithPath:unescaped];
-          }
+    NSString *cleanPath = filePath;
+    if ([cleanPath hasPrefix:@"file://"]) {
+      url = [NSURL URLWithString:cleanPath];
+      cleanPath = [cleanPath substringFromIndex:7];
+    }
+    cleanPath = [cleanPath stringByRemovingPercentEncoding];
+
+    if (!url && cleanPath) {
+      url = [NSURL fileURLWithPath:cleanPath];
+    }
+
+    BOOL isSecurityScoped = NO;
+    if (url && [url respondsToSelector:@selector(startAccessingSecurityScopedResource)]) {
+      isSecurityScoped = [url startAccessingSecurityScopedResource];
+    }
+
+    @try {
+      PDFDocument *doc = nil;
+      if (url) {
+        doc = [[PDFDocument alloc] initWithURL:url];
+      }
+      if ((!doc || doc.pageCount == 0) && cleanPath) {
+        NSData *fileData = [NSData dataWithContentsOfFile:cleanPath];
+        if (fileData && fileData.length > 0) {
+          doc = [[PDFDocument alloc] initWithData:fileData];
         }
       }
-    } else {
-      url = [NSURL fileURLWithPath:filePath];
-    }
+      if ((!doc || doc.pageCount == 0) && url) {
+        NSData *urlData = [NSData dataWithContentsOfURL:url];
+        if (urlData && urlData.length > 0) {
+          doc = [[PDFDocument alloc] initWithData:urlData];
+        }
+      }
 
-    if (!url) {
-      resolve(@"");
-      return;
-    }
+      if (!doc || doc.pageCount == 0) {
+        resolve(@"");
+        return;
+      }
 
-    PDFDocument *doc = [[PDFDocument alloc] initWithURL:url];
-    if (!doc || doc.pageCount == 0) {
-      NSData *data = [NSData dataWithContentsOfURL:url];
-      if (data && data.length > 0) {
-        doc = [[PDFDocument alloc] initWithData:data];
+      NSMutableString *fullText = [NSMutableString string];
+      for (NSUInteger i = 0; i < doc.pageCount; i++) {
+        PDFPage *page = [doc pageAtIndex:i];
+        if (page && page.string && page.string.length > 0) {
+          [fullText appendString:page.string];
+          [fullText appendString:@"\n"];
+        }
+      }
+      resolve(fullText);
+    } @finally {
+      if (isSecurityScoped) {
+        [url stopAccessingSecurityScopedResource];
       }
     }
-
-    if (!doc || doc.pageCount == 0) {
-      resolve(@"");
-      return;
-    }
-
-    NSMutableString *fullText = [NSMutableString string];
-    for (NSUInteger i = 0; i < doc.pageCount; i++) {
-      PDFPage *page = [doc pageAtIndex:i];
-      if (page && page.string) {
-        [fullText appendString:page.string];
-        [fullText appendString:@"\n"];
-      }
-    }
-    resolve(fullText);
   } @catch (NSException *exception) {
     resolve(@"");
   }

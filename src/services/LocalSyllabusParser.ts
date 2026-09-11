@@ -892,7 +892,7 @@ export class LocalSyllabusParser {
       'traffic-light', 'ai use policy', 'sensitive content', 'apa style', 'academic integrity',
       'disability services', 'non-discrimination', 'title ix', 'total 100%', 'total 100 points',
       'overview of required', 'grading scale', 'creswell', 'course resources', 'isbn:',
-      'school of', 'social sciences', 'vision', 'mission', 'values', 'faculty', 'email:',
+      'school of', 'social sciences', 'vision statement', 'vision, mission', 'mission statement', 'core values', 'faculty email',
       'access to the internet', 'microsoft-word', "library's", 'effective date', 'course dates',
       'primary faculty', 'counselling program', 'psychological practitioners', 'vanwdy', 'credits'
     ];
@@ -1345,12 +1345,40 @@ export class LocalSyllabusParser {
   }
 
   private extractCourseIdentity(lines: string[]): { code: string; name: string } {
-    const cleanLines = lines.slice(0, 40).map(l => l.trim()).filter(l => l.length > 0);
+    const nonBoilerplate = lines
+      .map(l => l.trim())
+      .filter(l => l.length > 0 && !this.isBoilerplatePolicyLine(l.toLowerCase()));
+    const cleanLines = nonBoilerplate.length > 0 ? nonBoilerplate : lines.map(l => l.trim()).filter(l => l.length > 0);
 
     let foundCode: string | undefined = undefined;
     let foundName: string | undefined = undefined;
 
+    // Check for explicit "Course Code: ..." / "Course Name: ..." labels anywhere in the document
     for (let idx = 0; idx < cleanLines.length; idx++) {
+      const line = cleanLines[idx];
+      const lower = line.toLowerCase();
+      if (lower.startsWith('course code:') || lower.startsWith('course code') || lower.startsWith('course:') || lower.startsWith('code:')) {
+        const codeMatch = line.match(LocalSyllabusParser.standaloneCodeRegex);
+        if (codeMatch) {
+          foundCode = codeMatch[1].trim().toUpperCase().replace(/\s+/g, ' ');
+          for (let look = 1; look <= 4; look++) {
+            if (idx + look < cleanLines.length) {
+              const nextL = cleanLines[idx + look];
+              const nextLower = nextL.toLowerCase();
+              if (nextLower.startsWith('course name:') || nextLower.startsWith('course title:') || nextLower.startsWith('title:')) {
+                foundName = nextL.replace(/^[^:]+:\s*/i, '').trim();
+                break;
+              }
+            }
+          }
+          if (foundCode && foundName) {
+            return { code: foundCode, name: foundName };
+          }
+        }
+      }
+    }
+
+    for (let idx = 0; idx < Math.min(cleanLines.length, 120); idx++) {
       const line = cleanLines[idx];
 
       // Stage 1: Line with Code + Title e.g. "CPC 514: Research Methods and Statistics"
@@ -1390,7 +1418,7 @@ export class LocalSyllabusParser {
     }
 
     if (foundCode) {
-      for (const line of cleanLines.slice(0, 15)) {
+      for (const line of cleanLines.slice(0, 30)) {
         if (line.toUpperCase().includes(foundCode)) continue;
         const lower = line.toLowerCase();
         if (lower.includes('syllabus') || lower.includes('credits') || lower.includes('school') || lower.includes('faculty') || lower.includes('email')) continue;

@@ -573,20 +573,22 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       // Step 1: Extract real text from fileUri or catalog
       if (!rawText && fileUri) {
         try {
-          if (fileName.toLowerCase().endsWith('.txt')) {
-            rawText = await FileSystem.readAsStringAsync(fileUri);
-          } else {
+          const lowerName = fileName.toLowerCase();
+          const lowerUri = fileUri.toLowerCase();
+          const isPdf = lowerName.endsWith('.pdf') || lowerUri.endsWith('.pdf');
+
+          if (isPdf) {
             // First: Attempt native PDFKit text extraction
             try {
               const extracted = await extractTextFromPDF(fileUri);
-              if (extracted && extracted.trim().length > 30) {
+              if (extracted && extracted.trim().length > 30 && !extracted.startsWith('%PDF-')) {
                 rawText = extracted.trim();
               }
             } catch (pdfErr) {
               console.warn('PDFKit extraction error:', pdfErr);
             }
 
-            // Second: Read base64 file for Gemini multimodal vision/document parser
+            // Second: Read base64 file for Gemini multimodal AI
             try {
               const b64 = await FileSystem.readAsStringAsync(fileUri, {
                 encoding: FileSystem.EncodingType.Base64
@@ -597,39 +599,25 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             } catch (b64Err) {
               console.warn('Failed to read base64 file:', b64Err);
             }
-
-            // Third: If rawText is still empty, attempt direct FileSystem string read
-            if (!rawText) {
-              try {
-                const directText = await FileSystem.readAsStringAsync(fileUri);
-                if (directText && directText.trim().length > 30) {
-                  rawText = directText.trim();
-                }
-              } catch {}
-            }
-
-            // Fourth: If rawText is still empty and base64 exists, extract ASCII text stream chunks
-            if (!rawText && base64Pdf) {
-              try {
-                let decoded = '';
-                if (typeof Buffer !== 'undefined') {
-                  decoded = Buffer.from(base64Pdf, 'base64').toString('latin1');
-                } else if (typeof atob !== 'undefined') {
-                  decoded = atob(base64Pdf);
-                }
-                const matches = decoded.match(/[A-Za-z0-9\s.,;:'"()/\-–—%]{4,}/g);
-                if (matches && matches.length > 0) {
-                  const combined = matches.join(' ');
-                  if (combined.length > 50) {
-                    rawText = combined;
-                  }
-                }
-              } catch {}
+          } else {
+            // Plain text or markdown files (.txt, .md, .csv)
+            try {
+              const directText = await FileSystem.readAsStringAsync(fileUri);
+              if (directText && !directText.startsWith('%PDF-') && directText.trim().length > 20) {
+                rawText = directText.trim();
+              }
+            } catch (txtErr) {
+              console.warn('Failed to read text file:', txtErr);
             }
           }
         } catch (e) {
           console.warn('Error reading fileUri:', e);
         }
+      }
+
+      // Safety check: ensure rawText is never binary garbage
+      if (rawText && (rawText.startsWith('%PDF-') || /[\x00-\x08\x0E-\x1F]/.test(rawText.slice(0, 200)))) {
+        rawText = '';
       }
 
       // Check bundled catalog if applicable
@@ -650,7 +638,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       let dto: any = null;
       try {
-        const syllabusTextSnippet = rawText ? `\n\nSyllabus Content:\n${rawText.slice(0, 18000)}` : '';
+        const syllabusTextSnippet = rawText ? `\n\nSyllabus Content:\n${rawText.slice(0, 32000)}` : '';
         const geminiPrompt = `You are an expert academic syllabus parser.
 Extract course details, weekly schedule, readings, and assignments from this syllabus into structured JSON matching:
 {

@@ -17,6 +17,7 @@ export * from './SlideUpModal';
 export * from './ScreenContainer';
 export * from './DeadlinesCalendarCard';
 export * from './GradeWeightTrackerCard';
+export * from './InlineCalendarPicker';
 export * from './SvgIcons';
 export * from './modals';
 
