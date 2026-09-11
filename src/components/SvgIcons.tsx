@@ -332,6 +332,108 @@ export const ShareIcon: React.FC<IconProps> = ({ size = 18, color = '#2470F5' })
   </Svg>
 );
 
+export const DocTextFillIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6z" fill={color} />
+    <Path d="M14 2v6h6" fill="#FFFFFF" opacity={0.35} />
+    <Line x1="8" y1="12" x2="16" y2="12" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+    <Line x1="8" y1="15" x2="16" y2="15" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+    <Line x1="8" y1="18" x2="13" y2="18" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+  </Svg>
+);
 
+export const DocRichtextFillIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6z" fill={color} />
+    <Path d="M14 2v6h6" fill="#FFFFFF" opacity={0.35} />
+    <Path d="M8 12h8M8 15.5h5" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+  </Svg>
+);
 
+export const WandAndStarsIcon: React.FC<IconProps> = ({ size = 16, color = '#8C45F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M3 21l10-10M14 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2zM19 12l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4zM7 5l.5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5.5-1z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
 
+export const NumberIcon: React.FC<IconProps> = ({ size = 14, color = '#596B85' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18" stroke={color} strokeWidth="2.4" strokeLinecap="round" />
+  </Svg>
+);
+
+export const LinkCircleFillIcon: React.FC<IconProps> = ({ size = 18, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill={color} />
+    <Path d="M10 14a3.5 3.5 0 0 0 5 0l2-2a3.5 3.5 0 0 0-5-5l-1 1" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+    <Path d="M14 10a3.5 3.5 0 0 0-5 0l-2 2a3.5 3.5 0 0 0 5 5l1-1" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+  </Svg>
+);
+
+export const PlayCircleFillIcon: React.FC<IconProps> = ({ size = 18, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill={color} />
+    <Path d="M10 8.5l6 3.5-6 3.5V8.5z" fill="#FFFFFF" />
+  </Svg>
+);
+
+export const ArrowUpRightIcon: React.FC<IconProps> = ({ size = 14, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M7 17L17 7M7 7h10v10" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+export const ArrowUpRightSquareIcon: React.FC<IconProps> = ({ size = 14, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect x="3" y="3" width="18" height="18" rx="4" stroke={color} strokeWidth="2" />
+    <Path d="M9 15l6-6M10 9h5v5" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+export const ArrowUpRightCircleFillIcon: React.FC<IconProps> = ({ size = 18, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" fill={color} />
+    <Path d="M9.5 14.5l5-5M11 9.5h3.5v3.5" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+export const CheckmarkIcon: React.FC<IconProps> = ({ size = 14, color = '#FFFFFF', strokeWidth = 2.4 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M5 13l4 4L19 7" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+export const PencilAndRulerIcon: React.FC<IconProps> = ({ size = 18, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M18 2l4 4-10 10H8v-4L18 2z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M2 22l6-6M5 16l3 3M8 13l3 3M11 10l3 3" stroke={color} strokeWidth="2" strokeLinecap="round" />
+  </Svg>
+);
+
+export const ChartPieFillIcon: React.FC<IconProps> = ({ size = 16, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M21.21 15.89A10 10 0 1 1 8 2.83" fill={color} />
+    <Path d="M22 12A10 10 0 0 0 12 2v10z" fill={color} opacity={0.7} />
+  </Svg>
+);
+
+export const PlayTvFillIcon: React.FC<IconProps> = ({ size = 16, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect x="2" y="5" width="20" height="15" rx="3" fill={color} />
+    <Path d="M10 9l5 3.5-5 3.5V9z" fill="#FFFFFF" />
+    <Path d="M8 2l4 3 4-3" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+  </Svg>
+);
+
+export const WaveformPathEcgIcon: React.FC<IconProps> = ({ size = 16, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M2 12h4l2.5-6 4 12 3-8 2.5 4h4" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+export const RectangleInsetTopLeftFilledIcon: React.FC<IconProps> = ({ size = 16, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect x="3" y="3" width="18" height="18" rx="3" stroke={color} strokeWidth="2" />
+    <Rect x="5" y="5" width="7" height="7" rx="1.5" fill={color} />
+  </Svg>
+);
