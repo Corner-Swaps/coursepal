@@ -143,13 +143,15 @@ function MainAppView() {
         <AddNewItemModal
           visible={showAddChoiceModal}
           onClose={() => setShowAddChoiceModal(false)}
-          onCreateCourse={() => setShowAddCourseModal(true)}
-          onAddTask={() => setShowAddTaskModal(true)}
-          onUploadDocument={() => {
-            setSelectedTab('syllabus');
-            setShowUploadModal(true);
+          onAddReading={() => {
+            setSelectedCategoryForAddTask('reading');
+            setShowAddTaskModal(true);
           }}
-          onStartFocusSession={() => setShowFocusModal(true)}
+          onAddAssignment={() => {
+            setSelectedCategoryForAddTask('assignment');
+            setShowAddTaskModal(true);
+          }}
+          onCreateCourse={() => setShowAddCourseModal(true)}
         />
 
         <AddTaskModal

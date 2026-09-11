@@ -40,7 +40,8 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     updateAssignment,
     deleteAssignment,
     restoreAssignment,
-    emptyTrash,
+    emptyAssignmentsTrash,
+    permanentlyDeleteAssignment,
     selectedCourseFilter,
     setSelectedCourseFilter
   } = useCoursePal();
@@ -338,13 +339,13 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               onPress={() => {
                 Alert.alert(
                   'Empty Trash?',
-                  'This will permanently delete all items in the trash. This action cannot be undone.',
+                  'This will permanently delete all assignments in the trash. This action cannot be undone.',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     {
                       text: 'Empty Trash',
                       style: 'destructive',
-                      onPress: () => emptyTrash()
+                      onPress: () => emptyAssignmentsTrash()
                     }
                   ]
                 );
@@ -453,9 +454,9 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                       </View>
                     </TouchableOpacity>
 
-                    {/* Right-side Action Buttons: Checkmark Ring & Trashcan OR Restore */}
+                    {/* Right Action: Completion Checkmark OR Restore & Permanent Delete */}
                     {sortMode === 'trash' ? (
-                      <View style={styles.cardRightActions}>
+                      <View style={styles.trashActionsRow}>
                         <TouchableOpacity
                           style={styles.restorePillButton}
                           onPress={() => restoreAssignment(assignment.id)}
@@ -463,6 +464,28 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                         >
                           <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
                           <Text style={styles.restorePillText}>Restore</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.permanentTrashBtn}
+                          onPress={() => {
+                            Alert.alert(
+                              'Delete Assignment Permanently?',
+                              `Are you sure you want to permanently delete '${assignment.title}'? This action cannot be undone.`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Delete',
+                                  style: 'destructive',
+                                  onPress: () => permanentlyDeleteAssignment(assignment.id)
+                                }
+                              ]
+                            );
+                          }}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <TrashIcon size={14} color="#D94033" />
                         </TouchableOpacity>
                       </View>
                     ) : (
@@ -906,6 +929,19 @@ const styles = StyleSheet.create({
   trashTouchContainer: {
     width: 30,
     height: 32,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  trashActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  permanentTrashBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(217, 64, 51, 0.1)',
     alignItems: 'center',
     justifyContent: 'center'
   },

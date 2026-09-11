@@ -49,6 +49,10 @@ interface CoursePalContextType {
   restoreAssignment: (id: string) => void;
   restoreReading: (id: string) => void;
   emptyTrash: () => void;
+  emptyReadingsTrash: () => void;
+  emptyAssignmentsTrash: () => void;
+  permanentlyDeleteReading: (id: string) => void;
+  permanentlyDeleteAssignment: (id: string) => void;
   deleteReading: (id: string) => void;
   deleteAssignment: (id: string) => void;
   deleteCourse: (id: string) => void;
@@ -557,28 +561,38 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   useEffect(() => {
     let isMounted = true;
     persistenceManager.loadLatestBackup().then(backup => {
-      if (!isMounted || !backup) return;
-      if (Array.isArray(backup.courses) && backup.courses.length > 0) {
-        setCourses(
-          backup.courses.map(c => ({
-            ...c,
-            createdAt: parseSafeDate(c.createdAt) || new Date()
-          }))
-        );
-      }
-      if (Array.isArray(backup.readings) && backup.readings.length > 0) {
-        setReadings(backup.readings.map(sanitizeReading));
-      }
-      if (Array.isArray(backup.assignments) && backup.assignments.length > 0) {
-        setAssignments(backup.assignments.map(sanitizeAssignment));
-      }
-      if (Array.isArray(backup.vaultDocs) && backup.vaultDocs.length > 0) {
-        setVaultDocs(
-          backup.vaultDocs.map(vd => ({
-            ...vd,
-            uploadedAt: parseSafeDate(vd.uploadedAt) || new Date()
-          }))
-        );
+      if (!isMounted) return;
+      if (backup) {
+        if (Array.isArray(backup.courses)) {
+          setCourses(
+            backup.courses.map(c => ({
+              ...c,
+              createdAt: parseSafeDate(c.createdAt) || new Date()
+            }))
+          );
+        }
+        if (Array.isArray(backup.readings)) {
+          setReadings(backup.readings.map(sanitizeReading));
+        }
+        if (Array.isArray(backup.assignments)) {
+          setAssignments(backup.assignments.map(sanitizeAssignment));
+        }
+        if (Array.isArray(backup.vaultDocs)) {
+          setVaultDocs(
+            backup.vaultDocs.map(vd => ({
+              ...vd,
+              uploadedAt: parseSafeDate(vd.uploadedAt) || new Date()
+            }))
+          );
+        }
+      } else {
+        // Initial baseline disk save
+        persistenceManager.saveImmediate({
+          courses: initialCourses,
+          readings: initialReadings,
+          assignments: initialAssignments,
+          vaultDocs: initialVaultDocs
+        });
       }
     });
     return () => {
@@ -657,22 +671,120 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     setReadings(prev => prev.map(r => (r.id === id ? { ...r, isDeleted: false } : r)));
   }, []);
 
+  const emptyReadingsTrash = useCallback(() => {
+    setReadings(prev => {
+      const next = prev.filter(r => !r.isDeleted);
+      persistenceManager.saveImmediate({
+        courses,
+        readings: next,
+        assignments,
+        vaultDocs
+      });
+      return next;
+    });
+  }, [courses, assignments, vaultDocs]);
+
+  const emptyAssignmentsTrash = useCallback(() => {
+    setAssignments(prev => {
+      const next = prev.filter(a => !a.isDeleted);
+      persistenceManager.saveImmediate({
+        courses,
+        readings,
+        assignments: next,
+        vaultDocs
+      });
+      return next;
+    });
+  }, [courses, readings, vaultDocs]);
+
+  const permanentlyDeleteReading = useCallback((id: string) => {
+    setReadings(prev => {
+      const next = prev.filter(r => r.id !== id);
+      persistenceManager.saveImmediate({
+        courses,
+        readings: next,
+        assignments,
+        vaultDocs
+      });
+      return next;
+    });
+  }, [courses, assignments, vaultDocs]);
+
+  const permanentlyDeleteAssignment = useCallback((id: string) => {
+    setAssignments(prev => {
+      const next = prev.filter(a => a.id !== id);
+      persistenceManager.saveImmediate({
+        courses,
+        readings,
+        assignments: next,
+        vaultDocs
+      });
+      return next;
+    });
+  }, [courses, readings, vaultDocs]);
+
   const emptyTrash = useCallback(() => {
-    setAssignments(prev => prev.filter(a => !a.isDeleted));
-    setReadings(prev => prev.filter(r => !r.isDeleted));
-  }, []);
+    emptyReadingsTrash();
+    emptyAssignmentsTrash();
+  }, [emptyReadingsTrash, emptyAssignmentsTrash]);
 
   const deleteReading = useCallback((id: string) => {
-    setReadings(prev => prev.map(r => (r.id === id ? { ...r, isDeleted: true } : r)));
-  }, []);
+    setReadings(prev => {
+      const next = prev.map(r => (r.id === id ? { ...r, isDeleted: true } : r));
+      persistenceManager.saveImmediate({
+        courses,
+        readings: next,
+        assignments,
+        vaultDocs
+      });
+      return next;
+    });
+  }, [courses, assignments, vaultDocs]);
 
   const deleteAssignment = useCallback((id: string) => {
-    setAssignments(prev => prev.map(a => (a.id === id ? { ...a, isDeleted: true } : a)));
-  }, []);
+    setAssignments(prev => {
+      const next = prev.map(a => (a.id === id ? { ...a, isDeleted: true } : a));
+      persistenceManager.saveImmediate({
+        courses,
+        readings,
+        assignments: next,
+        vaultDocs
+      });
+      return next;
+    });
+  }, [courses, readings, vaultDocs]);
 
   const deleteCourse = useCallback((id: string) => {
-    setCourses(prev => prev.filter(c => c.id !== id));
-  }, []);
+    const courseToDelete = courses.find(c => c.id === id);
+    const targetCode = courseToDelete
+      ? (courseToDelete.courseCode || courseToDelete.courseName).toLowerCase()
+      : null;
+
+    const nextCourses = courses.filter(c => c.id !== id);
+    const nextReadings = targetCode
+      ? readings.filter(r => (r.courseCode || '').toLowerCase() !== targetCode)
+      : readings;
+    const nextAssignments = targetCode
+      ? assignments.filter(
+          a => a.courseId !== id && (a.courseCode || '').toLowerCase() !== targetCode
+        )
+      : assignments.filter(a => a.courseId !== id);
+    const nextVaultDocs = targetCode
+      ? vaultDocs.filter(v => (v.courseCode || '').toLowerCase() !== targetCode)
+      : vaultDocs;
+
+    setCourses(nextCourses);
+    setReadings(nextReadings);
+    setAssignments(nextAssignments);
+    setVaultDocs(nextVaultDocs);
+
+    persistenceManager.saveImmediate({
+      courses: nextCourses,
+      readings: nextReadings,
+      assignments: nextAssignments,
+      vaultDocs: nextVaultDocs
+    });
+  }, [courses, readings, assignments, vaultDocs]);
 
   const updateCourse = useCallback((updated: Course) => {
     setCourses(prev => prev.map(c => (c.id === updated.id ? updated : c)));
@@ -1128,6 +1240,10 @@ Output ONLY valid JSON.`;
         restoreAssignment,
         restoreReading,
         emptyTrash,
+        emptyReadingsTrash,
+        emptyAssignmentsTrash,
+        permanentlyDeleteReading,
+        permanentlyDeleteAssignment,
         deleteReading,
         deleteAssignment,
         deleteCourse,

@@ -3,27 +3,25 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import {
   GraduationCapFillIcon,
   ChevronRightIcon,
-  DocBadgePlusIcon,
-  HeadphonesFillIcon
+  BookFillIcon,
+  ChecklistIcon
 } from '../SvgIcons';
 import { SlideUpModal } from '../SlideUpModal';
 
 interface AddNewItemModalProps {
   visible: boolean;
   onClose: () => void;
+  onAddReading: () => void;
+  onAddAssignment: () => void;
   onCreateCourse: () => void;
-  onAddTask: () => void;
-  onUploadDocument?: () => void;
-  onStartFocusSession?: () => void;
 }
 
 export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
   visible,
   onClose,
-  onCreateCourse,
-  onAddTask,
-  onUploadDocument,
-  onStartFocusSession
+  onAddReading,
+  onAddAssignment,
+  onCreateCourse
 }) => {
   return (
     <SlideUpModal
@@ -37,9 +35,57 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
         <Text style={styles.subtitle}>Select what you would like to add</Text>
       </View>
 
-      {/* Action Cards */}
+      {/* Action Cards: Reading, Assignment, Create Course */}
       <View style={styles.optionsContainer}>
-        {/* Card 1: Create New Course */}
+        {/* Card 1: Add Reading */}
+        <TouchableOpacity
+          style={styles.optionCard}
+          onPress={() => {
+            onClose();
+            onAddReading();
+          }}
+          activeOpacity={0.8}
+          testID="modal-choice-add-reading"
+        >
+          <View style={styles.blueIconSquare}>
+            <BookFillIcon size={20} color="#FFFFFF" />
+          </View>
+
+          <View style={styles.optionTextCol}>
+            <Text style={styles.optionTitle}>Add Reading</Text>
+            <Text style={styles.optionDesc}>
+              Add textbook chapter, article, or video reading
+            </Text>
+          </View>
+
+          <ChevronRightIcon size={13} color="#73859E" />
+        </TouchableOpacity>
+
+        {/* Card 2: Add Assignment */}
+        <TouchableOpacity
+          style={styles.optionCard}
+          onPress={() => {
+            onClose();
+            onAddAssignment();
+          }}
+          activeOpacity={0.8}
+          testID="modal-choice-add-assignment"
+        >
+          <View style={styles.amberIconSquare}>
+            <ChecklistIcon size={20} color="#FFFFFF" />
+          </View>
+
+          <View style={styles.optionTextCol}>
+            <Text style={styles.optionTitle}>Add Assignment</Text>
+            <Text style={styles.optionDesc}>
+              Add homework, lab report, quiz, or project
+            </Text>
+          </View>
+
+          <ChevronRightIcon size={13} color="#73859E" />
+        </TouchableOpacity>
+
+        {/* Card 3: Create New Course */}
         <TouchableOpacity
           style={styles.optionCard}
           onPress={() => {
@@ -56,88 +102,12 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
           <View style={styles.optionTextCol}>
             <Text style={styles.optionTitle}>Create New Course</Text>
             <Text style={styles.optionDesc}>
-              Create course with brand color & syllabus
+              Create course with custom brand color & schedule
             </Text>
           </View>
 
           <ChevronRightIcon size={13} color="#73859E" />
         </TouchableOpacity>
-
-        {/* Card 2: Add Reading or Assignment */}
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => {
-            onClose();
-            onAddTask();
-          }}
-          activeOpacity={0.8}
-          testID="modal-choice-add-task"
-        >
-          <View style={styles.blueIconSquare}>
-            <Text style={styles.plusIconText}>+</Text>
-          </View>
-
-          <View style={styles.optionTextCol}>
-            <Text style={styles.optionTitle}>Add Reading or Assignment</Text>
-            <Text style={styles.optionDesc}>
-              Add homework, reading, or lab item
-            </Text>
-          </View>
-
-          <ChevronRightIcon size={13} color="#73859E" />
-        </TouchableOpacity>
-
-        {/* Card 3: Upload Course Syllabus */}
-        {onUploadDocument && (
-          <TouchableOpacity
-            style={styles.optionCard}
-            onPress={() => {
-              onClose();
-              onUploadDocument();
-            }}
-            activeOpacity={0.8}
-            testID="modal-choice-upload-syllabus"
-          >
-            <View style={styles.emeraldIconSquare}>
-              <DocBadgePlusIcon size={20} color="#FFFFFF" />
-            </View>
-
-            <View style={styles.optionTextCol}>
-              <Text style={styles.optionTitle}>Upload Course Syllabus</Text>
-              <Text style={styles.optionDesc}>
-                Auto-extract schedule, readings & deadlines from PDF
-              </Text>
-            </View>
-
-            <ChevronRightIcon size={13} color="#73859E" />
-          </TouchableOpacity>
-        )}
-
-        {/* Card 4: Start Focus Study Session */}
-        {onStartFocusSession && (
-          <TouchableOpacity
-            style={styles.optionCard}
-            onPress={() => {
-              onClose();
-              onStartFocusSession();
-            }}
-            activeOpacity={0.8}
-            testID="modal-choice-focus-session"
-          >
-            <View style={styles.indigoIconSquare}>
-              <HeadphonesFillIcon size={20} color="#FFFFFF" />
-            </View>
-
-            <View style={styles.optionTextCol}>
-              <Text style={styles.optionTitle}>Start Focus Session</Text>
-              <Text style={styles.optionDesc}>
-                Pomodoro study timer & ambient soundscapes
-              </Text>
-            </View>
-
-            <ChevronRightIcon size={13} color="#73859E" />
-          </TouchableOpacity>
-        )}
       </View>
     </SlideUpModal>
   );
@@ -176,15 +146,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2
   },
-  purpleIconSquare: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#8C45F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14
-  },
   blueIconSquare: {
     width: 40,
     height: 40,
@@ -194,29 +155,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 14
   },
-  emeraldIconSquare: {
+  amberIconSquare: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#059669',
+    backgroundColor: '#EA580C',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14
   },
-  indigoIconSquare: {
+  purpleIconSquare: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#6366F1',
+    backgroundColor: '#8C45F5',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14
-  },
-  plusIconText: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '700',
-    lineHeight: 24
   },
   optionTextCol: {
     flex: 1

@@ -22,6 +22,12 @@ class DataPersistenceBackupManager {
   private backupFileName = 'CoursePal_AutoBackup.json';
   private backupTimer: NodeJS.Timeout | null = null;
   private isSaving = false;
+  private pendingData: {
+    courses: Course[];
+    readings: Reading[];
+    assignments: Assignment[];
+    vaultDocs: VaultDocument[];
+  } | null = null;
 
   private constructor() {}
 
@@ -35,6 +41,22 @@ class DataPersistenceBackupManager {
   private get backupFilePath(): string {
     const dir = FileSystem.documentDirectory || '';
     return `${dir}${this.backupFileName}`;
+  }
+
+  /**
+   * Immediately saves state to disk without debounce, cancelling any pending debounced timer
+   */
+  public async saveImmediate(data: {
+    courses: Course[];
+    readings: Reading[];
+    assignments: Assignment[];
+    vaultDocs: VaultDocument[];
+  }): Promise<boolean> {
+    if (this.backupTimer) {
+      clearTimeout(this.backupTimer);
+      this.backupTimer = null;
+    }
+    return this.performAutoBackup(data);
   }
 
   /**
@@ -55,7 +77,8 @@ class DataPersistenceBackupManager {
   }
 
   /**
-   * Immediately writes current state to disk
+   * Immediately writes current state to disk. If a write is currently in progress,
+   * queues the latest data to be written as soon as the current operation completes.
    */
   public async performAutoBackup(data: {
     courses: Course[];
@@ -63,7 +86,10 @@ class DataPersistenceBackupManager {
     assignments: Assignment[];
     vaultDocs: VaultDocument[];
   }): Promise<boolean> {
-    if (this.isSaving) return false;
+    if (this.isSaving) {
+      this.pendingData = data;
+      return true;
+    }
     this.isSaving = true;
 
     try {
@@ -88,6 +114,11 @@ class DataPersistenceBackupManager {
       return false;
     } finally {
       this.isSaving = false;
+      if (this.pendingData) {
+        const nextData = this.pendingData;
+        this.pendingData = null;
+        this.performAutoBackup(nextData);
+      }
     }
   }
 

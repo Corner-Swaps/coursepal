@@ -22,7 +22,8 @@ import { Assignment, Course, RubricCriterionDTO } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
 import {
   XMarkCircleFillIcon,
-  PlusCircleFillIcon
+  PlusCircleFillIcon,
+  TrashIcon
 } from '../SvgIcons';
 
 export interface EditAssignmentModalProps {
@@ -31,6 +32,7 @@ export interface EditAssignmentModalProps {
   courses: Course[];
   onClose: () => void;
   onSave: (updated: Assignment) => void;
+  onDeleteAssignment?: (id: string) => void;
 }
 
 export const EditAssignmentModal: React.FC<EditAssignmentModalProps> = ({
@@ -38,7 +40,8 @@ export const EditAssignmentModal: React.FC<EditAssignmentModalProps> = ({
   assignment,
   courses,
   onClose,
-  onSave
+  onSave,
+  onDeleteAssignment
 }) => {
   if (!assignment) return null;
 
@@ -372,6 +375,21 @@ export const EditAssignmentModal: React.FC<EditAssignmentModalProps> = ({
                 <Text style={styles.addItemButtonText}>Add Note</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Move to Trash Action */}
+            {onDeleteAssignment && (
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => {
+                  onDeleteAssignment(assignment.id);
+                  onClose();
+                }}
+                activeOpacity={0.7}
+              >
+                <TrashIcon size={15} color="#D94033" />
+                <Text style={styles.deleteButtonText}>Move to Trash</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </SafeAreaView>
       </TouchableWithoutFeedback>
@@ -627,5 +645,22 @@ const styles = StyleSheet.create({
     color: '#081324',
     lineHeight: 20,
     paddingVertical: 0
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginTop: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 64, 51, 0.25)',
+    gap: 8
+  },
+  deleteButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#D94033'
   }
 });

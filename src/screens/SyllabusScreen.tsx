@@ -65,6 +65,8 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
     readings,
     deleteCourse,
     deleteVaultDoc,
+    deleteReading,
+    deleteAssignment,
     updateCourse,
     updateAssignment,
     updateReading,
@@ -778,6 +780,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         courses={courses}
         onClose={() => setEditingAssignment(null)}
         onSave={updated => updateAssignment(updated)}
+        onDeleteAssignment={id => deleteAssignment(id)}
       />
 
       <ReadingDetailModal
@@ -786,6 +789,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         courses={courses}
         onClose={() => setEditingReading(null)}
         onSave={updated => updateReading(updated)}
+        onDeleteReading={id => deleteReading(id)}
       />
 
       <DocumentPreviewModal
