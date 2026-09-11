@@ -139,7 +139,10 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
         fileUri: attachedFileUri,
         fileSize: attachedFileSize,
         targetCourseId: newCourse.id,
-        preferredHexColor: selectedColorHex
+        preferredHexColor: selectedColorHex,
+        preserveCourseTitle: trimmedName,
+        preserveCourseSubtitle: courseDescription.trim(),
+        preserveCourseCode: newCourse.courseCode || undefined
       });
     }
 

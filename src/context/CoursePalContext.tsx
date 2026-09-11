@@ -22,6 +22,9 @@ export interface ImportSyllabusParams {
   fileSize?: string;
   targetCourseId?: string;
   preferredHexColor?: string;
+  preserveCourseTitle?: string;
+  preserveCourseSubtitle?: string;
+  preserveCourseCode?: string;
 }
 
 interface CoursePalContextType {
@@ -81,28 +84,7 @@ interface CoursePalContextType {
 
 const CoursePalContext = createContext<CoursePalContextType | undefined>(undefined);
 
-// Initial Mock Data matching SwiftData seed
-// Initial Mock Data matching SwiftData seed with full authentic schedule
-const initialCourses: Course[] = [
-  {
-    id: 'c-cpc527',
-    creatorId: 'user-self',
-    courseName: 'Group Counselling & Psychotherapy',
-    courseCode: 'CPC 527',
-    courseDescription: 'Advanced group dynamics, therapeutic stages, experiential interventions, and ethical facilitation.',
-    instructorName: 'Dr. Elena Rostova',
-    instructorEmail: 'e.rostova@university.edu',
-    hexColor: '#E11D48', // Crimson / Rose (Matching device screenshot)
-    termWeeks: 12,
-    sharingCode: '527318',
-    isDeleted: false,
-    isFavorite: true,
-    createdAt: new Date('2026-03-01T08:00:00Z'),
-    weeks: [],
-    assignments: [],
-    syllabusDocs: []
-  }
-];
+const initialCourses: Course[] = [];
 
 export function sanitizeReading(r: Reading): Reading {
   const canonicalCh = cleanChapterFromRaw(r.chapterText || r.title);
@@ -138,408 +120,9 @@ export function sanitizeAssignment(a: Assignment): Assignment {
   };
 }
 
-const initialReadings: Reading[] = [
-  // CPC 527 (18 readings from April 2 to June 18, 2026 - Exactly matching Swift app & device screenshot)
-  {
-    id: 'r-527-1',
-    title: 'Chapter 1',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapter 1',
-    estimatedTimeText: '~40–60 min',
-    chapterText: 'Chapter 1',
-    dueDate: new Date(2026, 3, 2), // Thursday, April 2, 2026
-    dateRangeStr: 'April 2',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 1: Intro to Group Work',
-    isFavorite: false,
-    weekId: 'w1'
-  },
-  {
-    id: 'r-527-2',
-    title: 'Chapters 1 & 2',
-    authorName: 'Corey',
-    resourceTitle: 'Groups: Process and Practice',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 1 & 2',
-    estimatedTimeText: '~45–60 min',
-    chapterText: 'Chapters 1 & 2',
-    dueDate: new Date(2026, 3, 2), // Thursday, April 2, 2026
-    dateRangeStr: 'April 2',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 1: Intro to Group Work',
-    isFavorite: false,
-    weekId: 'w1'
-  },
-  {
-    id: 'r-527-3',
-    title: 'Chapter 2',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapter 2',
-    estimatedTimeText: '~40–60 min',
-    chapterText: 'Chapter 2',
-    dueDate: new Date(2026, 3, 9), // Thursday, April 9, 2026
-    dateRangeStr: 'April 9',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 2: Introduction to Group Work Pt. 2',
-    isFavorite: false,
-    weekId: 'w2'
-  },
-  {
-    id: 'r-527-4',
-    title: 'Chapters 3 & 4',
-    authorName: 'Corey',
-    resourceTitle: 'Groups: Process and Practice',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 3 & 4',
-    estimatedTimeText: '~45–60 min',
-    chapterText: 'Chapters 3 & 4',
-    dueDate: new Date(2026, 3, 9), // Thursday, April 9, 2026
-    dateRangeStr: 'April 9',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 2: Introduction to Group Work Pt. 2',
-    isFavorite: false,
-    weekId: 'w2'
-  },
-  {
-    id: 'r-527-5',
-    title: 'Chapter 3',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapter 3',
-    estimatedTimeText: '~40–60 min',
-    chapterText: 'Chapter 3',
-    dueDate: new Date(2026, 3, 16), // Thursday, April 16, 2026
-    dateRangeStr: 'April 16',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 3: Group Stages: Initial Stages',
-    isFavorite: false,
-    weekId: 'w3'
-  },
-  {
-    id: 'r-527-6',
-    title: 'Chapters 5 & 6',
-    authorName: 'Corey',
-    resourceTitle: 'Groups: Process and Practice',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 5 & 6',
-    estimatedTimeText: '~45–60 min',
-    chapterText: 'Chapters 5 & 6',
-    dueDate: new Date(2026, 3, 16), // Thursday, April 16, 2026
-    dateRangeStr: 'April 16',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 3: Group Stages: Initial Stages',
-    isFavorite: false,
-    weekId: 'w3'
-  },
-  {
-    id: 'r-527-7',
-    title: 'Chapter 7',
-    authorName: 'Corey',
-    resourceTitle: 'Groups: Process and Practice',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapter 7',
-    estimatedTimeText: '~40–50 min',
-    chapterText: 'Chapter 7',
-    dueDate: new Date(2026, 3, 23), // Thursday, April 23, 2026
-    dateRangeStr: 'April 23',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 4: Group Stages: Transition',
-    isFavorite: false,
-    weekId: 'w4'
-  },
-  {
-    id: 'r-527-8',
-    title: 'Chapters 4 & 5',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 4 & 5',
-    estimatedTimeText: '~50–70 min',
-    chapterText: 'Chapters 4 & 5',
-    dueDate: new Date(2026, 3, 23), // Thursday, April 23, 2026
-    dateRangeStr: 'April 23',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 4: Group Stages: Transition',
-    isFavorite: false,
-    weekId: 'w4'
-  },
-  {
-    id: 'r-527-9',
-    title: 'Chapter 8',
-    authorName: 'Corey',
-    resourceTitle: 'Groups: Process and Practice',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapter 8',
-    estimatedTimeText: '~40–50 min',
-    chapterText: 'Chapter 8',
-    dueDate: new Date(2026, 3, 30), // Thursday, April 30, 2026
-    dateRangeStr: 'April 30',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 5: Group Stages: Working',
-    isFavorite: false,
-    weekId: 'w5'
-  },
-  {
-    id: 'r-527-10',
-    title: 'Chapters 6 & 7',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 6 & 7',
-    estimatedTimeText: '~50–70 min',
-    chapterText: 'Chapters 6 & 7',
-    dueDate: new Date(2026, 3, 30), // Thursday, April 30, 2026
-    dateRangeStr: 'April 30',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 5: Group Stages: Working',
-    isFavorite: false,
-    weekId: 'w5'
-  },
-  {
-    id: 'r-527-11',
-    title: 'Chapters 8 & 9',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 8 & 9',
-    estimatedTimeText: '~50–70 min',
-    chapterText: 'Chapters 8 & 9',
-    dueDate: new Date(2026, 4, 7), // Thursday, May 7, 2026
-    dateRangeStr: 'May 7',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 6: Presentations',
-    isFavorite: false,
-    weekId: 'w6'
-  },
-  {
-    id: 'r-527-12',
-    title: 'Chapters 10 & 11',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 10 & 11',
-    estimatedTimeText: '~50–70 min',
-    chapterText: 'Chapters 10 & 11',
-    dueDate: new Date(2026, 4, 14), // Thursday, May 14, 2026
-    dateRangeStr: 'May 14',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 7: Presentations',
-    isFavorite: false,
-    weekId: 'w7'
-  },
-  {
-    id: 'r-527-13',
-    title: 'Chapters 12 & 13',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 12 & 13',
-    estimatedTimeText: '~50–70 min',
-    chapterText: 'Chapters 12 & 13',
-    dueDate: new Date(2026, 4, 28), // Thursday, May 28, 2026
-    dateRangeStr: 'May 28',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 8: Presentations',
-    isFavorite: false,
-    weekId: 'w9'
-  },
-  {
-    id: 'r-527-14',
-    title: 'Chapter 9',
-    authorName: 'Corey',
-    resourceTitle: 'Groups: Process and Practice',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapter 9',
-    estimatedTimeText: '~40–50 min',
-    chapterText: 'Chapter 9',
-    dueDate: new Date(2026, 4, 28), // Thursday, May 28, 2026
-    dateRangeStr: 'May 28',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 8: Presentations',
-    isFavorite: false,
-    weekId: 'w9'
-  },
-  {
-    id: 'r-527-15',
-    title: 'Assigned Readings',
-    authorName: 'Brightspace',
-    resourceTitle: 'Course Shell Readings',
-    mediaTypeRaw: 'article',
-    mediaType: 'article',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• See Brightspace for Assigned Readings',
-    estimatedTimeText: '~30–45 min',
-    chapterText: undefined,
-    dueDate: new Date(2026, 5, 4), // Thursday, June 4, 2026
-    dateRangeStr: 'June 4',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 9: Group Stages: Final',
-    isFavorite: false,
-    weekId: 'w10'
-  },
-  {
-    id: 'r-527-16',
-    title: 'Chapters 10 & 11',
-    authorName: 'Corey',
-    resourceTitle: 'Groups: Process and Practice',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 10 & 11',
-    estimatedTimeText: '~45–60 min',
-    chapterText: 'Chapters 10 & 11',
-    dueDate: new Date(2026, 5, 11), // Thursday, June 11, 2026
-    dateRangeStr: 'June 11',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 10: Groups in Diverse Settings',
-    isFavorite: false,
-    weekId: 'w11'
-  },
-  {
-    id: 'r-527-17',
-    title: 'Chapters 14 & 15',
-    authorName: 'Yalom',
-    resourceTitle: 'Theory and Practice of Group Psychotherapy',
-    mediaTypeRaw: 'textbook',
-    mediaType: 'textbook',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• Review Chapters 14 & 15',
-    estimatedTimeText: '~50–70 min',
-    chapterText: 'Chapters 14 & 15',
-    dueDate: new Date(2026, 5, 11), // Thursday, June 11, 2026
-    dateRangeStr: 'June 11',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 10: Groups in Diverse Settings',
-    isFavorite: false,
-    weekId: 'w11'
-  },
-  {
-    id: 'r-527-18',
-    title: 'Assigned Readings',
-    authorName: 'Brightspace',
-    resourceTitle: 'Course Shell Readings',
-    mediaTypeRaw: 'article',
-    mediaType: 'article',
-    isCompleted: false,
-    isDeleted: false,
-    summaryText: '',
-    keyTakeawaysText: '• See Brightspace for Assigned Readings',
-    estimatedTimeText: '~30–45 min',
-    chapterText: undefined,
-    dueDate: new Date(2026, 5, 18), // Thursday, June 18, 2026
-    dateRangeStr: 'June 18',
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 11: Effective Closings',
-    isFavorite: false,
-    weekId: 'w12'
-  }
-];
-
-const initialAssignments: Assignment[] = [
-  // CPC 527 Deliverable (Exact match to media_1788720741700.png)
-  {
-    id: 'a-527-1',
-    title: 'Group Process & Self-Regulation Assessment',
-    weekNumber: 7,
-    dueDate: new Date(2026, 4, 14), // May 14, 2026
-    pointsPossible: '100 Points',
-    weightPercentage: '25%',
-    noteText: '',
-    isCompleted: false,
-    isDeleted: false,
-    courseCode: 'CPC 527',
-    relevantTopics: 'Module 1',
-    isFavorite: true,
-    rubricCriteria: [
-      { criterionName: 'Communication', points: 20, percentage: 20 },
-      { criterionName: 'Engagement & Attendance', points: 20, percentage: 20 },
-      { criterionName: 'Empathy & Compassion', points: 20, percentage: 20 },
-      { criterionName: 'Self Awareness', points: 20, percentage: 20 },
-      { criterionName: 'Self Regulation', points: 20, percentage: 20 }
-    ]
-  }
-];
-
-const initialVaultDocs: VaultDocument[] = [
-  {
-    id: 'vd-cpc527',
-    title: 'CPC 527: Group Psychotherapy Syllabus.pdf',
-    category: 'Syllabi',
-    fileSize: '2.4 MB',
-    fileType: 'PDF',
-    courseCode: 'CPC 527',
-    fileContent: 'Syllabus and clinical schedule for CPC 527 Group Psychotherapy.',
-    docColorHex: '#E11D48',
-    uploadedAt: new Date('2026-03-01T09:00:00Z')
-  }
-];
+const initialReadings: Reading[] = [];
+const initialAssignments: Assignment[] = [];
+const initialVaultDocs: VaultDocument[] = [];
 
 export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [courses, setCourses] = useState<Course[]>(initialCourses);
@@ -555,6 +138,15 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [showConfetti, setShowConfetti] = useState<boolean>(false);
   const [confettiTitle, setConfettiTitle] = useState<string>('');
 
+  const coursesRef = useRef<Course[]>(courses);
+  coursesRef.current = courses;
+  const readingsRef = useRef<Reading[]>(readings);
+  readingsRef.current = readings;
+  const assignmentsRef = useRef<Assignment[]>(assignments);
+  assignmentsRef.current = assignments;
+  const vaultDocsRef = useRef<VaultDocument[]>(vaultDocs);
+  vaultDocsRef.current = vaultDocs;
+
   const isInitialMount = useRef(true);
 
   // Restore latest backup from disk on app launch
@@ -563,35 +155,56 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     persistenceManager.loadLatestBackup().then(backup => {
       if (!isMounted) return;
       if (backup) {
-        if (Array.isArray(backup.courses)) {
-          setCourses(
-            backup.courses.map(c => ({
-              ...c,
-              createdAt: parseSafeDate(c.createdAt) || new Date()
-            }))
-          );
-        }
-        if (Array.isArray(backup.readings)) {
-          setReadings(backup.readings.map(sanitizeReading));
-        }
-        if (Array.isArray(backup.assignments)) {
-          setAssignments(backup.assignments.map(sanitizeAssignment));
-        }
-        if (Array.isArray(backup.vaultDocs)) {
-          setVaultDocs(
-            backup.vaultDocs.map(vd => ({
-              ...vd,
-              uploadedAt: parseSafeDate(vd.uploadedAt) || new Date()
-            }))
-          );
-        }
-      } else {
-        // Initial baseline disk save
+        const isMock = (id?: string | null, code?: string | null) =>
+          id === 'c-cpc527' || (Boolean(code) && code!.toUpperCase() === 'CPC 527');
+
+        const cleanCourses = (Array.isArray(backup.courses) ? backup.courses : [])
+          .filter(c => !isMock(c.id, c.courseCode))
+          .map(c => ({
+            ...c,
+            createdAt: parseSafeDate(c.createdAt) || new Date()
+          }));
+        const cleanReadings = (Array.isArray(backup.readings) ? backup.readings : [])
+          .filter(r => !r.id.startsWith('r-seed-') && !isMock('', r.courseCode))
+          .map(sanitizeReading);
+        const cleanAssignments = (Array.isArray(backup.assignments) ? backup.assignments : [])
+          .filter(a => !a.id.startsWith('a-seed-') && !isMock(a.courseId, a.courseCode))
+          .map(sanitizeAssignment);
+        const cleanVaultDocs = (Array.isArray(backup.vaultDocs) ? backup.vaultDocs : [])
+          .filter(vd => vd.id !== 'vd-cpc527' && !isMock('', vd.courseCode))
+          .map(vd => ({
+            ...vd,
+            uploadedAt: parseSafeDate(vd.uploadedAt) || new Date()
+          }));
+
+        coursesRef.current = cleanCourses;
+        readingsRef.current = cleanReadings;
+        assignmentsRef.current = cleanAssignments;
+        vaultDocsRef.current = cleanVaultDocs;
+
+        setCourses(cleanCourses);
+        setReadings(cleanReadings);
+        setAssignments(cleanAssignments);
+        setVaultDocs(cleanVaultDocs);
+
         persistenceManager.saveImmediate({
-          courses: initialCourses,
-          readings: initialReadings,
-          assignments: initialAssignments,
-          vaultDocs: initialVaultDocs
+          courses: cleanCourses,
+          readings: cleanReadings,
+          assignments: cleanAssignments,
+          vaultDocs: cleanVaultDocs
+        });
+      } else {
+        // Initial baseline disk save: empty state
+        coursesRef.current = [];
+        readingsRef.current = [];
+        assignmentsRef.current = [];
+        vaultDocsRef.current = [];
+
+        persistenceManager.saveImmediate({
+          courses: [],
+          readings: [],
+          assignments: [],
+          vaultDocs: []
         });
       }
     });
@@ -795,13 +408,16 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   const addCourse = useCallback((data: { courseName: string; courseCode?: string; courseDescription?: string; hexColor: string }): Course => {
+    const codeMatch = data.courseName.match(/^[A-Z]{2,5}\s*\d{2,4}/i);
+    const resolvedCode = data.courseCode || (codeMatch ? codeMatch[0].toUpperCase() : data.courseName.slice(0, 8).toUpperCase());
+
     const newCourse: Course = {
       id: `c-${Date.now()}`,
       creatorId: 'user-self',
       courseName: data.courseName,
-      courseCode: data.courseCode || 'GEN 101',
+      courseCode: resolvedCode,
       courseDescription: data.courseDescription || '',
-      hexColor: data.hexColor || MasterCoursePalette[0],
+      hexColor: data.hexColor || MasterCoursePalette[coursesRef.current.length % MasterCoursePalette.length],
       termWeeks: 12,
       sharingCode: String(Math.floor(100000 + Math.random() * 900000)),
       isDeleted: false,
@@ -811,7 +427,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       assignments: [],
       syllabusDocs: []
     };
-    setCourses(prev => [newCourse, ...prev]);
+    coursesRef.current = [newCourse, ...coursesRef.current];
+    setCourses(coursesRef.current);
     return newCourse;
   }, []);
 
@@ -1036,29 +653,51 @@ Output ONLY valid JSON.`;
       setUploadStatusText('Synthesizing course repository & weekly schedule...');
       await new Promise(r => setTimeout(r, 1000));
 
-      const courseCode = dto.courseCode || fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase();
-      const courseName = dto.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-      const hexColor = preferredHexColor || MasterCoursePalette[courses.length % MasterCoursePalette.length];
+      const courseCode = params.preserveCourseCode || dto.courseCode || fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase();
+      const courseName = params.preserveCourseTitle || dto.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const hexColor = preferredHexColor || MasterCoursePalette[coursesRef.current.length % MasterCoursePalette.length];
 
-      // Find or create course
-      let targetCourse = targetCourseId ? courses.find(c => c.id === targetCourseId) : undefined;
-      if (!targetCourse) {
-        targetCourse = courses.find(
+      // Find or create course using coursesRef.current (avoids stale closures)
+      let targetCourse = targetCourseId ? coursesRef.current.find(c => c.id === targetCourseId) : undefined;
+      if (!targetCourse && !targetCourseId) {
+        targetCourse = coursesRef.current.find(
           c => (c.courseCode && c.courseCode.toUpperCase() === courseCode.toUpperCase()) ||
                c.courseName.toLowerCase() === courseName.toLowerCase()
         );
       }
 
-      let finalCourse = targetCourse;
-      let courseId = targetCourse?.id;
-      let updatedCourses = courses;
-      if (!finalCourse) {
+      let finalCourse: Course;
+      let courseId: string;
+      let updatedCourses: Course[];
+
+      if (targetCourse) {
+        // Course was created by the user or previously imported:
+        // STRICTLY preserve user's course title, subtitle (description), code, and color!
+        finalCourse = {
+          ...targetCourse,
+          courseName: targetCourse.courseName,
+          courseDescription: targetCourse.courseDescription,
+          courseCode: targetCourse.courseCode,
+          hexColor: targetCourse.hexColor,
+          instructorName: targetCourse.instructorName || dto.instructorName || null,
+          instructorEmail: targetCourse.instructorEmail || dto.instructorEmail || null,
+          termWeeks: targetCourse.termWeeks || dto.termWeeks || (dto.weeks && dto.weeks.length > 0 ? dto.weeks.length : 12)
+        };
+        courseId = targetCourse.id;
+        updatedCourses = coursesRef.current.map(c => c.id === targetCourse!.id ? finalCourse : c);
+      } else {
+        const finalName = params.preserveCourseTitle || courseName;
+        const finalDesc = params.preserveCourseSubtitle !== undefined
+          ? params.preserveCourseSubtitle
+          : (dto.courseDescription || `Imported from ${fileName}. Instructor: ${dto.instructorName || 'Academic Faculty'}`);
+        const finalCode = params.preserveCourseCode || courseCode;
+
         const newCourse: Course = {
           id: `c-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           creatorId: 'user-self',
-          courseName,
-          courseCode,
-          courseDescription: `Imported from ${fileName}. Instructor: ${dto.instructorName || 'Academic Faculty'}`,
+          courseName: finalName,
+          courseCode: finalCode,
+          courseDescription: finalDesc,
           instructorName: dto.instructorName || null,
           instructorEmail: dto.instructorEmail || null,
           hexColor,
@@ -1073,9 +712,10 @@ Output ONLY valid JSON.`;
         };
         finalCourse = newCourse;
         courseId = newCourse.id;
-        updatedCourses = [newCourse, ...courses];
-        setCourses(updatedCourses);
+        updatedCourses = [newCourse, ...coursesRef.current];
       }
+      coursesRef.current = updatedCourses;
+      setCourses(updatedCourses);
 
       // Convert parsed weeks & readings into Reading objects
       const newReadings: Reading[] = [];
@@ -1168,9 +808,13 @@ Output ONLY valid JSON.`;
       };
 
       const sanitizedNewReadings = newReadings.map(sanitizeReading);
-      const updatedReadings = [...sanitizedNewReadings, ...readings];
-      const updatedAssignments = [...newAssignments, ...assignments];
-      const updatedVaultDocs = [newVaultDoc, ...vaultDocs];
+      const updatedReadings = [...sanitizedNewReadings, ...readingsRef.current];
+      const updatedAssignments = [...newAssignments, ...assignmentsRef.current];
+      const updatedVaultDocs = [newVaultDoc, ...vaultDocsRef.current];
+
+      readingsRef.current = updatedReadings;
+      assignmentsRef.current = updatedAssignments;
+      vaultDocsRef.current = updatedVaultDocs;
 
       if (newReadings.length > 0) {
         setReadings(updatedReadings);
@@ -1180,7 +824,7 @@ Output ONLY valid JSON.`;
       }
       setVaultDocs(updatedVaultDocs);
 
-      persistenceManager.scheduleAutoBackup({
+      persistenceManager.saveImmediate({
         courses: updatedCourses,
         readings: updatedReadings,
         assignments: updatedAssignments,

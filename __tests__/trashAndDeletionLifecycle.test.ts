@@ -169,7 +169,7 @@ describe('Trash and Deletion Lifecycle Guarantees', () => {
 
     it('honors empty array backups and does not require array length > 0', () => {
       const emptyBackup: BackupPayload = {
-        version: 2,
+        version: 3,
         timestamp: Date.now(),
         courses: [],
         readings: [],

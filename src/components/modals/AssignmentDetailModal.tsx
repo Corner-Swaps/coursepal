@@ -20,13 +20,9 @@ import {
   PencilSquareIcon,
   TrashIcon,
   XMarkIcon,
-  ArrowPathIcon,
-  HeadphonesFillIcon,
-  ShareIcon
+  ArrowPathIcon
 } from '../SvgIcons';
-import { CalendarExportService } from '../../services/CalendarExportService';
 import { parseSafeDate } from '../../utils/readingDisplayHelper';
-import { FocusStudyModal } from './FocusStudyModal';
 
 interface AssignmentDetailModalProps {
   visible: boolean;
@@ -62,19 +58,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
   const [notes, setNotes] = useState<string>(assignment.noteText || '');
   const [completedMilestones, setCompletedMilestones] = useState<Set<number>>(new Set());
-  const [showFocusModal, setShowFocusModal] = useState<boolean>(false);
-  const [isExportingCalendar, setIsExportingCalendar] = useState<boolean>(false);
-
-  const handleExportToCalendar = async () => {
-    setIsExportingCalendar(true);
-    const ics = CalendarExportService.createAssignmentICS(assignment, matchedCourse?.courseName);
-    await CalendarExportService.exportAndShareICS(
-      `Assignment_${assignment.title}`,
-      ics,
-      `[${assignment.courseCode || 'Course'}] ${assignment.title}`
-    );
-    setIsExportingCalendar(false);
-  };
 
   // Parse milestones from relevantTopics ("|||" delimited)
   const milestones = React.useMemo(() => {
@@ -182,29 +165,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                   <Text style={styles.weightBadgeText}>{assignment.weightPercentage} of Grade</Text>
                 </View>
               ) : null}
-            </View>
-
-            {/* Quick Actions Row: Focus Session & Calendar Export */}
-            <View style={styles.quickActionsRow}>
-              <TouchableOpacity
-                style={[styles.quickActionPill, { borderColor: courseColor }]}
-                onPress={() => setShowFocusModal(true)}
-                activeOpacity={0.7}
-              >
-                <HeadphonesFillIcon size={15} color={courseColor} />
-                <Text style={[styles.quickActionText, { color: courseColor }]}>
-                  Focus Session (25m)
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.quickActionPillSecondary}
-                onPress={handleExportToCalendar}
-                activeOpacity={0.7}
-              >
-                <ShareIcon size={14} color="#596B85" />
-                <Text style={styles.quickActionTextSecondary}>Add to Calendar</Text>
-              </TouchableOpacity>
             </View>
 
             {/* Instructions / Summary */}
@@ -336,15 +296,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
               </TouchableOpacity>
             )}
           </ScrollView>
-
-          {/* Focus Study Session Modal */}
-          <FocusStudyModal
-            visible={showFocusModal}
-            onClose={() => setShowFocusModal(false)}
-            title={assignment.title}
-            courseCode={assignment.courseCode || (matchedCourse?.courseCode ?? undefined)}
-            courseColor={courseColor}
-          />
         </SafeAreaView>
       </TouchableWithoutFeedback>
     </Modal>
@@ -633,54 +584,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#D94033'
-  },
-  quickActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-    marginBottom: 8
-  },
-  quickActionPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 10,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1
-  },
-  quickActionText: {
-    fontSize: 12.5,
-    fontWeight: '700'
-  },
-  quickActionPillSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D9E6',
-    borderRadius: 12,
-    paddingVertical: 10,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1
-  },
-  quickActionTextSecondary: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#596B85'
   },
   restoreDetailButton: {
     flexDirection: 'row',

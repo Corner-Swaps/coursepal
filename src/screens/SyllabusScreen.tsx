@@ -284,10 +284,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 }
                 const sortedWeeks = Array.from(readingsByWeek.keys()).sort((a, b) => a - b);
 
-                const fullTitle = course.courseCode
-                  ? `${course.courseCode}: ${course.courseName}`
-                  : course.courseName;
-
                 return (
                   <View key={course.id} style={styles.courseCard}>
                     {/* Header Bar */}
@@ -304,8 +300,13 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                         activeOpacity={0.7}
                       >
                         <Text style={styles.courseTitleText} numberOfLines={1}>
-                          {fullTitle}
+                          {course.courseName}
                         </Text>
+                        {course.courseDescription ? (
+                          <Text style={styles.courseSubtitleText} numberOfLines={1}>
+                            {course.courseDescription}
+                          </Text>
+                        ) : null}
                         <Text style={styles.courseStatsSubtitle} numberOfLines={1}>
                           {courseReadings.length} Readings • {courseAssignments.length} Assignments
                         </Text>
@@ -1027,10 +1028,16 @@ const styles = StyleSheet.create({
     color: '#141F38',
     letterSpacing: -0.2
   },
-  courseStatsSubtitle: {
+  courseSubtitleText: {
     fontSize: 12,
     fontWeight: '500',
     color: '#596B85',
+    marginTop: 1
+  },
+  courseStatsSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#8A99AD',
     marginTop: 2
   },
   cardActionsRow: {

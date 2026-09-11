@@ -94,7 +94,7 @@ class DataPersistenceBackupManager {
 
     try {
       const payload: BackupPayload = {
-        version: 2,
+        version: 3,
         timestamp: Date.now(),
         courses: data.courses,
         readings: data.readings,
@@ -144,7 +144,7 @@ class DataPersistenceBackupManager {
       }
 
       const parsed: BackupPayload = JSON.parse(content);
-      if (!parsed || parsed.version < 2) {
+      if (!parsed || parsed.version < 3) {
         return null;
       }
       // Revive ISO date strings to Date objects

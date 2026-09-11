@@ -24,15 +24,11 @@ import { CoursePalTheme } from '../../constants/theme';
 import {
   XMarkCircleFillIcon,
   PlusCircleFillIcon,
-  HeadphonesFillIcon,
-  ShareIcon,
   ArrowPathIcon,
   TrashIcon,
   CheckmarkCircleFillIcon
 } from '../SvgIcons';
 import { cleanChapterFromRaw, parseSafeDate, formatDisplayTitleWithChapter } from '../../utils/readingDisplayHelper';
-import { CalendarExportService } from '../../services/CalendarExportService';
-import { FocusStudyModal } from './FocusStudyModal';
 
 export interface ReadingDetailModalProps {
   visible: boolean;
@@ -65,25 +61,10 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   const [mediaType, setMediaType] = useState<MediaType>('textbook');
   const [videoUrlInput, setVideoUrlInput] = useState<string>('');
   const [noteInputs, setNoteInputs] = useState<string[]>([]);
-  const [showFocusModal, setShowFocusModal] = useState<boolean>(false);
-  const [isExportingCalendar, setIsExportingCalendar] = useState<boolean>(false);
 
   const matchedCourse = courses.find(
     c => (c.courseCode || c.courseName).toLowerCase() === (reading.courseCode || '').toLowerCase()
   );
-  const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
-  const displayTitle = formatDisplayTitleWithChapter(reading.title, reading.chapterText);
-
-  const handleExportToCalendar = async () => {
-    setIsExportingCalendar(true);
-    const ics = CalendarExportService.createReadingICS(reading, matchedCourse?.courseName);
-    await CalendarExportService.exportAndShareICS(
-      `Reading_${reading.title}`,
-      ics,
-      `[${reading.courseCode || 'Course'}] ${reading.title}`
-    );
-    setIsExportingCalendar(false);
-  };
 
   useEffect(() => {
     if (reading) {
@@ -209,29 +190,6 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
             bounces={true}
             overScrollMode="never"
           >
-            {/* Quick Actions Row: Focus Session & Calendar Export */}
-            <View style={styles.quickActionsRow}>
-              <TouchableOpacity
-                style={[styles.quickActionPill, { borderColor: courseColor }]}
-                onPress={() => setShowFocusModal(true)}
-                activeOpacity={0.7}
-              >
-                <HeadphonesFillIcon size={15} color={courseColor} />
-                <Text style={[styles.quickActionText, { color: courseColor }]}>
-                  Focus Session (25m)
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.quickActionPillSecondary}
-                onPress={handleExportToCalendar}
-                activeOpacity={0.7}
-              >
-                <ShareIcon size={14} color="#596B85" />
-                <Text style={styles.quickActionTextSecondary}>Add to Calendar</Text>
-              </TouchableOpacity>
-            </View>
-
             {/* MARK: - Section 1: Course Name */}
             <View style={styles.sectionCard}>
               <Text style={styles.captionLabel}>Course Name</Text>
@@ -465,15 +423,6 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               </TouchableOpacity>
             ) : null}
           </ScrollView>
-
-          {/* Focus Study Session Modal */}
-          <FocusStudyModal
-            visible={showFocusModal}
-            onClose={() => setShowFocusModal(false)}
-            title={displayTitle}
-            courseCode={reading.courseCode || (matchedCourse?.courseCode ?? undefined)}
-            courseColor={courseColor}
-          />
         </SafeAreaView>
       </TouchableWithoutFeedback>
     </Modal>
@@ -702,53 +651,6 @@ const styles = StyleSheet.create({
     color: '#081324',
     lineHeight: 22,
     paddingVertical: 0
-  },
-  quickActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12
-  },
-  quickActionPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 10,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1
-  },
-  quickActionText: {
-    fontSize: 12.5,
-    fontWeight: '700'
-  },
-  quickActionPillSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D9E6',
-    borderRadius: 12,
-    paddingVertical: 10,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1
-  },
-  quickActionTextSecondary: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#596B85'
   },
   completeButton: {
     flexDirection: 'row',
