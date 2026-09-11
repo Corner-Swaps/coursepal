@@ -41,6 +41,15 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
 
+  React.useEffect(() => {
+    if (visible) {
+      setCategory(initialCategory);
+      if (initialCourseId) {
+        setSelectedCourseId(initialCourseId);
+      }
+    }
+  }, [visible, initialCategory, initialCourseId]);
+
   if (!visible) return null;
 
   const handleSave = () => {

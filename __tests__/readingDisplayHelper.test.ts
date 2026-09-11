@@ -3,8 +3,11 @@ import {
   stripChapterMentions,
   distillSmartReadingTitle,
   formatDisplayTitleWithChapter,
-  formatAuthorAndPagesSubtitle
+  formatAuthorAndPagesSubtitle,
+  parseSafeDate,
+  formatAssignmentDueDate
 } from '../src/utils/readingDisplayHelper';
+import { sanitizeAssignment } from '../src/context/CoursePalContext';
 
 describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
   describe('cleanChapterFromRaw', () => {
@@ -108,6 +111,47 @@ describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
         resourceTitle: 'Textbook'
       });
       expect(sub).toBe('Corey');
+    });
+  });
+
+  describe('parseSafeDate & formatAssignmentDueDate', () => {
+    it('safely parses Date objects, ISO strings, timestamps, and returns null for invalid values', () => {
+      const date = new Date(2026, 4, 14);
+      expect(parseSafeDate(date)).toEqual(date);
+      expect(parseSafeDate('2026-05-14T12:00:00.000Z')?.getFullYear()).toBe(2026);
+      expect(parseSafeDate(date.getTime())?.getFullYear()).toBe(2026);
+      expect(parseSafeDate(null)).toBeNull();
+      expect(parseSafeDate(undefined)).toBeNull();
+      expect(parseSafeDate('invalid-date-string')).toBeNull();
+    });
+
+    it('formats assignment due date cleanly e.g. "Due Thursday, May 14"', () => {
+      const date = new Date(2026, 4, 14);
+      expect(formatAssignmentDueDate(date)).toBe('Due Thursday, May 14');
+      expect(formatAssignmentDueDate(null)).toBeNull();
+    });
+  });
+
+  describe('sanitizeAssignment', () => {
+    it('hydrates string due dates to Date objects and normalizes points and weights', () => {
+      const sanitized = sanitizeAssignment({
+        id: 'test-1',
+        title: ' Research Paper  ',
+        weekNumber: 3,
+        dueDate: ('2026-05-14T00:00:00.000Z' as any),
+        pointsPossible: '100',
+        weightPercentage: '20',
+        isCompleted: false,
+        isDeleted: false,
+        isFavorite: false,
+        rubricCriteria: []
+      });
+
+      expect(sanitized.title).toBe('Research Paper');
+      expect(sanitized.dueDate instanceof Date).toBe(true);
+      expect(sanitized.pointsPossible).toBe('100 Pts');
+      expect(sanitized.weightPercentage).toBe('20%');
+      expect(sanitized.weekNumber).toBe(3);
     });
   });
 });

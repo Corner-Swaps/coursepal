@@ -57,11 +57,13 @@ function MainAppView() {
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
   const [selectedCourseForAddTask, setSelectedCourseForAddTask] = useState<string | undefined>(undefined);
+  const [selectedCategoryForAddTask, setSelectedCategoryForAddTask] = useState<'assignment' | 'reading'>('assignment');
 
   const insets = useSafeAreaInsets();
 
-  const handleOpenAddTask = (courseId?: string) => {
+  const handleOpenAddTask = (courseId?: string, category: 'assignment' | 'reading' = 'assignment') => {
     setSelectedCourseForAddTask(courseId);
+    setSelectedCategoryForAddTask(category);
     setShowAddTaskModal(true);
   };
 
@@ -150,9 +152,11 @@ function MainAppView() {
         <AddTaskModal
           visible={showAddTaskModal}
           initialCourseId={selectedCourseForAddTask}
+          initialCategory={selectedCategoryForAddTask}
           onClose={() => {
             setShowAddTaskModal(false);
             setSelectedCourseForAddTask(undefined);
+            setSelectedCategoryForAddTask('assignment');
           }}
         />
 

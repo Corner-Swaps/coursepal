@@ -23,7 +23,8 @@ import { ReadingDetailModal } from '../components/modals';
 import {
   formatDisplayTitleWithChapter,
   formatAuthorAndPagesSubtitle,
-  formatWeekHeaderDate
+  formatWeekHeaderDate,
+  parseSafeDate
 } from '../utils/readingDisplayHelper';
 
 interface ReadingsScreenProps {
@@ -76,7 +77,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
 
       // Filter by Date
       if (isDateFilterActive && r.dueDate) {
-        const d = r.dueDate;
+        const d = parseSafeDate(r.dueDate);
+        if (!d) return false;
         const isSame =
           d.getFullYear() === selectedDate.getFullYear() &&
           d.getMonth() === selectedDate.getMonth() &&
@@ -110,9 +112,11 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     const map = new Map<string, string[]>();
     for (const r of readings) {
       if (r.isDeleted || !r.dueDate) continue;
-      const y = r.dueDate.getFullYear();
-      const m = String(r.dueDate.getMonth() + 1).padStart(2, '0');
-      const day = String(r.dueDate.getDate()).padStart(2, '0');
+      const d = parseSafeDate(r.dueDate);
+      if (!d) continue;
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
       const key = `${y}-${m}-${day}`;
 
       const matchedCourse = courses.find(

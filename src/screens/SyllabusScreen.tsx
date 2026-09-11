@@ -285,25 +285,25 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 return (
                   <View key={course.id} style={styles.courseCard}>
                     {/* Header Bar */}
-                    <TouchableOpacity
-                      style={styles.courseHeaderRow}
-                      onPress={() => toggleCourseExpand(course.id)}
-                      activeOpacity={0.85}
-                    >
+                    <View style={styles.courseHeaderRow}>
                       {/* Left Accent Stripe */}
                       <View
                         style={[styles.leftAccentBar, { backgroundColor: course.hexColor }]}
                       />
 
-                      {/* Course Title & Counts */}
-                      <View style={styles.courseInfoCol}>
+                      {/* Course Title & Counts - Tap to Expand/Collapse */}
+                      <TouchableOpacity
+                        style={styles.courseInfoCol}
+                        onPress={() => toggleCourseExpand(course.id)}
+                        activeOpacity={0.7}
+                      >
                         <Text style={styles.courseTitleText} numberOfLines={1}>
                           {fullTitle}
                         </Text>
                         <Text style={styles.courseStatsSubtitle} numberOfLines={1}>
                           {courseReadings.length} Readings • {courseAssignments.length} Assignments
                         </Text>
-                      </View>
+                      </TouchableOpacity>
 
                       {/* Action Buttons: Plus Menu, Trash, Chevron */}
                       <View style={styles.cardActionsRow}>
@@ -312,6 +312,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           style={styles.actionIconButton}
                           onPress={() => setActiveMenuCourse(course)}
                           activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                         >
                           <PlusIcon size={14} color={CoursePalTheme.accentBlue} />
                         </TouchableOpacity>
@@ -321,6 +322,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           style={styles.actionIconButton}
                           onPress={() => confirmDeleteCourse(course)}
                           activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                         >
                           <TrashIcon size={14} color="#D94033" />
                         </TouchableOpacity>
@@ -330,6 +332,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           style={styles.actionIconButton}
                           onPress={() => toggleCourseExpand(course.id)}
                           activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}
                         >
                           {isExpanded ? (
                             <ChevronUpIcon size={12} color="#596B85" />
@@ -338,7 +341,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           )}
                         </TouchableOpacity>
                       </View>
-                    </TouchableOpacity>
+                    </View>
 
                     {/* Expanded Content Dropdown */}
                     {isExpanded && (

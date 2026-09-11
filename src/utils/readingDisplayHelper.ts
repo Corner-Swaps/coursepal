@@ -232,10 +232,33 @@ export function formatAuthorAndPagesSubtitle(
   return parts.join(' · ');
 }
 
-export function formatWeekHeaderDate(date: Date): string {
-  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-  const monthName = date.toLocaleDateString('en-US', { month: 'long' });
-  const day = date.getDate();
+/**
+ * Safely parses any date input (string, Date, number, null, undefined) into a valid Date object or null.
+ * Protects against runtime crashes from .getFullYear() or .toLocaleDateString() on unparsed strings or invalid values.
+ */
+export function parseSafeDate(rawDate?: Date | string | number | null): Date | null {
+  if (!rawDate) return null;
+  if (rawDate instanceof Date) {
+    return isNaN(rawDate.getTime()) ? null : rawDate;
+  }
+  const parsed = new Date(rawDate);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Formats an assignment due date cleanly e.g. "Due Thursday, May 14".
+ */
+export function formatAssignmentDueDate(rawDate?: Date | string | number | null): string | null {
+  const d = parseSafeDate(rawDate);
+  if (!d) return null;
+  return `Due ${d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
+}
+
+export function formatWeekHeaderDate(rawDate: Date | string | number): string {
+  const d = parseSafeDate(rawDate) || new Date();
+  const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+  const monthName = d.toLocaleDateString('en-US', { month: 'long' });
+  const day = d.getDate();
   return `${dayName}, ${monthName} ${day}`;
 }
 

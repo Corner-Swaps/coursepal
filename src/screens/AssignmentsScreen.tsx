@@ -20,7 +20,11 @@ import {
 } from '../components/SvgIcons';
 import { Assignment } from '../types/models';
 import { AssignmentDetailModal, EditAssignmentModal } from '../components/modals';
-import { formatWeekHeaderDate } from '../utils/readingDisplayHelper';
+import {
+  formatWeekHeaderDate,
+  formatAssignmentDueDate,
+  parseSafeDate
+} from '../utils/readingDisplayHelper';
 
 interface AssignmentsScreenProps {
   onOpenFilterModal: () => void;
@@ -75,7 +79,8 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
 
       // Filter by Date
       if (isDateFilterActive && a.dueDate) {
-        const d = a.dueDate;
+        const d = parseSafeDate(a.dueDate);
+        if (!d) return false;
         const isSame =
           d.getFullYear() === selectedDate.getFullYear() &&
           d.getMonth() === selectedDate.getMonth() &&
@@ -105,9 +110,11 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     const map = new Map<string, string[]>();
     for (const a of assignments) {
       if (a.isDeleted || !a.dueDate) continue;
-      const y = a.dueDate.getFullYear();
-      const m = String(a.dueDate.getMonth() + 1).padStart(2, '0');
-      const day = String(a.dueDate.getDate()).padStart(2, '0');
+      const d = parseSafeDate(a.dueDate);
+      if (!d) continue;
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
       const key = `${y}-${m}-${day}`;
 
       const matchedCourse = courses.find(
@@ -375,7 +382,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                     {/* Middle Content Area */}
                     <TouchableOpacity
                       style={styles.cardMainContent}
-                      onPress={() => setAssignmentForEdit(assignment)}
+                      onPress={() => setSelectedAssignmentForDetail(assignment)}
                       activeOpacity={0.7}
                     >
                       {/* Top Line: Course Title Pill with white letters */}
@@ -396,13 +403,14 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                         {assignment.title}
                       </Text>
 
-                      {/* Date Display & Weight */}
+                      {/* Date Display & Points / Weight Badges */}
                       <View style={styles.assignmentDateRow}>
                         <Text style={styles.assignmentDateText}>
-                          {assignment.dueDate
-                            ? `Due ${assignment.dueDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} · Week ${assignment.weekNumber || 1}`
-                            : `Week ${assignment.weekNumber || 1}`}
+                          {formatAssignmentDueDate(assignment.dueDate) || `Week ${assignment.weekNumber || 1}`}
                         </Text>
+                        {assignment.pointsPossible && (
+                          <Text style={styles.weightText}>• {assignment.pointsPossible}</Text>
+                        )}
                         {assignment.weightPercentage && (
                           <Text style={styles.weightText}>• {assignment.weightPercentage}</Text>
                         )}

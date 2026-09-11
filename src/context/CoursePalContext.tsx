@@ -7,7 +7,11 @@ import { persistenceManager } from '../services/DataPersistenceBackupManager';
 import { LocalSyllabusParser } from '../services/LocalSyllabusParser';
 import { BundledSyllabiCatalog } from '../utils/syllabusCatalog';
 import { APIService } from '../services/APIService';
-import { cleanChapterFromRaw, formatDisplayTitleWithChapter } from '../utils/readingDisplayHelper';
+import {
+  cleanChapterFromRaw,
+  formatDisplayTitleWithChapter,
+  parseSafeDate
+} from '../utils/readingDisplayHelper';
 
 export type TabKey = 'readings' | 'assignments' | 'syllabus' | 'invite';
 
@@ -99,10 +103,34 @@ const initialCourses: Course[] = [
 export function sanitizeReading(r: Reading): Reading {
   const canonicalCh = cleanChapterFromRaw(r.chapterText || r.title);
   const displayTitle = formatDisplayTitleWithChapter(r, canonicalCh);
+  const cleanDueDate = parseSafeDate(r.dueDate);
   return {
     ...r,
     title: displayTitle,
-    chapterText: canonicalCh || undefined
+    chapterText: canonicalCh || undefined,
+    dueDate: cleanDueDate
+  };
+}
+
+export function sanitizeAssignment(a: Assignment): Assignment {
+  const cleanDueDate = parseSafeDate(a.dueDate);
+  let cleanPts = a.pointsPossible || '100 Pts';
+  if (/^\d+$/.test(cleanPts.trim())) {
+    cleanPts = `${cleanPts.trim()} Pts`;
+  }
+  let cleanWeight = a.weightPercentage || null;
+  if (cleanWeight && /^\d+$/.test(cleanWeight.trim())) {
+    cleanWeight = `${cleanWeight.trim()}%`;
+  }
+
+  return {
+    ...a,
+    title: a.title ? a.title.trim() : 'Assignment',
+    dueDate: cleanDueDate,
+    pointsPossible: cleanPts,
+    weightPercentage: cleanWeight,
+    weekNumber: a.weekNumber || 1,
+    rubricCriteria: a.rubricCriteria || []
   };
 }
 
@@ -531,16 +559,26 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     persistenceManager.loadLatestBackup().then(backup => {
       if (!isMounted || !backup) return;
       if (Array.isArray(backup.courses) && backup.courses.length > 0) {
-        setCourses(backup.courses);
+        setCourses(
+          backup.courses.map(c => ({
+            ...c,
+            createdAt: parseSafeDate(c.createdAt) || new Date()
+          }))
+        );
       }
       if (Array.isArray(backup.readings) && backup.readings.length > 0) {
         setReadings(backup.readings.map(sanitizeReading));
       }
       if (Array.isArray(backup.assignments) && backup.assignments.length > 0) {
-        setAssignments(backup.assignments);
+        setAssignments(backup.assignments.map(sanitizeAssignment));
       }
       if (Array.isArray(backup.vaultDocs) && backup.vaultDocs.length > 0) {
-        setVaultDocs(backup.vaultDocs);
+        setVaultDocs(
+          backup.vaultDocs.map(vd => ({
+            ...vd,
+            uploadedAt: parseSafeDate(vd.uploadedAt) || new Date()
+          }))
+        );
       }
     });
     return () => {
@@ -602,7 +640,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, [triggerConfetti]);
 
   const updateAssignment = useCallback((updated: Assignment) => {
-    setAssignments(prev => prev.map(a => (a.id === updated.id ? updated : a)));
+    const sanitized = sanitizeAssignment(updated);
+    setAssignments(prev => prev.map(a => (a.id === sanitized.id ? sanitized : a)));
   }, []);
 
   const updateReading = useCallback((updated: Reading) => {
@@ -703,7 +742,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       };
       setReadings(prev => [sanitizeReading(newReading), ...prev]);
     } else {
-      const newAssignment: Assignment = {
+      const newAssignment: Assignment = sanitizeAssignment({
         id: `a-${Date.now()}`,
         title: data.title,
         weekNumber: data.weekNumber,
@@ -717,7 +756,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         relevantTopics: `Week ${data.weekNumber}`,
         isFavorite: false,
         rubricCriteria: []
-      };
+      });
       setAssignments(prev => [newAssignment, ...prev]);
     }
   }, [courses]);
@@ -962,13 +1001,25 @@ Output ONLY valid JSON.`;
         });
       }
 
-      // Convert parsed assignments into Assignment objects
+      // Convert parsed assignments into Assignment objects with intelligent week resolution
       const newAssignments: Assignment[] = (dto.assignments || []).map((a: any, aIdx: number) => {
-        const dueDate = a.dueDate ? new Date(a.dueDate) : undefined;
-        return {
+        const dueDate = parseSafeDate(a.dueDate);
+        let resolvedWeek = a.weekNumber;
+        if (!resolvedWeek && dueDate && Array.isArray(dto.weeks) && dto.weeks.length > 0) {
+          for (const w of dto.weeks) {
+            const wDate = parseSafeDate(w.startDate);
+            if (wDate && Math.abs(dueDate.getTime() - wDate.getTime()) <= 7 * 86400000) {
+              resolvedWeek = w.weekNumber;
+              break;
+            }
+          }
+        }
+        if (!resolvedWeek) resolvedWeek = aIdx + 1;
+
+        return sanitizeAssignment({
           id: `a-${Date.now()}-${aIdx}`,
           title: a.title,
-          weekNumber: aIdx + 1,
+          weekNumber: resolvedWeek,
           dueDate: dueDate,
           fullInstructions: a.fullInstructions || 'Parsed from course syllabus.',
           pointsPossible: a.pointsPossible || '100 Points',
@@ -988,7 +1039,7 @@ Output ONLY valid JSON.`;
           isFavorite: false,
           courseId: courseId,
           rubricCriteria: a.rubric || []
-        };
+        });
       });
 
       // Add VaultDocument
