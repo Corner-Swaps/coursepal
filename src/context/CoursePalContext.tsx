@@ -6,6 +6,7 @@ import { CourseSharingService } from '../services/CourseSharingService';
 import { persistenceManager } from '../services/DataPersistenceBackupManager';
 import { LocalSyllabusParser } from '../services/LocalSyllabusParser';
 import { BundledSyllabiCatalog } from '../utils/syllabusCatalog';
+import { APIService } from '../services/APIService';
 
 export type TabKey = 'readings' | 'assignments' | 'syllabus' | 'invite';
 
@@ -762,11 +763,14 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     const { fileName, fileUri, fileSize, targetCourseId, preferredHexColor } = params;
     let rawText = params.rawText || '';
 
+    // Switch immediately to syllabus tab so user sees the in-page upload status
+    setSelectedTab('syllabus');
     setIsUploading(true);
-    setUploadProgress(0.15);
+    setUploadProgress(0.12);
     setUploadStatusText(`Extracting syllabus: ${fileName}...`);
 
     try {
+      await new Promise(r => setTimeout(r, 800));
       // Step 1: If rawText is not provided, try to extract it from fileUri or catalog
       if (!rawText && fileUri) {
         try {
@@ -811,16 +815,63 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       }
 
-      setUploadProgress(0.5);
-      setUploadStatusText('Analyzing schedule, readings & assignments...');
-      await new Promise(r => setTimeout(r, 400));
+      // Stage 2: AI Parsing with Gemini API
+      setUploadProgress(0.45);
+      setUploadStatusText('Analyzing schedule, readings & assignments with Gemini AI...');
 
-      // Parse with LocalSyllabusParser
-      const dto = LocalSyllabusParser.shared.parseText(rawText);
+      let dto: any = null;
+      try {
+        const geminiPrompt = `You are an expert academic syllabus parser.
+Extract course details, weekly schedule, readings, and assignments from this syllabus into structured JSON matching:
+{
+  "courseName": "Course Name",
+  "courseCode": "Course Code",
+  "instructorName": "Instructor Name",
+  "termWeeks": 12,
+  "weeks": [
+    {
+      "weekNumber": 1,
+      "theme": "Topic or Theme",
+      "readings": [
+        { "title": "Short Title 5-6 Words", "authorName": "Author", "mediaType": "textbook" }
+      ]
+    }
+  ],
+  "assignments": [
+    { "title": "Assignment Title", "pointsPossible": "100 Points", "weightPercentage": "25%" }
+  ]
+}
 
-      setUploadProgress(0.8);
-      setUploadStatusText('Synthesizing course repository...');
-      await new Promise(r => setTimeout(r, 300));
+Syllabus Text:
+${rawText.slice(0, 7500)}
+
+Output ONLY valid JSON.`;
+
+        const [aiResult] = await Promise.all([
+          APIService.shared.generateContentWithGemini(geminiPrompt),
+          new Promise(r => setTimeout(r, 2200))
+        ]);
+
+        let cleanJson = aiResult.trim();
+        if (cleanJson.startsWith('```')) {
+          cleanJson = cleanJson.split('\n').slice(1).join('\n');
+          if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3).trim();
+        }
+        dto = JSON.parse(cleanJson);
+      } catch {
+        // Fallback to local intelligent parser with authentic loading duration
+        await new Promise(r => setTimeout(r, 1600));
+        dto = LocalSyllabusParser.shared.parseText(rawText);
+      }
+
+      if (!dto || !dto.courseName) {
+        dto = LocalSyllabusParser.shared.parseText(rawText);
+      }
+
+      // Stage 3: Synthesizing Course Repository
+      setUploadProgress(0.85);
+      setUploadStatusText('Synthesizing course repository & weekly schedule...');
+      await new Promise(r => setTimeout(r, 1000));
 
       const courseCode = dto.courseCode || fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase();
       const courseName = dto.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
@@ -866,10 +917,10 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       // Convert parsed weeks & readings into Reading objects
       const newReadings: Reading[] = [];
       if (dto.weeks && dto.weeks.length > 0) {
-        dto.weeks.forEach((w, wIdx) => {
+        dto.weeks.forEach((w: any, wIdx: number) => {
           const weekNum = w.weekNumber || (wIdx + 1);
           if (w.readings && w.readings.length > 0) {
-            w.readings.forEach((r, rIdx) => {
+            w.readings.forEach((r: any, rIdx: number) => {
               const readingDate = r.dueDate ? new Date(r.dueDate) : undefined;
               newReadings.push({
                 id: `r-${Date.now()}-${wIdx}-${rIdx}`,
@@ -900,7 +951,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
 
       // Convert parsed assignments into Assignment objects
-      const newAssignments: Assignment[] = (dto.assignments || []).map((a, aIdx) => {
+      const newAssignments: Assignment[] = (dto.assignments || []).map((a: any, aIdx: number) => {
         const dueDate = a.dueDate ? new Date(a.dueDate) : undefined;
         return {
           id: `a-${Date.now()}-${aIdx}`,
@@ -967,7 +1018,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       const countMsg = `${newReadings.length} readings & ${newAssignments.length} assignments`;
       triggerConfetti(`Extracted ${finalCourse.courseCode || finalCourse.courseName}! Added ${countMsg}.`);
 
-      setSelectedTab('readings');
+      setSelectedTab('syllabus');
 
       return {
         success: true,
