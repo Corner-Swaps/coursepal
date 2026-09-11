@@ -13,6 +13,7 @@ import {
   ItemDTO
 } from '../types/models';
 import { FacultyExtractor } from './FacultyExtractor';
+import { cleanChapterFromRaw } from '../utils/readingDisplayHelper';
 
 export type SemanticCategory = 'assignment' | 'reading' | 'media' | 'inClass' | 'noise';
 
@@ -1090,7 +1091,7 @@ export class LocalSyllabusParser {
     let pages: string | undefined = undefined;
 
     const chMatch = healed.match(LocalSyllabusParser.chapterRegex);
-    if (chMatch) chapter = chMatch[0].trim();
+    if (chMatch) chapter = cleanChapterFromRaw(chMatch[0].trim()) || chMatch[0].trim();
 
     const pgMatch = healed.match(LocalSyllabusParser.pagesRegex);
     if (pgMatch) pages = pgMatch[0].trim();

@@ -25,6 +25,7 @@ import {
   XMarkCircleFillIcon,
   PlusCircleFillIcon
 } from '../SvgIcons';
+import { cleanChapterFromRaw } from '../../utils/readingDisplayHelper';
 
 export interface ReadingDetailModalProps {
   visible: boolean;
@@ -80,8 +81,8 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
       setHasDueDate(reading.dueDate != null);
       setDueDate(reading.dueDate ? new Date(reading.dueDate) : new Date());
 
-      const chDisplay = [reading.chapterText, reading.pagesText].filter(Boolean).join(', ');
-      setChapterInput(chDisplay || reading.chapterText || '');
+      const chDisplay = reading.chapterText || '';
+      setChapterInput(chDisplay);
 
       const topics = (reading.relevantTopics || '')
         .split(',')
@@ -125,9 +126,10 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   };
 
   const handleSave = () => {
+    const cleanedChapter = cleanChapterFromRaw(chapterInput.trim()) || chapterInput.trim() || undefined;
     const updated: Reading = {
       ...reading,
-      chapterText: chapterInput.trim() || undefined,
+      chapterText: cleanedChapter,
       relevantTopics: topicInputs.filter(t => t.trim().length > 0).join(', ') || undefined,
       mediaType: mediaType,
       videoUrl: videoUrlInput.trim() || undefined,

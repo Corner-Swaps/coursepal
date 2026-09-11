@@ -7,6 +7,7 @@ import { persistenceManager } from '../services/DataPersistenceBackupManager';
 import { LocalSyllabusParser } from '../services/LocalSyllabusParser';
 import { BundledSyllabiCatalog } from '../utils/syllabusCatalog';
 import { APIService } from '../services/APIService';
+import { cleanChapterFromRaw, formatDisplayTitleWithChapter } from '../utils/readingDisplayHelper';
 
 export type TabKey = 'readings' | 'assignments' | 'syllabus' | 'invite';
 
@@ -95,11 +96,21 @@ const initialCourses: Course[] = [
   }
 ];
 
+export function sanitizeReading(r: Reading): Reading {
+  const canonicalCh = cleanChapterFromRaw(r.chapterText || r.title);
+  const displayTitle = formatDisplayTitleWithChapter(r, canonicalCh);
+  return {
+    ...r,
+    title: displayTitle,
+    chapterText: canonicalCh || undefined
+  };
+}
+
 const initialReadings: Reading[] = [
   // CPC 527 (18 readings from April 2 to June 18, 2026 - Exactly matching Swift app & device screenshot)
   {
     id: 'r-527-1',
-    title: 'Chapter 1 · Ch. 1',
+    title: 'Chapter 1',
     authorName: 'Yalom',
     resourceTitle: 'Theory and Practice of Group Psychotherapy',
     mediaTypeRaw: 'textbook',
@@ -109,7 +120,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapter 1',
     estimatedTimeText: '~40–60 min',
-    chapterText: 'Ch. 1',
+    chapterText: 'Chapter 1',
     dueDate: new Date(2026, 3, 2), // Thursday, April 2, 2026
     dateRangeStr: 'April 2',
     courseCode: 'CPC 527',
@@ -129,7 +140,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 1 & 2',
     estimatedTimeText: '~45–60 min',
-    chapterText: 'Ch. 1 & 2',
+    chapterText: 'Chapters 1 & 2',
     dueDate: new Date(2026, 3, 2), // Thursday, April 2, 2026
     dateRangeStr: 'April 2',
     courseCode: 'CPC 527',
@@ -139,7 +150,7 @@ const initialReadings: Reading[] = [
   },
   {
     id: 'r-527-3',
-    title: 'Chapter 2 · Ch. 2',
+    title: 'Chapter 2',
     authorName: 'Yalom',
     resourceTitle: 'Theory and Practice of Group Psychotherapy',
     mediaTypeRaw: 'textbook',
@@ -149,7 +160,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapter 2',
     estimatedTimeText: '~40–60 min',
-    chapterText: 'Ch. 2',
+    chapterText: 'Chapter 2',
     dueDate: new Date(2026, 3, 9), // Thursday, April 9, 2026
     dateRangeStr: 'April 9',
     courseCode: 'CPC 527',
@@ -169,7 +180,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 3 & 4',
     estimatedTimeText: '~45–60 min',
-    chapterText: 'Ch. 3 & 4',
+    chapterText: 'Chapters 3 & 4',
     dueDate: new Date(2026, 3, 9), // Thursday, April 9, 2026
     dateRangeStr: 'April 9',
     courseCode: 'CPC 527',
@@ -179,7 +190,7 @@ const initialReadings: Reading[] = [
   },
   {
     id: 'r-527-5',
-    title: 'Chapter 3 · Ch. 3',
+    title: 'Chapter 3',
     authorName: 'Yalom',
     resourceTitle: 'Theory and Practice of Group Psychotherapy',
     mediaTypeRaw: 'textbook',
@@ -189,7 +200,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapter 3',
     estimatedTimeText: '~40–60 min',
-    chapterText: 'Ch. 3',
+    chapterText: 'Chapter 3',
     dueDate: new Date(2026, 3, 16), // Thursday, April 16, 2026
     dateRangeStr: 'April 16',
     courseCode: 'CPC 527',
@@ -209,7 +220,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 5 & 6',
     estimatedTimeText: '~45–60 min',
-    chapterText: 'Ch. 5 & 6',
+    chapterText: 'Chapters 5 & 6',
     dueDate: new Date(2026, 3, 16), // Thursday, April 16, 2026
     dateRangeStr: 'April 16',
     courseCode: 'CPC 527',
@@ -229,7 +240,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapter 7',
     estimatedTimeText: '~40–50 min',
-    chapterText: 'Ch. 7',
+    chapterText: 'Chapter 7',
     dueDate: new Date(2026, 3, 23), // Thursday, April 23, 2026
     dateRangeStr: 'April 23',
     courseCode: 'CPC 527',
@@ -249,7 +260,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 4 & 5',
     estimatedTimeText: '~50–70 min',
-    chapterText: 'Ch. 4 & 5',
+    chapterText: 'Chapters 4 & 5',
     dueDate: new Date(2026, 3, 23), // Thursday, April 23, 2026
     dateRangeStr: 'April 23',
     courseCode: 'CPC 527',
@@ -269,7 +280,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapter 8',
     estimatedTimeText: '~40–50 min',
-    chapterText: 'Ch. 8',
+    chapterText: 'Chapter 8',
     dueDate: new Date(2026, 3, 30), // Thursday, April 30, 2026
     dateRangeStr: 'April 30',
     courseCode: 'CPC 527',
@@ -289,7 +300,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 6 & 7',
     estimatedTimeText: '~50–70 min',
-    chapterText: 'Ch. 6 & 7',
+    chapterText: 'Chapters 6 & 7',
     dueDate: new Date(2026, 3, 30), // Thursday, April 30, 2026
     dateRangeStr: 'April 30',
     courseCode: 'CPC 527',
@@ -309,7 +320,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 8 & 9',
     estimatedTimeText: '~50–70 min',
-    chapterText: 'Ch. 8 & 9',
+    chapterText: 'Chapters 8 & 9',
     dueDate: new Date(2026, 4, 7), // Thursday, May 7, 2026
     dateRangeStr: 'May 7',
     courseCode: 'CPC 527',
@@ -329,7 +340,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 10 & 11',
     estimatedTimeText: '~50–70 min',
-    chapterText: 'Ch. 10 & 11',
+    chapterText: 'Chapters 10 & 11',
     dueDate: new Date(2026, 4, 14), // Thursday, May 14, 2026
     dateRangeStr: 'May 14',
     courseCode: 'CPC 527',
@@ -349,7 +360,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 12 & 13',
     estimatedTimeText: '~50–70 min',
-    chapterText: 'Ch. 12 & 13',
+    chapterText: 'Chapters 12 & 13',
     dueDate: new Date(2026, 4, 28), // Thursday, May 28, 2026
     dateRangeStr: 'May 28',
     courseCode: 'CPC 527',
@@ -369,7 +380,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapter 9',
     estimatedTimeText: '~40–50 min',
-    chapterText: 'Ch. 9',
+    chapterText: 'Chapter 9',
     dueDate: new Date(2026, 4, 28), // Thursday, May 28, 2026
     dateRangeStr: 'May 28',
     courseCode: 'CPC 527',
@@ -389,7 +400,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• See Brightspace for Assigned Readings',
     estimatedTimeText: '~30–45 min',
-    chapterText: 'Assigned Readings',
+    chapterText: undefined,
     dueDate: new Date(2026, 5, 4), // Thursday, June 4, 2026
     dateRangeStr: 'June 4',
     courseCode: 'CPC 527',
@@ -409,7 +420,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 10 & 11',
     estimatedTimeText: '~45–60 min',
-    chapterText: 'Ch. 10 & 11',
+    chapterText: 'Chapters 10 & 11',
     dueDate: new Date(2026, 5, 11), // Thursday, June 11, 2026
     dateRangeStr: 'June 11',
     courseCode: 'CPC 527',
@@ -429,7 +440,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• Review Chapters 14 & 15',
     estimatedTimeText: '~50–70 min',
-    chapterText: 'Ch. 14 & 15',
+    chapterText: 'Chapters 14 & 15',
     dueDate: new Date(2026, 5, 11), // Thursday, June 11, 2026
     dateRangeStr: 'June 11',
     courseCode: 'CPC 527',
@@ -449,7 +460,7 @@ const initialReadings: Reading[] = [
     summaryText: '',
     keyTakeawaysText: '• See Brightspace for Assigned Readings',
     estimatedTimeText: '~30–45 min',
-    chapterText: 'Assigned Readings',
+    chapterText: undefined,
     dueDate: new Date(2026, 5, 18), // Thursday, June 18, 2026
     dateRangeStr: 'June 18',
     courseCode: 'CPC 527',
@@ -523,7 +534,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         setCourses(backup.courses);
       }
       if (Array.isArray(backup.readings) && backup.readings.length > 0) {
-        setReadings(backup.readings);
+        setReadings(backup.readings.map(sanitizeReading));
       }
       if (Array.isArray(backup.assignments) && backup.assignments.length > 0) {
         setAssignments(backup.assignments);
@@ -595,7 +606,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   const updateReading = useCallback((updated: Reading) => {
-    setReadings(prev => prev.map(r => (r.id === updated.id ? updated : r)));
+    const sanitized = sanitizeReading(updated);
+    setReadings(prev => prev.map(r => (r.id === sanitized.id ? sanitized : r)));
   }, []);
 
   const restoreAssignment = useCallback((id: string) => {
@@ -681,15 +693,15 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         keyTakeawaysText: `• Review ${data.title}`,
         estimatedTimeText: data.mediaType === 'video' ? '~20–30 min' : '~40–60 min',
         videoUrl: data.videoUrl,
-        chapterText: `Week ${data.weekNumber}`,
-        pagesText: 'Class Material',
+        chapterText: undefined,
+        pagesText: '',
         dueDate: data.dueDate,
         dateRangeStr: `Week ${data.weekNumber}`,
         courseCode,
         relevantTopics: `Week ${data.weekNumber}`,
         isFavorite: false
       };
-      setReadings(prev => [newReading, ...prev]);
+      setReadings(prev => [sanitizeReading(newReading), ...prev]);
     } else {
       const newAssignment: Assignment = {
         id: `a-${Date.now()}`,
@@ -992,7 +1004,8 @@ Output ONLY valid JSON.`;
         uploadedAt: new Date()
       };
 
-      const updatedReadings = [...newReadings, ...readings];
+      const sanitizedNewReadings = newReadings.map(sanitizeReading);
+      const updatedReadings = [...sanitizedNewReadings, ...readings];
       const updatedAssignments = [...newAssignments, ...assignments];
       const updatedVaultDocs = [newVaultDoc, ...vaultDocs];
 

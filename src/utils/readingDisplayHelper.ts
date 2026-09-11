@@ -1,6 +1,8 @@
 /**
  * ReadingDisplayHelper
- * 1:1 parity with ReadingTitleCleaner and Swift WeeklyDashboardView formatting logic.
+ * Universal, deduplicated chapter formatting and display engine.
+ * Ensures that chapters are stated EXACTLY ONCE (never repeating "Ch. 12 · Chapters 12"
+ * or duplicating chapters in subtitles down below).
  */
 
 export function repairChapterArtifacts(text: string): string {
@@ -16,58 +18,81 @@ export function repairChapterArtifacts(text: string): string {
   return str;
 }
 
+/**
+ * Standardizes any chapter string into clean canonical representation:
+ * - Single: "Chapter 1", "Chapter 12"
+ * - Multiple: "Chapters 1 & 2", "Chapters 12 & 13", "Chapters 1–4"
+ * Never returns mixed "Ch." or duplicates.
+ */
 export function cleanChapterFromRaw(rawCh?: string | null): string | null {
   if (!rawCh || !rawCh.trim()) return null;
   let cleaned = repairChapterArtifacts(rawCh.trim());
-  cleaned = cleaned.replace(/[()[\]]/g, '');
-  const lower = cleaned.toLowerCase();
+  cleaned = cleaned.replace(/[()[\]]/g, '').trim();
 
-  if (lower.startsWith('chapter ')) {
-    return 'Chapter ' + cleaned.slice(8).trim();
-  } else if (lower.startsWith('chapters ')) {
-    return 'Chapters ' + cleaned.slice(9).trim();
-  } else if (lower.startsWith('ch. ')) {
-    return 'Ch. ' + cleaned.slice(4).trim();
-  } else if (lower.startsWith('chs. ')) {
-    return 'Chs. ' + cleaned.slice(5).trim();
+  // Check if string contains explicit chapter keywords: chapter, chapters, ch., ch, chap., etc.
+  const hasChapterKeyword = /\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\b/i.test(cleaned);
+  // Check if string is purely digits/connectors e.g. "12", "12 & 13", "1-4", "1, 2"
+  const isPureNumbers = /^\d+[\s&,\-–andto\d]*$/i.test(cleaned);
+
+  if (!hasChapterKeyword && !isPureNumbers) {
+    // Not a chapter! Prevents dates, years, or topic titles from being misidentified as chapters
+    return null;
   }
 
-  if (/^\d+[\s&,\-–\d]*$/.test(cleaned)) {
-    if (cleaned.includes('-') || cleaned.includes('–') || cleaned.includes('&') || cleaned.includes(',')) {
-      return `Chapters ${cleaned}`;
-    } else {
-      return `Chapter ${cleaned}`;
-    }
+  // Extract all digit groups with connectors e.g. "12 & 13", "1, 2", "1-4", "12"
+  const digitsMatch = cleaned.match(/\b\d+[\s&,\-–andto\d]*\b/i);
+  if (digitsMatch) {
+    let numPart = digitsMatch[0].trim();
+    // Normalize connectors: replace "and" with "&", "-" with en-dash "–"
+    numPart = numPart
+      .replace(/\band\b/gi, '&')
+      .replace(/\s*-\s*/g, '–')
+      .replace(/\s*–\s*/g, '–')
+      .replace(/\s+/g, ' ');
+    // Clean trailing/leading connectors
+    numPart = numPart.replace(/^[,&–\s]+|[,&–\s]+$/g, '').trim();
+
+    const isPlural = numPart.includes('&') || numPart.includes('–') || numPart.includes(',') || /\bto\b/i.test(numPart);
+    return isPlural ? `Chapters ${numPart}` : `Chapter ${numPart}`;
   }
 
-  if (cleaned.length > 0) {
-    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  // If chapter keyword exists without digits (e.g. "Chapter One", "Chapter IV")
+  const keywordMatch = cleaned.match(/\b(?:chapters?)\s+([A-Za-z]+)\b/i);
+  if (keywordMatch) {
+    const wordPart = keywordMatch[1].trim();
+    return `Chapter ${wordPart.charAt(0).toUpperCase() + wordPart.slice(1)}`;
   }
-  return cleaned;
+
+  return null;
 }
 
-export function stripChapterMentions(title: string): string {
-  const healed = repairChapterArtifacts(title);
-  const chapterPattern = /\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chs?\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)+\s*[:\-–·•.]*\s*/gi;
-  let stripped = healed.replace(chapterPattern, ' ').replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '');
+/**
+ * Strips all chapter mentions, numbers, and connecting symbols from text.
+ */
+export function stripChapterMentions(text: string): string {
+  if (!text) return '';
+  const healed = repairChapterArtifacts(text);
+  // Matches "Chapter 1 · Ch. 1", "Chapters 12 & 13", "Ch. 12", "Ch 1 & 2", etc.
+  const chapterPattern = /\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)*[:\-–·•.]*\s*/gi;
+  let stripped = healed.replace(chapterPattern, ' ');
+  // Clean dangling separators and whitespace
+  stripped = stripped.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '');
   stripped = stripped.replace(/\s+/g, ' ').trim();
-  if (!stripped) {
-    return healed;
-  }
   return stripped;
 }
 
+/**
+ * Cleans out academic syllabus metadata noise (course codes, LMS terms, imperative verbs).
+ */
 export function distillSmartReadingTitle(rawTitle: string): string {
   let title = (rawTitle || '').trim();
   if (!title) return 'Reading';
 
   title = repairChapterArtifacts(title);
-  // Strip XML/HTML tags
   title = title.replace(/<[^>]+>/g, '');
-  // Strip course code prefix like "CPC 527: "
   title = title.replace(/^[A-Z]{2,5}\s*\d{3,4}[A-Z]?\s*[:\-–.]*\s*/i, '');
 
-  // Strip APA-style citation year e.g. "(2014)"
+  // Strip APA citation year "(2014)"
   const yearMatch = title.match(/\(\s*\d{4}\s*\)\.?\s*/);
   if (yearMatch && yearMatch.index !== undefined) {
     const afterYear = title.slice(yearMatch.index + yearMatch[0].length).trim();
@@ -84,25 +109,11 @@ export function distillSmartReadingTitle(rawTitle: string): string {
   // Strip preparatory suffixes
   title = title.replace(/\s+(?:in\s+preparation\s+for|prior\s+to\s+class|before\s+class|for\s+class\s+discussion|for\s+discussion|in\s+preparation|in\s+advance)\b.*$/i, '');
 
-  // Strip imperative verbs at start
+  // Strip imperative verbs
   title = title.replace(/^\s*(?:please\s+)?(?:review|read\s+and\s+review|read|study|complete\s+the\s+reading\s+of|complete\s+the\s+reading\s+on|complete\s+reading\s+of|complete\s+reading|complete|prepare\s+for|examine|access\s+and\s+read|consult)\s+(?:sample\s+|the\s+|all\s+|assigned\s+|required\s+)?/i, '');
-  title = title.replace(/^\s*(?:required|assigned|weekly)\s+readings?\s*[:\-–]*\s*/i, '');
-  title = title.replace(/^\s*readings?\s*[:\-–]*\s*/i, '');
-
-  // If title has author + chapter mention e.g. "Corey Chapters 1 & 2 on the therapeutic..."
-  const authorChMatch = title.match(/^([A-Z][a-zA-Z\s&,.\-–]+?)\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chs?\.?)/i);
-  if (authorChMatch && authorChMatch[1]) {
-    const author = authorChMatch[1].replace(/^[ :;•·\-–—\t]+|[ :;•·\-–—\t]+$/g, '');
-    if (author.length >= 2) {
-      title = author;
-    }
-  }
-
-  // If title is just an author + chapter without extra text (e.g. "Gehart chapters 4-10" or "Corey Ch. 1 & 2")
-  const chPattern = /\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chs?\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)+\s*[:\-–·•.]*\s*/gi;
-  const chStripped = title.replace(chPattern, ' ').replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
-  if (chStripped.length >= 2) {
-    title = chStripped;
+  const prefixMatch = title.match(/^\s*(?:required|assigned|weekly)?\s*readings?\s*[:\-–]+\s*(.+)$/i);
+  if (prefixMatch && prefixMatch[1].trim()) {
+    title = prefixMatch[1].trim();
   }
 
   if (title.toLowerCase() === 'articles' || title.toLowerCase() === 'article') {
@@ -112,46 +123,112 @@ export function distillSmartReadingTitle(rawTitle: string): string {
   return title || 'Reading';
 }
 
-export function formatDisplayTitleWithChapter(titleOrReading: string | { title: string; chapterText?: string | null }, chapterText?: string | null): string {
+/**
+ * Returns a display title where the chapter is stated EXACTLY ONCE.
+ * Eliminates all artifacts like "Ch. 12 · Chapters 12" or "Chapter 1 · Ch. 1".
+ */
+export function formatDisplayTitleWithChapter(
+  titleOrReading: string | { title: string; chapterText?: string | null; authorName?: string | null },
+  chapterText?: string | null
+): string {
+  let rawTitle = '';
+  let rawCh: string | null | undefined = chapterText;
+  let authorName: string | null | undefined = null;
+
   if (typeof titleOrReading === 'object' && titleOrReading !== null) {
-    return formatDisplayTitleWithChapter(titleOrReading.title, titleOrReading.chapterText);
-  }
-  const cleanTitle = distillSmartReadingTitle(titleOrReading);
-  const ch = cleanChapterFromRaw(chapterText);
-  if (!ch) {
-    return cleanTitle;
-  }
-
-  const stripped = stripChapterMentions(cleanTitle);
-  if (!stripped || stripped.toLowerCase() === ch.toLowerCase()) {
-    return ch;
+    rawTitle = titleOrReading.title || '';
+    if (!rawCh) rawCh = titleOrReading.chapterText;
+    authorName = titleOrReading.authorName;
+  } else {
+    rawTitle = titleOrReading || '';
   }
 
-  return `${ch} · ${stripped}`;
+  // Detect chapter candidate from either chapterText or rawTitle
+  const chapterCandidate = rawCh || rawTitle;
+  const canonicalChapter = cleanChapterFromRaw(chapterCandidate);
+
+  // Extract substantive topic by stripping all chapter mentions and noise
+  let substantiveTitle = stripChapterMentions(distillSmartReadingTitle(rawTitle));
+
+  // If author is duplicated in substantive title (e.g. "Corey" or "Yalom"), strip it
+  if (authorName && substantiveTitle.toLowerCase() === authorName.toLowerCase()) {
+    substantiveTitle = '';
+  }
+
+  // If no substantive title remains, or it duplicates the chapter, return ONLY the chapter
+  if (
+    !substantiveTitle ||
+    (canonicalChapter && substantiveTitle.toLowerCase() === canonicalChapter.toLowerCase()) ||
+    substantiveTitle.toLowerCase() === 'reading' ||
+    (substantiveTitle.toLowerCase() === 'assigned readings' && canonicalChapter)
+  ) {
+    return canonicalChapter || distillSmartReadingTitle(rawTitle);
+  }
+
+  // If there is both a chapter and a distinct substantive title, combine them cleanly
+  if (canonicalChapter) {
+    return `${canonicalChapter} · ${substantiveTitle}`;
+  }
+
+  return substantiveTitle;
 }
 
+/**
+ * Subtitle formatter for the reading card down below.
+ * CRITICAL: Chapters are strictly EXCLUDED so they are never repeated below the title!
+ */
 export function formatAuthorAndPagesSubtitle(
   authorOrReading?: string | { authorName?: string | null; pagesText?: string | null; resourceTitle?: string | null } | null,
   pagesText?: string | null,
   resourceTitle?: string | null
 ): string {
+  let author = '';
+  let pages = pagesText || '';
+  let resource = resourceTitle || '';
+
   if (typeof authorOrReading === 'object' && authorOrReading !== null) {
-    return formatAuthorAndPagesSubtitle(
-      authorOrReading.authorName,
-      authorOrReading.pagesText,
-      authorOrReading.resourceTitle
-    );
+    author = authorOrReading.authorName || '';
+    pages = authorOrReading.pagesText || pages;
+    resource = authorOrReading.resourceTitle || resource;
+  } else if (typeof authorOrReading === 'string') {
+    author = authorOrReading;
   }
+
   const parts: string[] = [];
-  if (resourceTitle && resourceTitle.trim()) {
-    parts.push(resourceTitle.trim());
+
+  // 1. Clean Resource / Textbook Title (strip any chapter mentions)
+  if (resource && resource.trim()) {
+    let cleanRes = stripChapterMentions(resource.trim());
+    cleanRes = cleanRes.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+    if (cleanRes && cleanRes.toLowerCase() !== 'reading' && cleanRes.toLowerCase() !== 'textbook') {
+      parts.push(cleanRes);
+    }
   }
-  if (authorOrReading && authorOrReading.trim()) {
-    parts.push(authorOrReading.trim());
+
+  // 2. Clean Author (strip any chapter mentions)
+  if (author && author.trim()) {
+    let cleanAuth = stripChapterMentions(author.trim());
+    cleanAuth = cleanAuth.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+    if (cleanAuth) {
+      parts.push(cleanAuth);
+    }
   }
-  if (pagesText && pagesText.trim()) {
-    parts.push(pagesText.trim());
+
+  // 3. Clean Pages: ONLY include if it's an actual page number/range (e.g. "pp. 14–35", "p. 12")
+  // Chapters are NEVER allowed down below in pages!
+  if (pages && pages.trim()) {
+    let cleanPg = pages.trim();
+    const hasChapterMention = /\b(?:chapters?|chs?\.?|chap\.?)\b/i.test(cleanPg);
+    const hasPageDigits = /\b(?:pp?\.?|pages?)\s*\d+/i.test(cleanPg) || /^\d+\s*[-–]\s*\d+$/.test(cleanPg);
+
+    if (!hasChapterMention && hasPageDigits) {
+      if (/^\d+\s*[-–]\s*\d+$/.test(cleanPg)) {
+        cleanPg = `pp. ${cleanPg.replace('-', '–')}`;
+      }
+      parts.push(cleanPg);
+    }
   }
+
   return parts.join(' · ');
 }
 
@@ -161,3 +238,4 @@ export function formatWeekHeaderDate(date: Date): string {
   const day = date.getDate();
   return `${dayName}, ${monthName} ${day}`;
 }
+

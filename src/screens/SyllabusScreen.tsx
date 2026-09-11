@@ -160,16 +160,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
               {vaultDocs.length} document{vaultDocs.length === 1 ? '' : 's'} stored in syllabus
             </Text>
           </View>
-
-          <TouchableOpacity
-            style={styles.headerUploadButton}
-            onPress={() => handleOpenUpload()}
-            activeOpacity={0.8}
-            testID="syllabus-header-upload-btn"
-          >
-            <DocBadgePlusIcon size={16} color="#FFFFFF" />
-            <Text style={styles.headerUploadText}>Upload</Text>
-          </TouchableOpacity>
         </View>
 
         {/* MARK: - Vault Category Filter Bar (Courses First, Documents Second) */}
@@ -793,25 +783,6 @@ const styles = StyleSheet.create({
   },
   headerLeftCol: {
     flex: 1
-  },
-  headerUploadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: CoursePalTheme.accentBlue,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    gap: 5,
-    shadowColor: CoursePalTheme.accentBlue,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  headerUploadText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF'
   },
   uploadDocBannerRow: {
     flexDirection: 'row',
