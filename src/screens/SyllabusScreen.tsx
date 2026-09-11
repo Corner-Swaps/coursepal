@@ -17,7 +17,6 @@ import {
 } from 'react-native';
 import { useCoursePal } from '../context/CoursePalContext';
 import { CoursePalTheme } from '../constants/theme';
-import { SlideUpModal } from '../components/SlideUpModal';
 import {
   BookFillIcon,
   BookClosedFillIcon,
@@ -29,9 +28,7 @@ import {
   ChevronUpIcon,
   EyeFillIcon,
   DocBadgePlusIcon,
-  FolderBadgePlusIcon,
-  ChecklistIcon,
-  ShareIcon
+  FolderBadgePlusIcon
 } from '../components/SvgIcons';
 import { Course, VaultDocument, Assignment, Reading } from '../types/models';
 import {
@@ -78,7 +75,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
 
   const [selectedCategory, setSelectedCategory] = useState<'syllabi' | 'documents'>('syllabi');
   const [expandedCourseIds, setExpandedCourseIds] = useState<Set<string>>(new Set());
-  const [activeMenuCourse, setActiveMenuCourse] = useState<Course | null>(null);
 
   // Modals state
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
@@ -314,18 +310,8 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                         </Text>
                       </TouchableOpacity>
 
-                      {/* Action Buttons: Plus Menu, Trash, Chevron */}
+                      {/* Action Buttons: Trash, Chevron */}
                       <View style={styles.cardActionsRow}>
-                        {/* Plus Button */}
-                        <TouchableOpacity
-                          style={styles.actionIconButton}
-                          onPress={() => setActiveMenuCourse(course)}
-                          activeOpacity={0.7}
-                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                        >
-                          <PlusIcon size={14} color={CoursePalTheme.accentBlue} />
-                        </TouchableOpacity>
-
                         {/* Trash Button */}
                         <TouchableOpacity
                           style={styles.actionIconButton}
@@ -603,153 +589,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         )}
       </ScrollView>
 
-      {/* MARK: - Course Action Menu Modal (Matching AddNewItemModal slide-up bottom sheet) */}
-      <SlideUpModal
-        visible={activeMenuCourse !== null}
-        onClose={() => setActiveMenuCourse(null)}
-        testID="syllabus-course-action-modal"
-      >
-        {activeMenuCourse && (
-          <>
-            {/* Header Title & Subtitle */}
-            <View style={styles.actionMenuHeader}>
-              <Text style={styles.actionMenuTitle} numberOfLines={1}>
-                {activeMenuCourse.courseCode || activeMenuCourse.courseName}
-              </Text>
-              <Text style={styles.actionMenuSubtitle} numberOfLines={1}>
-                {activeMenuCourse.courseName ? activeMenuCourse.courseName : 'Select what you would like to add'}
-              </Text>
-            </View>
 
-            {/* Action Cards List */}
-            <View style={styles.actionMenuItemsList}>
-              {/* Card 1: Add Assignment */}
-              <TouchableOpacity
-                style={styles.actionOptionCard}
-                onPress={() => {
-                  const cid = activeMenuCourse.id;
-                  setActiveMenuCourse(null);
-                  onOpenAddTaskModal(cid, 'assignment');
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.actionIconSquare, { backgroundColor: '#2470F5' }]}>
-                  <ChecklistIcon size={20} color="#FFFFFF" />
-                </View>
-
-                <View style={styles.actionOptionTextCol}>
-                  <Text style={styles.actionOptionTitle}>Add Assignment</Text>
-                  <Text style={styles.actionOptionDesc}>
-                    Create homework, project, paper, or exam
-                  </Text>
-                </View>
-
-                <ChevronRightIcon size={13} color="#73859E" />
-              </TouchableOpacity>
-
-              {/* Card 2: Add Reading */}
-              <TouchableOpacity
-                style={styles.actionOptionCard}
-                onPress={() => {
-                  const cid = activeMenuCourse.id;
-                  setActiveMenuCourse(null);
-                  onOpenAddTaskModal(cid, 'reading');
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.actionIconSquare, { backgroundColor: '#10B981' }]}>
-                  <BookFillIcon size={20} color="#FFFFFF" />
-                </View>
-
-                <View style={styles.actionOptionTextCol}>
-                  <Text style={styles.actionOptionTitle}>Add Reading</Text>
-                  <Text style={styles.actionOptionDesc}>
-                    Add textbook chapter, article, or video
-                  </Text>
-                </View>
-
-                <ChevronRightIcon size={13} color="#73859E" />
-              </TouchableOpacity>
-
-              {/* Card 3: Upload Material / Syllabus */}
-              <TouchableOpacity
-                style={styles.actionOptionCard}
-                onPress={() => {
-                  const c = activeMenuCourse;
-                  setActiveMenuCourse(null);
-                  handleOpenUpload(c.id);
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.actionIconSquare, { backgroundColor: '#8C45F5' }]}>
-                  <DocBadgePlusIcon size={20} color="#FFFFFF" />
-                </View>
-
-                <View style={styles.actionOptionTextCol}>
-                  <Text style={styles.actionOptionTitle}>Upload Material / Syllabus</Text>
-                  <Text style={styles.actionOptionDesc}>
-                    Import PDF syllabus or course documents
-                  </Text>
-                </View>
-
-                <ChevronRightIcon size={13} color="#73859E" />
-              </TouchableOpacity>
-
-              {/* Card 4: Add Existing from Vault */}
-              <TouchableOpacity
-                style={styles.actionOptionCard}
-                onPress={() => {
-                  setActiveMenuCourse(null);
-                  setSelectedCategory('documents');
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.actionIconSquare, { backgroundColor: '#F59E0B' }]}>
-                  <FolderBadgePlusIcon size={20} color="#FFFFFF" />
-                </View>
-
-                <View style={styles.actionOptionTextCol}>
-                  <Text style={styles.actionOptionTitle}>Add Existing from Vault</Text>
-                  <Text style={styles.actionOptionDesc}>
-                    Select from your saved vault documents
-                  </Text>
-                </View>
-
-                <ChevronRightIcon size={13} color="#73859E" />
-              </TouchableOpacity>
-
-              {/* Card 5: Export Schedule to Calendar */}
-              <TouchableOpacity
-                style={styles.actionOptionCard}
-                onPress={async () => {
-                  const c = activeMenuCourse;
-                  setActiveMenuCourse(null);
-                  const ics = CalendarExportService.createCourseScheduleICS(c, assignments, readings);
-                  await CalendarExportService.exportAndShareICS(
-                    `${c.courseCode || 'Course'}_Schedule`,
-                    ics,
-                    `${c.courseName} Semester Schedule`
-                  );
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.actionIconSquare, { backgroundColor: '#0284C7' }]}>
-                  <ShareIcon size={19} color="#FFFFFF" />
-                </View>
-
-                <View style={styles.actionOptionTextCol}>
-                  <Text style={styles.actionOptionTitle}>Export Schedule to Calendar</Text>
-                  <Text style={styles.actionOptionDesc}>
-                    Add all course deliverables to Apple Calendar (.ics)
-                  </Text>
-                </View>
-
-                <ChevronRightIcon size={13} color="#73859E" />
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-      </SlideUpModal>
 
       {/* MARK: - Modals */}
       <CourseDetailModal

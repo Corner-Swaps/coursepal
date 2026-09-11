@@ -13,6 +13,7 @@ import {
   parseSafeDate
 } from '../utils/readingDisplayHelper';
 import { extractTextFromPDF } from '../services/PDFTextExtractor';
+import { beginBackgroundTask, endBackgroundTask } from '../services/BackgroundTaskService';
 
 export type TabKey = 'readings' | 'assignments' | 'syllabus' | 'invite';
 
@@ -430,6 +431,12 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
     coursesRef.current = [newCourse, ...coursesRef.current];
     setCourses(coursesRef.current);
+    persistenceManager.saveImmediate({
+      courses: coursesRef.current,
+      readings: readingsRef.current,
+      assignments: assignmentsRef.current,
+      vaultDocs: vaultDocsRef.current
+    });
     return newCourse;
   }, []);
 
@@ -550,8 +557,10 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     setUploadProgress(0.12);
     setUploadStatusText(`Extracting syllabus: ${fileName}...`);
 
+    // Request iOS background execution assertion to prevent suspension if app is minimized
+    await beginBackgroundTask('SyllabusUpload');
+
     try {
-      await new Promise(r => setTimeout(r, 600));
       let base64Pdf: string | undefined = undefined;
 
       // Step 1: Extract real text from fileUri or catalog
@@ -560,12 +569,12 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (fileName.toLowerCase().endsWith('.txt')) {
             rawText = await FileSystem.readAsStringAsync(fileUri);
           } else if (fileName.toLowerCase().endsWith('.pdf')) {
-            // First: extract plain text directly with iOS native PDFKit (runs in 5ms)
+            // Native on-device PDFKit extraction (runs in ~5ms)
             const extracted = await extractTextFromPDF(fileUri);
             if (extracted && extracted.trim().length > 30) {
               rawText = extracted.trim();
             } else {
-              // If text extraction is empty (e.g. image-based PDF), read base64 for Gemini multimodal
+              // If text extraction is empty (e.g. scanned image PDF), read base64 for Gemini multimodal
               try {
                 const b64 = await FileSystem.readAsStringAsync(fileUri, {
                   encoding: FileSystem.EncodingType.Base64
@@ -626,11 +635,7 @@ ${syllabusTextSnippet}
 
 Output ONLY valid JSON.`;
 
-        const [aiResult] = await Promise.all([
-          APIService.shared.generateContentWithGemini(geminiPrompt, undefined, base64Pdf),
-          new Promise(r => setTimeout(r, 1200))
-        ]);
-
+        const aiResult = await APIService.shared.generateContentWithGemini(geminiPrompt, undefined, base64Pdf);
         let cleanJson = aiResult.trim();
         if (cleanJson.startsWith('```')) {
           cleanJson = cleanJson.split('\n').slice(1).join('\n');
@@ -648,13 +653,25 @@ Output ONLY valid JSON.`;
         dto = LocalSyllabusParser.shared.parseText(rawText);
       }
 
+      // Resilient fallback if neither Gemini nor LocalSyllabusParser yielded a DTO
+      if (!dto) {
+        dto = {
+          courseName: params.preserveCourseTitle || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+          courseCode: params.preserveCourseCode || fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase(),
+          instructorName: 'Academic Faculty',
+          instructorEmail: null,
+          termWeeks: 12,
+          weeks: [],
+          assignments: []
+        };
+      }
+
       // Stage 3: Synthesizing Course Repository
       setUploadProgress(0.85);
       setUploadStatusText('Synthesizing course repository & weekly schedule...');
-      await new Promise(r => setTimeout(r, 1000));
 
-      const courseCode = params.preserveCourseCode || dto.courseCode || fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase();
-      const courseName = params.preserveCourseTitle || dto.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const courseCode = params.preserveCourseCode || dto?.courseCode || fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase();
+      const courseName = params.preserveCourseTitle || dto?.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
       const hexColor = preferredHexColor || MasterCoursePalette[coursesRef.current.length % MasterCoursePalette.length];
 
       // Find or create course using coursesRef.current (avoids stale closures)
@@ -679,9 +696,9 @@ Output ONLY valid JSON.`;
           courseDescription: targetCourse.courseDescription,
           courseCode: targetCourse.courseCode,
           hexColor: targetCourse.hexColor,
-          instructorName: targetCourse.instructorName || dto.instructorName || null,
-          instructorEmail: targetCourse.instructorEmail || dto.instructorEmail || null,
-          termWeeks: targetCourse.termWeeks || dto.termWeeks || (dto.weeks && dto.weeks.length > 0 ? dto.weeks.length : 12)
+          instructorName: targetCourse.instructorName || dto?.instructorName || null,
+          instructorEmail: targetCourse.instructorEmail || dto?.instructorEmail || null,
+          termWeeks: targetCourse.termWeeks || dto?.termWeeks || (dto?.weeks && dto.weeks.length > 0 ? dto.weeks.length : 12)
         };
         courseId = targetCourse.id;
         updatedCourses = coursesRef.current.map(c => c.id === targetCourse!.id ? finalCourse : c);
@@ -689,7 +706,7 @@ Output ONLY valid JSON.`;
         const finalName = params.preserveCourseTitle || courseName;
         const finalDesc = params.preserveCourseSubtitle !== undefined
           ? params.preserveCourseSubtitle
-          : (dto.courseDescription || `Imported from ${fileName}. Instructor: ${dto.instructorName || 'Academic Faculty'}`);
+          : (dto?.courseDescription || `Imported from ${fileName}. Instructor: ${dto?.instructorName || 'Academic Faculty'}`);
         const finalCode = params.preserveCourseCode || courseCode;
 
         const newCourse: Course = {
@@ -698,10 +715,10 @@ Output ONLY valid JSON.`;
           courseName: finalName,
           courseCode: finalCode,
           courseDescription: finalDesc,
-          instructorName: dto.instructorName || null,
-          instructorEmail: dto.instructorEmail || null,
+          instructorName: dto?.instructorName || null,
+          instructorEmail: dto?.instructorEmail || null,
           hexColor,
-          termWeeks: dto.termWeeks || (dto.weeks && dto.weeks.length > 0 ? dto.weeks.length : 12),
+          termWeeks: dto?.termWeeks || (dto?.weeks && dto.weeks.length > 0 ? dto.weeks.length : 12),
           sharingCode: String(Math.floor(100000 + Math.random() * 900000)),
           isDeleted: false,
           isFavorite: true,
@@ -719,7 +736,7 @@ Output ONLY valid JSON.`;
 
       // Convert parsed weeks & readings into Reading objects
       const newReadings: Reading[] = [];
-      if (dto.weeks && dto.weeks.length > 0) {
+      if (dto?.weeks && dto.weeks.length > 0) {
         dto.weeks.forEach((w: any, wIdx: number) => {
           const weekNum = w.weekNumber || (wIdx + 1);
           if (w.readings && w.readings.length > 0) {
@@ -754,10 +771,10 @@ Output ONLY valid JSON.`;
       }
 
       // Convert parsed assignments into Assignment objects with intelligent week resolution
-      const newAssignments: Assignment[] = (dto.assignments || []).map((a: any, aIdx: number) => {
+      const newAssignments: Assignment[] = (dto?.assignments || []).map((a: any, aIdx: number) => {
         const dueDate = parseSafeDate(a.dueDate);
         let resolvedWeek = a.weekNumber;
-        if (!resolvedWeek && dueDate && Array.isArray(dto.weeks) && dto.weeks.length > 0) {
+        if (!resolvedWeek && dueDate && Array.isArray(dto?.weeks) && dto.weeks.length > 0) {
           for (const w of dto.weeks) {
             const wDate = parseSafeDate(w.startDate);
             if (wDate && Math.abs(dueDate.getTime() - wDate.getTime()) <= 7 * 86400000) {
@@ -853,6 +870,8 @@ Output ONLY valid JSON.`;
         success: false,
         message: err.message || 'Failed to parse syllabus document.'
       };
+    } finally {
+      await endBackgroundTask('SyllabusUpload');
     }
   }, [courses, triggerConfetti, setSelectedTab]);
 

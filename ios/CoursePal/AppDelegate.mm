@@ -121,3 +121,64 @@ RCT_EXPORT_METHOD(extractText:(NSString *)filePath
 }
 
 @end
+
+@interface BackgroundTaskManager : NSObject <RCTBridgeModule>
+@end
+
+@implementation BackgroundTaskManager {
+  NSMutableDictionary<NSString *, NSNumber *> *_activeTasks;
+}
+
+RCT_EXPORT_MODULE();
+
++ (BOOL)requiresMainQueueSetup {
+  return YES;
+}
+
+- (instancetype)init {
+  if (self = [super init]) {
+    _activeTasks = [NSMutableDictionary dictionary];
+  }
+  return self;
+}
+
+RCT_EXPORT_METHOD(beginBackgroundTask:(NSString *)taskName
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    UIBackgroundTaskIdentifier taskId = [[UIApplication sharedApplication] beginBackgroundTaskWithName:taskName expirationHandler:^{
+      dispatch_async(dispatch_get_main_queue(), ^{
+        NSNumber *ident = self->_activeTasks[taskName];
+        if (ident) {
+          UIBackgroundTaskIdentifier tid = [ident unsignedIntegerValue];
+          if (tid != UIBackgroundTaskInvalid) {
+            [[UIApplication sharedApplication] endBackgroundTask:tid];
+          }
+          [self->_activeTasks removeObjectForKey:taskName];
+        }
+      });
+    }];
+    self->_activeTasks[taskName] = @(taskId);
+    resolve(@(taskId));
+  });
+}
+
+RCT_EXPORT_METHOD(endBackgroundTask:(NSString *)taskName
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSNumber *ident = self->_activeTasks[taskName];
+    if (ident) {
+      UIBackgroundTaskIdentifier taskId = [ident unsignedIntegerValue];
+      if (taskId != UIBackgroundTaskInvalid) {
+        [[UIApplication sharedApplication] endBackgroundTask:taskId];
+      }
+      [self->_activeTasks removeObjectForKey:taskName];
+    }
+    resolve(@(YES));
+  });
+}
+
+@end
