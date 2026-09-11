@@ -112,6 +112,79 @@ describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
       });
       expect(sub).toBe('Corey');
     });
+
+    it('deduplicates when textbook title matches course name or is already in title', () => {
+      const sub = formatAuthorAndPagesSubtitle(
+        'Goldenberg & Goldenberg',
+        '1-35',
+        'Family Therapy: An Overview',
+        'Family Therapy: An Overview',
+        'Family Systems Therapy'
+      );
+      // Because "Family Therapy: An Overview" is already the displayTitle, subtitle only shows author & pages
+      expect(sub).toBe('Goldenberg & Goldenberg · pp. 1–35');
+    });
+  });
+
+  describe('User Case: Family Therapy Deduplication Across Card', () => {
+    it('handles identical textbook and course redundancy without repeating phrases', () => {
+      const rawReading = {
+        id: 'r1',
+        title: 'Family Therapy: An Overview',
+        chapterText: 'Chapter 1',
+        resourceTitle: 'Family Therapy: An Overview',
+        authorName: 'Goldenberg & Goldenberg',
+        pagesText: 'pp. 1-35',
+        courseCode: 'CPC 512'
+      };
+      const courseName = 'Family Therapy';
+
+      const displayTitle = formatDisplayTitleWithChapter(
+        rawReading.title,
+        rawReading.chapterText,
+        rawReading.resourceTitle,
+        courseName
+      );
+      expect(displayTitle).toBe('Chapter 1');
+
+      const displaySubtitle = formatAuthorAndPagesSubtitle(
+        rawReading.authorName,
+        rawReading.pagesText,
+        rawReading.resourceTitle,
+        displayTitle,
+        courseName
+      );
+      expect(displaySubtitle).toBe('Family Therapy: An Overview · Goldenberg & Goldenberg · pp. 1–35');
+    });
+
+    it('handles repeated prefix stutter like "Family Therapy: Family Therapy: An Overview"', () => {
+      const displayTitle = formatDisplayTitleWithChapter(
+        'Family Therapy: Family Therapy: An Overview',
+        'Chapter 1',
+        'Family Therapy: An Overview',
+        'Family Systems Therapy'
+      );
+      expect(displayTitle).toBe('Chapter 1');
+    });
+
+    it('retains distinct chapter topic when reading has a genuine sub-topic', () => {
+      const displayTitle = formatDisplayTitleWithChapter(
+        'Chapter 4: Adlerian Family Therapy',
+        'Chapter 4',
+        'Family Therapy: An Overview',
+        'Family Systems Therapy'
+      );
+      expect(displayTitle).toBe('Chapter 4 · Adlerian Family Therapy');
+
+      const displaySubtitle = formatAuthorAndPagesSubtitle(
+        'Goldenberg & Goldenberg',
+        'pp. 95-130',
+        'Family Therapy: An Overview',
+        displayTitle,
+        'Family Systems Therapy'
+      );
+      expect(displaySubtitle).toBe('Family Therapy: An Overview · Goldenberg & Goldenberg · pp. 95–130');
+    });
   });
 
   describe('parseSafeDate & formatAssignmentDueDate', () => {

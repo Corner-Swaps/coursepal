@@ -443,22 +443,35 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                     </View>
                                   </View>
 
-                                  {/* Readings in Week */}
-                                  {weekReadings.map(reading => (
-                                    <TouchableOpacity
-                                      key={reading.id}
-                                      style={styles.itemPillRow}
-                                      onPress={() => setEditingReading(reading)}
-                                      activeOpacity={0.7}
-                                    >
-                                      <Text style={styles.itemTitleText}>
-                                        {formatDisplayTitleWithChapter(reading)}
-                                      </Text>
-                                      {formatAuthorAndPagesSubtitle(reading).length > 0 && (
-                                        <Text style={styles.itemAuthorText}>
-                                          {formatAuthorAndPagesSubtitle(reading)}
+                                  {weekReadings.map(reading => {
+                                    const dispTitle = formatDisplayTitleWithChapter(
+                                      reading,
+                                      undefined,
+                                      reading.resourceTitle,
+                                      course.courseName
+                                    );
+                                    const dispSub = formatAuthorAndPagesSubtitle(
+                                      reading,
+                                      undefined,
+                                      reading.resourceTitle,
+                                      dispTitle,
+                                      course.courseName
+                                    );
+                                    return (
+                                      <TouchableOpacity
+                                        key={reading.id}
+                                        style={styles.itemPillRow}
+                                        onPress={() => setEditingReading(reading)}
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text style={styles.itemTitleText}>
+                                          {dispTitle}
                                         </Text>
-                                      )}
+                                        {dispSub.length > 0 && (
+                                          <Text style={styles.itemAuthorText}>
+                                            {dispSub}
+                                          </Text>
+                                        )}
                                       {reading.dueDate && (() => {
                                         const d = parseSafeDate(reading.dueDate);
                                         if (!d) return null;
@@ -474,7 +487,8 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                         );
                                       })()}
                                     </TouchableOpacity>
-                                  ))}
+                                    );
+                                  })}
                                 </View>
                               );
                             })

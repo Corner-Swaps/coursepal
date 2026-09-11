@@ -434,9 +434,20 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                       (reading.courseCode || '').toLowerCase()
                   );
                   const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
-                  const pillTitle = matchedCourse?.courseName || reading.courseCode || 'Reading';
-                  const displayTitle = formatDisplayTitleWithChapter(reading.title, reading.chapterText);
-                  const displaySubtitle = formatAuthorAndPagesSubtitle(reading.authorName, reading.pagesText, reading.resourceTitle);
+                  const pillTitle = matchedCourse?.courseCode || matchedCourse?.courseName || reading.courseCode || 'Reading';
+                  const displayTitle = formatDisplayTitleWithChapter(
+                    reading.title,
+                    reading.chapterText,
+                    reading.resourceTitle,
+                    matchedCourse?.courseName
+                  );
+                  const displaySubtitle = formatAuthorAndPagesSubtitle(
+                    reading.authorName,
+                    reading.pagesText,
+                    reading.resourceTitle,
+                    displayTitle,
+                    matchedCourse?.courseName
+                  );
                   const showDueDate = reading.dueDate
                     ? (formatWeekHeaderDate(new Date(reading.dueDate)) !== weekDateStr)
                     : false;

@@ -123,22 +123,46 @@ export function distillSmartReadingTitle(rawTitle: string): string {
   return title || 'Reading';
 }
 
+export function deduplicateRepeatedPhrases(text: string): string {
+  if (!text) return '';
+  let str = text.trim();
+  const parts = str.split(/\s*[:\-–·]\s*/);
+  if (parts.length > 1) {
+    const uniqueParts: string[] = [];
+    for (const p of parts) {
+      const trimmed = p.trim();
+      if (!trimmed) continue;
+      const lower = trimmed.toLowerCase();
+      if (!uniqueParts.some(u => u.toLowerCase() === lower || u.toLowerCase().includes(lower))) {
+        uniqueParts.push(trimmed);
+      }
+    }
+    str = uniqueParts.join(': ');
+  }
+  return str;
+}
+
 /**
  * Returns a display title where the chapter is stated EXACTLY ONCE.
- * Eliminates all artifacts like "Ch. 12 · Chapters 12" or "Chapter 1 · Ch. 1".
+ * Eliminates all artifacts like "Ch. 12 · Chapters 12" or "Chapter 1 · Ch. 1"
+ * and suppresses repeating the textbook title if it matches resourceTitle or courseName.
  */
 export function formatDisplayTitleWithChapter(
-  titleOrReading: string | { title: string; chapterText?: string | null; authorName?: string | null },
-  chapterText?: string | null
+  titleOrReading: string | { title: string; chapterText?: string | null; authorName?: string | null; resourceTitle?: string | null },
+  chapterText?: string | null,
+  resourceTitle?: string | null,
+  courseName?: string | null
 ): string {
   let rawTitle = '';
   let rawCh: string | null | undefined = chapterText;
   let authorName: string | null | undefined = null;
+  let resTitle: string | null | undefined = resourceTitle;
 
   if (typeof titleOrReading === 'object' && titleOrReading !== null) {
     rawTitle = titleOrReading.title || '';
     if (!rawCh) rawCh = titleOrReading.chapterText;
     authorName = titleOrReading.authorName;
+    if (!resTitle) resTitle = titleOrReading.resourceTitle;
   } else {
     rawTitle = titleOrReading || '';
   }
@@ -148,11 +172,31 @@ export function formatDisplayTitleWithChapter(
   const canonicalChapter = cleanChapterFromRaw(chapterCandidate);
 
   // Extract substantive topic by stripping all chapter mentions and noise
-  let substantiveTitle = stripChapterMentions(distillSmartReadingTitle(rawTitle));
+  let substantiveTitle = stripChapterMentions(deduplicateRepeatedPhrases(distillSmartReadingTitle(rawTitle)));
 
   // If author is duplicated in substantive title (e.g. "Corey" or "Yalom"), strip it
   if (authorName && substantiveTitle.toLowerCase() === authorName.toLowerCase()) {
     substantiveTitle = '';
+  }
+
+  // Strip generic textbook noise if chapter exists or if title contains more specific text
+  if (canonicalChapter) {
+    substantiveTitle = substantiveTitle.replace(/\b(?:textbooks?|readings?|required)\b/gi, '').trim();
+    substantiveTitle = substantiveTitle.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+  }
+
+  const normSubstantive = substantiveTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normRes = (resTitle || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normCourse = (courseName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // Check if substantive title matches or overlaps the textbook or course name
+  const isBookOrCourseName =
+    normSubstantive.length === 0 ||
+    (normRes.length > 0 && (normSubstantive === normRes || normRes.includes(normSubstantive) || normSubstantive.includes(normRes))) ||
+    (normCourse.length > 0 && (normSubstantive === normCourse || normCourse.includes(normSubstantive) || normSubstantive.includes(normCourse)));
+
+  if (canonicalChapter && isBookOrCourseName) {
+    return canonicalChapter;
   }
 
   // If no substantive title remains, or it duplicates the chapter, return ONLY the chapter
@@ -176,11 +220,14 @@ export function formatDisplayTitleWithChapter(
 /**
  * Subtitle formatter for the reading card down below.
  * CRITICAL: Chapters are strictly EXCLUDED so they are never repeated below the title!
+ * Also omits textbook title if it's already displayed in displayTitle or identical to courseName.
  */
 export function formatAuthorAndPagesSubtitle(
   authorOrReading?: string | { authorName?: string | null; pagesText?: string | null; resourceTitle?: string | null } | null,
   pagesText?: string | null,
-  resourceTitle?: string | null
+  resourceTitle?: string | null,
+  displayTitle?: string | null,
+  courseName?: string | null
 ): string {
   let author = '';
   let pages = pagesText || '';
@@ -198,9 +245,20 @@ export function formatAuthorAndPagesSubtitle(
 
   // 1. Clean Resource / Textbook Title (strip any chapter mentions)
   if (resource && resource.trim()) {
-    let cleanRes = stripChapterMentions(resource.trim());
+    let cleanRes = stripChapterMentions(deduplicateRepeatedPhrases(resource.trim()));
     cleanRes = cleanRes.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
-    if (cleanRes && cleanRes.toLowerCase() !== 'reading' && cleanRes.toLowerCase() !== 'textbook') {
+    const lowerRes = cleanRes.toLowerCase();
+    const lowerDisplay = (displayTitle || '').toLowerCase();
+    const lowerCourse = (courseName || '').toLowerCase();
+
+    const isAlreadyInTitle =
+      lowerDisplay.includes(lowerRes) ||
+      (cleanRes.length > 5 && lowerDisplay.replace(/chapters?\s*[\d&–,-]+\s*·\s*/i, '').includes(lowerRes));
+    const isJustCourseName =
+      lowerCourse && (lowerCourse === lowerRes || (lowerRes.length > 4 && lowerCourse.includes(lowerRes)));
+    const isGeneric = lowerRes === 'reading' || lowerRes === 'textbook' || lowerRes === 'required reading';
+
+    if (cleanRes && !isAlreadyInTitle && !isJustCourseName && !isGeneric) {
       parts.push(cleanRes);
     }
   }
@@ -210,7 +268,12 @@ export function formatAuthorAndPagesSubtitle(
     let cleanAuth = stripChapterMentions(author.trim());
     cleanAuth = cleanAuth.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
     if (cleanAuth) {
-      parts.push(cleanAuth);
+      const lowerAuth = cleanAuth.toLowerCase();
+      const alreadyInParts = parts.some(p => p.toLowerCase().includes(lowerAuth));
+      const alreadyInTitle = (displayTitle || '').toLowerCase().includes(lowerAuth);
+      if (!alreadyInParts && !alreadyInTitle) {
+        parts.push(cleanAuth);
+      }
     }
   }
 
@@ -222,8 +285,12 @@ export function formatAuthorAndPagesSubtitle(
     const hasPageDigits = /\b(?:pp?\.?|pages?)\s*\d+/i.test(cleanPg) || /^\d+\s*[-–]\s*\d+$/.test(cleanPg);
 
     if (!hasChapterMention && hasPageDigits) {
-      if (/^\d+\s*[-–]\s*\d+$/.test(cleanPg)) {
-        cleanPg = `pp. ${cleanPg.replace('-', '–')}`;
+      // Normalize hyphen to en-dash
+      cleanPg = cleanPg.replace(/(\d+)\s*-\s*(\d+)/g, '$1–$2');
+      if (/^\d+\s*–\s*\d+$/.test(cleanPg)) {
+        cleanPg = `pp. ${cleanPg}`;
+      } else if (!/^pp?\.?/i.test(cleanPg) && !/^pages?/i.test(cleanPg)) {
+        cleanPg = `pp. ${cleanPg}`;
       }
       parts.push(cleanPg);
     }

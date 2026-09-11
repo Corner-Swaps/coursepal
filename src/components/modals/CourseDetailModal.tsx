@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Course, Assignment, Reading } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
 import { SparklesIcon, ChevronRightIcon } from '../SvgIcons';
+import { formatDisplayTitleWithChapter, formatAuthorAndPagesSubtitle } from '../../utils/readingDisplayHelper';
 
 export interface CourseDetailModalProps {
   visible: boolean;
@@ -247,24 +248,39 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
             {/* MARK: - 4. Course Readings Section */}
             <Text style={styles.sectionHeaderTitle}>Readings</Text>
             <View style={styles.sectionCard}>
-              {courseReadings.map(reading => (
-                <TouchableOpacity
-                  key={reading.id}
-                  style={styles.itemRowCard}
-                  onPress={() => onEditReading && onEditReading(reading)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.itemRowTitle}>{reading.title}</Text>
-                  {reading.authorName && (
-                    <Text style={styles.itemRowSubtitle}>{reading.authorName}</Text>
-                  )}
-                  {reading.dueDate && (
-                    <Text style={styles.itemRowDate}>
-                      Due {new Date(reading.dueDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              ))}
+              {courseReadings.map(reading => {
+                const dispTitle = formatDisplayTitleWithChapter(
+                  reading,
+                  undefined,
+                  reading.resourceTitle,
+                  course.courseName
+                );
+                const dispSub = formatAuthorAndPagesSubtitle(
+                  reading,
+                  undefined,
+                  reading.resourceTitle,
+                  dispTitle,
+                  course.courseName
+                );
+                return (
+                  <TouchableOpacity
+                    key={reading.id}
+                    style={styles.itemRowCard}
+                    onPress={() => onEditReading && onEditReading(reading)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.itemRowTitle}>{dispTitle}</Text>
+                    {dispSub.length > 0 && (
+                      <Text style={styles.itemRowSubtitle}>{dispSub}</Text>
+                    )}
+                    {reading.dueDate && (
+                      <Text style={styles.itemRowDate}>
+                        Due {new Date(reading.dueDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
 
               <TouchableOpacity
                 style={styles.actionPillButton}
