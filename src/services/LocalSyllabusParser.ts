@@ -1120,12 +1120,20 @@ export class LocalSyllabusParser {
     if (colonIdx >= 0) {
       const left = trimmed.substring(0, colonIdx).trim();
       const right = trimmed.substring(colonIdx + 1).trim();
-      if (left.length > 0 && left.length < 40 && !left.toLowerCase().includes('chapter') && !left.toLowerCase().includes('read')) {
+      const leftLower = left.toLowerCase();
+      const nonAuthorWords = [
+        'research design', 'principles', 'introduction', 'handbook', 'guide',
+        'foundations', 'psychology', 'theory', 'family systems', 'clinical',
+        'counseling', 'case study', 'course', 'textbook', 'overview', 'methods',
+        'chapter', 'read'
+      ];
+      const isNotAuthor = nonAuthorWords.some(w => leftLower.includes(w));
+      if (left.length > 0 && left.length < 40 && !isNotAuthor) {
         return { author: left, resource: right.length > 0 ? right : undefined };
       }
     }
 
-    const authorChapterPattern = /^([A-Z][a-zA-Z\s&,\.\-–]+?)\s*[:\-–]?\s*(?:chapters?|chs?\.?|chps?\.?|chap\.?)\s*(.*)$/;
+    const authorChapterPattern = /^([A-Z][a-zA-Z\s&,\.\-–]+?)\s*[:\-–]?\s*\b(?:chapters?|chps?\.?|chap\.?|ch\b\.?|chs\b\.?)\s*(.*)$/i;
     const match = trimmed.match(authorChapterPattern);
     if (match) {
       let author = match[1].trim();
@@ -1137,7 +1145,15 @@ export class LocalSyllabusParser {
       }
       const rawRes = match[2]?.trim();
       const resource = rawRes ? this.repairChapterArtifacts(rawRes).trim() : undefined;
-      if (author.length > 0 && author.length < 35 && !author.toLowerCase().includes('required')) {
+      const nonAuthorWords = [
+        'research design', 'principles', 'introduction', 'handbook', 'guide',
+        'foundations', 'psychology', 'theory', 'family systems', 'clinical',
+        'counseling', 'case study', 'course', 'textbook', 'overview', 'methods',
+        'chapter', 'read'
+      ];
+      const authorLower = author.toLowerCase();
+      const isNotAuthor = nonAuthorWords.some(w => authorLower.includes(w));
+      if (author.length > 0 && author.length < 35 && !author.toLowerCase().includes('required') && !isNotAuthor) {
         return { author, resource: resource && resource.length > 0 ? resource : undefined };
       }
     }

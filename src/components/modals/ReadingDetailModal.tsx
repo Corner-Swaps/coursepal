@@ -1,10 +1,10 @@
 /**
  * ReadingDetailModal
- * 1:1 Parity with native Swift EditReadingSheet in WeeklyDashboardView.swift
- * Visual layout matching media_1788659537240.png
+ * In-place editable Reading Details with reliable Schedule toggles,
+ * chapter/pages, media type, resource link, and clean keyboard-aware notes.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Modal,
   View,
@@ -14,8 +14,8 @@ import {
   TouchableOpacity,
   TextInput,
   Switch,
-  TouchableWithoutFeedback,
-  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,9 +23,12 @@ import { Reading, Course, MediaType } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
 import {
   XMarkCircleFillIcon,
-  PlusCircleFillIcon
+  PlusCircleFillIcon,
+  CalendarIcon,
+  ArrowUpRightIcon,
+  BookFillIcon
 } from '../SvgIcons';
-import { cleanChapterFromRaw, parseSafeDate, formatDisplayTitleWithChapter } from '../../utils/readingDisplayHelper';
+import { cleanChapterFromRaw, parseSafeDate } from '../../utils/readingDisplayHelper';
 import { InlineCalendarPicker } from '../InlineCalendarPicker';
 
 export interface ReadingDetailModalProps {
@@ -43,31 +46,66 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   reading,
   courses,
   onClose,
-  onSave,
-  onToggleComplete,
-  onDeleteReading
+  onSave
 }) => {
   if (!reading) return null;
 
-  const [courseNameInput, setCourseNameInput] = useState<string>('');
+  const scrollViewRef = useRef<ScrollView>(null);
+  const currentReadingIdRef = useRef<string | null>(null);
+
+  const matchedCourse = courses.find(
+    c => (c.courseCode || c.courseName).toLowerCase() === (reading.courseCode || '').toLowerCase()
+  );
+
+  const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
+
+  // Validate course code to exclude generic labels
+  const isInvalidCourseCode = (code?: string | null) =>
+    !code || /^(new|assignment|reading|crs|gen\s*101|details)/i.test(code.trim());
+
+  const validCourseCode = !isInvalidCourseCode(reading.courseCode)
+    ? reading.courseCode
+    : matchedCourse && !isInvalidCourseCode(matchedCourse.courseCode)
+    ? matchedCourse.courseCode
+    : null;
+
+  // State
+  const [titleText, setTitleText] = useState<string>(reading.title || '');
+
+  // Schedule Toggles
+  const [isWeekEnabled, setIsWeekEnabled] = useState<boolean>(true);
   const [weekNumber, setWeekNumber] = useState<number>(1);
+  const [isModuleEnabled, setIsModuleEnabled] = useState<boolean>(false);
   const [moduleInput, setModuleInput] = useState<string>('');
   const [hasDueDate, setHasDueDate] = useState<boolean>(false);
   const [dueDate, setDueDate] = useState<Date>(new Date());
-  const [showCalendar, setShowCalendar] = useState<boolean>(false);
+
   const [chapterInput, setChapterInput] = useState<string>('');
   const [topicInputs, setTopicInputs] = useState<string[]>([]);
   const [mediaType, setMediaType] = useState<MediaType>('textbook');
   const [videoUrlInput, setVideoUrlInput] = useState<string>('');
   const [noteInputs, setNoteInputs] = useState<string[]>([]);
 
-  const matchedCourse = courses.find(
-    c => (c.courseCode || c.courseName).toLowerCase() === (reading.courseCode || '').toLowerCase()
-  );
+  // Derive chapter text for pill (e.g. "Chapter 4" or "Ch. 3")
+  const derivedChapter = useMemo(() => {
+    if (chapterInput.trim().length > 0) {
+      return chapterInput.trim();
+    }
+    if (reading.chapterText && reading.chapterText.trim().length > 0) {
+      return cleanChapterFromRaw(reading.chapterText) || reading.chapterText.trim();
+    }
+    const cleanFromTitle = cleanChapterFromRaw(reading.title);
+    if (cleanFromTitle) return cleanFromTitle;
+    return null;
+  }, [chapterInput, reading.chapterText, reading.title]);
 
+  // Re-sync ONLY when switching reading IDs or when modal opens
   useEffect(() => {
-    if (reading) {
-      setCourseNameInput(matchedCourse?.courseName || reading.courseCode || 'New');
+    if (!reading || !visible) return;
+
+    if (currentReadingIdRef.current !== reading.id) {
+      currentReadingIdRef.current = reading.id;
+      setTitleText(reading.title || '');
 
       // Derive week number
       let derivedW = 1;
@@ -79,8 +117,14 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
         if (m) derivedW = parseInt(m[1], 10);
       }
       setWeekNumber(derivedW);
+      setIsWeekEnabled(derivedW > 0);
 
-      setModuleInput(reading.relevantTopics && reading.relevantTopics.toLowerCase().includes('module') ? reading.relevantTopics : '');
+      const modText = reading.relevantTopics && reading.relevantTopics.toLowerCase().includes('module')
+        ? reading.relevantTopics
+        : '';
+      setModuleInput(modText);
+      setIsModuleEnabled(modText.trim().length > 0);
+
       setHasDueDate(reading.dueDate != null);
       setDueDate(parseSafeDate(reading.dueDate) || new Date());
 
@@ -102,234 +146,350 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
         .filter(n => n.length > 0);
       setNoteInputs(notes);
     }
-  }, [reading, courses]);
+  }, [reading?.id, visible]);
 
+  const saveAllChanges = (overrides: Partial<Reading> = {}) => {
+    if (!reading) return;
+    const cleanedChapter = cleanChapterFromRaw(chapterInput.trim()) || chapterInput.trim() || undefined;
+    const cleanTopics = topicInputs.filter(t => t.trim().length > 0).join(', ');
+    const cleanNotes = noteInputs.filter(n => n.trim().length > 0).join('\n');
+
+    const updated: Reading = {
+      ...reading,
+      title: titleText.trim() || reading.title,
+      chapterText: cleanedChapter,
+      relevantTopics: isModuleEnabled && moduleInput.trim().length > 0
+        ? moduleInput.trim()
+        : cleanTopics || undefined,
+      mediaType: mediaType,
+      mediaTypeRaw: mediaType,
+      videoUrl: videoUrlInput.trim() || undefined,
+      dueDate: hasDueDate ? dueDate : undefined,
+      weekId: isWeekEnabled ? `w-${weekNumber}` : undefined,
+      summaryText: cleanNotes,
+      ...overrides
+    };
+
+    if (onSave) {
+      onSave(updated);
+    }
+  };
+
+  const handleDone = () => {
+    saveAllChanges();
+    currentReadingIdRef.current = null;
+    onClose();
+  };
+
+  // Toggle Handlers
+  const handleToggleWeek = (enabled: boolean) => {
+    setIsWeekEnabled(enabled);
+    saveAllChanges({ weekId: enabled ? `w-${weekNumber}` : undefined });
+  };
+
+  const handleToggleModule = (enabled: boolean) => {
+    setIsModuleEnabled(enabled);
+    saveAllChanges({ relevantTopics: enabled ? (moduleInput.trim() || 'Module 1') : undefined });
+  };
+
+  const handleToggleDueDate = (enabled: boolean) => {
+    setHasDueDate(enabled);
+    saveAllChanges({ dueDate: enabled ? dueDate : undefined });
+  };
+
+  const handleWeekStep = (delta: number) => {
+    const next = Math.max(1, Math.min(52, weekNumber + delta));
+    setWeekNumber(next);
+    saveAllChanges({ weekId: `w-${next}` });
+  };
+
+  // Topics Handlers
   const handleAddTopic = () => {
     setTopicInputs(prev => [...prev, '']);
   };
 
   const handleRemoveTopic = (idx: number) => {
-    setTopicInputs(prev => prev.filter((_, i) => i !== idx));
+    const updated = topicInputs.filter((_, i) => i !== idx);
+    setTopicInputs(updated);
+    saveAllChanges({ relevantTopics: updated.join(', ') });
   };
 
   const handleUpdateTopic = (idx: number, text: string) => {
-    setTopicInputs(prev => prev.map((t, i) => (i === idx ? text : t)));
+    const updated = topicInputs.map((t, i) => (i === idx ? text : t));
+    setTopicInputs(updated);
+    saveAllChanges({ relevantTopics: updated.join(', ') });
   };
 
+  // Notes Handlers
   const handleAddNote = () => {
-    setNoteInputs(prev => [...prev, '']);
+    const updated = [...noteInputs, ''];
+    setNoteInputs(updated);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 150);
   };
 
   const handleRemoveNote = (idx: number) => {
-    setNoteInputs(prev => prev.filter((_, i) => i !== idx));
+    const updated = noteInputs.filter((_, i) => i !== idx);
+    setNoteInputs(updated);
+    saveAllChanges({ summaryText: updated.join('\n') });
   };
 
   const handleUpdateNote = (idx: number, text: string) => {
-    setNoteInputs(prev => prev.map((n, i) => (i === idx ? text : n)));
+    const updated = noteInputs.map((n, i) => (i === idx ? text : n));
+    setNoteInputs(updated);
+    saveAllChanges({ summaryText: updated.join('\n') });
   };
 
-  const handleSave = () => {
-    const cleanedChapter = cleanChapterFromRaw(chapterInput.trim()) || chapterInput.trim() || undefined;
-    const updated: Reading = {
-      ...reading,
-      chapterText: cleanedChapter,
-      relevantTopics: topicInputs.filter(t => t.trim().length > 0).join(', ') || undefined,
-      mediaType: mediaType,
-      videoUrl: videoUrlInput.trim() || undefined,
-      dueDate: hasDueDate ? dueDate : null,
-      summaryText: noteInputs.filter(n => n.trim().length > 0).join('\n')
-    };
-    if (onSave) {
-      onSave(updated);
+  const formattedDueDateStr = useMemo(() => {
+    if (hasDueDate && dueDate) {
+      return dueDate.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      });
     }
-    onClose();
-  };
-
-  const formattedDate = dueDate.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
+    return isWeekEnabled ? `Week ${weekNumber}` : 'No due date specified';
+  }, [hasDueDate, dueDate, isWeekEnabled, weekNumber]);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleDone}>
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        {/* MARK: - Top Navigation Bar Matching iOS Details Sheet */}
+        {/* Navigation Bar */}
         <View style={styles.navBar}>
           <TouchableOpacity
-            onPress={onClose}
-            style={[styles.navButton, styles.cancelButton]}
+            onPress={handleDone}
+            style={styles.doneNavButton}
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Text style={styles.doneNavText}>Done</Text>
           </TouchableOpacity>
 
           <View style={styles.navTitleContainer}>
-            <Text style={styles.navTitle} numberOfLines={1}>Details</Text>
+            <Text style={styles.navTitle} numberOfLines={1}>Reading Details</Text>
           </View>
 
-          <TouchableOpacity
-            onPress={handleSave}
-            style={[styles.navButton, styles.actionButton]}
-            activeOpacity={0.7}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Text style={styles.saveText}>Save</Text>
-          </TouchableOpacity>
+          <View style={styles.navPlaceholder} />
         </View>
 
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          nestedScrollEnabled={true}
-          alwaysBounceVertical={true}
-          bounces={true}
-          showsVerticalScrollIndicator={true}
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 50 : 0}
         >
-            {/* MARK: - Section 1: Course Name */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.captionLabel}>Course Name</Text>
-              <TextInput
-                style={styles.courseNameInput}
-                value={courseNameInput}
-                onChangeText={setCourseNameInput}
-                placeholder="Enter course name..."
-                placeholderTextColor="#8E9BAE"
-              />
-            </View>
-
-            {/* MARK: - Section 2: Schedule */}
-            <Text style={styles.sectionHeaderTitle}>Schedule</Text>
-            <View style={styles.sectionCard}>
-              {/* Week Row with Toggle / Stepper */}
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Week</Text>
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => setWeekNumber(prev => Math.max(1, prev - 1))}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepperBtnText}>−</Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.stepperValueBox}>
-                    <Text style={styles.stepperValueText}>Week {weekNumber}</Text>
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={true}
+          >
+            {/* MARK: - Header Banner (Clean Title & Chapter Pill) */}
+            <View style={styles.headerBannerCard}>
+              <View style={styles.headerPillsRow}>
+                {derivedChapter ? (
+                  <View style={[styles.courseCodePill, { backgroundColor: `${courseColor}22` }]}>
+                    <Text style={[styles.courseCodePillText, { color: courseColor }]}>{derivedChapter}</Text>
                   </View>
+                ) : validCourseCode ? (
+                  <View style={[styles.courseCodePill, { backgroundColor: `${courseColor}22` }]}>
+                    <Text style={[styles.courseCodePillText, { color: courseColor }]}>{validCourseCode}</Text>
+                  </View>
+                ) : null}
 
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => setWeekNumber(prev => Math.min(52, prev + 1))}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepperBtnText}>+</Text>
-                  </TouchableOpacity>
+                <View style={styles.mediaBadge}>
+                  <BookFillIcon size={12} color="#2470F5" />
+                  <Text style={styles.mediaBadgeText}>
+                    {(mediaType || 'TEXTBOOK').toUpperCase()}
+                  </Text>
                 </View>
               </View>
 
-              <View style={styles.rowDivider} />
-
-              {/* Module Row */}
-              <View style={styles.formRow}>
+              {/* Title Input */}
+              <View style={styles.titleSection}>
                 <TextInput
-                  style={styles.rowFullInput}
-                  value={moduleInput}
-                  onChangeText={setModuleInput}
-                  placeholder="Module"
-                  placeholderTextColor="#B0BAC9"
+                  style={styles.readingTitleInput}
+                  value={titleText}
+                  onChangeText={t => {
+                    setTitleText(t);
+                    saveAllChanges({ title: t });
+                  }}
+                  placeholder="Reading Title"
+                  placeholderTextColor="#8E9BAE"
+                  multiline={true}
+                />
+              </View>
+            </View>
+
+            {/* MARK: - Section 1: Systemized Schedule & Due Date */}
+            <Text style={styles.sectionHeaderTitle}>Schedule & Due Date</Text>
+            <View style={styles.sectionCard}>
+              {/* Week Row with Toggle */}
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Schedule Week</Text>
+                <Switch
+                  value={isWeekEnabled}
+                  onValueChange={handleToggleWeek}
+                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
+                  thumbColor="#FFFFFF"
+                  style={styles.switchControl}
                 />
               </View>
 
+              {isWeekEnabled && (
+                <>
+                  <View style={styles.rowDivider} />
+                  <View style={styles.formRow}>
+                    <Text style={styles.rowSubLabel}>Select Week Number</Text>
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleWeekStep(-1)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.stepperBtnText}>−</Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.stepperValueBox}>
+                        <Text style={styles.stepperValueText}>Week {weekNumber}</Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleWeekStep(1)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.stepperBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              )}
+
               <View style={styles.rowDivider} />
 
-              {/* Due Date Row with Switch */}
+              {/* Module Row with Toggle */}
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Module / Topic</Text>
+                <Switch
+                  value={isModuleEnabled}
+                  onValueChange={handleToggleModule}
+                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
+                  thumbColor="#FFFFFF"
+                  style={styles.switchControl}
+                />
+              </View>
+
+              {isModuleEnabled && (
+                <>
+                  <View style={styles.rowDivider} />
+                  <View style={styles.formRow}>
+                    <TextInput
+                      style={styles.rowFullInput}
+                      value={moduleInput}
+                      onChangeText={t => {
+                        setModuleInput(t);
+                        saveAllChanges({ relevantTopics: t.trim() || undefined });
+                      }}
+                      placeholder="e.g. Module 1: Foundations"
+                      placeholderTextColor="#94A3B8"
+                    />
+                  </View>
+                </>
+              )}
+
+              <View style={styles.rowDivider} />
+
+              {/* Due Date Row with Toggle */}
               <View style={styles.formRow}>
                 <Text style={styles.rowLabel}>Due Date</Text>
                 <Switch
                   value={hasDueDate}
-                  onValueChange={v => {
-                    setHasDueDate(v);
-                    if (!v) setShowCalendar(false);
-                  }}
+                  onValueChange={handleToggleDueDate}
                   trackColor={{ false: '#E2E8F0', true: '#34C759' }}
                   thumbColor="#FFFFFF"
+                  style={styles.switchControl}
                 />
               </View>
 
-              {/* Select Date Row (if Due Date is on) */}
               {hasDueDate && (
                 <>
                   <View style={styles.rowDivider} />
-                  <TouchableOpacity
-                    style={styles.formRow}
-                    onPress={() => setShowCalendar(prev => !prev)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.rowLabel}>Select Date</Text>
-                    <View style={styles.dateCapsuleInteractive}>
-                      <Text style={styles.dateCapsuleText}>{formattedDate}</Text>
-                      <Text style={styles.dateCapsuleAction}>{showCalendar ? 'Done' : 'Change'}</Text>
-                    </View>
-                  </TouchableOpacity>
+                  <View style={styles.selectedDateBanner}>
+                    <CalendarIcon size={14} color="#2470F5" />
+                    <Text style={styles.selectedDateBannerText}>{formattedDueDateStr}</Text>
+                  </View>
 
-                  {showCalendar && (
-                    <InlineCalendarPicker
-                      selectedDate={dueDate}
-                      onSelectDate={d => {
-                        setDueDate(d);
-                      }}
-                    />
-                  )}
+                  {/* Inline Calendar Picker */}
+                  <InlineCalendarPicker
+                    selectedDate={dueDate}
+                    onSelectDate={d => {
+                      setDueDate(d);
+                      saveAllChanges({ dueDate: d });
+                    }}
+                    accentColor={CoursePalTheme.accentBlue}
+                  />
                 </>
               )}
             </View>
 
-            {/* MARK: - Section 3: Chapter & Pages */}
+            {/* MARK: - Section 2: Chapter & Pages */}
             <Text style={styles.sectionHeaderTitle}>Chapter & Pages</Text>
-            <View style={styles.sectionCardSingle}>
+            <View style={styles.sectionCard}>
               <TextInput
                 style={styles.singleFieldInput}
                 value={chapterInput}
-                onChangeText={setChapterInput}
+                onChangeText={t => {
+                  setChapterInput(t);
+                  saveAllChanges({ chapterText: t.trim() || undefined });
+                }}
                 placeholder="e.g. Chapter 4, pp. 120-155"
-                placeholderTextColor="#8E9BAE"
+                placeholderTextColor="#94A3B8"
               />
             </View>
 
-            {/* MARK: - Section 4: Topics */}
+            {/* MARK: - Section 3: Topics */}
             <Text style={styles.sectionHeaderTitle}>Topics</Text>
             <View style={styles.sectionCard}>
               {topicInputs.map((topic, idx) => (
                 <View key={`topic-${idx}`} style={styles.topicRow}>
-                  <Text style={styles.topicPrefix}>{idx + 1} -</Text>
+                  <Text style={styles.itemIndexNumber}>{idx + 1} -</Text>
                   <TextInput
                     style={styles.topicInput}
                     value={topic}
                     onChangeText={t => handleUpdateTopic(idx, t)}
                     placeholder="Topic description..."
-                    placeholderTextColor="#8E9BAE"
-                    multiline
+                    placeholderTextColor="#94A3B8"
+                    multiline={true}
                   />
-                  {topic.length > 0 && (
-                    <TouchableOpacity onPress={() => handleRemoveTopic(idx)} style={styles.removeTopicButton}>
-                      <XMarkCircleFillIcon size={16} color="#B0BAC9" />
+                  {topicInputs.length > 1 && (
+                    <TouchableOpacity
+                      onPress={() => handleRemoveTopic(idx)}
+                      style={styles.deleteIconBtn}
+                      activeOpacity={0.7}
+                    >
+                      <XMarkCircleFillIcon size={18} color="#94A3B8" />
                     </TouchableOpacity>
                   )}
                 </View>
               ))}
 
-              <TouchableOpacity onPress={handleAddTopic} style={styles.addItemButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                onPress={handleAddTopic}
+                style={styles.addItemBtn}
+                activeOpacity={0.7}
+              >
                 <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
-                <Text style={styles.addItemButtonText}>Add Topic</Text>
+                <Text style={styles.addItemBtnText}>Add Topic</Text>
               </TouchableOpacity>
             </View>
 
-            {/* MARK: - Section 5: Media Type (Compact Pills) */}
+            {/* MARK: - Section 4: Media Type */}
             <Text style={styles.sectionHeaderTitle}>Media Type</Text>
-            <View style={styles.mediaTypeRow}>
+            <View style={styles.mediaTypePillsRow}>
               {(['textbook', 'article', 'video', 'podcast'] as MediaType[]).map(t => {
                 const isSelected = mediaType === t;
                 const label =
@@ -344,7 +504,10 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                   <TouchableOpacity
                     key={t}
                     style={[styles.mediaTypePill, isSelected && styles.mediaTypePillActive]}
-                    onPress={() => setMediaType(t)}
+                    onPress={() => {
+                      setMediaType(t);
+                      saveAllChanges({ mediaType: t, mediaTypeRaw: t });
+                    }}
                     activeOpacity={0.7}
                   >
                     <Text
@@ -360,63 +523,96 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               })}
             </View>
 
-            {/* MARK: - Section 6: Resource Link */}
+            {/* MARK: - Section 5: Resource Link */}
             <Text style={styles.sectionHeaderTitle}>Resource Link</Text>
-            <View style={styles.sectionCardSingle}>
+            <View style={styles.sectionCard}>
               <TextInput
                 style={styles.singleFieldInput}
                 value={videoUrlInput}
-                onChangeText={setVideoUrlInput}
-                placeholder="Paste video or article URL..."
-                placeholderTextColor="#8E9BAE"
+                onChangeText={t => {
+                  setVideoUrlInput(t);
+                  saveAllChanges({ videoUrl: t.trim() || undefined });
+                }}
+                placeholder="Paste reference link or video URL..."
+                placeholderTextColor="#94A3B8"
                 autoCapitalize="none"
                 keyboardType="url"
               />
+
+              {videoUrlInput.trim().length > 0 && (
+                <TouchableOpacity
+                  style={styles.openLinkPill}
+                  onPress={() => {
+                    const url = videoUrlInput.startsWith('http') ? videoUrlInput : `https://${videoUrlInput}`;
+                    Linking.openURL(url).catch(() => {});
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <ArrowUpRightIcon size={13} color="#2470F5" />
+                  <Text style={styles.openLinkPillText} numberOfLines={1}>
+                    Open {videoUrlInput}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
-            {/* MARK: - Section 7: Notes */}
+            {/* MARK: - Section 6: Notes (Keyboard-Aware, No Giant Bottom Gap) */}
             <Text style={styles.sectionHeaderTitle}>Notes</Text>
             <View style={styles.sectionCard}>
               {noteInputs.map((note, idx) => (
                 <View key={`note-${idx}`} style={styles.noteItemCard}>
-                  <View style={styles.noteItemHeader}>
-                    <Text style={styles.topicPrefix}>{idx + 1} -</Text>
-                    <TextInput
-                      style={styles.noteTextInput}
-                      value={note}
-                      onChangeText={t => handleUpdateNote(idx, t)}
-                      placeholder="Add note or instruction..."
-                      placeholderTextColor="#8E9BAE"
-                      multiline
-                    />
-                    <TouchableOpacity onPress={() => handleRemoveNote(idx)} style={styles.removeTopicButton}>
-                      <XMarkCircleFillIcon size={16} color="#B0BAC9" />
-                    </TouchableOpacity>
-                  </View>
+                  <Text style={styles.itemIndexNumber}>{idx + 1} -</Text>
+                  <TextInput
+                    style={styles.noteTextInput}
+                    value={note}
+                    onChangeText={t => handleUpdateNote(idx, t)}
+                    onFocus={() => {
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                      }, 150);
+                    }}
+                    placeholder="Add personal note or key takeaway..."
+                    placeholderTextColor="#94A3B8"
+                    multiline={true}
+                  />
+                  <TouchableOpacity
+                    onPress={() => handleRemoveNote(idx)}
+                    style={styles.deleteIconBtn}
+                    activeOpacity={0.7}
+                  >
+                    <XMarkCircleFillIcon size={18} color="#94A3B8" />
+                  </TouchableOpacity>
                 </View>
               ))}
 
-              <TouchableOpacity onPress={handleAddNote} style={styles.addItemButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                onPress={handleAddNote}
+                style={styles.addItemBtn}
+                activeOpacity={0.7}
+              >
                 <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
-                <Text style={styles.addItemButtonText}>Add Note</Text>
+                <Text style={styles.addItemBtnText}>Add Note</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </SafeAreaView>
-      </Modal>
-    );
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F5FA',
-    width: '100%'
+    backgroundColor: '#F2F5FA'
+  },
+  keyboardAvoid: {
+    flex: 1
   },
   navBar: {
     paddingTop: 14,
     paddingBottom: 10,
-    minHeight: 60,
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -425,245 +621,251 @@ const styles = StyleSheet.create({
     borderBottomColor: '#D1D9E6',
     backgroundColor: '#F2F5FA'
   },
-  navButton: {
-    minWidth: 70,
-    height: 44,
-    justifyContent: 'center'
-  },
-  cancelButton: {
+  doneNavButton: {
+    minWidth: 60,
+    height: 40,
+    justifyContent: 'center',
     alignItems: 'flex-start'
   },
-  actionButton: {
-    alignItems: 'flex-end'
-  },
-  cancelText: {
+  doneNavText: {
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#2470F5'
   },
   navTitleContainer: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12
+    justifyContent: 'center'
   },
   navTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#081324',
-    textAlign: 'center'
+    color: '#141F38'
   },
-  saveText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#2470F5'
+  navPlaceholder: {
+    minWidth: 60
   },
   scrollView: {
-    flex: 1,
-    width: '100%'
+    flex: 1
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 64,
-    paddingTop: 20
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24
+  },
+  headerBannerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 }
+  },
+  headerPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10
+  },
+  courseCodePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8
+  },
+  courseCodePillText: {
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  mediaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(36, 112, 245, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4
+  },
+  mediaBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2470F5'
+  },
+  titleSection: {
+    marginBottom: 4
+  },
+  readingTitleInput: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#141F38',
+    lineHeight: 26,
+    padding: 0
   },
   sectionHeaderTitle: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#596B85',
-    marginTop: 24,
-    marginBottom: 10,
-    marginLeft: 4,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase'
-  },
-  captionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#8E9BAE',
-    marginBottom: 6,
-    letterSpacing: 0.5
-  },
-  courseNameInput: {
-    fontSize: 16,
     fontWeight: '600',
-    color: '#081324',
-    paddingVertical: 4
+    color: '#596B85',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginLeft: 4,
+    marginBottom: 8,
+    marginTop: 10
   },
   sectionCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E3E8F0',
+    borderColor: '#E2E8F0',
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  sectionCardSingle: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: '#E3E8F0',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  singleFieldInput: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#081324',
-    paddingVertical: 4
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 }
   },
   formRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12
+    minHeight: 40,
+    paddingRight: 4
   },
   rowLabel: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#081324'
+    color: '#141F38'
   },
-  rowValueInput: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#081324',
-    textAlign: 'right',
-    minWidth: 40,
-    paddingVertical: 0
+  rowSubLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#596B85'
   },
-  rowFullInput: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#081324',
-    paddingVertical: 4
+  switchControl: {
+    marginRight: 2
   },
   rowDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 4
-  },
-  dateCapsule: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8
-  },
-  dateCapsuleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#081324'
-  },
-  topicRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-    gap: 10
-  },
-  topicPrefix: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#596B85',
-    marginTop: 2
-  },
-  topicInput: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#081324',
-    paddingVertical: 2
-  },
-  removeTopicButton: {
-    padding: 6,
-    marginTop: 2
-  },
-  addItemButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    marginTop: 6
-  },
-  addItemButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: CoursePalTheme.accentBlue
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 10
   },
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    padding: 3
+    gap: 6
   },
   stepperBtn: {
-    width: 30,
-    height: 30,
+    width: 34,
+    height: 34,
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#EEF2F6',
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1
+    justifyContent: 'center'
   },
   stepperBtnText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: CoursePalTheme.accentBlue,
-    lineHeight: 19
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2470F5'
   },
   stepperValueBox: {
-    paddingHorizontal: 12
+    backgroundColor: '#EEF2F6',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    minWidth: 70,
+    alignItems: 'center'
   },
   stepperValueText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#081324'
+    color: '#141F38'
   },
-  dateCapsuleInteractive: {
+  rowFullInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#141F38',
+    paddingVertical: 4
+  },
+  selectedDateBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#EFF6FF',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 12
   },
-  dateCapsuleAction: {
-    fontSize: 12,
+  selectedDateBannerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2470F5'
+  },
+  singleFieldInput: {
+    fontSize: 14.5,
+    color: '#141F38',
+    paddingVertical: 4
+  },
+  topicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8
+  },
+  itemIndexNumber: {
+    fontSize: 13,
     fontWeight: '700',
-    color: CoursePalTheme.accentBlue
+    color: '#596B85'
   },
-  mediaTypeRow: {
+  topicInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#141F38',
+    padding: 0
+  },
+  deleteIconBtn: {
+    padding: 2
+  },
+  addItemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    paddingVertical: 4
+  },
+  addItemBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2470F5'
+  },
+  mediaTypePillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 2
+    marginBottom: 12
   },
   mediaTypePill: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 10,
+    flex: 1,
+    minWidth: 70,
     backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0'
   },
   mediaTypePillActive: {
-    backgroundColor: CoursePalTheme.accentBlue,
-    borderColor: CoursePalTheme.accentBlue
+    backgroundColor: '#2470F5',
+    borderColor: '#2470F5'
   },
   mediaTypePillText: {
     fontSize: 13,
@@ -671,80 +873,38 @@ const styles = StyleSheet.create({
     color: '#596B85'
   },
   mediaTypePillTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700'
+    color: '#FFFFFF'
+  },
+  openLinkPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    padding: 10,
+    borderRadius: 10,
+    marginTop: 8
+  },
+  openLinkPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2470F5'
   },
   noteItemCard: {
-    backgroundColor: '#F8FAFD',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginVertical: 6,
-    minHeight: 88
-  },
-  noteItemHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8
   },
   noteTextInput: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '400',
-    color: '#081324',
-    lineHeight: 22,
-    paddingVertical: 0
-  },
-  completeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: CoursePalTheme.accentBlue,
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginTop: 8,
-    marginBottom: 6
-  },
-  completeButtonDone: {
-    backgroundColor: '#E6F4EA',
-    borderWidth: 1,
-    borderColor: '#A7F3D0'
-  },
-  completeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700'
-  },
-  completeButtonTextDone: {
-    color: '#059669'
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12
-  },
-  deleteButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#D94033'
-  },
-  restoreDetailButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(36, 112, 245, 0.12)',
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginVertical: 10
-  },
-  restoreDetailButtonText: {
-    color: CoursePalTheme.accentBlue,
     fontSize: 14,
-    fontWeight: '700'
+    color: '#141F38',
+    lineHeight: 20,
+    padding: 0
   }
 });

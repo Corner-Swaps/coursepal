@@ -5,8 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
-  ScrollView,
-  SafeAreaView
+  ScrollView
 } from 'react-native';
 import { CoursePalTheme } from '../../constants/theme';
 import {
@@ -19,7 +18,6 @@ import {
   ArrowRightIcon,
   XMarkIcon
 } from '../SvgIcons';
-import { InfoCreditsModal } from './InfoCreditsModal';
 
 interface FeatureDetailItem {
   id: string;
@@ -38,6 +36,7 @@ interface WelcomeTermsModalProps {
 export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, onAccept }) => {
   const [selectedFeature, setSelectedFeature] = useState<FeatureDetailItem | null>(null);
   const [showingLegalSheet, setShowingLegalSheet] = useState<boolean>(false);
+  const [legalTab, setLegalTab] = useState<'terms' | 'privacy' | 'about'>('terms');
 
   if (!visible) return null;
 
@@ -92,7 +91,9 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
               <TouchableOpacity
                 key={item.id}
                 style={styles.pillRow}
-                onPress={() => setSelectedFeature(item)}
+                onPress={() => {
+                  setSelectedFeature(item);
+                }}
                 activeOpacity={0.7}
               >
                 <View
@@ -150,58 +151,119 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
             <Text style={styles.acceptButtonText}>Agree & Continue</Text>
             <ArrowRightIcon size={14} color="#FFFFFF" strokeWidth={2.6} />
           </TouchableOpacity>
-        </View>
-      </View>
 
-      {/* Feature Detail Modal Sheet */}
-      {selectedFeature && (
-        <Modal visible={true} transparent animationType="fade">
-          <View style={styles.detailBackdrop}>
-            <View style={styles.detailCard}>
-              <View style={styles.detailTopRow}>
-                <View
-                  style={[
-                    styles.detailIconCircle,
-                    { backgroundColor: `${selectedFeature.iconColor}15` }
-                  ]}
-                >
-                  {selectedFeature.icon}
+          {/* Feature Detail In-Modal Overlay (NO nested Modal) */}
+          {selectedFeature && (
+            <View style={styles.detailOverlay}>
+              <View style={styles.detailInnerCard}>
+                <View style={styles.detailTopRow}>
+                  <View
+                    style={[
+                      styles.detailIconCircle,
+                      { backgroundColor: `${selectedFeature.iconColor}15` }
+                    ]}
+                  >
+                    {selectedFeature.icon}
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setSelectedFeature(null)}
+                    style={styles.closeButton}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <XMarkIcon size={18} color="#596B85" />
+                  </TouchableOpacity>
                 </View>
+
+                <Text style={styles.detailTitle}>{selectedFeature.title}</Text>
+                <Text style={styles.detailDescription}>
+                  {selectedFeature.fullDescription}
+                </Text>
+
                 <TouchableOpacity
+                  style={[
+                    styles.gotItButton,
+                    { backgroundColor: selectedFeature.iconColor }
+                  ]}
                   onPress={() => setSelectedFeature(null)}
-                  style={styles.closeButton}
-                  activeOpacity={0.7}
+                  activeOpacity={0.85}
                 >
-                  <XMarkIcon size={18} color="#596B85" />
+                  <Text style={styles.gotItText}>Got It</Text>
                 </TouchableOpacity>
               </View>
-
-              <Text style={styles.detailTitle}>{selectedFeature.title}</Text>
-              <Text style={styles.detailDescription}>
-                {selectedFeature.fullDescription}
-              </Text>
-
-              <TouchableOpacity
-                style={[
-                  styles.gotItButton,
-                  { backgroundColor: selectedFeature.iconColor }
-                ]}
-                onPress={() => setSelectedFeature(null)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.gotItText}>Got It</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </Modal>
-      )}
+          )}
 
-      {/* Full Legal Modal */}
-      <InfoCreditsModal
-        visible={showingLegalSheet}
-        onClose={() => setShowingLegalSheet(false)}
-        initialTab="terms"
-      />
+          {/* Full Legal In-Modal Overlay (NO nested Modal) */}
+          {showingLegalSheet && (
+            <View style={styles.legalOverlay}>
+              <View style={styles.legalInnerCard}>
+                <View style={styles.legalHeaderRow}>
+                  <Text style={styles.legalTitle}>Legal Policies & Terms</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowingLegalSheet(false)}
+                    style={styles.closeButton}
+                    activeOpacity={0.7}
+                  >
+                    <XMarkIcon size={18} color="#596B85" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Segmented Switcher */}
+                <View style={styles.segmentedRow}>
+                  <TouchableOpacity
+                    style={[styles.segBtn, legalTab === 'terms' && styles.segBtnActive]}
+                    onPress={() => setLegalTab('terms')}
+                  >
+                    <Text style={[styles.segBtnText, legalTab === 'terms' && styles.segBtnTextActive]}>Terms</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.segBtn, legalTab === 'privacy' && styles.segBtnActive]}
+                    onPress={() => setLegalTab('privacy')}
+                  >
+                    <Text style={[styles.segBtnText, legalTab === 'privacy' && styles.segBtnTextActive]}>Privacy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.segBtn, legalTab === 'about' && styles.segBtnActive]}
+                    onPress={() => setLegalTab('about')}
+                  >
+                    <Text style={[styles.segBtnText, legalTab === 'about' && styles.segBtnTextActive]}>Disclaimer</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.legalScroll} showsVerticalScrollIndicator={true}>
+                  {legalTab === 'terms' && (
+                    <Text style={styles.legalBody}>
+                      By using CoursePal, you agree that you are solely responsible for verifying all course deliverables, assignment deadlines, reading schedules, and exam dates against the official syllabus provided by your educational institution and course instructors.{'\n\n'}
+                      CoursePal is provided on an &quot;AS IS&quot; and &quot;AS AVAILABLE&quot; basis without warranties of any kind. CoursePal and its creators assume zero liability for academic consequences, missed deadlines, late penalties, or parsing inaccuracies.
+                    </Text>
+                  )}
+                  {legalTab === 'privacy' && (
+                    <Text style={styles.legalBody}>
+                      CoursePal is engineered with a strict local-first architecture. All syllabus documents, course notes, and schedules are stored securely in local device storage on your iOS device.{'\n\n'}
+                      We do not sell, rent, monetize, or track your personal academic data. We do not use third-party behavioral analytics or advertising tracking SDKs.
+                    </Text>
+                  )}
+                  {legalTab === 'about' && (
+                    <Text style={styles.legalBody}>
+                      CoursePal leverages artificial intelligence for optical character recognition and document structure analysis. AI models can make errors, misread dates, or skip sections.{'\n\n'}
+                      Always cross-reference your generated timeline with Canvas, Blackboard, Brightspace, Moodle, or your professor&apos;s direct instructions.
+                    </Text>
+                  )}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={styles.legalDoneBtn}
+                  onPress={() => setShowingLegalSheet(false)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.legalDoneBtnText}>Back to Welcome</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      </View>
     </Modal>
   );
 };
@@ -225,7 +287,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 20,
-    elevation: 10
+    elevation: 10,
+    overflow: 'hidden'
   },
   iconCircle: {
     width: 62,
@@ -314,24 +377,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700'
   },
-  detailBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24
-  },
-  detailCard: {
-    width: '100%',
-    maxWidth: 340,
+  detailOverlay: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    elevation: 8
+    borderRadius: 24,
+    padding: 22,
+    justifyContent: 'space-between',
+    zIndex: 10
+  },
+  detailInnerCard: {
+    flex: 1,
+    justifyContent: 'space-between'
   },
   detailTopRow: {
     flexDirection: 'row',
@@ -347,7 +403,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   closeButton: {
-    padding: 4
+    padding: 6
   },
   detailTitle: {
     fontSize: 17,
@@ -356,22 +412,96 @@ const styles = StyleSheet.create({
     marginBottom: 8
   },
   detailDescription: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '400',
     color: '#475569',
-    lineHeight: 19,
+    lineHeight: 20,
     marginBottom: 20
   },
   gotItButton: {
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    marginTop: 'auto'
   },
   gotItText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700'
+  },
+  legalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    zIndex: 10
+  },
+  legalInnerCard: {
+    flex: 1
+  },
+  legalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12
+  },
+  legalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#141F38'
+  },
+  segmentedRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 12
+  },
+  segBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    alignItems: 'center',
+    borderRadius: 8
+  },
+  segBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1
+  },
+  segBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B'
+  },
+  segBtnTextActive: {
+    color: '#141F38',
+    fontWeight: '700'
+  },
+  legalScroll: {
+    flex: 1,
+    marginBottom: 12
+  },
+  legalBody: {
+    fontSize: 12.5,
+    color: '#475569',
+    lineHeight: 18
+  },
+  legalDoneBtn: {
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  legalDoneBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '700'
   }
 });
+
 

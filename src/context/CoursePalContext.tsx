@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import * as FileSystem from 'expo-file-system';
-import { Course, Reading, Assignment, VaultDocument, MediaType } from '../types/models';
+import { Course, Week, Reading, Assignment, VaultDocument, MediaType } from '../types/models';
 import { MasterCoursePalette } from '../constants/theme';
 import { CourseSharingService } from '../services/CourseSharingService';
 import { persistenceManager } from '../services/DataPersistenceBackupManager';
@@ -151,35 +151,42 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const isInitialMount = useRef(true);
 
-  // Restore latest backup and terms acceptance status from disk on app launch
+  // Restore latest backup from disk on app launch
   useEffect(() => {
     let isMounted = true;
-
-    persistenceManager.loadTermsAccepted().then(accepted => {
-      if (!isMounted) return;
-      setHasAcceptedTerms(accepted);
-    });
 
     persistenceManager.loadLatestBackup().then(backup => {
       if (!isMounted) return;
       if (backup) {
-        const isMock = (id?: string | null, code?: string | null) =>
-          id === 'c-cpc527' || (Boolean(code) && code!.toUpperCase() === 'CPC 527');
+        const isMockSeed = (id?: string | null) =>
+          id === 'c-cpc527-static-seed' || id === 'c-seed-mock';
+
+        const isSyntheticReading = (r: any) => {
+          const t = (r.title || '').toLowerCase();
+          return t.includes('required reading & core materials') || t.startsWith('required reading (week');
+        };
+
+        const isSyntheticAssignment = (a: any) => {
+          const t = (a.title || '').trim();
+          return t === 'Initial Research & Literature Review' ||
+                 t === 'Midterm Case Analysis' ||
+                 t === 'Final Capstone Project & Defense';
+        };
 
         const cleanCourses = (Array.isArray(backup.courses) ? backup.courses : [])
-          .filter(c => !isMock(c.id, c.courseCode))
+          .filter(c => !isMockSeed(c.id))
           .map(c => ({
             ...c,
             createdAt: parseSafeDate(c.createdAt) || new Date()
           }));
         const cleanReadings = (Array.isArray(backup.readings) ? backup.readings : [])
-          .filter(r => !r.id.startsWith('r-seed-') && !isMock('', r.courseCode))
+          .filter(r => !r.id?.startsWith('r-seed-') && !isMockSeed(r.id) && !isSyntheticReading(r))
           .map(sanitizeReading);
         const cleanAssignments = (Array.isArray(backup.assignments) ? backup.assignments : [])
-          .filter(a => !a.id.startsWith('a-seed-') && !isMock(a.courseId, a.courseCode))
+          .filter(a => !a.id?.startsWith('a-seed-') && !isMockSeed(a.id) && !isSyntheticAssignment(a))
           .map(sanitizeAssignment);
         const cleanVaultDocs = (Array.isArray(backup.vaultDocs) ? backup.vaultDocs : [])
-          .filter(vd => vd.id !== 'vd-cpc527' && !isMock('', vd.courseCode))
+          .filter(vd => vd.id !== 'vd-cpc527-static-seed')
           .map(vd => ({
             ...vd,
             uploadedAt: parseSafeDate(vd.uploadedAt) || new Date()
@@ -573,45 +580,52 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       // Step 1: Extract real text from fileUri or catalog
       if (!rawText && fileUri) {
         try {
-          const lowerName = fileName.toLowerCase();
-          const lowerUri = fileUri.toLowerCase();
-          const isPdf = lowerName.endsWith('.pdf') || lowerUri.endsWith('.pdf');
-
-          if (isPdf) {
-            // First: Attempt native PDFKit text extraction
-            try {
-              const extracted = await extractTextFromPDF(fileUri);
-              if (extracted && extracted.trim().length > 30 && !extracted.startsWith('%PDF-')) {
-                rawText = extracted.trim();
-              }
-            } catch (pdfErr) {
-              console.warn('PDFKit extraction error:', pdfErr);
+          // Native multi-format extractor (PDF, DOCX, RTF, TXT)
+          try {
+            const extracted = await extractTextFromPDF(fileUri);
+            if (extracted && extracted.trim().length > 20 && !extracted.startsWith('%PDF-')) {
+              rawText = extracted.trim();
             }
+          } catch (extractorErr) {
+            // Ignore native extraction error silently
+          }
 
-            // Second: Read base64 file for Gemini multimodal AI
-            try {
-              const b64 = await FileSystem.readAsStringAsync(fileUri, {
-                encoding: FileSystem.EncodingType.Base64
-              });
-              if (b64 && b64.length > 50) {
-                base64Pdf = b64;
+          // If raw text still not found, try reading as plain text or base64
+          if (!rawText || rawText.trim().length < 20) {
+            const lower = (fileName + ' ' + fileUri).toLowerCase();
+            const isBinary = lower.includes('.pdf') || lower.includes('.docx') || lower.includes('.doc');
+
+            if (isBinary) {
+              try {
+                const b64 = await FileSystem.readAsStringAsync(fileUri, {
+                  encoding: FileSystem.EncodingType.Base64
+                });
+                if (b64 && b64.length > 50) {
+                  base64Pdf = b64;
+                }
+              } catch (b64Err) {
+                // Ignore silently
               }
-            } catch (b64Err) {
-              console.warn('Failed to read base64 file:', b64Err);
-            }
-          } else {
-            // Plain text or markdown files (.txt, .md, .csv)
-            try {
-              const directText = await FileSystem.readAsStringAsync(fileUri);
-              if (directText && !directText.startsWith('%PDF-') && directText.trim().length > 20) {
-                rawText = directText.trim();
+            } else {
+              try {
+                const directText = await FileSystem.readAsStringAsync(fileUri);
+                if (directText && !directText.startsWith('%PDF-') && directText.trim().length > 20) {
+                  rawText = directText.trim();
+                }
+              } catch (txtErr) {
+                try {
+                  const b64 = await FileSystem.readAsStringAsync(fileUri, {
+                    encoding: FileSystem.EncodingType.Base64
+                  });
+                  if (b64 && b64.length > 50) {
+                    base64Pdf = b64;
+                  }
+                } catch (b64Fallback) {}
               }
-            } catch (txtErr) {
-              console.warn('Failed to read text file:', txtErr);
             }
           }
         } catch (e) {
-          console.warn('Error reading fileUri:', e);
+          // Handled safely
         }
       }
 
@@ -637,19 +651,41 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       setUploadStatusText('Analyzing schedule, readings & assignments with Gemini AI...');
 
       let dto: any = null;
-      try {
-        const syllabusTextSnippet = rawText ? `\n\nSyllabus Content:\n${rawText.slice(0, 32000)}` : '';
-        const geminiPrompt = `You are an expert academic syllabus parser.
-Extract course details, weekly schedule, readings, and assignments from this syllabus into structured JSON matching:
+      if (rawText || base64Pdf) {
+        try {
+          const syllabusTextSnippet = rawText ? `\n\nSyllabus Content:\n${rawText.slice(0, 32000)}` : '';
+          const geminiPrompt = `You are an expert academic syllabus extraction engine.
+Carefully extract all real course information, weekly schedule, required readings, textbooks, and deliverables/assignments from this syllabus into structured JSON matching:
 {
   "courseName": "Course Name",
   "courseCode": "Course Code",
   "instructorName": "Instructor Name",
+  "instructorEmail": "Instructor Email",
   "termWeeks": 12,
+  "assignments": [
+    {
+      "title": "Exact Assignment Title",
+      "dueDate": "2026-05-15 or description",
+      "pointsPossible": "100 Points",
+      "weightPercentage": "25%",
+      "fullInstructions": "Detailed instructions from syllabus",
+      "weekNumber": 1
+    }
+  ],
+  "readings": [
+    {
+      "title": "Exact Reading Title or Book Title",
+      "authorName": "Author Name(s)",
+      "chapterText": "Chapter 1",
+      "pagesText": "pp. 1-25",
+      "mediaType": "textbook",
+      "weekNumber": 1
+    }
+  ],
   "weeks": [
     {
       "weekNumber": 1,
-      "theme": "Topic or Theme",
+      "theme": "Weekly Topic",
       "readings": [
         {
           "title": "Reading Title",
@@ -668,105 +704,119 @@ Extract course details, weekly schedule, readings, and assignments from this syl
         }
       ]
     }
-  ],
-  "assignments": [
-    {
-      "title": "Assignment Title",
-      "dueDate": "2026-05-15",
-      "pointsPossible": "100 Points",
-      "weightPercentage": "25%"
-    }
   ]
 }
 ${syllabusTextSnippet}
 
 Output ONLY valid JSON.`;
 
-        const aiResult = await APIService.shared.generateContentWithGemini(geminiPrompt, undefined, base64Pdf);
-        let cleanJson = aiResult.trim();
-        if (cleanJson.startsWith('```')) {
-          cleanJson = cleanJson.split('\n').slice(1).join('\n');
-          if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3).trim();
+          const aiResult = await APIService.shared.generateContentWithGemini(geminiPrompt, undefined, base64Pdf);
+          let cleanJson = aiResult.trim();
+          if (cleanJson.startsWith('```')) {
+            cleanJson = cleanJson.split('\n').slice(1).join('\n');
+            if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3).trim();
+          }
+          dto = JSON.parse(cleanJson);
+        } catch (aiErr) {
+          console.warn('Gemini syllabus parse error:', aiErr);
         }
-        dto = JSON.parse(cleanJson);
-      } catch (aiErr) {
-        console.warn('Gemini syllabus parse failed, falling back to local parser:', aiErr);
       }
 
-      // If Gemini returned empty or missing weeks/assignments, run LocalSyllabusParser
-      const hasGeminiWeeks = Array.isArray(dto?.weeks) && dto.weeks.length > 0;
-      const hasGeminiAssignments = Array.isArray(dto?.assignments) && dto.assignments.length > 0;
-      if ((!hasGeminiWeeks || !hasGeminiAssignments) && rawText) {
+      // Merge with LocalSyllabusParser to guarantee 100% extraction coverage
+      let localDto: any = null;
+      if (rawText) {
         try {
-          const localDto = LocalSyllabusParser.shared.parseText(rawText);
-          if (localDto) {
-            dto = {
-              ...dto,
-              courseName: dto?.courseName || localDto.courseName,
-              courseCode: dto?.courseCode || localDto.courseCode,
-              instructorName: dto?.instructorName || localDto.instructorName,
-              termWeeks: dto?.termWeeks || localDto.termWeeks,
-              weeks: hasGeminiWeeks ? dto.weeks : localDto.weeks,
-              assignments: hasGeminiAssignments ? dto.assignments : localDto.assignments
-            };
-          }
+          localDto = LocalSyllabusParser.shared.parseText(rawText);
         } catch (localErr) {
           console.warn('Local parser error:', localErr);
         }
       }
 
-      // Safety Net: If still empty, synthesize structured semester deliverables
-      const finalWeeksExist = Array.isArray(dto?.weeks) && dto.weeks.some((w: any) => Array.isArray(w.readings) && w.readings.length > 0);
-      const finalAssignExist = (Array.isArray(dto?.assignments) && dto.assignments.length > 0) ||
-                               (Array.isArray(dto?.weeks) && dto.weeks.some((w: any) => Array.isArray(w.assignments) && w.assignments.length > 0));
+      // Extract and normalize all real assignments from all sources
+      const candidateAssignments: any[] = [
+        ...(Array.isArray(dto?.assignments) ? dto.assignments : []),
+        ...(Array.isArray(dto?.deliverables) ? dto.deliverables : []),
+        ...(Array.isArray(dto?.items) ? dto.items.filter((i: any) => (i.category || '').toLowerCase() === 'assignment') : []),
+        ...(Array.isArray(dto?.weeks) ? dto.weeks.flatMap((w: any) => (w.assignments || []).map((wa: any) => ({ ...wa, weekNumber: wa.weekNumber || w.weekNumber }))) : []),
+        ...(Array.isArray(localDto?.assignments) ? localDto.assignments : []),
+        ...(Array.isArray(localDto?.items) ? localDto.items.filter((i: any) => (i.category || '').toLowerCase() === 'assignment') : [])
+      ];
 
-      if (!finalWeeksExist || !finalAssignExist) {
-        const weeksCount = dto?.termWeeks || 12;
-        const synthWeeks = Array.from({ length: weeksCount }, (_, i) => ({
-          weekNumber: i + 1,
-          theme: `Week ${i + 1} Required Readings & Topics`,
-          readings: [
-            {
-              title: `Required Reading & Core Materials (Week ${i + 1})`,
-              authorName: dto?.instructorName || 'Faculty',
-              chapterText: `Chapter ${i + 1}`,
-              mediaType: 'textbook'
-            }
-          ]
-        }));
-        const synthAssignments = [
-          {
-            title: 'Initial Research & Literature Review',
-            pointsPossible: '100 Points',
-            weightPercentage: '25%',
-            weekNumber: 4,
-            dueDate: new Date(Date.now() + 28 * 86400000).toISOString()
-          },
-          {
-            title: 'Midterm Case Analysis',
-            pointsPossible: '100 Points',
-            weightPercentage: '35%',
-            weekNumber: 7,
-            dueDate: new Date(Date.now() + 49 * 86400000).toISOString()
-          },
-          {
-            title: 'Final Capstone Project & Defense',
-            pointsPossible: '100 Points',
-            weightPercentage: '40%',
-            weekNumber: weeksCount,
-            dueDate: new Date(Date.now() + weeksCount * 7 * 86400000).toISOString()
+      const cleanAssignmentsList: any[] = [];
+      for (const a of candidateAssignments) {
+        const rawTitle = (a.title || a.name || a.assignmentName || a.assignment_name || a.deliverable || '').trim();
+        if (!rawTitle || rawTitle.toLowerCase() === 'item title' || rawTitle.toLowerCase().includes('total 100%')) continue;
+        const normKey = rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const existing = cleanAssignmentsList.find(e => e.title.toLowerCase().replace(/[^a-z0-9]/g, '') === normKey);
+        if (existing) {
+          if (!existing.dueDate && (a.dueDate || a.due_date || a.dueDateIso || a.date)) {
+            existing.dueDate = a.dueDate || a.due_date || a.dueDateIso || a.date;
           }
-        ];
+          if (!existing.weightPercentage && (a.weightPercentage || a.weight || a.weight_percentage || a.percentage)) {
+            existing.weightPercentage = a.weightPercentage || a.weight || a.weight_percentage || a.percentage;
+          }
+          if ((!existing.fullInstructions || existing.fullInstructions === 'Parsed from course syllabus.') && (a.fullInstructions || a.instructions || a.description)) {
+            existing.fullInstructions = a.fullInstructions || a.instructions || a.description;
+          }
+          continue;
+        }
 
-        dto = {
-          courseName: params.preserveCourseTitle || dto?.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
-          courseCode: params.preserveCourseCode || dto?.courseCode || fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase(),
-          instructorName: dto?.instructorName || 'Academic Faculty',
-          instructorEmail: dto?.instructorEmail || null,
-          termWeeks: weeksCount,
-          weeks: finalWeeksExist ? dto.weeks : synthWeeks,
-          assignments: finalAssignExist ? dto.assignments : synthAssignments
-        };
+        cleanAssignmentsList.push({
+          title: rawTitle,
+          dueDate: a.dueDate || a.due_date || a.dueDateIso || a.date || a.rawDueDate || null,
+          pointsPossible: a.pointsPossible || a.points || a.points_possible || a.totalPoints || '100 Points',
+          weightPercentage: a.weightPercentage || a.weight || a.weight_percentage || a.percentage || null,
+          fullInstructions: a.fullInstructions || a.instructions || a.description || 'Parsed from course syllabus.',
+          weekNumber: a.weekNumber || a.week_number || undefined,
+          subType: a.subType || a.subTypeRaw || a.category || 'PAPER',
+          rubric: a.rubric || a.rubricCriteria || []
+        });
+      }
+
+      // Extract and normalize all real readings from all sources
+      const candidateReadings: any[] = [
+        ...(Array.isArray(dto?.readings) ? dto.readings : []),
+        ...(Array.isArray(dto?.textbooks) ? dto.textbooks : []),
+        ...(Array.isArray(dto?.resources) ? dto.resources : []),
+        ...(Array.isArray(dto?.items) ? dto.items.filter((i: any) => (i.category || '').toLowerCase() === 'reading') : []),
+        ...(Array.isArray(dto?.weeks) ? dto.weeks.flatMap((w: any) => (w.readings || []).map((wr: any) => ({ ...wr, weekNumber: wr.weekNumber || w.weekNumber, relevantTopics: wr.relevantTopics || w.theme }))) : []),
+        ...(Array.isArray(localDto?.weeks) ? localDto.weeks.flatMap((w: any) => (w.readings || []).map((wr: any) => ({ ...wr, weekNumber: wr.weekNumber || w.weekNumber, relevantTopics: wr.relevantTopics || w.theme }))) : []),
+        ...(Array.isArray(localDto?.items) ? localDto.items.filter((i: any) => (i.category || '').toLowerCase() === 'reading') : [])
+      ];
+
+      const cleanReadingsList: any[] = [];
+      for (const r of candidateReadings) {
+        const rawTitle = (r.title || r.name || r.readingTitle || r.resourceTitle || r.bookTitle || '').trim();
+        if (!rawTitle || rawTitle.toLowerCase().includes('required reading & core materials')) continue;
+        const ch = (r.chapterText || r.chapter || r.chapters || r.chaptersOrPages || '').trim();
+        const wk = r.weekNumber || r.week_number || 1;
+        const normKey = `${rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '')}_${ch.toLowerCase().replace(/[^a-z0-9]/g, '')}_${wk}`;
+
+        const existing = cleanReadingsList.find(e => (e as any)._normKey === normKey);
+        if (existing) {
+          if (!existing.authorName && (r.authorName || r.author || r.authors)) {
+            existing.authorName = r.authorName || r.author || r.authors;
+          }
+          if (!existing.chapterText && ch) existing.chapterText = ch;
+          if (!existing.pagesText && (r.pagesText || r.pages)) existing.pagesText = r.pagesText || r.pages;
+          continue;
+        }
+
+        cleanReadingsList.push({
+          _normKey: normKey,
+          title: rawTitle,
+          authorName: r.authorName || r.author || r.authors || null,
+          resourceTitle: r.resourceTitle || r.bookTitle || rawTitle,
+          chapterText: ch || null,
+          pagesText: r.pagesText || r.pages || null,
+          mediaType: r.mediaType || r.subType || 'textbook',
+          weekNumber: wk,
+          dueDate: r.dueDate || r.due_date || null,
+          summaryText: r.summaryText || '',
+          keyTakeawaysText: r.keyTakeawaysText || `• Study ${rawTitle}`,
+          estimatedTimeText: r.estimatedTimeText || '~45 min read',
+          relevantTopics: r.relevantTopics || null
+        });
       }
 
       // Stage 3: Synthesizing Course Repository
@@ -837,77 +887,39 @@ Output ONLY valid JSON.`;
       coursesRef.current = updatedCourses;
       setCourses(updatedCourses);
 
-      // Convert parsed weeks & readings into Reading objects
-      const newReadings: Reading[] = [];
-      if (dto?.weeks && dto.weeks.length > 0) {
-        dto.weeks.forEach((w: any, wIdx: number) => {
-          const weekNum = w.weekNumber || (wIdx + 1);
-          if (w.readings && w.readings.length > 0) {
-            w.readings.forEach((r: any, rIdx: number) => {
-              const readingDate = parseSafeDate(r.dueDate);
-              newReadings.push({
-                id: `r-${Date.now()}-${wIdx}-${rIdx}`,
-                title: r.title || `Reading ${rIdx + 1}`,
-                authorName: r.authorName || null,
-                resourceTitle: r.resourceTitle || r.title,
-                mediaTypeRaw: r.mediaType || 'textbook',
-                mediaType: (r.mediaType as MediaType) || 'textbook',
-                isCompleted: false,
-                isDeleted: false,
-                summaryText: r.summaryText || '',
-                keyTakeawaysText: r.keyTakeawaysText || `• Review ${r.title}`,
-                estimatedTimeText: r.estimatedTimeText || '~45 min',
-                dueDate: readingDate,
-                dateRangeStr: w.dateRangeStr || (readingDate ? readingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined),
-                chapterText: r.chapterText || null,
-                pagesText: r.pagesText || null,
-                courseCode: finalCourse!.courseCode || courseCode,
-                relevantTopics: r.relevantTopics || w.theme || null,
-                sourceDocumentName: fileName,
-                docColorHex: finalCourse!.hexColor,
-                isFavorite: false,
-                weekId: `w-${weekNum}`
-              });
-            });
-          }
-        });
-      }
+      // Convert all clean readings into Reading objects
+      const newReadings: Reading[] = cleanReadingsList.map((r: any, rIdx: number) => {
+        const weekNum = r.weekNumber || 1;
+        const readingDate = parseSafeDate(r.dueDate);
+        return {
+          id: `r-${Date.now()}-${rIdx}`,
+          title: r.title,
+          authorName: r.authorName || null,
+          resourceTitle: r.resourceTitle || r.title,
+          mediaTypeRaw: r.mediaType || 'textbook',
+          mediaType: (r.mediaType as MediaType) || 'textbook',
+          isCompleted: false,
+          isDeleted: false,
+          summaryText: r.summaryText || '',
+          keyTakeawaysText: r.keyTakeawaysText || `• Study ${r.title}`,
+          estimatedTimeText: r.estimatedTimeText || '~45 min read',
+          dueDate: readingDate,
+          dateRangeStr: readingDate ? readingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined,
+          chapterText: r.chapterText || null,
+          pagesText: r.pagesText || null,
+          courseCode: finalCourse!.courseCode || courseCode,
+          relevantTopics: r.relevantTopics || null,
+          sourceDocumentName: fileName,
+          docColorHex: finalCourse!.hexColor,
+          isFavorite: false,
+          weekId: `w-${weekNum}`
+        };
+      });
 
-      // Collect raw assignments from BOTH root dto.assignments AND w.assignments inside each week
-      const rawAssignmentsList: any[] = Array.isArray(dto?.assignments) ? [...dto.assignments] : [];
-      if (Array.isArray(dto?.weeks)) {
-        dto.weeks.forEach((w: any) => {
-          if (Array.isArray(w.assignments)) {
-            w.assignments.forEach((wa: any) => {
-              const alreadyExists = rawAssignmentsList.some(
-                existing => (existing.title || '').trim().toLowerCase() === (wa.title || '').trim().toLowerCase()
-              );
-              if (!alreadyExists) {
-                rawAssignmentsList.push({
-                  ...wa,
-                  weekNumber: wa.weekNumber || w.weekNumber
-                });
-              }
-            });
-          }
-        });
-      }
-
-      // Convert parsed assignments into Assignment objects with intelligent week resolution
-      const newAssignments: Assignment[] = rawAssignmentsList.map((a: any, aIdx: number) => {
+      // Convert all clean assignments into Assignment objects
+      const newAssignments: Assignment[] = cleanAssignmentsList.map((a: any, aIdx: number) => {
         const dueDate = parseSafeDate(a.dueDate);
-        let resolvedWeek = a.weekNumber;
-        if (!resolvedWeek && dueDate && Array.isArray(dto?.weeks) && dto.weeks.length > 0) {
-          for (const w of dto.weeks) {
-            const wDate = parseSafeDate(w.startDate);
-            if (wDate && Math.abs(dueDate.getTime() - wDate.getTime()) <= 7 * 86400000) {
-              resolvedWeek = w.weekNumber;
-              break;
-            }
-          }
-        }
-        if (!resolvedWeek) resolvedWeek = aIdx + 1;
-
+        let resolvedWeek = a.weekNumber || (aIdx + 1);
         return sanitizeAssignment({
           id: `a-${Date.now()}-${aIdx}`,
           title: a.title,
@@ -923,16 +935,51 @@ Output ONLY valid JSON.`;
           courseCode: finalCourse!.courseCode || courseCode,
           moduleMention: a.moduleMention || null,
           weightPercentage: a.weightPercentage || null,
-          subTypeRaw: a.subType || a.subTypeRaw || 'assignment',
+          subTypeRaw: a.subType || 'assignment',
           mediaUrl: a.mediaUrl || null,
           relevantTopics: a.relevantTopics || null,
           sourceDocumentName: fileName,
           docColorHex: finalCourse!.hexColor,
           isFavorite: false,
           courseId: courseId,
-          rubricCriteria: a.rubric || a.rubricCriteria || []
+          rubricCriteria: a.rubric || []
         });
       });
+
+      const maxWeek = Math.max(
+        ...newReadings.map(r => {
+          const m = (r.weekId || '').match(/\d+/);
+          return m ? parseInt(m[0], 10) : 1;
+        }),
+        ...newAssignments.map(a => a.weekNumber),
+        finalCourse?.termWeeks || 1,
+        1
+      );
+
+      const courseWeeks: Week[] = [];
+      for (let w = 1; w <= maxWeek; w++) {
+        const weekReadings = newReadings.filter(r => r.weekId === `w-${w}`);
+        const foundTheme = dto?.weeks?.find((dw: any) => dw.weekNumber === w)?.theme ||
+                           localDto?.weeks?.find((lw: any) => lw.weekNumber === w)?.theme ||
+                           `Week ${w}`;
+        courseWeeks.push({
+          id: `w-${w}`,
+          weekNumber: w,
+          theme: foundTheme,
+          courseId,
+          readings: weekReadings
+        });
+      }
+
+      finalCourse = {
+        ...finalCourse,
+        termWeeks: maxWeek,
+        weeks: courseWeeks,
+        assignments: newAssignments
+      };
+      updatedCourses = updatedCourses.map(c => c.id === courseId ? finalCourse : c);
+      coursesRef.current = updatedCourses;
+      setCourses(updatedCourses);
 
       // Add VaultDocument
       const newVaultDoc: VaultDocument = {

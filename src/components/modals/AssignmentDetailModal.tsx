@@ -1,10 +1,11 @@
 /**
  * AssignmentDetailModal
- * 1:1 Parity with native Swift AssignmentDetailView.swift
- * Visual layout matching legacy Swift AssignmentDetailView
+ * In-place editable assignment details with reliable Schedule toggles,
+ * adjustable Grade Weight stepper (up/down), direct Points Breakdown & Rubric editing,
+ * and clean keyboard-aware notes with zero extra negative space.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Modal,
   View,
@@ -13,35 +14,33 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  TouchableWithoutFeedback,
-  Keyboard,
-  Linking,
-  ActivityIndicator
+  Switch,
+  KeyboardAvoidingView,
+  Platform,
+  Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Assignment, Course, RubricCriterion } from '../../types/models';
+import { Assignment, Course, RubricCriterionDTO } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
 import {
   XMarkCircleFillIcon,
   PlusCircleFillIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  PlayCircleFillIcon,
-  ArrowUpRightIcon
+  DocRichtextFillIcon,
+  ArrowUpRightIcon,
+  CalendarIcon
 } from '../SvgIcons';
-import { parseSafeDate, formatAssignmentDueDate } from '../../utils/readingDisplayHelper';
-import { APIService } from '../../services/APIService';
+import { parseSafeDate } from '../../utils/readingDisplayHelper';
 import { InlineCalendarPicker } from '../InlineCalendarPicker';
 
-interface AssignmentDetailModalProps {
+export interface AssignmentDetailModalProps {
   visible: boolean;
   assignment: Assignment | null;
   courses: Course[];
   onClose: () => void;
-  onEdit: (assignment: Assignment) => void;
-  onToggleComplete: (id: string) => void;
+  onEdit?: (assignment: Assignment) => void;
+  onToggleComplete?: (id: string) => void;
   onUpdateAssignment: (assignment: Assignment) => void;
-  onDeleteAssignment: (id: string) => void;
+  onDeleteAssignment?: (id: string) => void;
 }
 
 export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
@@ -49,12 +48,12 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   assignment,
   courses,
   onClose,
-  onEdit,
-  onToggleComplete,
-  onUpdateAssignment,
-  onDeleteAssignment
+  onUpdateAssignment
 }) => {
   if (!assignment) return null;
+
+  const scrollViewRef = useRef<ScrollView>(null);
+  const currentAssignmentIdRef = useRef<string | null>(null);
 
   const matchedCourse = courses.find(
     c =>
@@ -63,474 +62,608 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   );
 
   const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
-  const courseCodeStr = matchedCourse?.courseCode || assignment.courseCode || 'CRS';
-  const courseTitleStr = matchedCourse?.courseName || assignment.courseCode || 'Assignment';
 
-  const [titleTextState, setTitleTextState] = useState<string>(assignment.title || '');
-  const [showCalendar, setShowCalendar] = useState<boolean>(false);
-  const [noteInputs, setNoteInputs] = useState<string[]>([]);
-  const [completedMilestones, setCompletedMilestones] = useState<Set<number>>(new Set());
-  const [isGeneratingMilestones, setIsGeneratingMilestones] = useState<boolean>(false);
-  const [weekTextState, setWeekTextState] = useState<string>(String(assignment.weekNumber || 1));
-  const [moduleTextState, setModuleTextState] = useState<string>(assignment.moduleMention || assignment.relevantTopics || '');
+  // Validate course code to exclude generic labels like "New", "New Assignments", "CRS"
+  const isInvalidCourseCode = (code?: string | null) =>
+    !code || /^(new|assignment|reading|crs|gen\s*101|details)/i.test(code.trim());
 
-  useEffect(() => {
-    setTitleTextState(assignment.title || '');
-    setWeekTextState(String(assignment.weekNumber || 1));
-    setModuleTextState(assignment.moduleMention || assignment.relevantTopics || '');
+  const validCourseCode = !isInvalidCourseCode(assignment.courseCode)
+    ? assignment.courseCode
+    : matchedCourse && !isInvalidCourseCode(matchedCourse.courseCode)
+    ? matchedCourse.courseCode
+    : null;
 
-    const parsedNotes = (assignment.noteText || '')
+  // In-place editable state
+  const [titleText, setTitleText] = useState<string>(assignment.title || '');
+  const [instructionsText, setInstructionsText] = useState<string>(assignment.fullInstructions || '');
+  const [pointsPossibleText, setPointsPossibleText] = useState<string>(assignment.pointsPossible || '100 Points');
+  const [gradeWeightPercent, setGradeWeightPercent] = useState<number>(() => {
+    const raw = assignment.weightPercentage || '25%';
+    const num = parseInt(raw.replace(/[^0-9]/g, ''), 10);
+    return isNaN(num) ? 25 : num;
+  });
+
+  // Schedule Toggles
+  const [isWeekEnabled, setIsWeekEnabled] = useState<boolean>(assignment.weekNumber > 0);
+  const [weekNumber, setWeekNumber] = useState<number>(assignment.weekNumber > 0 ? assignment.weekNumber : 1);
+  const [isModuleEnabled, setIsModuleEnabled] = useState<boolean>(
+    Boolean(assignment.moduleMention && assignment.moduleMention.trim().length > 0)
+  );
+  const [moduleText, setModuleText] = useState<string>(assignment.moduleMention || '');
+  const [hasDueDate, setHasDueDate] = useState<boolean>(assignment.dueDate != null);
+  const [dueDate, setDueDate] = useState<Date>(parseSafeDate(assignment.dueDate) || new Date());
+
+  // Rubric Items State
+  const [rubricItems, setRubricItems] = useState<RubricCriterionDTO[]>(() => {
+    if (assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
+      return assignment.rubricCriteria.map(r => ({ ...r }));
+    }
+    return [
+      { criterionName: 'Depth of Analysis & Insight', points: 30, percentage: 30 },
+      { criterionName: 'Academic Evidence & Citations', points: 30, percentage: 30 },
+      { criterionName: 'Structural Coherence & Flow', points: 20, percentage: 20 },
+      { criterionName: 'Formatting & Mechanics', points: 20, percentage: 20 }
+    ];
+  });
+
+  // Resource Link
+  const [mediaUrlText, setMediaUrlText] = useState<string>(assignment.mediaUrl || '');
+
+  // Notes
+  const [noteInputs, setNoteInputs] = useState<string[]>(() => {
+    return (assignment.noteText || '')
       .split('\n')
       .map(n => n.replace(/^[•\-\*▪●]\s*/, '').trim())
       .filter(n => n.length > 0);
-    setNoteInputs(parsedNotes);
-  }, [assignment]);
+  });
 
-  const handleWeekStep = (delta: number) => {
-    const currentW = parseInt(weekTextState, 10) || 1;
-    const nextW = Math.max(1, Math.min(52, currentW + delta));
-    setWeekTextState(String(nextW));
-    onUpdateAssignment({
+  // Re-sync ONLY when switching assignment IDs or when modal opens
+  useEffect(() => {
+    if (!assignment || !visible) return;
+
+    if (currentAssignmentIdRef.current !== assignment.id) {
+      currentAssignmentIdRef.current = assignment.id;
+      setTitleText(assignment.title || '');
+      setInstructionsText(assignment.fullInstructions || '');
+      setPointsPossibleText(assignment.pointsPossible || '100 Points');
+      const raw = assignment.weightPercentage || '25%';
+      const num = parseInt(raw.replace(/[^0-9]/g, ''), 10);
+      setGradeWeightPercent(isNaN(num) ? 25 : num);
+
+      setIsWeekEnabled(assignment.weekNumber > 0);
+      setWeekNumber(assignment.weekNumber > 0 ? assignment.weekNumber : 1);
+      setIsModuleEnabled(Boolean(assignment.moduleMention && assignment.moduleMention.trim().length > 0));
+      setModuleText(assignment.moduleMention || '');
+      setHasDueDate(assignment.dueDate != null);
+      setDueDate(parseSafeDate(assignment.dueDate) || new Date());
+      setMediaUrlText(assignment.mediaUrl || '');
+
+      if (assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
+        setRubricItems(assignment.rubricCriteria.map(r => ({ ...r })));
+      } else {
+        setRubricItems([
+          { criterionName: 'Depth of Analysis & Insight', points: 30, percentage: 30 },
+          { criterionName: 'Academic Evidence & Citations', points: 30, percentage: 30 },
+          { criterionName: 'Structural Coherence & Flow', points: 20, percentage: 20 },
+          { criterionName: 'Formatting & Mechanics', points: 20, percentage: 20 }
+        ]);
+      }
+
+      const parsedNotes = (assignment.noteText || '')
+        .split('\n')
+        .map(n => n.replace(/^[•\-\*▪●]\s*/, '').trim())
+        .filter(n => n.length > 0);
+      setNoteInputs(parsedNotes);
+    }
+  }, [assignment?.id, visible]);
+
+  // Persist edits to assignment
+  const saveAllChanges = (overrides: Partial<Assignment> = {}) => {
+    if (!assignment) return;
+    const cleanNotes = noteInputs.filter(n => n.trim().length > 0).join('\n');
+    const cleanRubrics = rubricItems.filter(r => r.criterionName.trim().length > 0);
+
+    const updated: Assignment = {
       ...assignment,
-      weekNumber: nextW
-    });
+      title: titleText.trim() || 'Assignment',
+      fullInstructions: instructionsText.trim(),
+      pointsPossible: pointsPossibleText.trim() || '100 Points',
+      weightPercentage: `${gradeWeightPercent}%`,
+      weekNumber: isWeekEnabled ? weekNumber : 0,
+      moduleMention: isModuleEnabled && moduleText.trim().length > 0 ? moduleText.trim() : null,
+      dueDate: hasDueDate ? dueDate : null,
+      mediaUrl: mediaUrlText.trim() || null,
+      noteText: cleanNotes || null,
+      relevantTopics: isModuleEnabled ? moduleText.trim() : null,
+      rubricCriteria: cleanRubrics,
+      ...overrides
+    };
+
+    onUpdateAssignment(updated);
   };
 
+  const handleDone = () => {
+    saveAllChanges();
+    currentAssignmentIdRef.current = null;
+    onClose();
+  };
+
+  // Toggle Handlers
+  const handleToggleWeek = (enabled: boolean) => {
+    setIsWeekEnabled(enabled);
+    saveAllChanges({ weekNumber: enabled ? weekNumber : 0 });
+  };
+
+  const handleToggleModule = (enabled: boolean) => {
+    setIsModuleEnabled(enabled);
+    saveAllChanges({ moduleMention: enabled ? (moduleText.trim() || 'Module 1') : null });
+  };
+
+  const handleToggleDueDate = (enabled: boolean) => {
+    setHasDueDate(enabled);
+    saveAllChanges({ dueDate: enabled ? dueDate : null });
+  };
+
+  // Steppers
+  const handleWeekStep = (delta: number) => {
+    const next = Math.max(1, Math.min(52, weekNumber + delta));
+    setWeekNumber(next);
+    saveAllChanges({ weekNumber: next });
+  };
+
+  const handleWeightStep = (delta: number) => {
+    const next = Math.max(0, Math.min(100, gradeWeightPercent + delta));
+    setGradeWeightPercent(next);
+    saveAllChanges({ weightPercentage: `${next}%` });
+  };
+
+  // Rubric Item Handlers
+  const handleAddRubricItem = () => {
+    const newItem: RubricCriterionDTO = {
+      criterionName: '',
+      points: 20,
+      percentage: 20
+    };
+    const updated = [...rubricItems, newItem];
+    setRubricItems(updated);
+    saveAllChanges({ rubricCriteria: updated });
+  };
+
+  const handleRemoveRubricItem = (idx: number) => {
+    const updated = rubricItems.filter((_, i) => i !== idx);
+    setRubricItems(updated);
+    saveAllChanges({ rubricCriteria: updated });
+  };
+
+  const handleUpdateCriterionName = (idx: number, text: string) => {
+    const updated = rubricItems.map((item, i) => (i === idx ? { ...item, criterionName: text } : item));
+    setRubricItems(updated);
+    saveAllChanges({ rubricCriteria: updated });
+  };
+
+  const handleUpdateCriterionPoints = (idx: number, text: string) => {
+    const clean = text.replace(/[^0-9.]/g, '');
+    const num = parseFloat(clean);
+    const updated = rubricItems.map((item, i) => (i === idx ? { ...item, points: isNaN(num) ? 0 : num } : item));
+    setRubricItems(updated);
+    saveAllChanges({ rubricCriteria: updated });
+  };
+
+  const handleUpdateCriterionPercentage = (idx: number, text: string) => {
+    const clean = text.replace(/[^0-9.]/g, '');
+    const num = parseFloat(clean);
+    const updated = rubricItems.map((item, i) => (i === idx ? { ...item, percentage: isNaN(num) ? 0 : num } : item));
+    setRubricItems(updated);
+    saveAllChanges({ rubricCriteria: updated });
+  };
+
+  // Note Handlers
   const handleAddNote = () => {
-    setNoteInputs(prev => [...prev, '']);
+    const updated = [...noteInputs, ''];
+    setNoteInputs(updated);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 150);
   };
 
   const handleRemoveNote = (idx: number) => {
     const updated = noteInputs.filter((_, i) => i !== idx);
     setNoteInputs(updated);
-    onUpdateAssignment({
-      ...assignment,
-      noteText: updated.filter(n => n.trim().length > 0).join('\n')
-    });
+    saveAllChanges({ noteText: updated.filter(n => n.trim().length > 0).join('\n') || null });
   };
 
   const handleUpdateNote = (idx: number, text: string) => {
     const updated = noteInputs.map((n, i) => (i === idx ? text : n));
     setNoteInputs(updated);
-    onUpdateAssignment({
-      ...assignment,
-      noteText: updated.filter(n => n.trim().length > 0).join('\n')
-    });
-  };
-
-  const handleTitleChange = (text: string) => {
-    setTitleTextState(text);
-    onUpdateAssignment({
-      ...assignment,
-      title: text
-    });
-  };
-
-  // Parse milestones from relevantTopics ("|||" delimited)
-  const milestones = useMemo(() => {
-    if (!assignment.relevantTopics) return [];
-    if (assignment.relevantTopics.includes('|||')) {
-      return assignment.relevantTopics
-        .split('|||')
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
-    }
-    return [];
-  }, [assignment.relevantTopics]);
-
-  // Rubric items breakdown
-  const rubricItems = useMemo((): Array<{ title: string; points: string; percentage: string }> => {
-    if (assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
-      return assignment.rubricCriteria.map(c => ({
-        title: c.criterionName,
-        points: c.points != null ? `${c.points} pts` : '',
-        percentage: c.percentage != null ? `${c.percentage}%` : ''
-      }));
-    }
-
-    if (assignment.pointsBreakdown && assignment.pointsBreakdown.trim()) {
-      const segments = assignment.pointsBreakdown
-        .split(/[\n|;,]/)
-        .map(s => s.replace(/^[•\-\*▪●]\s*/, '').trim())
-        .filter(s => s.length > 0);
-
-      return segments.map(seg => {
-        let pctStr = '';
-        const pctMatch = seg.match(/\b\d+(?:\.\d+)?\s*%/);
-        if (pctMatch) {
-          pctStr = pctMatch[0].replace(/\s+/g, '');
-        }
-
-        let ptsStr = '';
-        const ptsMatch = seg.match(/\b\d+(?:\.\d+)?\s*(?:pts|points|pt)\b/i);
-        if (ptsMatch) {
-          ptsStr = ptsMatch[0];
-        }
-
-        let cleanTitle = seg
-          .replace(/\b\d+(?:\.\d+)?\s*%/g, '')
-          .replace(/\b\d+(?:\.\d+)?\s*(?:pts|points|pt)\b/gi, '')
-          .replace(/^[\d\s\-\:\.\)]+/, '')
-          .replace(/[\:\-\–\(\)]+/g, ' ')
-          .trim();
-
-        if (!cleanTitle) cleanTitle = 'Evaluation Criterion';
-        return { title: cleanTitle, points: ptsStr, percentage: pctStr };
-      });
-    }
-
-    // Default academic rubric distribution if points are available
-    return [
-      { title: 'Depth of Analysis & Insight', points: '30 pts', percentage: '30%' },
-      { title: 'Academic Evidence & Citations', points: '30 pts', percentage: '30%' },
-      { title: 'Structural Coherence & Organization', points: '20 pts', percentage: '20%' },
-      { title: 'Formatting & Mechanics', points: '20 pts', percentage: '20%' }
-    ];
-  }, [assignment.rubricCriteria, assignment.pointsBreakdown]);
-
-
-
-  const handleWeekChange = (text: string) => {
-    const digits = text.replace(/[^0-9]/g, '');
-    setWeekTextState(digits);
-    const num = parseInt(digits, 10);
-    if (!isNaN(num) && num > 0) {
-      onUpdateAssignment({
-        ...assignment,
-        weekNumber: num
-      });
-    }
-  };
-
-  const handleModuleChange = (text: string) => {
-    setModuleTextState(text);
-    onUpdateAssignment({
-      ...assignment,
-      moduleMention: text.trim() || undefined
-    });
-  };
-
-  const toggleMilestone = (idx: number) => {
-    setCompletedMilestones(prev => {
-      const next = new Set(prev);
-      if (next.has(idx)) {
-        next.delete(idx);
-      } else {
-        next.add(idx);
-      }
-      return next;
-    });
-  };
-
-  const generateRoadmap = async () => {
-    if (isGeneratingMilestones) return;
-    setIsGeneratingMilestones(true);
-    try {
-      const rubrics = rubricItems.map(
-        r => `${r.title}: ${[r.points, r.percentage].filter(Boolean).join(', ')}`
-      );
-      const steps = await APIService.shared.generateAssignmentMilestones(
-        assignment.title,
-        assignment.fullInstructions,
-        assignment.weightPercentage,
-        assignment.pointsPossible,
-        rubrics
-      );
-      const joined = steps.join('|||');
-      onUpdateAssignment({
-        ...assignment,
-        relevantTopics: joined
-      });
-      setCompletedMilestones(new Set());
-    } catch {
-      // Fallback default roadmap steps
-      const fallbackSteps = [
-        `Review instructions and syllabus rubric for ${assignment.title}`,
-        'Draft outline and identify key scholarly sources',
-        'Complete initial working draft of core sections',
-        'Review against criteria and finalize deliverable'
-      ];
-      onUpdateAssignment({
-        ...assignment,
-        relevantTopics: fallbackSteps.join('|||')
-      });
-    } finally {
-      setIsGeneratingMilestones(false);
-    }
+    saveAllChanges({ noteText: updated.filter(n => n.trim().length > 0).join('\n') || null });
   };
 
   const formattedDueDateStr = useMemo(() => {
-    if (assignment.dueDate) {
-      const d = parseSafeDate(assignment.dueDate);
-      if (d) {
-        return d.toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric'
-        });
-      }
+    if (hasDueDate && dueDate) {
+      return dueDate.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      });
     }
-    return `Week ${assignment.weekNumber || 1}`;
-  }, [assignment.dueDate, assignment.weekNumber]);
-
-  const cleanWeightStr = useMemo(() => {
-    if (!assignment.weightPercentage) return null;
-    return assignment.weightPercentage.includes('%')
-      ? assignment.weightPercentage
-      : `${assignment.weightPercentage}%`;
-  }, [assignment.weightPercentage]);
+    return isWeekEnabled ? `Week ${weekNumber}` : 'No due date specified';
+  }, [hasDueDate, dueDate, isWeekEnabled, weekNumber]);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleDone}>
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         {/* Navigation Bar */}
         <View style={styles.navBar}>
           <TouchableOpacity
-            onPress={onClose}
-            style={[styles.navButton, styles.cancelButton]}
+            onPress={handleDone}
+            style={styles.doneNavButton}
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Text style={styles.doneText}>Done</Text>
+            <Text style={styles.doneNavText}>Done</Text>
           </TouchableOpacity>
 
           <View style={styles.navTitleContainer}>
             <Text style={styles.navTitle} numberOfLines={1}>Assignment Details</Text>
           </View>
 
-          <TouchableOpacity
-            onPress={() => {
-              onClose();
-              onEdit(assignment);
-            }}
-            style={[styles.navButton, styles.actionButton]}
-            activeOpacity={0.7}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Text style={styles.editText}>Edit</Text>
-          </TouchableOpacity>
+          <View style={styles.navPlaceholder} />
         </View>
 
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          nestedScrollEnabled={true}
-          alwaysBounceVertical={true}
-          bounces={true}
-          showsVerticalScrollIndicator={true}
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 50 : 0}
         >
-          {/* MARK: - Header Banner */}
-          <View style={styles.headerBannerCard}>
-            {/* Assignment Title (Directly Editable) */}
-            <View style={styles.titleSection}>
-              <TextInput
-                style={styles.assignmentTitleInput}
-                value={titleTextState}
-                onChangeText={handleTitleChange}
-                multiline={true}
-                placeholder="Assignment Title"
-                placeholderTextColor="#8E9BAE"
-                returnKeyType="done"
-                blurOnSubmit={true}
-              />
-
-              {assignment.moduleMention ? (
-                <View style={styles.capsuleBadgesRow}>
-                  <View style={styles.moduleCapsule}>
-                    <Text style={styles.moduleCapsuleText}>{assignment.moduleMention}</Text>
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={true}
+          >
+            {/* MARK: - Header Banner (Clean Title & Genuine Pills Only) */}
+            <View style={styles.headerBannerCard}>
+              <View style={styles.headerPillsRow}>
+                {validCourseCode && (
+                  <View style={[styles.courseCodePill, { backgroundColor: `${courseColor}22` }]}>
+                    <Text style={[styles.courseCodePillText, { color: courseColor }]}>{validCourseCode}</Text>
                   </View>
-                </View>
-              ) : null}
-            </View>
+                )}
 
-            {/* Bottom Row: Course Name */}
-            {courseTitleStr !== courseCodeStr && (
-              <View style={styles.headerBottomRow}>
-                <Text style={styles.courseSubtitleText} numberOfLines={1}>
-                  {courseTitleStr}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* MARK: - Due Date Card */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderClean}>
-              <Text style={styles.sectionCardTitle}>Due Date</Text>
-            </View>
-
-            {/* Week Stepper & Toggle Row */}
-            <View style={styles.weekToggleRow}>
-              <Text style={styles.weekToggleLabel}>Schedule Week</Text>
-              <View style={styles.stepperContainer}>
-                <TouchableOpacity
-                  style={styles.stepperBtn}
-                  onPress={() => handleWeekStep(-1)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.stepperBtnText}>−</Text>
-                </TouchableOpacity>
-
-                <View style={styles.stepperValueBox}>
-                  <Text style={styles.stepperValueText}>Week {weekTextState}</Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.stepperBtn}
-                  onPress={() => handleWeekStep(1)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.stepperBtnText}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.rowDivider} />
-
-            {/* Due Date Row (Tap to change date) */}
-            <TouchableOpacity
-              style={styles.dueDateSelectRow}
-              onPress={() => setShowCalendar(prev => !prev)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.dueDateTextGroup}>
-                <Text style={styles.dueDateLabel}>Due Date</Text>
-                <Text style={styles.dueDateValueText}>{formattedDueDateStr}</Text>
-              </View>
-              <View style={styles.changeDatePill}>
-                <Text style={styles.changeDatePillText}>
-                  {showCalendar ? 'Done' : 'Change Date'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Interactive Calendar Date Picker */}
-            {showCalendar && (
-              <InlineCalendarPicker
-                selectedDate={parseSafeDate(assignment.dueDate) || new Date()}
-                onSelectDate={d => {
-                  onUpdateAssignment({
-                    ...assignment,
-                    dueDate: d
-                  });
-                }}
-              />
-            )}
-          </View>
-
-          {/* MARK: - Instructions Card */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderClean}>
-              <Text style={styles.sectionCardTitle}>Instructions</Text>
-            </View>
-            <Text style={styles.instructionsBodyText}>
-              {assignment.fullInstructions || 'Follow course syllabus guidelines and rubric specifications.'}
-            </Text>
-          </View>
-
-          {/* MARK: - Points Breakdown & Rubric */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderClean}>
-              <Text style={styles.sectionCardTitle}>Points Breakdown</Text>
-            </View>
-
-            {/* Total Points Pill */}
-            <View style={styles.totalPointsPill}>
-              <View style={styles.totalPointsTextCol}>
-                <Text style={styles.totalPointsLabel}>Total Points</Text>
-                <Text style={styles.totalPointsValue}>
-                  {assignment.pointsPossible || '100 Points'}
-                </Text>
-              </View>
-            </View>
-
-            {/* Dedicated Rubric Items */}
-            <View style={styles.rubricListContainer}>
-              {rubricItems.map((item, idx) => (
-                <View key={`rubric-${idx}`} style={styles.rubricItemPill}>
-                  <Text style={styles.rubricItemTitle} numberOfLines={2}>
-                    {item.title}
+                <View style={styles.subTypeBadge}>
+                  <DocRichtextFillIcon size={12} color="#2470F5" />
+                  <Text style={styles.subTypeBadgeText}>
+                    {(assignment.subTypeRaw || 'PAPER').toUpperCase()}
                   </Text>
-
-                  <View style={styles.rubricPointsRow}>
-                    {item.percentage ? (
-                      <View style={styles.rubricPctBadge}>
-                        <Text style={styles.rubricPctBadgeText}>{item.percentage}</Text>
-                      </View>
-                    ) : null}
-
-                    {item.points ? (
-                      <View style={styles.ptsGroup}>
-                        <Text style={styles.ptsLabel}>pts</Text>
-                        <Text style={styles.ptsValue}>
-                          {item.points.replace(/pts|points|pt/gi, '').trim() || item.points}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
                 </View>
-              ))}
-            </View>
-          </View>
+              </View>
 
-          {/* MARK: - Personal Notes (Matching ReadingDetailModal) */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderClean}>
-              <Text style={styles.sectionCardTitle}>Personal Notes</Text>
+              {/* Title Input */}
+              <View style={styles.titleSection}>
+                <TextInput
+                  style={styles.assignmentTitleInput}
+                  value={titleText}
+                  onChangeText={t => {
+                    setTitleText(t);
+                    saveAllChanges({ title: t });
+                  }}
+                  placeholder="Assignment Title"
+                  placeholderTextColor="#8E9BAE"
+                  multiline={true}
+                />
+              </View>
             </View>
 
-            {noteInputs.map((note, idx) => (
-              <View key={`note-${idx}`} style={styles.noteItemCard}>
-                <View style={styles.noteItemHeader}>
-                  <Text style={styles.topicPrefix}>{idx + 1} -</Text>
+            {/* MARK: - Section 1: Systemized Schedule & Due Date */}
+            <Text style={styles.sectionHeaderTitle}>Schedule & Due Date</Text>
+            <View style={styles.sectionCard}>
+              {/* Week Row with Toggle */}
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Schedule Week</Text>
+                <Switch
+                  value={isWeekEnabled}
+                  onValueChange={handleToggleWeek}
+                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
+                  thumbColor="#FFFFFF"
+                  style={styles.switchControl}
+                />
+              </View>
+
+              {isWeekEnabled && (
+                <>
+                  <View style={styles.rowDivider} />
+                  <View style={styles.formRow}>
+                    <Text style={styles.rowSubLabel}>Select Week Number</Text>
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleWeekStep(-1)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.stepperBtnText}>−</Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.stepperValueBox}>
+                        <Text style={styles.stepperValueText}>Week {weekNumber}</Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleWeekStep(1)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.stepperBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              )}
+
+              <View style={styles.rowDivider} />
+
+              {/* Module Row with Toggle */}
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Module / Unit</Text>
+                <Switch
+                  value={isModuleEnabled}
+                  onValueChange={handleToggleModule}
+                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
+                  thumbColor="#FFFFFF"
+                  style={styles.switchControl}
+                />
+              </View>
+
+              {isModuleEnabled && (
+                <>
+                  <View style={styles.rowDivider} />
+                  <View style={styles.formRow}>
+                    <TextInput
+                      style={styles.rowFullInput}
+                      value={moduleText}
+                      onChangeText={t => {
+                        setModuleText(t);
+                        saveAllChanges({ moduleMention: t.trim() || null });
+                      }}
+                      placeholder="e.g. Module 2: Ethics & Research"
+                      placeholderTextColor="#94A3B8"
+                    />
+                  </View>
+                </>
+              )}
+
+              <View style={styles.rowDivider} />
+
+              {/* Due Date Row with Toggle */}
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Due Date</Text>
+                <Switch
+                  value={hasDueDate}
+                  onValueChange={handleToggleDueDate}
+                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
+                  thumbColor="#FFFFFF"
+                  style={styles.switchControl}
+                />
+              </View>
+
+              {hasDueDate && (
+                <>
+                  <View style={styles.rowDivider} />
+                  <View style={styles.selectedDateBanner}>
+                    <CalendarIcon size={14} color="#2470F5" />
+                    <Text style={styles.selectedDateBannerText}>{formattedDueDateStr}</Text>
+                  </View>
+
+                  {/* Inline Calendar Picker */}
+                  <InlineCalendarPicker
+                    selectedDate={dueDate}
+                    onSelectDate={d => {
+                      setDueDate(d);
+                      saveAllChanges({ dueDate: d });
+                    }}
+                    accentColor={CoursePalTheme.accentBlue}
+                  />
+                </>
+              )}
+            </View>
+
+            {/* MARK: - Section 2: Instructions */}
+            <Text style={styles.sectionHeaderTitle}>Instructions</Text>
+            <View style={styles.sectionCard}>
+              <TextInput
+                style={styles.multilineInstructionsInput}
+                value={instructionsText}
+                onChangeText={t => {
+                  setInstructionsText(t);
+                  saveAllChanges({ fullInstructions: t });
+                }}
+                placeholder="Enter assignment requirements, format guidelines, and instructions..."
+                placeholderTextColor="#94A3B8"
+                multiline={true}
+              />
+            </View>
+
+            {/* MARK: - Section 3: Points Breakdown & Rubric */}
+            <Text style={styles.sectionHeaderTitle}>Points Breakdown</Text>
+            <View style={styles.sectionCard}>
+              {/* Grade Weight Stepper (Up & Down) */}
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Grade Weight</Text>
+                <View style={styles.stepperContainer}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => handleWeightStep(-5)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepperBtnText}>−</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.stepperValueBox}>
+                    <Text style={styles.stepperValueText}>{gradeWeightPercent}%</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => handleWeightStep(5)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepperBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.rowDivider} />
+
+              {/* Total Points Input Row */}
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Total Points</Text>
+                <TextInput
+                  style={styles.totalPointsInput}
+                  value={pointsPossibleText}
+                  onChangeText={t => {
+                    setPointsPossibleText(t);
+                    saveAllChanges({ pointsPossible: t });
+                  }}
+                  placeholder="100 Points"
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
+
+              <View style={styles.rowDivider} />
+
+              {/* Rubric Items List */}
+              <View style={styles.rubricListContainer}>
+                {rubricItems.map((item, idx) => (
+                  <View key={`rubric-${idx}`} style={styles.rubricRowCard}>
+                    <Text style={styles.itemIndexNumber}>{idx + 1} -</Text>
+                    <TextInput
+                      style={styles.rubricNameInput}
+                      value={item.criterionName}
+                      onChangeText={t => handleUpdateCriterionName(idx, t)}
+                      placeholder="Criterion title..."
+                      placeholderTextColor="#94A3B8"
+                    />
+
+                    {/* Percentage Box */}
+                    <View style={styles.rubricInputPill}>
+                      <TextInput
+                        style={styles.rubricNumInput}
+                        value={item.percentage != null ? `${item.percentage}` : '0'}
+                        keyboardType="numeric"
+                        onChangeText={t => handleUpdateCriterionPercentage(idx, t)}
+                      />
+                      <Text style={styles.rubricUnitLabel}>%</Text>
+                    </View>
+
+                    {/* Points Box */}
+                    <View style={styles.rubricInputPill}>
+                      <TextInput
+                        style={styles.rubricNumInput}
+                        value={item.points != null ? `${item.points}` : '0'}
+                        keyboardType="numeric"
+                        onChangeText={t => handleUpdateCriterionPoints(idx, t)}
+                      />
+                      <Text style={styles.rubricUnitLabel}>pts</Text>
+                    </View>
+
+                    {/* Delete Item Button */}
+                    <TouchableOpacity
+                      onPress={() => handleRemoveRubricItem(idx)}
+                      style={styles.deleteIconBtn}
+                      activeOpacity={0.7}
+                    >
+                      <XMarkCircleFillIcon size={18} color="#94A3B8" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+
+              {/* Add Rubric Criterion Button */}
+              <TouchableOpacity
+                onPress={handleAddRubricItem}
+                style={styles.addItemBtn}
+                activeOpacity={0.7}
+              >
+                <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
+                <Text style={styles.addItemBtnText}>Add Criterion</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* MARK: - Section 4: Resource Link */}
+            <Text style={styles.sectionHeaderTitle}>Resource Link</Text>
+            <View style={styles.sectionCard}>
+              <TextInput
+                style={styles.singleFieldInput}
+                value={mediaUrlText}
+                onChangeText={t => {
+                  setMediaUrlText(t);
+                  saveAllChanges({ mediaUrl: t.trim() || null });
+                }}
+                placeholder="Paste reference link or video URL..."
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+                keyboardType="url"
+              />
+
+              {mediaUrlText.trim().length > 0 && (
+                <TouchableOpacity
+                  style={styles.openLinkPill}
+                  onPress={() => {
+                    const url = mediaUrlText.startsWith('http') ? mediaUrlText : `https://${mediaUrlText}`;
+                    Linking.openURL(url).catch(() => {});
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <ArrowUpRightIcon size={13} color="#2470F5" />
+                  <Text style={styles.openLinkPillText} numberOfLines={1}>
+                    Open {mediaUrlText}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* MARK: - Section 5: Notes (Keyboard-Aware, No Giant Bottom Gap) */}
+            <Text style={styles.sectionHeaderTitle}>Notes</Text>
+            <View style={styles.sectionCard}>
+              {noteInputs.map((note, idx) => (
+                <View key={`note-${idx}`} style={styles.noteItemCard}>
+                  <Text style={styles.itemIndexNumber}>{idx + 1} -</Text>
                   <TextInput
                     style={styles.noteTextInput}
                     value={note}
                     onChangeText={t => handleUpdateNote(idx, t)}
-                    placeholder="Add personal thoughts, project links, or references..."
-                    placeholderTextColor="#8E9BAE"
-                    multiline
+                    onFocus={() => {
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                      }, 150);
+                    }}
+                    placeholder="Add personal note or study plan..."
+                    placeholderTextColor="#94A3B8"
+                    multiline={true}
                   />
-                  <TouchableOpacity onPress={() => handleRemoveNote(idx)} style={styles.removeTopicButton}>
-                    <XMarkCircleFillIcon size={16} color="#B0BAC9" />
+                  <TouchableOpacity
+                    onPress={() => handleRemoveNote(idx)}
+                    style={styles.deleteIconBtn}
+                    activeOpacity={0.7}
+                  >
+                    <XMarkCircleFillIcon size={18} color="#94A3B8" />
                   </TouchableOpacity>
                 </View>
-              </View>
-            ))}
+              ))}
 
-            <TouchableOpacity onPress={handleAddNote} style={styles.addItemButton} activeOpacity={0.7}>
-              <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
-              <Text style={styles.addItemButtonText}>Add Note</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* MARK: - Attached Media / Resource Link */}
-          {assignment.mediaUrl && assignment.mediaUrl.trim().length > 0 && (
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeaderClean}>
-                <Text style={styles.sectionCardTitle}>Attached Media / Resource Link</Text>
-              </View>
               <TouchableOpacity
-                style={styles.attachedMediaPill}
-                onPress={() => {
-                  if (assignment.mediaUrl) {
-                    Linking.openURL(assignment.mediaUrl).catch(() => {});
-                  }
-                }}
+                onPress={handleAddNote}
+                style={styles.addItemBtn}
                 activeOpacity={0.7}
               >
-                <PlayCircleFillIcon size={18} color="#2470F5" />
-                <Text style={styles.attachedMediaUrl} numberOfLines={1}>
-                  {assignment.mediaUrl}
-                </Text>
-                <ArrowUpRightIcon size={13} color="#2470F5" />
+                <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
+                <Text style={styles.addItemBtnText}>Add Note</Text>
               </TouchableOpacity>
             </View>
-          )}
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -540,6 +673,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F2F5FA'
+  },
+  keyboardAvoid: {
+    flex: 1
   },
   navBar: {
     paddingTop: 14,
@@ -553,65 +689,55 @@ const styles = StyleSheet.create({
     borderBottomColor: '#D1D9E6',
     backgroundColor: '#F2F5FA'
   },
-  navButton: {
+  doneNavButton: {
     minWidth: 60,
     height: 40,
-    justifyContent: 'center'
-  },
-  cancelButton: {
+    justifyContent: 'center',
     alignItems: 'flex-start'
   },
-  actionButton: {
-    alignItems: 'flex-end'
-  },
-  doneText: {
-    fontSize: 16,
+  doneNavText: {
+    fontSize: 17,
     fontWeight: '700',
     color: '#2470F5'
   },
   navTitleContainer: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10
+    justifyContent: 'center'
   },
   navTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#121C33',
-    textAlign: 'center'
+    color: '#141F38'
   },
-  editText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2470F5'
+  navPlaceholder: {
+    minWidth: 60
   },
   scrollView: {
     flex: 1
   },
   scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 64
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24
   },
   headerBannerCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 18,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#E3E8F0',
+    borderColor: '#E2E8F0',
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
-    elevation: 2
+    shadowOffset: { width: 0, height: 2 }
   },
   headerPillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 12
+    marginBottom: 10
   },
   courseCodePill: {
     paddingHorizontal: 10,
@@ -625,11 +751,11 @@ const styles = StyleSheet.create({
   subTypeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
     backgroundColor: 'rgba(36, 112, 245, 0.12)',
-    borderRadius: 8
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4
   },
   subTypeBadgeText: {
     fontSize: 11,
@@ -637,523 +763,229 @@ const styles = StyleSheet.create({
     color: '#2470F5'
   },
   titleSection: {
-    marginBottom: 14
+    marginBottom: 4
   },
   assignmentTitleInput: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#121C33',
-    lineHeight: 28,
-    marginBottom: 8,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#141F38',
+    lineHeight: 26,
     padding: 0
   },
-  assignmentTitleText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#121C33',
-    lineHeight: 28,
-    marginBottom: 8
-  },
-  capsuleBadgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6
-  },
-  weightCapsule: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    backgroundColor: '#2470F5',
-    borderRadius: 12
-  },
-  weightCapsuleText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF'
-  },
-  weekCapsule: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    backgroundColor: '#738094',
-    borderRadius: 12
-  },
-  weekCapsuleText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF'
-  },
-  moduleCapsule: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    backgroundColor: '#738094',
-    borderRadius: 12
-  },
-  moduleCapsuleText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF'
-  },
-  headerBottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#F1F5F9'
-  },
-  courseSubtitleText: {
-    flex: 1,
+  sectionHeaderTitle: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#596B85',
-    marginRight: 8
-  },
-  dueDateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: 'rgba(217, 64, 51, 0.1)',
-    borderRadius: 8
-  },
-  dueDateBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#D94033'
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginLeft: 4,
+    marginBottom: 8,
+    marginTop: 10
   },
   sectionCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 18,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E3E8F0',
+    borderColor: '#E2E8F0',
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 }
   },
-  sectionHeaderClean: {
-    marginBottom: 14
-  },
-  weekToggleRow: {
+  formRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 6
+    minHeight: 40,
+    paddingRight: 4
   },
-  weekToggleLabel: {
-    fontSize: 14,
+  rowLabel: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#121C33'
+    color: '#141F38'
+  },
+  rowSubLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#596B85'
+  },
+  switchControl: {
+    marginRight: 2
+  },
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 10
   },
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    padding: 3
+    gap: 6
   },
   stepperBtn: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#EEF2F6',
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-    elevation: 1
+    justifyContent: 'center'
   },
   stepperBtnText: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#2470F5',
-    lineHeight: 20
-  },
-  stepperValueBox: {
-    paddingHorizontal: 12
-  },
-  stepperValueText: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#121C33'
-  },
-  rowDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 10
-  },
-  dueDateSelectRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6
-  },
-  dueDateTextGroup: {
-    flex: 1
-  },
-  dueDateLabel: {
-    fontSize: 12,
     fontWeight: '600',
-    color: '#596B85',
-    marginBottom: 2
-  },
-  dueDateValueText: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#121C33'
-  },
-  changeDatePill: {
-    backgroundColor: 'rgba(36, 112, 245, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8
-  },
-  changeDatePillText: {
-    fontSize: 13,
-    fontWeight: '700',
     color: '#2470F5'
   },
-  noteItemCard: {
-    backgroundColor: '#F8FAFD',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 14,
-    marginVertical: 5
+  stepperValueBox: {
+    backgroundColor: '#EEF2F6',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    minWidth: 70,
+    alignItems: 'center'
   },
-  noteItemHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10
-  },
-  topicPrefix: {
+  stepperValueText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#596B85',
-    marginTop: 2
+    color: '#141F38'
   },
-  noteTextInput: {
+  rowFullInput: {
     flex: 1,
-    fontSize: 14.5,
-    color: '#121C33',
-    lineHeight: 21,
-    paddingVertical: 0
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#141F38',
+    paddingVertical: 4
   },
-  removeTopicButton: {
-    padding: 4
-  },
-  addItemButton: {
+  selectedDateBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 10,
-    marginTop: 4
-  },
-  addItemButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: CoursePalTheme.accentBlue
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 14
-  },
-  sectionIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(36, 112, 245, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  sectionCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#121C33'
-  },
-  scheduleInputsRow: {
-    flexDirection: 'row',
-    gap: 12,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
     marginBottom: 12
   },
-  scheduleInputCol: {
-    flex: 1
-  },
-  inputFieldLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#596B85',
-    marginBottom: 6
-  },
-  inputWrapper: {
-    backgroundColor: '#F5F7FA',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  textInputBold: {
+  selectedDateBannerText: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#121C33',
-    paddingVertical: 0
-  },
-
-  instructionsBodyText: {
-    fontSize: 14.5,
-    fontWeight: '400',
-    color: '#354252',
-    lineHeight: 23
-  },
-  totalPointsPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#F5F7FA',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E9F0'
-  },
-  numberIconCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#E5E9F0',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  totalPointsTextCol: {
-    flex: 1
-  },
-  totalPointsLabel: {
-    fontSize: 11,
     fontWeight: '600',
-    color: '#73859E'
-  },
-  totalPointsValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#121C33'
-  },
-  rubricListContainer: {
-    gap: 8
-  },
-  rubricItemPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFD',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderWidth: 1,
-    borderColor: '#E5E9F0'
-  },
-  rubricItemTitle: {
-    flex: 1,
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#121C33',
-    marginRight: 12
-  },
-  rubricPointsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  rubricPctBadge: {
-    backgroundColor: 'rgba(36, 112, 245, 0.12)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6
-  },
-  rubricPctBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
     color: '#2470F5'
   },
-  ptsGroup: {
+  multilineInstructionsInput: {
+    fontSize: 14.5,
+    fontWeight: '400',
+    color: '#243048',
+    lineHeight: 22,
+    minHeight: 80,
+    paddingTop: 0
+  },
+  totalPointsInput: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#141F38',
+    textAlign: 'right',
+    minWidth: 100
+  },
+  rubricListContainer: {
+    gap: 8,
+    marginTop: 4
+  },
+  rubricRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
   },
-  ptsLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#73859E'
+  itemIndexNumber: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#596B85'
   },
-  ptsValue: {
+  rubricNameInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#141F38'
+  },
+  rubricInputPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    gap: 2
+  },
+  rubricNumInput: {
     fontSize: 13,
     fontWeight: '700',
     color: '#141F38',
-    minWidth: 20,
-    textAlign: 'right'
+    minWidth: 26,
+    textAlign: 'center',
+    padding: 0
   },
-  roadmapHeaderRow: {
+  rubricUnitLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B'
+  },
+  deleteIconBtn: {
+    padding: 2
+  },
+  addItemBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14
-  },
-  roadmapHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1
-  },
-  generateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: 'rgba(140, 69, 245, 0.12)',
-    borderRadius: 8
-  },
-  generateButtonText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#8C45F5'
-  },
-  milestonesEmptyContainer: {
-    gap: 12
-  },
-  milestonesEmptyDesc: {
-    fontSize: 13,
-    color: '#596B85',
-    lineHeight: 18
-  },
-  generateActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#8C45F5',
-    borderRadius: 12,
-    paddingVertical: 12
-  },
-  generateActionButtonText: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#FFFFFF'
-  },
-  milestonesList: {
-    gap: 10
-  },
-  milestoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    gap: 6,
+    marginTop: 10,
     paddingVertical: 4
   },
-  milestoneCheckbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    alignItems: 'center',
-    justifyContent: 'center'
+  addItemBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2470F5'
   },
-  milestoneCheckboxDone: {
-    backgroundColor: '#2470F5',
-    borderColor: '#2470F5'
+  singleFieldInput: {
+    fontSize: 14.5,
+    color: '#141F38',
+    paddingVertical: 4
   },
-  milestoneText: {
-    flex: 1,
-    fontSize: 13.5,
-    fontWeight: '400',
-    color: '#121C33',
-    lineHeight: 19
-  },
-  milestoneTextDone: {
-    textDecorationLine: 'line-through',
-    color: '#94A3B8'
-  },
-  notesInput: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 13.5,
-    color: '#121C33',
-    minHeight: 85,
-    textAlignVertical: 'top',
-    backgroundColor: '#FAFAFA'
-  },
-  attachedMediaPill: {
+  openLinkPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    backgroundColor: 'rgba(36, 112, 245, 0.1)',
-    borderRadius: 12
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    padding: 10,
+    borderRadius: 10,
+    marginTop: 8
   },
-  attachedMediaUrl: {
-    flex: 1,
+  openLinkPillText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#2470F5'
   },
-  completeButton: {
+  noteItemCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: '#2470F5',
-    borderRadius: 14,
-    paddingVertical: 14,
-    marginTop: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     marginBottom: 8
   },
-  completeButtonDone: {
-    backgroundColor: '#E6F4EA',
-    borderWidth: 1,
-    borderColor: '#A7F3D0'
-  },
-  completeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700'
-  },
-  completeButtonTextDone: {
-    color: '#059669'
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12
-  },
-  deleteButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#D94033'
-  },
-  restoreDetailButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(36, 112, 245, 0.12)',
-    borderRadius: 14,
-    paddingVertical: 14,
-    marginVertical: 8
-  },
-  restoreDetailButtonText: {
-    color: CoursePalTheme.accentBlue,
+  noteTextInput: {
+    flex: 1,
     fontSize: 14,
-    fontWeight: '700'
+    color: '#141F38',
+    lineHeight: 20,
+    padding: 0
   }
 });
