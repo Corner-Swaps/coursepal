@@ -30,7 +30,8 @@ import {
   EyeFillIcon,
   DocBadgePlusIcon,
   FolderBadgePlusIcon,
-  ChecklistIcon
+  ChecklistIcon,
+  ShareIcon
 } from '../components/SvgIcons';
 import { Course, VaultDocument, Assignment, Reading } from '../types/models';
 import {
@@ -42,8 +43,11 @@ import {
 } from '../components/modals';
 import {
   formatDisplayTitleWithChapter,
-  formatAuthorAndPagesSubtitle
+  formatAuthorAndPagesSubtitle,
+  parseSafeDate
 } from '../utils/readingDisplayHelper';
+import { GradeWeightTrackerCard } from '../components/GradeWeightTrackerCard';
+import { CalendarExportService } from '../services/CalendarExportService';
 
 interface SyllabusScreenProps {
   onOpenAddTaskModal: (courseId?: string, category?: 'assignment' | 'reading') => void;
@@ -378,6 +382,9 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           </TouchableOpacity>
                         </View>
 
+                        {/* Grade Weight Tracker & Target Calculator */}
+                        <GradeWeightTrackerCard course={course} assignments={assignments} />
+
                         {/* Assignments Section */}
                         <View style={styles.sectionContainer}>
                           <Text style={styles.sectionTitle}>Assignments</Text>
@@ -408,16 +415,20 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
 
                                 <Text style={styles.itemTitleText}>{assign.title}</Text>
 
-                                {assign.dueDate && (
-                                  <Text style={styles.itemDueText}>
-                                    Due{' '}
-                                    {new Date(assign.dueDate).toLocaleDateString('en-US', {
-                                      weekday: 'long',
-                                      month: 'long',
-                                      day: 'numeric'
-                                    })}
-                                  </Text>
-                                )}
+                                {assign.dueDate && (() => {
+                                  const d = parseSafeDate(assign.dueDate);
+                                  if (!d) return null;
+                                  return (
+                                    <Text style={styles.itemDueText}>
+                                      Due{' '}
+                                      {d.toLocaleDateString('en-US', {
+                                        weekday: 'long',
+                                        month: 'long',
+                                        day: 'numeric'
+                                      })}
+                                    </Text>
+                                  );
+                                })()}
                               </TouchableOpacity>
                             ))}
 
@@ -468,16 +479,20 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                           {formatAuthorAndPagesSubtitle(reading)}
                                         </Text>
                                       )}
-                                      {reading.dueDate && (
-                                        <Text style={styles.itemDueText}>
-                                          Due{' '}
-                                          {new Date(reading.dueDate).toLocaleDateString('en-US', {
-                                            weekday: 'long',
-                                            month: 'long',
-                                            day: 'numeric'
-                                          })}
-                                        </Text>
-                                      )}
+                                      {reading.dueDate && (() => {
+                                        const d = parseSafeDate(reading.dueDate);
+                                        if (!d) return null;
+                                        return (
+                                          <Text style={styles.itemDueText}>
+                                            Due{' '}
+                                            {d.toLocaleDateString('en-US', {
+                                              weekday: 'long',
+                                              month: 'long',
+                                              day: 'numeric'
+                                            })}
+                                          </Text>
+                                        );
+                                      })()}
                                     </TouchableOpacity>
                                   ))}
                                 </View>
@@ -692,6 +707,35 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                   <Text style={styles.actionOptionTitle}>Add Existing from Vault</Text>
                   <Text style={styles.actionOptionDesc}>
                     Select from your saved vault documents
+                  </Text>
+                </View>
+
+                <ChevronRightIcon size={13} color="#73859E" />
+              </TouchableOpacity>
+
+              {/* Card 5: Export Schedule to Calendar */}
+              <TouchableOpacity
+                style={styles.actionOptionCard}
+                onPress={async () => {
+                  const c = activeMenuCourse;
+                  setActiveMenuCourse(null);
+                  const ics = CalendarExportService.createCourseScheduleICS(c, assignments, readings);
+                  await CalendarExportService.exportAndShareICS(
+                    `${c.courseCode || 'Course'}_Schedule`,
+                    ics,
+                    `${c.courseName} Semester Schedule`
+                  );
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.actionIconSquare, { backgroundColor: '#0284C7' }]}>
+                  <ShareIcon size={19} color="#FFFFFF" />
+                </View>
+
+                <View style={styles.actionOptionTextCol}>
+                  <Text style={styles.actionOptionTitle}>Export Schedule to Calendar</Text>
+                  <Text style={styles.actionOptionDesc}>
+                    Add all course deliverables to Apple Calendar (.ics)
                   </Text>
                 </View>
 

@@ -27,7 +27,8 @@ import {
   AddTaskModal,
   AddCourseModal,
   CourseFilterModal,
-  UploadDocumentModal
+  UploadDocumentModal,
+  FocusStudyModal
 } from './components/modals';
 
 export default function App() {
@@ -56,6 +57,7 @@ function MainAppView() {
   const [showAddCourseModal, setShowAddCourseModal] = useState<boolean>(false);
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
+  const [showFocusModal, setShowFocusModal] = useState<boolean>(false);
   const [selectedCourseForAddTask, setSelectedCourseForAddTask] = useState<string | undefined>(undefined);
   const [selectedCategoryForAddTask, setSelectedCategoryForAddTask] = useState<'assignment' | 'reading'>('assignment');
 
@@ -147,6 +149,7 @@ function MainAppView() {
             setSelectedTab('syllabus');
             setShowUploadModal(true);
           }}
+          onStartFocusSession={() => setShowFocusModal(true)}
         />
 
         <AddTaskModal
@@ -175,6 +178,11 @@ function MainAppView() {
         <CourseFilterModal
           visible={showFilterModal}
           onClose={() => setShowFilterModal(false)}
+        />
+
+        <FocusStudyModal
+          visible={showFocusModal}
+          onClose={() => setShowFocusModal(false)}
         />
 
         {/* Confetti Celebration Overlay */}

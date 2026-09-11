@@ -16,6 +16,7 @@ export * from './BottomSheetPanContainer';
 export * from './SlideUpModal';
 export * from './ScreenContainer';
 export * from './DeadlinesCalendarCard';
+export * from './GradeWeightTrackerCard';
 export * from './SvgIcons';
 export * from './modals';
 

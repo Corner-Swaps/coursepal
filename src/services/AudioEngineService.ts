@@ -11,6 +11,24 @@
 
 import { SoundscapeTrack, AudioPlaybackState } from '../types/audio';
 import { getSoundscapeById } from '../utils/soundCatalog';
+import { AudioAssets } from '../assets';
+
+function getLocalAudioAsset(id: string) {
+  switch (id) {
+    case 'rain':
+      return AudioAssets.rain;
+    case 'library':
+      return AudioAssets.library;
+    case 'white_noise':
+      return AudioAssets.whiteNoise;
+    case 'waves':
+      return AudioAssets.waves;
+    case 'completion_chime':
+      return AudioAssets.completionChime;
+    default:
+      return null;
+  }
+}
 
 export interface AudioProvider {
   playTrack(track: SoundscapeTrack, fadeInMs?: number): Promise<void>;
@@ -88,8 +106,10 @@ class AudioService implements AudioProvider {
 
     if (this.avModule?.Audio?.Sound) {
       try {
+        const localAsset = getLocalAudioAsset(track.id);
+        const source = localAsset ? localAsset : { uri: track.assetPath };
         const { sound } = await this.avModule.Audio.Sound.createAsync(
-          { uri: track.assetPath },
+          source,
           {
             shouldPlay: true,
             isLooping: track.isLoopable,

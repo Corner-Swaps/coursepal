@@ -5,7 +5,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput
+  TextInput,
+  Alert
 } from 'react-native';
 import { useCoursePal } from '../context/CoursePalContext';
 import { CoursePalTheme } from '../constants/theme';
@@ -16,7 +17,8 @@ import {
   TrashIcon,
   MagnifyingGlassIcon,
   XMarkCircleFillIcon,
-  CalendarIcon
+  CalendarIcon,
+  ArrowPathIcon
 } from '../components/SvgIcons';
 import { Course, Reading } from '../types/models';
 import { ReadingDetailModal } from '../components/modals';
@@ -38,6 +40,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     toggleReading,
     updateReading,
     deleteReading,
+    restoreReading,
+    emptyTrash,
     selectedCourseFilter,
     setSelectedCourseFilter
   } = useCoursePal();
@@ -342,6 +346,40 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         </View>
       )}
 
+      {/* Trash Mode Banner */}
+      {sortMode === 'trash' && (
+        <View style={styles.trashModeBanner}>
+          <View style={styles.trashModeLeft}>
+            <TrashIcon size={16} color="#D94033" />
+            <Text style={styles.trashModeTitle}>
+              Trash Bin ({deletedCount} item{deletedCount === 1 ? '' : 's'})
+            </Text>
+          </View>
+          {deletedCount > 0 && (
+            <TouchableOpacity
+              style={styles.emptyTrashBtn}
+              onPress={() => {
+                Alert.alert(
+                  'Empty Trash?',
+                  'This will permanently delete all items in the trash. This action cannot be undone.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Empty Trash',
+                      style: 'destructive',
+                      onPress: () => emptyTrash()
+                    }
+                  ]
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.emptyTrashBtnText}>Empty Trash</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {/* MARK: - Grouped Reading Cards */}
       {activeReadings.length === 0 ? (
         <View style={styles.emptyStateCard}>
@@ -456,34 +494,47 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                         )}
                       </TouchableOpacity>
 
-                      {/* Right-side Action Buttons: Checkmark Ring & Trashcan */}
-                      <View style={styles.cardRightActions}>
-                        <TouchableOpacity
-                          style={styles.touchCircleContainer}
-                          onPress={() => toggleReading(reading.id)}
-                          activeOpacity={0.7}
-                        >
-                          <View
-                            style={[
-                              styles.checkboxCircle,
-                              reading.isCompleted && {
-                                backgroundColor: CoursePalTheme.accentBlue,
-                                borderColor: CoursePalTheme.accentBlue
-                              }
-                            ]}
+                      {/* Right-side Action Buttons: Checkmark Ring & Trashcan OR Restore */}
+                      {sortMode === 'trash' ? (
+                        <View style={styles.cardRightActions}>
+                          <TouchableOpacity
+                            style={styles.restorePillButton}
+                            onPress={() => restoreReading(reading.id)}
+                            activeOpacity={0.7}
                           >
-                            {reading.isCompleted && <Text style={styles.checkboxCheckmark}>✓</Text>}
-                          </View>
-                        </TouchableOpacity>
+                            <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
+                            <Text style={styles.restorePillText}>Restore</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <View style={styles.cardRightActions}>
+                          <TouchableOpacity
+                            style={styles.touchCircleContainer}
+                            onPress={() => toggleReading(reading.id)}
+                            activeOpacity={0.7}
+                          >
+                            <View
+                              style={[
+                                styles.checkboxCircle,
+                                reading.isCompleted && {
+                                  backgroundColor: CoursePalTheme.accentBlue,
+                                  borderColor: CoursePalTheme.accentBlue
+                                }
+                              ]}
+                            >
+                              {reading.isCompleted && <Text style={styles.checkboxCheckmark}>✓</Text>}
+                            </View>
+                          </TouchableOpacity>
 
-                        <TouchableOpacity
-                          style={styles.trashTouchContainer}
-                          onPress={() => deleteReading(reading.id)}
-                          activeOpacity={0.7}
-                        >
-                          <TrashIcon size={15} color="rgba(217, 64, 51, 0.85)" />
-                        </TouchableOpacity>
-                      </View>
+                          <TouchableOpacity
+                            style={styles.trashTouchContainer}
+                            onPress={() => deleteReading(reading.id)}
+                            activeOpacity={0.7}
+                          >
+                            <TrashIcon size={15} color="rgba(217, 64, 51, 0.85)" />
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -720,6 +771,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#596B85'
   },
+  trashModeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(217, 64, 51, 0.08)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 64, 51, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 18,
+    marginTop: 12
+  },
+  trashModeLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  trashModeTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#D94033'
+  },
+  emptyTrashBtn: {
+    backgroundColor: '#D94033',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8
+  },
+  emptyTrashBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
   readingsListContainer: {
     marginHorizontal: 18,
     marginTop: 16,
@@ -858,6 +943,20 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  restorePillButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(36, 112, 245, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10
+  },
+  restorePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue
   },
   emptyStateCard: {
     backgroundColor: '#FFFFFF',

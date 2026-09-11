@@ -11,3 +11,4 @@ export { EditAssignmentModal } from './EditAssignmentModal';
 export { ReadingDetailModal } from './ReadingDetailModal';
 export { CourseDetailModal } from './CourseDetailModal';
 export { UploadDocumentModal } from './UploadDocumentModal';
+export { FocusStudyModal } from './FocusStudyModal';

@@ -7,3 +7,4 @@ export * from './HapticsService';
 export * from './LocalSyllabusParser';
 export * from './NeuralDocumentService';
 export * from './StorageService';
+export * from './CalendarExportService';

@@ -287,5 +287,51 @@ export const ArchiveBoxFillIcon: React.FC<IconProps> = ({ size = 16, color = '#8
   </Svg>
 );
 
+export const ArrowPathIcon: React.FC<IconProps> = ({ size = 16, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M4 12a8 8 0 0 1 14.93-4M20 12a8 8 0 0 1-14.93 4"
+      stroke={color}
+      strokeWidth="2.2"
+      strokeLinecap="round"
+    />
+    <Path d="M20 4v4h-4M4 20v-4h4" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+export const HeadphonesFillIcon: React.FC<IconProps> = ({ size = 20, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M3 12a9 9 0 0 1 18 0v6a3 3 0 0 1-3 3h-1a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h3V12a8 8 0 0 0-16 0v1h3a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H6a3 3 0 0 1-3-3v-6z"
+      fill={color}
+    />
+  </Svg>
+);
+
+export const PlayFillIcon: React.FC<IconProps> = ({ size = 18, color = '#FFFFFF' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M8 5v14l11-7L8 5z" fill={color} />
+  </Svg>
+);
+
+export const PauseFillIcon: React.FC<IconProps> = ({ size = 18, color = '#FFFFFF' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" fill={color} />
+  </Svg>
+);
+
+export const ShareIcon: React.FC<IconProps> = ({ size = 18, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"
+      stroke={color}
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+
 
 

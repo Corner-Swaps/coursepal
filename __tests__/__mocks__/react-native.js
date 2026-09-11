@@ -71,4 +71,9 @@ module.exports = {
     ease: (t) => t,
     inOut: () => (t) => t,
   },
+  Share: {
+    share: jest.fn(() => Promise.resolve({ action: 'sharedAction' })),
+    sharedAction: 'sharedAction',
+    dismissedAction: 'dismissedAction',
+  },
 };

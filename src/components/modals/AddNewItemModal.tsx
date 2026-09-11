@@ -1,6 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { GraduationCapFillIcon, ChevronRightIcon, DocBadgePlusIcon } from '../SvgIcons';
+import {
+  GraduationCapFillIcon,
+  ChevronRightIcon,
+  DocBadgePlusIcon,
+  HeadphonesFillIcon
+} from '../SvgIcons';
 import { SlideUpModal } from '../SlideUpModal';
 
 interface AddNewItemModalProps {
@@ -9,6 +14,7 @@ interface AddNewItemModalProps {
   onCreateCourse: () => void;
   onAddTask: () => void;
   onUploadDocument?: () => void;
+  onStartFocusSession?: () => void;
 }
 
 export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
@@ -16,7 +22,8 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
   onClose,
   onCreateCourse,
   onAddTask,
-  onUploadDocument
+  onUploadDocument,
+  onStartFocusSession
 }) => {
   return (
     <SlideUpModal
@@ -105,6 +112,32 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
             <ChevronRightIcon size={13} color="#73859E" />
           </TouchableOpacity>
         )}
+
+        {/* Card 4: Start Focus Study Session */}
+        {onStartFocusSession && (
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() => {
+              onClose();
+              onStartFocusSession();
+            }}
+            activeOpacity={0.8}
+            testID="modal-choice-focus-session"
+          >
+            <View style={styles.indigoIconSquare}>
+              <HeadphonesFillIcon size={20} color="#FFFFFF" />
+            </View>
+
+            <View style={styles.optionTextCol}>
+              <Text style={styles.optionTitle}>Start Focus Session</Text>
+              <Text style={styles.optionDesc}>
+                Pomodoro study timer & ambient soundscapes
+              </Text>
+            </View>
+
+            <ChevronRightIcon size={13} color="#73859E" />
+          </TouchableOpacity>
+        )}
       </View>
     </SlideUpModal>
   );
@@ -166,6 +199,15 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 12,
     backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14
+  },
+  indigoIconSquare: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#6366F1',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14
