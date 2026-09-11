@@ -16,7 +16,9 @@ import {
 
 export interface ConfettiCelebrationProps {
   active?: boolean;
+  particleCount?: number;
   onFinished?: () => void;
+  onAnimationComplete?: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -33,7 +35,9 @@ interface ParticleInstance {
 
 export const ConfettiCelebration: React.FC<ConfettiCelebrationProps> = ({
   active = true,
+  particleCount,
   onFinished,
+  onAnimationComplete,
   style
 }) => {
   const [particles, setParticles] = useState<ParticleInstance[]>([]);
@@ -50,8 +54,9 @@ export const ConfettiCelebration: React.FC<ConfettiCelebrationProps> = ({
 
     const { width: W, height: H } = Dimensions.get('window');
     const newParticles: ParticleInstance[] = [];
+    const count = particleCount ?? ConfettiPhysics.particleCount;
 
-    for (let i = 0; i < ConfettiPhysics.particleCount; i++) {
+    for (let i = 0; i < count; i++) {
       const color = ConfettiPalette[i % ConfettiPalette.length];
       const startX = (0.15 + Math.random() * 0.70) * W;
       const startY = (0.25 + Math.random() * 0.20) * H;
@@ -115,7 +120,8 @@ export const ConfettiCelebration: React.FC<ConfettiCelebrationProps> = ({
       if (dt < ConfettiPhysics.totalDurationSeconds) {
         frameRef.current = requestAnimationFrame(updateFrame);
       } else {
-        onFinished?.();
+        const finishCallback = onFinished || onAnimationComplete;
+        finishCallback?.();
       }
     };
 
@@ -126,7 +132,7 @@ export const ConfettiCelebration: React.FC<ConfettiCelebrationProps> = ({
         cancelAnimationFrame(frameRef.current);
       }
     };
-  }, [active, onFinished]);
+  }, [active, onFinished, onAnimationComplete, particleCount]);
 
   if (!active || particles.length === 0) return null;
 
