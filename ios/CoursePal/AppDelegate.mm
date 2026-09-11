@@ -91,21 +91,46 @@ RCT_EXPORT_METHOD(extractText:(NSString *)filePath
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
   @try {
-    NSString *cleanPath = filePath;
-    if ([cleanPath hasPrefix:@"file://"]) {
-      cleanPath = [cleanPath substringFromIndex:7];
+    if (!filePath || filePath.length == 0) {
+      resolve(@"");
+      return;
     }
-    cleanPath = [cleanPath stringByRemovingPercentEncoding];
-    NSURL *url = [NSURL fileURLWithPath:cleanPath];
+
+    NSURL *url = nil;
+    if ([filePath hasPrefix:@"file://"]) {
+      url = [NSURL URLWithString:filePath];
+      if (!url || ![[NSFileManager defaultManager] fileExistsAtPath:url.path]) {
+        NSString *unescaped = [filePath stringByRemovingPercentEncoding];
+        if (unescaped) {
+          if ([unescaped hasPrefix:@"file://"]) {
+            url = [NSURL fileURLWithPath:[unescaped substringFromIndex:7]];
+          } else {
+            url = [NSURL fileURLWithPath:unescaped];
+          }
+        }
+      }
+    } else {
+      url = [NSURL fileURLWithPath:filePath];
+    }
+
     if (!url) {
       resolve(@"");
       return;
     }
+
     PDFDocument *doc = [[PDFDocument alloc] initWithURL:url];
+    if (!doc || doc.pageCount == 0) {
+      NSData *data = [NSData dataWithContentsOfURL:url];
+      if (data && data.length > 0) {
+        doc = [[PDFDocument alloc] initWithData:data];
+      }
+    }
+
     if (!doc || doc.pageCount == 0) {
       resolve(@"");
       return;
     }
+
     NSMutableString *fullText = [NSMutableString string];
     for (NSUInteger i = 0; i < doc.pageCount; i++) {
       PDFPage *page = [doc pageAtIndex:i];

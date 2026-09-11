@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import {
   GraduationCapFillIcon,
   ChevronRightIcon,
-  GlassesFillIcon
+  ClearBookIcon
 } from '../SvgIcons';
 import { SlideUpModal } from '../SlideUpModal';
 
@@ -81,7 +81,7 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
           testID="modal-choice-add-task"
         >
           <View style={styles.blueIconSquare}>
-            <GlassesFillIcon size={20} color="#FFFFFF" />
+            <ClearBookIcon size={20} color="#FFFFFF" />
           </View>
 
           <View style={styles.optionTextCol}>

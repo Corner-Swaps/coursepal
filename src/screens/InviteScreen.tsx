@@ -191,6 +191,26 @@ export const InviteScreen: React.FC = () => {
               </View>
             ))
           )}
+
+          {/* MARK: - About & Legal Card (Exclusively in Share Codes) */}
+          <View style={styles.aboutCardContainer}>
+            <TouchableOpacity
+              style={styles.aboutCard}
+              onPress={() => setShowInfoSheet(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.aboutIconCircle}>
+                <ShieldLockIcon size={18} color={CoursePalTheme.accentBlue} />
+              </View>
+
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>About & Legal</Text>
+                <Text style={styles.aboutDesc}>Privacy policy, terms of service & support</Text>
+              </View>
+
+              <ChevronRightIcon size={13} color="#73859E" />
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         // Join Course Section
@@ -224,26 +244,6 @@ export const InviteScreen: React.FC = () => {
           </View>
         </View>
       )}
-
-      {/* MARK: - About & Legal Card */}
-      <View style={styles.aboutCardContainer}>
-        <TouchableOpacity
-          style={styles.aboutCard}
-          onPress={() => setShowInfoSheet(true)}
-          activeOpacity={0.8}
-        >
-          <View style={styles.aboutIconCircle}>
-            <ShieldLockIcon size={18} color={CoursePalTheme.accentBlue} />
-          </View>
-
-          <View style={styles.aboutTextCol}>
-            <Text style={styles.aboutTitle}>About & Legal</Text>
-            <Text style={styles.aboutDesc}>Privacy policy, terms of service & support</Text>
-          </View>
-
-          <ChevronRightIcon size={13} color="#73859E" />
-        </TouchableOpacity>
-      </View>
 
       {/* Modals */}
       <QRCodeModal

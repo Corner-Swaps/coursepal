@@ -7,14 +7,35 @@ interface IconProps {
   strokeWidth?: number;
 }
 
-export const BookFillIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5' }) => (
+export const ClearBookIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5', strokeWidth = 1.9 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    {/* Left and Right Open Book Pages */}
     <Path
-      d="M12 6.25C9.8 4.2 6.5 3.8 3.5 4.5A1.5 1.5 0 0 0 2.25 6v12.2c0 .9.8 1.6 1.7 1.45 2.55-.4 5.35-.05 7.05 1.6.4.35 1 .35 1.4 0 1.7-1.65 4.5-2 7.05-1.6.9.15 1.7-.55 1.7-1.45V6a1.5 1.5 0 0 0-1.25-1.5c-3-.7-6.3-.3-8.5 1.75z"
-      fill={color}
+      d="M12 6.5C9.5 4.8 6.5 4.8 3.5 5.8A1 1 0 0 0 2.8 6.8v11.4a1 1 0 0 0 1.3.95C6.8 18.2 9.5 18.2 12 19.8c2.5-1.6 5.2-1.6 7.9-.65a1 1 0 0 0 1.3-.95V6.8a1 1 0 0 0-.7-1C17.5 4.8 14.5 4.8 12 6.5z"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    {/* Center Spine */}
+    <Path
+      d="M12 6.5V19.8"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+    />
+    {/* Inner Page Guidelines */}
+    <Path
+      d="M5.5 9.5c1.8-.5 3.5-.5 4.5.3M5.5 13c1.8-.5 3.5-.5 4.5.3M14 9.8c1-.8 2.7-.8 4.5-.3M14 13.3c1-.8 2.7-.8 4.5-.3"
+      stroke={color}
+      strokeWidth={1.3}
+      strokeLinecap="round"
+      opacity={0.5}
     />
   </Svg>
 );
+
+export const BookFillIcon: React.FC<IconProps> = ClearBookIcon;
 
 export const GlassesFillIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5' }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

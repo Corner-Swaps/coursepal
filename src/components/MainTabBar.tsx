@@ -16,7 +16,7 @@ import {
 import { CoursePalTheme } from '../constants/theme';
 import { Typography } from '../constants/typography';
 import {
-  GlassesFillIcon,
+  ClearBookIcon,
   CalendarIcon,
   GraduationCapFillIcon,
   PersonFillIcon,
@@ -49,7 +49,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
           testID="tab-readings"
         >
           <View style={styles.tabIconWrapper}>
-            <GlassesFillIcon
+            <ClearBookIcon
               size={22}
               color={selectedTab === 'readings' ? CoursePalTheme.accentBlue : '#73859E'}
             />

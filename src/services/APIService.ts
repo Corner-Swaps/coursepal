@@ -43,9 +43,7 @@ export class APIService {
       throw new Error('No API key available for AI service');
     }
 
-    const modelsToTry = base64Pdf
-      ? ['gemini-flash-latest', 'gemini-3-flash-preview', 'gemini-3.6-flash']
-      : ['gemini-flash-lite-latest', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest'];
 
     const contents: any[] = [];
     if (context) {
@@ -87,13 +85,18 @@ export class APIService {
     for (const modelName of modelsToTry) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (response.ok) {
           const result = await response.json();

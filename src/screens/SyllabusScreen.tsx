@@ -234,10 +234,10 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
           /* Courses List */
           <View style={styles.listContainer}>
             {activeCourses.length === 0 ? (
-              <View style={styles.emptyCenterContainer}>
-                <Text style={styles.emptyCenterTitle}>No Courses</Text>
-                <Text style={styles.emptyCenterDesc}>
-                  There are no courses uploaded yet.
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No Courses Found</Text>
+                <Text style={styles.emptyDesc}>
+                  Upload a syllabus document or create a course to get started.
                 </Text>
               </View>
             ) : (
@@ -501,9 +501,9 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
           /* Documents List */
           <View style={styles.listContainer}>
             {vaultDocs.length === 0 ? (
-              <View style={styles.emptyCenterContainer}>
-                <Text style={styles.emptyCenterTitle}>No Documents</Text>
-                <Text style={styles.emptyCenterDesc}>
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No Documents Found</Text>
+                <Text style={styles.emptyDesc}>
                   There are no syllabus documents uploaded yet.
                 </Text>
               </View>
