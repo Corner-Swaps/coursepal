@@ -154,42 +154,42 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-          {/* MARK: - Top Navigation Bar Matching iOS Details Sheet */}
-          <View style={styles.navBar}>
-            <TouchableOpacity
-              onPress={onClose}
-              style={[styles.navButton, styles.cancelButton]}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        {/* MARK: - Top Navigation Bar Matching iOS Details Sheet */}
+        <View style={styles.navBar}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={[styles.navButton, styles.cancelButton]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={styles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
 
-            <View style={styles.navTitleContainer}>
-              <Text style={styles.navTitle} numberOfLines={1}>Details</Text>
-            </View>
-
-            <TouchableOpacity
-              onPress={handleSave}
-              style={[styles.navButton, styles.actionButton]}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={styles.saveText}>Save</Text>
-            </TouchableOpacity>
+          <View style={styles.navTitleContainer}>
+            <Text style={styles.navTitle} numberOfLines={1}>Details</Text>
           </View>
 
-          <ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            alwaysBounceHorizontal={false}
-            showsHorizontalScrollIndicator={false}
-            bounces={true}
-            overScrollMode="never"
+          <TouchableOpacity
+            onPress={handleSave}
+            style={[styles.navButton, styles.actionButton]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
+            <Text style={styles.saveText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          nestedScrollEnabled={true}
+          alwaysBounceVertical={true}
+          bounces={true}
+          showsVerticalScrollIndicator={true}
+        >
             {/* MARK: - Section 1: Course Name */}
             <View style={styles.sectionCard}>
               <Text style={styles.captionLabel}>Course Name</Text>
@@ -424,9 +424,8 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
             ) : null}
           </ScrollView>
         </SafeAreaView>
-      </TouchableWithoutFeedback>
-    </Modal>
-  );
+      </Modal>
+    );
 };
 
 const styles = StyleSheet.create({

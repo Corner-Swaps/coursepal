@@ -79,6 +79,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   const courseCodeStr = matchedCourse?.courseCode || assignment.courseCode || 'CRS';
   const courseTitleStr = matchedCourse?.courseName || assignment.courseCode || 'Assignment';
 
+  const [titleTextState, setTitleTextState] = useState<string>(assignment.title || '');
   const [notes, setNotes] = useState<string>(assignment.noteText || '');
   const [completedMilestones, setCompletedMilestones] = useState<Set<number>>(new Set());
   const [isGeneratingMilestones, setIsGeneratingMilestones] = useState<boolean>(false);
@@ -86,10 +87,19 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   const [moduleTextState, setModuleTextState] = useState<string>(assignment.moduleMention || assignment.relevantTopics || '');
 
   useEffect(() => {
+    setTitleTextState(assignment.title || '');
     setNotes(assignment.noteText || '');
     setWeekTextState(String(assignment.weekNumber || 1));
     setModuleTextState(assignment.moduleMention || assignment.relevantTopics || '');
   }, [assignment]);
+
+  const handleTitleChange = (text: string) => {
+    setTitleTextState(text);
+    onUpdateAssignment({
+      ...assignment,
+      title: text
+    });
+  };
 
   // Parse milestones from relevantTopics ("|||" delimited)
   const milestones = useMemo(() => {
@@ -280,372 +290,216 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-          {/* Navigation Bar */}
-          <View style={styles.navBar}>
-            <TouchableOpacity
-              onPress={onClose}
-              style={[styles.navButton, styles.cancelButton]}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={styles.doneText}>Done</Text>
-            </TouchableOpacity>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        {/* Navigation Bar */}
+        <View style={styles.navBar}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={[styles.navButton, styles.cancelButton]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={styles.doneText}>Done</Text>
+          </TouchableOpacity>
 
-            <View style={styles.navTitleContainer}>
-              <Text style={styles.navTitle} numberOfLines={1}>Assignment Details</Text>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => {
-                onClose();
-                onEdit(assignment);
-              }}
-              style={[styles.navButton, styles.actionButton]}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={styles.editText}>Edit</Text>
-            </TouchableOpacity>
+          <View style={styles.navTitleContainer}>
+            <Text style={styles.navTitle} numberOfLines={1}>Assignment Details</Text>
           </View>
 
-          <ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={true}
+          <TouchableOpacity
+            onPress={() => {
+              onClose();
+              onEdit(assignment);
+            }}
+            style={[styles.navButton, styles.actionButton]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            {/* MARK: - Header Banner (1:1 with Swift headerBannerView) */}
-            <View style={styles.headerBannerCard}>
-              {/* Top Row: Course Code Pill & Subtype Badge */}
-              <View style={styles.headerPillsRow}>
-                <View style={[styles.courseCodePill, { backgroundColor: `${courseColor}26` }]}>
-                  <Text style={[styles.courseCodePillText, { color: courseColor }]}>{courseCodeStr}</Text>
-                </View>
+            <Text style={styles.editText}>Edit</Text>
+          </TouchableOpacity>
+        </View>
 
-                <View style={styles.subTypeBadge}>
-                  {renderSubTypeIcon()}
-                  <Text style={styles.subTypeBadgeText}>
-                    {(assignment.subTypeRaw || 'ASSIGNMENT').toUpperCase()}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Assignment Title & Badges */}
-              <View style={styles.titleSection}>
-                <Text style={styles.assignmentTitleText}>{assignment.title}</Text>
-
-                <View style={styles.capsuleBadgesRow}>
-                  {cleanWeightStr && (
-                    <View style={styles.weightCapsule}>
-                      <Text style={styles.weightCapsuleText}>{cleanWeightStr}</Text>
-                    </View>
-                  )}
-
-                  {assignment.weekNumber > 0 && (
-                    <View style={styles.weekCapsule}>
-                      <Text style={styles.weekCapsuleText}>Week {assignment.weekNumber}</Text>
-                    </View>
-                  )}
-
-                  {assignment.moduleMention ? (
-                    <View style={styles.moduleCapsule}>
-                      <Text style={styles.moduleCapsuleText}>{assignment.moduleMention}</Text>
-                    </View>
-                  ) : null}
-                </View>
-              </View>
-
-              {/* Bottom Row: Course Name & Due Date */}
-              <View style={styles.headerBottomRow}>
-                {courseTitleStr !== courseCodeStr && (
-                  <Text style={styles.courseSubtitleText} numberOfLines={1}>
-                    {courseTitleStr}
-                  </Text>
-                )}
-
-                <View style={styles.dueDateBadge}>
-                  <CalendarIcon size={12} color="#D94033" />
-                  <Text style={styles.dueDateBadgeText}>
-                    {formatAssignmentDueDate(assignment.dueDate) || `Week ${assignment.weekNumber || 1}`}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* MARK: - Schedule & Due Date Card */}
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionIconCircle}>
-                  <CalendarIcon size={14} color="#2470F5" />
-                </View>
-                <Text style={styles.sectionCardTitle}>Schedule & Due Date</Text>
-              </View>
-
-              <View style={styles.scheduleInputsRow}>
-                {/* Week Box */}
-                <View style={styles.scheduleInputCol}>
-                  <Text style={styles.inputFieldLabel}>Week</Text>
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      style={styles.textInputBold}
-                      value={weekTextState}
-                      keyboardType="number-pad"
-                      onChangeText={handleWeekChange}
-                      placeholder="1"
-                      placeholderTextColor="#8E9BAE"
-                    />
-                  </View>
-                </View>
-
-                {/* Module Box */}
-                <View style={styles.scheduleInputCol}>
-                  <Text style={styles.inputFieldLabel}>Module</Text>
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      style={styles.textInputBold}
-                      value={moduleTextState}
-                      onChangeText={handleModuleChange}
-                      placeholder="Module"
-                      placeholderTextColor="#8E9BAE"
-                    />
-                  </View>
-                </View>
-              </View>
-
-              {/* Due Date Display */}
-              <View style={styles.dueDateDisplayBox}>
-                <Text style={styles.inputFieldLabel}>Due Date</Text>
-                <View style={styles.dueDateRow}>
-                  <CalendarIcon size={15} color="#596B85" />
-                  <Text style={styles.dueDateValueText}>{formattedDueDateStr}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* MARK: - Instructions Card */}
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionIconCircle}>
-                  <DocTextFillIcon size={14} color="#2470F5" />
-                </View>
-                <Text style={styles.sectionCardTitle}>Instructions</Text>
-              </View>
-              <Text style={styles.instructionsBodyText}>
-                {assignment.fullInstructions || 'Follow course syllabus guidelines and rubric specifications.'}
-              </Text>
-            </View>
-
-            {/* MARK: - Points Breakdown & Rubric */}
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionIconCircle}>
-                  <ChartPieFillIcon size={14} color="#2470F5" />
-                </View>
-                <Text style={styles.sectionCardTitle}>Points Breakdown</Text>
-              </View>
-
-              {/* Total Points Pill */}
-              <View style={styles.totalPointsPill}>
-                <View style={styles.numberIconCircle}>
-                  <NumberIcon size={12} color="#596B85" />
-                </View>
-                <View style={styles.totalPointsTextCol}>
-                  <Text style={styles.totalPointsLabel}>Total Points</Text>
-                  <Text style={styles.totalPointsValue}>
-                    {assignment.pointsPossible || '100 Points'}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Dedicated Rubric Items */}
-              <View style={styles.rubricListContainer}>
-                {rubricItems.map((item, idx) => (
-                  <View key={`rubric-${idx}`} style={styles.rubricItemPill}>
-                    <Text style={styles.rubricItemTitle} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-
-                    <View style={styles.rubricPointsRow}>
-                      {item.percentage ? (
-                        <View style={styles.rubricPctBadge}>
-                          <Text style={styles.rubricPctBadgeText}>{item.percentage}</Text>
-                        </View>
-                      ) : null}
-
-                      {item.points ? (
-                        <View style={styles.ptsGroup}>
-                          <Text style={styles.ptsLabel}>pts</Text>
-                          <Text style={styles.ptsValue}>
-                            {item.points.replace(/pts|points|pt/gi, '').trim() || item.points}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            {/* MARK: - AI Study Roadmap & Milestones */}
-            <View style={styles.sectionCard}>
-              <View style={styles.roadmapHeaderRow}>
-                <View style={styles.roadmapHeaderLeft}>
-                  <SparklesIcon size={16} color="#8C45F5" />
-                  <Text style={styles.sectionCardTitle}>AI Study Roadmap & Milestones</Text>
-                </View>
-
-                {isGeneratingMilestones ? (
-                  <ActivityIndicator size="small" color="#8C45F5" />
-                ) : (
-                  <TouchableOpacity
-                    style={styles.generateButton}
-                    onPress={generateRoadmap}
-                    activeOpacity={0.7}
-                  >
-                    <WandAndStarsIcon size={12} color="#8C45F5" />
-                    <Text style={styles.generateButtonText}>
-                      {milestones.length === 0 ? 'Generate' : 'Regenerate'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {milestones.length === 0 ? (
-                <View style={styles.milestonesEmptyContainer}>
-                  <Text style={styles.milestonesEmptyDesc}>
-                    Let AI break down this assignment into actionable, step-by-step milestones to help you stay on track.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.generateActionButton}
-                    onPress={generateRoadmap}
-                    activeOpacity={0.8}
-                  >
-                    <SparklesIcon size={16} color="#FFFFFF" />
-                    <Text style={styles.generateActionButtonText}>Generate Actionable Milestones</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.milestonesList}>
-                  {milestones.map((step, idx) => {
-                    const isDone = completedMilestones.has(idx);
-                    return (
-                      <TouchableOpacity
-                        key={`step-${idx}`}
-                        style={styles.milestoneRow}
-                        onPress={() => toggleMilestone(idx)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={[styles.milestoneCheckbox, isDone && styles.milestoneCheckboxDone]}>
-                          {isDone && <CheckmarkIcon size={11} color="#FFFFFF" strokeWidth={2.6} />}
-                        </View>
-                        <Text style={[styles.milestoneText, isDone && styles.milestoneTextDone]}>
-                          {step}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-
-            {/* MARK: - Personal Notes */}
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionIconCircle}>
-                  <PencilSquareIcon size={14} color="#2470F5" />
-                </View>
-                <Text style={styles.sectionCardTitle}>Personal Notes</Text>
-              </View>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          nestedScrollEnabled={true}
+          alwaysBounceVertical={true}
+          bounces={true}
+          showsVerticalScrollIndicator={true}
+        >
+          {/* MARK: - Header Banner */}
+          <View style={styles.headerBannerCard}>
+            {/* Assignment Title (Directly Editable) & Badges */}
+            <View style={styles.titleSection}>
               <TextInput
-                style={styles.notesInput}
-                multiline
-                numberOfLines={4}
-                placeholder="Add personal thoughts, project links, or references..."
+                style={styles.assignmentTitleInput}
+                value={titleTextState}
+                onChangeText={handleTitleChange}
+                multiline={true}
+                placeholder="Assignment Title"
                 placeholderTextColor="#8E9BAE"
-                value={notes}
-                onChangeText={handleNotesChange}
+                returnKeyType="done"
+                blurOnSubmit={true}
               />
+
+              <View style={styles.capsuleBadgesRow}>
+                {cleanWeightStr && (
+                  <View style={styles.weightCapsule}>
+                    <Text style={styles.weightCapsuleText}>{cleanWeightStr}</Text>
+                  </View>
+                )}
+
+                {assignment.moduleMention ? (
+                  <View style={styles.moduleCapsule}>
+                    <Text style={styles.moduleCapsuleText}>{assignment.moduleMention}</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
 
-            {/* MARK: - Attached Media / Resource Link */}
-            {assignment.mediaUrl && assignment.mediaUrl.trim().length > 0 && (
-              <View style={styles.sectionCard}>
-                <View style={styles.sectionHeaderRow}>
-                  <LinkCircleFillIcon size={18} color="#2470F5" />
-                  <Text style={styles.sectionCardTitle}>Attached Media / Resource Link</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.attachedMediaPill}
-                  onPress={() => {
-                    if (assignment.mediaUrl) {
-                      Linking.openURL(assignment.mediaUrl).catch(() => {});
-                    }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <PlayCircleFillIcon size={18} color="#2470F5" />
-                  <Text style={styles.attachedMediaUrl} numberOfLines={1}>
-                    {assignment.mediaUrl}
-                  </Text>
-                  <ArrowUpRightIcon size={13} color="#2470F5" />
-                </TouchableOpacity>
+            {/* Bottom Row: Course Name & Due Date */}
+            <View style={styles.headerBottomRow}>
+              {courseTitleStr !== courseCodeStr && (
+                <Text style={styles.courseSubtitleText} numberOfLines={1}>
+                  {courseTitleStr}
+                </Text>
+              )}
+
+              <View style={styles.dueDateBadge}>
+                <CalendarIcon size={12} color="#D94033" />
+                <Text style={styles.dueDateBadgeText}>
+                  {formatAssignmentDueDate(assignment.dueDate) || 'Due Date'}
+                </Text>
               </View>
-            )}
+            </View>
+          </View>
 
-            {/* Complete Toggle Button */}
-            <TouchableOpacity
-              style={[
-                styles.completeButton,
-                assignment.isCompleted && styles.completeButtonDone
-              ]}
-              onPress={() => onToggleComplete(assignment.id)}
-              activeOpacity={0.8}
-            >
-              <CheckmarkCircleFillIcon size={18} color={assignment.isCompleted ? '#059669' : '#FFFFFF'} />
-              <Text
-                style={[
-                  styles.completeButtonText,
-                  assignment.isCompleted && styles.completeButtonTextDone
-                ]}
-              >
-                {assignment.isCompleted ? 'Completed' : 'Mark as Complete'}
-              </Text>
-            </TouchableOpacity>
+          {/* MARK: - Due Date Card */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionIconCircle}>
+                <CalendarIcon size={14} color="#2470F5" />
+              </View>
+              <Text style={styles.sectionCardTitle}>Due Date</Text>
+            </View>
 
-            {/* Delete or Restore Assignment Button */}
-            {assignment.isDeleted ? (
+            <View style={styles.dueDateRow}>
+              <CalendarIcon size={15} color="#596B85" />
+              <Text style={styles.dueDateValueText}>{formattedDueDateStr}</Text>
+            </View>
+          </View>
+
+          {/* MARK: - Instructions Card */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionIconCircle}>
+                <DocTextFillIcon size={14} color="#2470F5" />
+              </View>
+              <Text style={styles.sectionCardTitle}>Instructions</Text>
+            </View>
+            <Text style={styles.instructionsBodyText}>
+              {assignment.fullInstructions || 'Follow course syllabus guidelines and rubric specifications.'}
+            </Text>
+          </View>
+
+          {/* MARK: - Points Breakdown & Rubric */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionIconCircle}>
+                <ChartPieFillIcon size={14} color="#2470F5" />
+              </View>
+              <Text style={styles.sectionCardTitle}>Points Breakdown</Text>
+            </View>
+
+            {/* Total Points Pill */}
+            <View style={styles.totalPointsPill}>
+              <View style={styles.numberIconCircle}>
+                <NumberIcon size={12} color="#596B85" />
+              </View>
+              <View style={styles.totalPointsTextCol}>
+                <Text style={styles.totalPointsLabel}>Total Points</Text>
+                <Text style={styles.totalPointsValue}>
+                  {assignment.pointsPossible || '100 Points'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Dedicated Rubric Items */}
+            <View style={styles.rubricListContainer}>
+              {rubricItems.map((item, idx) => (
+                <View key={`rubric-${idx}`} style={styles.rubricItemPill}>
+                  <Text style={styles.rubricItemTitle} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+
+                  <View style={styles.rubricPointsRow}>
+                    {item.percentage ? (
+                      <View style={styles.rubricPctBadge}>
+                        <Text style={styles.rubricPctBadgeText}>{item.percentage}</Text>
+                      </View>
+                    ) : null}
+
+                    {item.points ? (
+                      <View style={styles.ptsGroup}>
+                        <Text style={styles.ptsLabel}>pts</Text>
+                        <Text style={styles.ptsValue}>
+                          {item.points.replace(/pts|points|pt/gi, '').trim() || item.points}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* MARK: - Personal Notes */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionIconCircle}>
+                <PencilSquareIcon size={14} color="#2470F5" />
+              </View>
+              <Text style={styles.sectionCardTitle}>Personal Notes</Text>
+            </View>
+            <TextInput
+              style={styles.notesInput}
+              multiline
+              numberOfLines={4}
+              placeholder="Add personal thoughts, project links, or references..."
+              placeholderTextColor="#8E9BAE"
+              value={notes}
+              onChangeText={handleNotesChange}
+            />
+          </View>
+
+          {/* MARK: - Attached Media / Resource Link */}
+          {assignment.mediaUrl && assignment.mediaUrl.trim().length > 0 && (
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeaderRow}>
+                <LinkCircleFillIcon size={18} color="#2470F5" />
+                <Text style={styles.sectionCardTitle}>Attached Media / Resource Link</Text>
+              </View>
               <TouchableOpacity
-                style={styles.restoreDetailButton}
+                style={styles.attachedMediaPill}
                 onPress={() => {
-                  onUpdateAssignment({
-                    ...assignment,
-                    isDeleted: false
-                  });
-                  onClose();
+                  if (assignment.mediaUrl) {
+                    Linking.openURL(assignment.mediaUrl).catch(() => {});
+                  }
                 }}
                 activeOpacity={0.7}
               >
-                <ArrowPathIcon size={16} color={CoursePalTheme.accentBlue} />
-                <Text style={styles.restoreDetailButtonText}>Restore to Active Schedule</Text>
+                <PlayCircleFillIcon size={18} color="#2470F5" />
+                <Text style={styles.attachedMediaUrl} numberOfLines={1}>
+                  {assignment.mediaUrl}
+                </Text>
+                <ArrowUpRightIcon size={13} color="#2470F5" />
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => {
-                  onDeleteAssignment(assignment.id);
-                  onClose();
-                }}
-                activeOpacity={0.7}
-              >
-                <TrashIcon size={15} color="#D94033" />
-                <Text style={styles.deleteButtonText}>Move to Trash</Text>
-              </TouchableOpacity>
-            )}
-          </ScrollView>
-        </SafeAreaView>
-      </TouchableWithoutFeedback>
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
     </Modal>
   );
 };
@@ -752,6 +606,14 @@ const styles = StyleSheet.create({
   },
   titleSection: {
     marginBottom: 14
+  },
+  assignmentTitleInput: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#121C33',
+    lineHeight: 28,
+    marginBottom: 8,
+    padding: 0
   },
   assignmentTitleText: {
     fontSize: 22,

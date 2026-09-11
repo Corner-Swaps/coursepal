@@ -38,6 +38,7 @@ import {
   DocumentPreviewModal,
   CourseDetailModal,
   EditAssignmentModal,
+  AssignmentDetailModal,
   ReadingDetailModal,
   UploadDocumentModal
 } from '../components/modals';
@@ -84,6 +85,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
   const [uploadTargetCourseId, setUploadTargetCourseId] = useState<string | undefined>(undefined);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
+  const [selectedAssignmentForDetail, setSelectedAssignmentForDetail] = useState<Assignment | null>(null);
   const [editingReading, setEditingReading] = useState<Reading | null>(null);
   const [previewDoc, setPreviewDoc] = useState<VaultDocument | null>(null);
 
@@ -396,7 +398,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                               <TouchableOpacity
                                 key={assign.id}
                                 style={styles.itemPillRow}
-                                onPress={() => setEditingAssignment(assign)}
+                                onPress={() => setSelectedAssignmentForDetail(assign)}
                                 activeOpacity={0.7}
                               >
                                 <View style={styles.tagsRow}>
@@ -767,11 +769,38 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         }}
         onEditAssignment={assign => {
           setEditingCourse(null);
-          setEditingAssignment(assign);
+          setSelectedAssignmentForDetail(assign);
         }}
         onEditReading={reading => {
           setEditingCourse(null);
           setEditingReading(reading);
+        }}
+      />
+
+      <AssignmentDetailModal
+        visible={selectedAssignmentForDetail !== null}
+        assignment={selectedAssignmentForDetail}
+        courses={courses}
+        onClose={() => setSelectedAssignmentForDetail(null)}
+        onEdit={assign => {
+          setEditingAssignment(assign);
+        }}
+        onToggleComplete={id => {
+          const a = assignments.find(x => x.id === id);
+          if (a) {
+            updateAssignment({ ...a, isCompleted: !a.isCompleted });
+            if (selectedAssignmentForDetail?.id === id) {
+              setSelectedAssignmentForDetail({ ...selectedAssignmentForDetail, isCompleted: !selectedAssignmentForDetail.isCompleted });
+            }
+          }
+        }}
+        onUpdateAssignment={updated => {
+          updateAssignment(updated);
+          setSelectedAssignmentForDetail(updated);
+        }}
+        onDeleteAssignment={id => {
+          deleteAssignment(id);
+          setSelectedAssignmentForDetail(null);
         }}
       />
 
@@ -780,8 +809,18 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         assignment={editingAssignment}
         courses={courses}
         onClose={() => setEditingAssignment(null)}
-        onSave={updated => updateAssignment(updated)}
-        onDeleteAssignment={id => deleteAssignment(id)}
+        onSave={updated => {
+          updateAssignment(updated);
+          if (selectedAssignmentForDetail?.id === updated.id) {
+            setSelectedAssignmentForDetail(updated);
+          }
+        }}
+        onDeleteAssignment={id => {
+          deleteAssignment(id);
+          if (selectedAssignmentForDetail?.id === id) {
+            setSelectedAssignmentForDetail(null);
+          }
+        }}
       />
 
       <ReadingDetailModal

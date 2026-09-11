@@ -37,13 +37,16 @@ export class APIService {
   /**
    * Calls Gemini 3.6 Flash generateContent API endpoint with resilient fallback
    */
-  public async generateContentWithGemini(prompt: string, context?: string): Promise<string> {
+  public async generateContentWithGemini(prompt: string, context?: string, base64Pdf?: string): Promise<string> {
     const apiKey = this.activeAPIKey;
     if (!apiKey) {
       throw new Error('No API key available for AI service');
     }
 
-    const modelsToTry = ['gemini-flash-lite-latest', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+    const modelsToTry = base64Pdf
+      ? ['gemini-flash-latest', 'gemini-3-flash-preview', 'gemini-3.6-flash']
+      : ['gemini-flash-lite-latest', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+
     const contents: any[] = [];
     if (context) {
       contents.push({
@@ -56,9 +59,20 @@ export class APIService {
       });
     }
 
+    const userParts: any[] = [];
+    if (base64Pdf) {
+      userParts.push({
+        inlineData: {
+          mimeType: 'application/pdf',
+          data: base64Pdf
+        }
+      });
+    }
+    userParts.push({ text: prompt });
+
     contents.push({
       role: 'user',
-      parts: [{ text: prompt }]
+      parts: userParts
     });
 
     const body = {
@@ -96,6 +110,52 @@ export class APIService {
     }
 
     throw new Error(lastError || 'Failed to generate content with Gemini API');
+  }
+
+  /**
+   * Generates 4-5 actionable study milestones for an assignment matching Swift APIService
+   */
+  public async generateAssignmentMilestones(
+    title: string,
+    instructions?: string | null,
+    weight?: string | null,
+    points?: string | null,
+    rubric: string[] = []
+  ): Promise<string[]> {
+    const prompt = `You are CoursePal Study Plan AI. Break down the university assignment into 4 to 5 chronological, actionable study milestones.
+Return ONLY a JSON array of strings, e.g. ["Step 1...", "Step 2...", "Step 3...", "Step 4..."].
+Each step should start with an action verb and be concise (under 15 words).
+
+Assignment Title: ${title}
+Weight: ${weight || 'N/A'}
+Points: ${points || 'N/A'}
+Instructions: ${instructions || 'Standard course assignment'}
+Rubric Breakdown: ${rubric.join(', ') || 'Standard academic criteria'}
+
+Output ONLY valid JSON array.`;
+
+    try {
+      const response = await this.generateContentWithGemini(prompt);
+      let cleanJson = response.trim();
+      if (cleanJson.startsWith('```')) {
+        cleanJson = cleanJson.split('\n').slice(1).join('\n');
+        if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3).trim();
+      }
+      const parsed = JSON.parse(cleanJson);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map(s => String(s).trim());
+      }
+    } catch {
+      // Fallback
+    }
+
+    return [
+      'Review assignment guidelines & rubric criteria',
+      'Research topic & gather 5+ peer-reviewed sources',
+      'Draft initial outline and structure key arguments',
+      'Write complete first draft with APA formatting',
+      'Proofread, refine citations, and submit final version'
+    ];
   }
 }
 

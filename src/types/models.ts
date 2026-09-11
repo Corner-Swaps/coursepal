@@ -14,6 +14,8 @@ export interface RubricCriterionDTO {
   description?: string | null;
 }
 
+export type RubricCriterion = RubricCriterionDTO;
+
 export interface ExtractionStatsDTO {
   status: string;
   confidenceScore: number;

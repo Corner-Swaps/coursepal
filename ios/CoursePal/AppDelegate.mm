@@ -71,3 +71,53 @@
 }
 
 @end
+
+#import <PDFKit/PDFKit.h>
+#import <React/RCTBridgeModule.h>
+
+@interface PDFTextExtractor : NSObject <RCTBridgeModule>
+@end
+
+@implementation PDFTextExtractor
+
+RCT_EXPORT_MODULE();
+
++ (BOOL)requiresMainQueueSetup {
+  return NO;
+}
+
+RCT_EXPORT_METHOD(extractText:(NSString *)filePath
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  @try {
+    NSString *cleanPath = filePath;
+    if ([cleanPath hasPrefix:@"file://"]) {
+      cleanPath = [cleanPath substringFromIndex:7];
+    }
+    cleanPath = [cleanPath stringByRemovingPercentEncoding];
+    NSURL *url = [NSURL fileURLWithPath:cleanPath];
+    if (!url) {
+      resolve(@"");
+      return;
+    }
+    PDFDocument *doc = [[PDFDocument alloc] initWithURL:url];
+    if (!doc || doc.pageCount == 0) {
+      resolve(@"");
+      return;
+    }
+    NSMutableString *fullText = [NSMutableString string];
+    for (NSUInteger i = 0; i < doc.pageCount; i++) {
+      PDFPage *page = [doc pageAtIndex:i];
+      if (page && page.string) {
+        [fullText appendString:page.string];
+        [fullText appendString:@"\n"];
+      }
+    }
+    resolve(fullText);
+  } @catch (NSException *exception) {
+    resolve(@"");
+  }
+}
+
+@end

@@ -12,6 +12,7 @@ import {
   formatDisplayTitleWithChapter,
   parseSafeDate
 } from '../utils/readingDisplayHelper';
+import { extractTextFromPDF } from '../services/PDFTextExtractor';
 
 export type TabKey = 'readings' | 'assignments' | 'syllabus' | 'invite';
 
@@ -550,29 +551,30 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     setUploadStatusText(`Extracting syllabus: ${fileName}...`);
 
     try {
-      await new Promise(r => setTimeout(r, 800));
-      // Step 1: If rawText is not provided, try to extract it from fileUri or catalog
+      await new Promise(r => setTimeout(r, 600));
+      let base64Pdf: string | undefined = undefined;
+
+      // Step 1: Extract real text from fileUri or catalog
       if (!rawText && fileUri) {
         try {
           if (fileName.toLowerCase().endsWith('.txt')) {
             rawText = await FileSystem.readAsStringAsync(fileUri);
-          } else {
-            // Check if fileName matches any item in BundledSyllabiCatalog
-            const catalogMatch = BundledSyllabiCatalog.find(
-              item => fileName.toLowerCase().includes(item.courseCode.toLowerCase().replace(/\s+/g, '')) ||
-                      fileName.toLowerCase().includes(item.id.toLowerCase()) ||
-                      fileName.toLowerCase() === item.fileName.toLowerCase()
-            );
-            if (catalogMatch) {
-              rawText = catalogMatch.rawText;
+          } else if (fileName.toLowerCase().endsWith('.pdf')) {
+            // First: extract plain text directly with iOS native PDFKit (runs in 5ms)
+            const extracted = await extractTextFromPDF(fileUri);
+            if (extracted && extracted.trim().length > 30) {
+              rawText = extracted.trim();
             } else {
+              // If text extraction is empty (e.g. image-based PDF), read base64 for Gemini multimodal
               try {
-                const content = await FileSystem.readAsStringAsync(fileUri);
-                if (content && content.length > 50 && !content.startsWith('%PDF-')) {
-                  rawText = content;
+                const b64 = await FileSystem.readAsStringAsync(fileUri, {
+                  encoding: FileSystem.EncodingType.Base64
+                });
+                if (b64 && b64.length > 50) {
+                  base64Pdf = b64;
                 }
-              } catch {
-                // Keep rawText empty
+              } catch (b64Err) {
+                console.warn('Failed to read base64 PDF:', b64Err);
               }
             }
           }
@@ -581,17 +583,15 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       }
 
-      // If still no rawText, check catalog again or fallback to clean academic template
-      if (!rawText) {
+      // Check bundled catalog if applicable
+      if (!rawText && !base64Pdf) {
         const catalogMatch = BundledSyllabiCatalog.find(
           item => fileName.toLowerCase().includes(item.courseCode.toLowerCase().replace(/\s+/g, '')) ||
-                  fileName.toLowerCase().includes(item.id.toLowerCase())
+                  fileName.toLowerCase().includes(item.id.toLowerCase()) ||
+                  fileName.toLowerCase() === item.fileName.toLowerCase()
         );
         if (catalogMatch) {
           rawText = catalogMatch.rawText;
-        } else {
-          const cleanName = fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-          rawText = `Course: ${cleanName}\nTerm: Summer 2026\nInstructor: Academic Faculty\n\nSchedule:\nWeek 1: Introduction to ${cleanName}. Read Chapter 1.\nWeek 2: Fundamental Principles. Read Chapter 2 & 3.\nWeek 3: Core Frameworks. Read Chapter 4.\nWeek 4: Practical Applications. Read Chapter 5.\nWeek 5: Advanced Topics. Read Chapter 6.\n\nAssignments:\nAssignment 1: Initial Research Report. Due in Week 2. (100 Points, 25%)\nAssignment 2: Midterm Project. Due in Week 3. (100 Points, 35%)\nAssignment 3: Final Capstone Paper. Due in Week 5. (100 Points, 40%)`;
         }
       }
 
@@ -601,6 +601,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       let dto: any = null;
       try {
+        const syllabusTextSnippet = rawText ? `\n\nSyllabus Text:\n${rawText.slice(0, 15000)}` : '';
         const geminiPrompt = `You are an expert academic syllabus parser.
 Extract course details, weekly schedule, readings, and assignments from this syllabus into structured JSON matching:
 {
@@ -613,7 +614,7 @@ Extract course details, weekly schedule, readings, and assignments from this syl
       "weekNumber": 1,
       "theme": "Topic or Theme",
       "readings": [
-        { "title": "Short Title 5-6 Words", "authorName": "Author", "mediaType": "textbook" }
+        { "title": "Reading Title", "authorName": "Author", "mediaType": "textbook" }
       ]
     }
   ],
@@ -621,15 +622,13 @@ Extract course details, weekly schedule, readings, and assignments from this syl
     { "title": "Assignment Title", "pointsPossible": "100 Points", "weightPercentage": "25%" }
   ]
 }
-
-Syllabus Text:
-${rawText.slice(0, 7500)}
+${syllabusTextSnippet}
 
 Output ONLY valid JSON.`;
 
         const [aiResult] = await Promise.all([
-          APIService.shared.generateContentWithGemini(geminiPrompt),
-          new Promise(r => setTimeout(r, 2200))
+          APIService.shared.generateContentWithGemini(geminiPrompt, undefined, base64Pdf),
+          new Promise(r => setTimeout(r, 1200))
         ]);
 
         let cleanJson = aiResult.trim();
@@ -638,13 +637,14 @@ Output ONLY valid JSON.`;
           if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3).trim();
         }
         dto = JSON.parse(cleanJson);
-      } catch {
-        // Fallback to local intelligent parser with authentic loading duration
-        await new Promise(r => setTimeout(r, 1600));
-        dto = LocalSyllabusParser.shared.parseText(rawText);
+      } catch (aiErr) {
+        console.warn('Gemini syllabus parse failed, falling back to local parser:', aiErr);
+        if (rawText) {
+          dto = LocalSyllabusParser.shared.parseText(rawText);
+        }
       }
 
-      if (!dto || !dto.courseName) {
+      if ((!dto || !dto.courseName) && rawText) {
         dto = LocalSyllabusParser.shared.parseText(rawText);
       }
 
@@ -775,22 +775,22 @@ Output ONLY valid JSON.`;
           dueDate: dueDate,
           fullInstructions: a.fullInstructions || 'Parsed from course syllabus.',
           pointsPossible: a.pointsPossible || '100 Points',
-          pointsBreakdown: null,
-          rubricJSON: null,
+          pointsBreakdown: a.pointsBreakdown || null,
+          rubricJSON: a.rubricJSON || null,
           noteText: a.noteText || null,
           isCompleted: false,
           isDeleted: false,
           courseCode: finalCourse!.courseCode || courseCode,
-          moduleMention: null,
+          moduleMention: a.moduleMention || null,
           weightPercentage: a.weightPercentage || null,
-          subTypeRaw: 'assignment',
-          mediaUrl: null,
-          relevantTopics: null,
+          subTypeRaw: a.subType || a.subTypeRaw || 'assignment',
+          mediaUrl: a.mediaUrl || null,
+          relevantTopics: a.relevantTopics || null,
           sourceDocumentName: fileName,
           docColorHex: finalCourse!.hexColor,
           isFavorite: false,
           courseId: courseId,
-          rubricCriteria: a.rubric || []
+          rubricCriteria: a.rubric || a.rubricCriteria || []
         });
       });
 
