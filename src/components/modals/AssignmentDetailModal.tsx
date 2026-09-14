@@ -76,29 +76,24 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   // In-place editable state
   const [titleText, setTitleText] = useState<string>(assignment.title || '');
   const [instructionsText, setInstructionsText] = useState<string>(assignment.fullInstructions || '');
-  const [pointsPossibleText, setPointsPossibleText] = useState<string>(assignment.pointsPossible || '100 Points');
-  const [gradeWeightPercent, setGradeWeightPercent] = useState<number>(() => {
-    const raw = assignment.weightPercentage || '25%';
-    const num = parseInt(raw.replace(/[^0-9]/g, ''), 10);
-    return isNaN(num) ? 25 : num;
+  const [pointsPossibleText, setPointsPossibleText] = useState<string>(assignment.pointsPossible || '');
+  const [gradeWeightPercent, setGradeWeightPercent] = useState<number | null>(() => {
+    if (!assignment.weightPercentage) return null;
+    const num = parseInt(assignment.weightPercentage.replace(/[^0-9]/g, ''), 10);
+    return isNaN(num) ? null : num;
   });
 
   // Schedule Toggles
   const [isWeekEnabled, setIsWeekEnabled] = useState<boolean>(assignment.weekNumber > 0);
   const [weekNumber, setWeekNumber] = useState<number>(assignment.weekNumber > 0 ? assignment.weekNumber : 1);
-  const [dueDate, setDueDate] = useState<Date>(parseSafeDate(assignment.dueDate) || new Date());
+  const [dueDate, setDueDate] = useState<Date | null>(assignment.dueDate ? parseSafeDate(assignment.dueDate) : null);
 
-  // Rubric Items State
+  // Rubric Items State - truthful extraction only; no fabricated generic defaults
   const [rubricItems, setRubricItems] = useState<RubricCriterionDTO[]>(() => {
     if (assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
       return assignment.rubricCriteria.map(r => ({ ...r }));
     }
-    return [
-      { criterionName: 'Depth of Analysis & Insight', points: 30, percentage: 30 },
-      { criterionName: 'Academic Evidence & Citations', points: 30, percentage: 30 },
-      { criterionName: 'Structural Coherence & Flow', points: 20, percentage: 20 },
-      { criterionName: 'Formatting & Mechanics', points: 20, percentage: 20 }
-    ];
+    return [];
   });
 
   // Resource Link
@@ -120,25 +115,23 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
       currentAssignmentIdRef.current = assignment.id;
       setTitleText(assignment.title || '');
       setInstructionsText(assignment.fullInstructions || '');
-      setPointsPossibleText(assignment.pointsPossible || '100 Points');
-      const raw = assignment.weightPercentage || '25%';
-      const num = parseInt(raw.replace(/[^0-9]/g, ''), 10);
-      setGradeWeightPercent(isNaN(num) ? 25 : num);
+      setPointsPossibleText(assignment.pointsPossible || '');
+      if (assignment.weightPercentage) {
+        const num = parseInt(assignment.weightPercentage.replace(/[^0-9]/g, ''), 10);
+        setGradeWeightPercent(isNaN(num) ? null : num);
+      } else {
+        setGradeWeightPercent(null);
+      }
 
       setIsWeekEnabled(assignment.weekNumber > 0);
       setWeekNumber(assignment.weekNumber > 0 ? assignment.weekNumber : 1);
-      setDueDate(parseSafeDate(assignment.dueDate) || new Date());
+      setDueDate(assignment.dueDate ? parseSafeDate(assignment.dueDate) : null);
       setMediaUrlText(assignment.mediaUrl || '');
 
       if (assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
         setRubricItems(assignment.rubricCriteria.map(r => ({ ...r })));
       } else {
-        setRubricItems([
-          { criterionName: 'Depth of Analysis & Insight', points: 30, percentage: 30 },
-          { criterionName: 'Academic Evidence & Citations', points: 30, percentage: 30 },
-          { criterionName: 'Structural Coherence & Flow', points: 20, percentage: 20 },
-          { criterionName: 'Formatting & Mechanics', points: 20, percentage: 20 }
-        ]);
+        setRubricItems([]);
       }
 
       const parsedNotes = (assignment.noteText || '')
@@ -157,12 +150,12 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
     const updated: Assignment = {
       ...assignment,
-      title: titleText.trim() || 'Assignment',
+      title: titleText.trim() || assignment.title || 'Assignment',
       fullInstructions: instructionsText.trim(),
-      pointsPossible: pointsPossibleText.trim() || '100 Points',
-      weightPercentage: `${gradeWeightPercent}%`,
+      pointsPossible: pointsPossibleText.trim() ? pointsPossibleText.trim() : null,
+      weightPercentage: gradeWeightPercent !== null ? `${gradeWeightPercent}%` : null,
       weekNumber: isWeekEnabled ? (weekNumber > 0 ? weekNumber : 1) : 0,
-      dueDate: dueDate,
+      dueDate: dueDate || null,
       mediaUrl: mediaUrlText.trim() || null,
       noteText: cleanNotes || null,
       rubricCriteria: cleanRubrics,
@@ -413,7 +406,9 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
               <View style={styles.formRow}>
                 <Text style={styles.rowLabel}>Grade Weight</Text>
                 <View style={styles.weightBadge}>
-                  <Text style={styles.weightBadgeText}>{gradeWeightPercent}%</Text>
+                  <Text style={styles.weightBadgeText}>
+                    {gradeWeightPercent !== null ? `${gradeWeightPercent}%` : 'Unspecified'}
+                  </Text>
                 </View>
               </View>
 
@@ -429,12 +424,12 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                     setPointsPossibleText(t);
                     saveAllChanges({ pointsPossible: t });
                   }}
-                  placeholder="100 Points"
+                  placeholder="e.g. 100 Points"
                   placeholderTextColor="#94A3B8"
                 />
               </View>
 
-              {rubricItems.length > 0 && (
+              {rubricItems.length > 0 ? (
                 <>
                   <View style={styles.rowDivider} />
 
@@ -456,6 +451,13 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                         </View>
                       </View>
                     ))}
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.rowDivider} />
+                  <View style={styles.emptyRubricContainer}>
+                    <Text style={styles.emptyRubricText}>No rubric criteria specified</Text>
                   </View>
                 </>
               )}
@@ -951,5 +953,15 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '600',
     color: '#2470F5'
+  },
+  emptyRubricContainer: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptyRubricText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontStyle: 'italic'
   }
 });

@@ -378,7 +378,8 @@ export class SyllabusImportManager {
             weekNumber: item.weekNumber,
             subType: item.subType,
             mediaUrl: item.mediaUrl,
-            rubric: item.rubric
+            rubric: item.rubric,
+            rubricCriteria: item.rubricCriteria || item.rubric
           });
         } else if (category === 'reading' || category === 'textbook' || category === 'media') {
           candidateReadings.push({

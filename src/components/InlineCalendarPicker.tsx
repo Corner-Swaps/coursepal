@@ -10,7 +10,7 @@ import { CoursePalTheme } from '../constants/theme';
 import { ChevronLeftIcon, ChevronRightIcon } from './SvgIcons';
 
 interface InlineCalendarPickerProps {
-  selectedDate: Date;
+  selectedDate?: Date | null;
   onSelectDate: (date: Date) => void;
   accentColor?: string;
 }
@@ -26,7 +26,7 @@ export const InlineCalendarPicker: React.FC<InlineCalendarPickerProps> = ({
   onSelectDate,
   accentColor = CoursePalTheme.accentBlue
 }) => {
-  const [viewDate, setViewDate] = useState<Date>(() => new Date(selectedDate.getTime()));
+  const [viewDate, setViewDate] = useState<Date>(() => new Date((selectedDate || new Date()).getTime()));
 
   const viewYear = viewDate.getFullYear();
   const viewMonth = viewDate.getMonth();
@@ -46,6 +46,7 @@ export const InlineCalendarPicker: React.FC<InlineCalendarPickerProps> = ({
   const today = new Date();
   const isSelected = (day: number) => {
     return (
+      selectedDate != null &&
       selectedDate.getFullYear() === viewYear &&
       selectedDate.getMonth() === viewMonth &&
       selectedDate.getDate() === day

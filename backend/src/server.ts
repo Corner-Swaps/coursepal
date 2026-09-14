@@ -12,10 +12,11 @@ const host = process.env.HOST || '0.0.0.0';
 const port = parseInt(process.env.PORT || '3088', 10);
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
-const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ limits: { fileSize: 50 * 1024 * 1024 } });
 
 // Health check
 app.get('/health', (req, res) => {
@@ -97,18 +98,42 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// 2. Syllabus Upload & Vision AI Parsing Endpoint with SHA-256 Deduplication
+// 2. Syllabus Upload & Vision AI Parsing Endpoint with SHA-256 Deduplication & Diagnostic Contract
 app.post('/api/syllabi/parse', upload.single('syllabus'), async (req, res) => {
-  const userId = (req.body.userId as string) || '00000000-0000-0000-0000-000000000001';
-  const rawText = req.body.rawText as string | undefined;
+  const userId = (req.body?.userId as string) || '00000000-0000-0000-0000-000000000001';
+  let rawText = req.body?.rawText as string | undefined;
+
+  // Support base64Pdf from JSON payload as well as multer file upload
+  let fileBuffer: Buffer | undefined = req.file?.buffer;
+  let mimeType: string | undefined = req.file?.mimetype;
+
+  if (!fileBuffer && req.body?.base64Pdf) {
+    try {
+      fileBuffer = Buffer.from(req.body.base64Pdf, 'base64');
+      mimeType = 'application/pdf';
+    } catch {
+      // invalid base64, fileBuffer remains undefined
+    }
+  }
+
+  const hasBuffer = Boolean(fileBuffer && fileBuffer.length > 0);
+  const hasText = Boolean(rawText && rawText.trim().length > 0);
+
+  // Requirement 2: Reject empty documents before calling AI
+  if (!hasBuffer && !hasText) {
+    return res.status(400).json({
+      success: false,
+      error: 'EMPTY_DOCUMENT',
+      message: 'No readable document content provided. Please upload a file or provide extracted text context.'
+    });
+  }
+
+  const contentToHash = hasBuffer ? fileBuffer! : Buffer.from(rawText || '');
+  const receivedByteCount = contentToHash.length;
+  const fileHash = crypto.createHash('sha256').update(contentToHash).digest('hex');
+  const diagnosticImportId = crypto.randomUUID ? crypto.randomUUID() : `diag-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
   try {
-    // Calculate SHA-256 hash of syllabus payload for duplicate detection
-    const contentToHash = req.file?.buffer || Buffer.from(rawText || '');
-    const fileHash = contentToHash.length > 0
-      ? crypto.createHash('sha256').update(contentToHash).digest('hex')
-      : null;
-
     if (fileHash) {
       try {
         // Check for pre-existing course matching this SHA-256 file hash in PostgreSQL
@@ -123,7 +148,16 @@ app.post('/api/syllabi/parse', upload.single('syllabus'), async (req, res) => {
           );
 
           const fullCourse = await getFullCourseDetails(existingCourseId, userId);
-          return res.json({ ...fullCourse, deduplicated: true });
+          return res.json({
+            success: true,
+            diagnosticImportId,
+            documentHash: fileHash,
+            receivedByteCount,
+            parserSource: 'BACKEND_FALLBACK',
+            providerModel: null,
+            deduplicated: true,
+            ...fullCourse
+          });
         }
       } catch (dbErr) {
         // Fallback SHA-256 hash check in memoryDb
@@ -139,14 +173,25 @@ app.post('/api/syllabi/parse', upload.single('syllabus'), async (req, res) => {
 
           const weeks = Array.from(memoryDb.weeks.values()).filter(w => w.course_id === existingCourse.id);
           const assignments = Array.from(memoryDb.assignments.values()).filter(a => a.course_id === existingCourse.id);
-          return res.json({ ...existingCourse, weeks, assignments, deduplicated: true });
+          return res.json({
+            success: true,
+            diagnosticImportId,
+            documentHash: fileHash,
+            receivedByteCount,
+            parserSource: 'BACKEND_FALLBACK',
+            providerModel: null,
+            deduplicated: true,
+            ...existingCourse,
+            weeks,
+            assignments
+          });
         }
       }
     }
 
     const parsedSyllabus = await parseSyllabusDocument(
-      req.file?.buffer,
-      req.file?.mimetype,
+      fileBuffer,
+      mimeType,
       rawText
     );
 
@@ -161,7 +206,7 @@ app.post('/api/syllabi/parse', upload.single('syllabus'), async (req, res) => {
     const sharingCode = generateSharingCode();
 
     try {
-      // 1. Create course
+      // 1. Create course in PostgreSQL
       const courseRes = await query(
         `INSERT INTO courses (creator_id, course_name, course_code, term_weeks, sharing_code, file_hash)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -194,7 +239,6 @@ app.post('/api/syllabi/parse', upload.single('syllabus'), async (req, res) => {
 
       // 3. Insert assignments
       for (const a of parsedSyllabus.assignments) {
-        // Normalize month abbreviations that JS Date() can't parse (e.g. "Sept" → "Sep")
         const normalizedDate = a.dueDate
           ? a.dueDate.replace(/\bSept\b/i, 'Sep').replace(/\bJune\b/i, 'Jun').replace(/\bJuly\b/i, 'Jul')
           : null;
@@ -208,9 +252,22 @@ app.post('/api/syllabi/parse', upload.single('syllabus'), async (req, res) => {
         );
       }
 
-      // Fetch complete course graph
-      const fullCourse = await getFullCourseDetails(course.id, userId);
-      return res.json(fullCourse);
+      return res.json({
+        success: true,
+        diagnosticImportId,
+        documentHash: fileHash,
+        receivedByteCount,
+        parserSource: parsedSyllabus.parserSource,
+        providerModel: parsedSyllabus.providerModel || null,
+        courseId: course.id,
+        sharingCode,
+        courseName: parsedSyllabus.courseName,
+        courseCode: parsedSyllabus.courseCode,
+        termWeeks: parsedSyllabus.termWeeks,
+        weeks: parsedSyllabus.weeks,
+        assignments: parsedSyllabus.assignments,
+        textbooks: parsedSyllabus.textbooks
+      });
 
     } catch (pgErr) {
       // Memory DB fallback
@@ -271,6 +328,7 @@ app.post('/api/syllabi/parse', upload.single('syllabus'), async (req, res) => {
           full_instructions: a.fullInstructions,
           points_possible: a.pointsPossible,
           weight_percentage: a.weightPercentage,
+          rubricCriteria: a.rubricCriteria,
           note_text: ''
         };
         memoryDb.assignments.set(assignId, assignObj);
@@ -278,14 +336,29 @@ app.post('/api/syllabi/parse', upload.single('syllabus'), async (req, res) => {
       }
 
       return res.json({
-        ...course,
-        weeks: weeksArr,
-        assignments: assignmentsArr
+        success: true,
+        diagnosticImportId,
+        documentHash: fileHash,
+        receivedByteCount,
+        parserSource: parsedSyllabus.parserSource,
+        providerModel: parsedSyllabus.providerModel || null,
+        courseId,
+        sharingCode,
+        courseName: parsedSyllabus.courseName,
+        courseCode: parsedSyllabus.courseCode,
+        termWeeks: parsedSyllabus.termWeeks,
+        weeks: parsedSyllabus.weeks,
+        assignments: parsedSyllabus.assignments,
+        textbooks: parsedSyllabus.textbooks
       });
     }
 
   } catch (err: any) {
-    res.status(500).json({ error: 'Syllabus parsing failed', details: err.message });
+    res.status(500).json({
+      success: false,
+      error: 'Syllabus parsing failed',
+      details: err.message
+    });
   }
 });
 

@@ -4,10 +4,20 @@
  * Uses authenticated server-side endpoint in production with no bundled provider secrets.
  */
 
+export interface DiagnosticProvenance {
+  diagnosticImportId?: string;
+  documentHash?: string;
+  receivedByteCount?: number;
+  parserSource: 'PROVIDER_AI' | 'BACKEND_FALLBACK' | 'LOCAL_DEVICE_FALLBACK';
+  providerModel?: string | null;
+  status: string;
+}
+
 export class APIService {
   private static instance: APIService;
   private customApiKey: string | null = null;
   private serverProxyUrl: string = 'http://localhost:3088/api/syllabi/parse';
+  private lastDiagnostic: DiagnosticProvenance | null = null;
 
   private constructor() {}
 
@@ -36,6 +46,10 @@ export class APIService {
     return this.customApiKey;
   }
 
+  public getLastDiagnostic(): DiagnosticProvenance | null {
+    return this.lastDiagnostic;
+  }
+
   /**
    * Calls AI generateContent endpoint via server-side proxy or authenticated key
    * with bounded retries and timeout guards.
@@ -44,13 +58,14 @@ export class APIService {
     prompt: string,
     context?: string,
     base64Pdf?: string,
-    base64Images?: string[]
+    base64Images?: string[],
+    fileName?: string
   ): Promise<string> {
     const apiKey = this.activeAPIKey;
 
     // If no direct API key is set, attempt server-side proxy endpoint
     if (!apiKey) {
-      return this.callServerSideProxy(prompt, context, base64Pdf, base64Images);
+      return this.callServerSideProxy(prompt, context, base64Pdf, base64Images, fileName);
     }
 
     // Direct Gemini API call with bounded retries & sanitized errors
@@ -139,6 +154,12 @@ export class APIService {
           const result = await response.json();
           const candidate = result.candidates?.[0];
           const textPart = candidate?.content?.parts?.[0]?.text;
+          this.lastDiagnostic = {
+            diagnosticImportId: `direct-${Date.now()}`,
+            parserSource: 'PROVIDER_AI',
+            providerModel: modelName,
+            status: 'SUCCESS'
+          };
           return textPart || '';
         }
 
@@ -157,41 +178,76 @@ export class APIService {
   }
 
   /**
-   * Calls secure server-side proxy
+   * Calls secure server-side proxy trying reachable candidates (custom URL, LAN IP, localhost)
    */
   private async callServerSideProxy(
     prompt: string,
     context?: string,
     base64Pdf?: string,
-    base64Images?: string[]
+    base64Images?: string[],
+    fileName?: string
   ): Promise<string> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
+    const candidateUrls = Array.from(
+      new Set([
+        this.serverProxyUrl,
+        'http://192.168.10.36:3088/api/syllabi/parse',
+        'http://localhost:3088/api/syllabi/parse'
+      ])
+    );
 
-      const response = await fetch(this.serverProxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          prompt,
-          rawText: context,
-          base64Pdf,
-          base64Images
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+    let lastError = '';
+    for (const url of candidateUrls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-      if (response.ok) {
-        const data = await response.json();
-        return typeof data === 'string' ? data : JSON.stringify(data);
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            prompt,
+            rawText: context,
+            base64Pdf,
+            base64Images,
+            fileName
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json();
+          this.lastDiagnostic = {
+            diagnosticImportId: data.diagnosticImportId,
+            documentHash: data.documentHash,
+            receivedByteCount: data.receivedByteCount,
+            parserSource: data.parserSource || 'BACKEND_FALLBACK',
+            providerModel: data.providerModel || null,
+            status: 'SUCCESS'
+          };
+          this.serverProxyUrl = url;
+          return typeof data === 'string' ? data : JSON.stringify(data);
+        }
+
+        const errText = await response.text();
+        lastError = `Server (${response.status}): ${this.sanitizeError(errText)}`;
+        if (response.status === 400) {
+          break;
+        }
+      } catch (err: any) {
+        lastError = this.sanitizeError(err.message || 'Network request failed');
       }
-      throw new Error(`Server returned status ${response.status}`);
-    } catch (err: any) {
-      throw new Error(`Server-side AI parsing unavailable: ${this.sanitizeError(err.message)}`);
     }
+
+    this.lastDiagnostic = {
+      parserSource: 'LOCAL_DEVICE_FALLBACK',
+      status: 'FALLBACK',
+      providerModel: null
+    };
+
+    throw new Error(`Server-side AI parsing unavailable: ${lastError}`);
   }
 
   /**

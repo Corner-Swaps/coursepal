@@ -200,7 +200,7 @@ async function runTests() {
   console.log('====================================================\n');
 
   let passedCount = 0;
-  const totalTests = 20;
+  const totalTests = 23;
 
   const logTest = (num: number, name: string, passed: boolean, details: string = '') => {
     if (passed) {
@@ -320,6 +320,78 @@ async function runTests() {
   // Test 20: Progress State & Assignment Scratchpad Integration
   const sampleNote = "Need to focus on Creswell Chapter 4 methodology in discussion section.";
   logTest(20, 'User Progress Toggle & Assignment Notes Scratchpad Persistence', sampleNote.length > 10, 'Note validation passed');
+
+  // Test 21: Rejection of Empty Syllabus Document (HTTP 400 EMPTY_DOCUMENT)
+  try {
+    const parseRoute = (app as any)._router.stack.find((layer: any) => layer.route && layer.route.path === '/api/syllabi/parse');
+    const parseHandler = parseRoute.route.stack[parseRoute.route.stack.length - 1].handle;
+    let emptyRejected = false;
+    const reqMock: any = { body: { rawText: '   ' }, file: undefined };
+    const resMock: any = {
+      status: (code: number) => ({
+        json: (data: any) => {
+          emptyRejected = code === 400 && data.error === 'EMPTY_DOCUMENT';
+        }
+      })
+    };
+    await parseHandler(reqMock, resMock, () => {});
+    logTest(21, 'Empty Document Rejection (HTTP 400 EMPTY_DOCUMENT)', emptyRejected, 'Rejected empty request without crashing');
+  } catch (err: any) {
+    logTest(21, 'Empty Document Rejection (HTTP 400 EMPTY_DOCUMENT)', false, err.message);
+  }
+
+  // Test 22: Diagnostic Provenance Contract on Parse Endpoint
+  try {
+    const parseRoute = (app as any)._router.stack.find((layer: any) => layer.route && layer.route.path === '/api/syllabi/parse');
+    const parseHandler = parseRoute.route.stack[parseRoute.route.stack.length - 1].handle;
+    let contractValid = false;
+    const reqMock: any = {
+      body: {
+        rawText: 'CS 101: Intro to CS\nWeek 1: Basics\nReading: Ch 1',
+        userId: 'test-user-diag'
+      }
+    };
+    const resMock: any = {
+      status: (code: number) => ({
+        json: (data: any) => {
+          contractValid = false;
+        }
+      }),
+      json: (data: any) => {
+        contractValid = Boolean(
+          data.success === true &&
+          data.diagnosticImportId &&
+          data.documentHash &&
+          typeof data.receivedByteCount === 'number' &&
+          (data.parserSource === 'PROVIDER_AI' || data.parserSource === 'BACKEND_FALLBACK')
+        );
+      }
+    };
+    await parseHandler(reqMock, resMock, () => {});
+    logTest(22, 'Diagnostic Provenance Contract (Import ID, Hash, ParserSource)', contractValid, 'Contract fields verified');
+  } catch (err: any) {
+    logTest(22, 'Diagnostic Provenance Contract (Import ID, Hash, ParserSource)', false, err.message);
+  }
+
+  // Test 23: Rubric Criteria Extraction Structure
+  const cpc523RubricText = `
+CPC 523: Human Sexuality
+Assignments:
+1. Self-Reflection Paper (100 Points, 25%)
+Due: July 17th
+Rubric:
+- Organization & Coherence (10 points)
+- Evidence & Support (20 points)
+- Analysis and use of Course (25 points)
+- Professional Ethics (15 points)
+- Cultural competence (20 points)
+- Identity Formation (10 points)
+Total: 100 Points
+`;
+  const parsedRubric = await parseSyllabusDocument(undefined, undefined, cpc523RubricText);
+  const reflectionAssign = parsedRubric.assignments.find(a => a.title.toLowerCase().includes('reflection'));
+  const criteriaCount = reflectionAssign?.rubricCriteria?.length || 0;
+  logTest(23, 'Rubric Criteria Structured Extraction (6 Criteria, 100 Pts)', criteriaCount === 6, `Extracted ${criteriaCount} criteria`);
 
   console.log('\n====================================================');
   console.log(`  RESULTS: ${passedCount}/${totalTests} Tests Passed`);

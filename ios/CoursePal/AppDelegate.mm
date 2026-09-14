@@ -553,14 +553,48 @@ RCT_EXPORT_METHOD(extractText:(NSString *)filePath
         }
       }
 
-      // Check 2: PDF extraction (PDFKit)
+      // Check 2: PDF extraction (PDFKit with layout-aware line sorting)
       PDFDocument *doc = [[PDFDocument alloc] initWithData:fileData];
       if (doc && doc.pageCount > 0) {
         NSMutableString *fullText = [NSMutableString string];
         for (NSUInteger i = 0; i < doc.pageCount; i++) {
           PDFPage *page = [doc pageAtIndex:i];
-          if (page && page.string && page.string.length > 0) {
-            [fullText appendString:page.string];
+          if (!page) continue;
+          NSString *rawStr = page.string;
+          if (!rawStr || rawStr.length == 0) continue;
+
+          PDFSelection *pageSel = [page selectionForRange:NSMakeRange(0, rawStr.length)];
+          NSArray<PDFSelection *> *lines = [pageSel selectionsByLine];
+          if (lines && lines.count > 0) {
+            NSMutableArray<PDFSelection *> *sortedLines = [lines mutableCopy];
+            [sortedLines sortUsingComparator:^NSComparisonResult(PDFSelection *l1, PDFSelection *l2) {
+              CGRect b1 = [l1 boundsForPage:page];
+              CGRect b2 = [l2 boundsForPage:page];
+              CGFloat midY1 = CGRectGetMidY(b1);
+              CGFloat midY2 = CGRectGetMidY(b2);
+              if (fabs(midY1 - midY2) > 8.0) {
+                return midY1 > midY2 ? NSOrderedAscending : NSOrderedDescending;
+              }
+              CGFloat minX1 = CGRectGetMinX(b1);
+              CGFloat minX2 = CGRectGetMinX(b2);
+              if (minX1 < minX2) return NSOrderedAscending;
+              if (minX1 > minX2) return NSOrderedDescending;
+              return NSOrderedSame;
+            }];
+
+            for (PDFSelection *line in sortedLines) {
+              NSString *s = line.string;
+              if (s && s.length > 0) {
+                NSString *trimmed = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (trimmed.length > 0) {
+                  [fullText appendString:trimmed];
+                  [fullText appendString:@"\n"];
+                }
+              }
+            }
+            [fullText appendString:@"\n"];
+          } else {
+            [fullText appendString:rawStr];
             [fullText appendString:@"\n"];
           }
         }

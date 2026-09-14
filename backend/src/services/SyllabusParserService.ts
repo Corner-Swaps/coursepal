@@ -20,13 +20,29 @@ export const WeekSchema = z.object({
   readings: z.array(ReadingSchema).default([])
 });
 
+export const RubricCriterionSchema = z.object({
+  criterionName: z.string(),
+  points: z.number().nullish(),
+  percentage: z.number().nullish(),
+  description: z.string().nullish()
+});
+
+export const TextbookSchema = z.object({
+  title: z.string(),
+  authorName: z.string().nullish(),
+  edition: z.string().nullish(),
+  isbn: z.string().nullish()
+});
+
 export const AssignmentSchema = z.object({
   title: z.string(),
   dueDate: z.string().nullish(),
   fullInstructions: z.string().nullish(),
   pointsPossible: z.string().nullish(), // Point System e.g. "100 Points"
   pointsBreakdown: z.string().nullish(),
-  weightPercentage: z.string().nullish() // Percentage System e.g. "20%"
+  weightPercentage: z.string().nullish(), // Percentage System e.g. "20%"
+  weekNumber: z.number().int().nullish(),
+  rubricCriteria: z.array(RubricCriterionSchema).default([])
 });
 
 export const ParsedSyllabusSchema = z.object({
@@ -34,7 +50,10 @@ export const ParsedSyllabusSchema = z.object({
   courseCode: z.string().nullish(),
   termWeeks: z.number().int().min(1).max(24).default(16),
   weeks: z.array(WeekSchema).default([]),
-  assignments: z.array(AssignmentSchema).default([])
+  assignments: z.array(AssignmentSchema).default([]),
+  textbooks: z.array(TextbookSchema).default([]),
+  parserSource: z.enum(['PROVIDER_AI', 'BACKEND_FALLBACK']).default('PROVIDER_AI'),
+  providerModel: z.string().nullish()
 });
 
 export type ParsedSyllabus = z.infer<typeof ParsedSyllabusSchema>;
@@ -82,11 +101,18 @@ export function formatReadingTitle5to6Words(rawTitle: string, contextTopic?: str
 
 const SYSTEM_PROMPT = `
 You are an expert academic syllabus parser.
-Your task is to convert raw syllabus text or scanned document images into structured JSON format matching this exact schema:
+Your task is to convert raw syllabus text or document images into structured JSON matching this exact schema:
 {
   "courseName": "string",
-  "courseCode": "string (e.g. CS101 or CPC 511)",
+  "courseCode": "string (e.g. CS101 or CPC 523)",
   "termWeeks": 12,
+  "textbooks": [
+    {
+      "title": "Exact Textbook Title",
+      "authorName": "Author Name",
+      "edition": "Edition if stated"
+    }
+  ],
   "weeks": [
     {
       "weekNumber": 1,
@@ -94,7 +120,7 @@ Your task is to convert raw syllabus text or scanned document images into struct
       "theme": "Introduction to Group Work",
       "readings": [
         {
-          "title": "Short Title Five Six Words",
+          "title": "Exact Reading Title or Book Chapter",
           "mediaType": "textbook"
         }
       ]
@@ -103,23 +129,31 @@ Your task is to convert raw syllabus text or scanned document images into struct
   "assignments": [
     {
       "title": "Exact Assignment Title",
-      "dueDate": "2026-04-26T23:59:00Z",
+      "dueDate": "YYYY-MM-DD",
       "fullInstructions": "Detailed instructions from syllabus",
       "pointsPossible": "100 Points",
-      "weightPercentage": "30%"
+      "weightPercentage": "30%",
+      "weekNumber": 5,
+      "rubricCriteria": [
+        {
+          "criterionName": "Organization & Coherence",
+          "points": 10,
+          "percentage": 10
+        }
+      ]
     }
   ]
 }
 
 CRITICAL RULES:
-1. READING TITLES: Every title in "readings" MUST be a short title of between 5 to 6 words (word count strictly >= 5 and <= 6) appropriate to the document.
-2. SEPARATE POINT & PERCENTAGE SYSTEMS: "pointsPossible" represents rubric score points (e.g. "100 Points"), whereas "weightPercentage" represents final grade percentage weight (e.g. "20%"). Keep them separate.
+1. READING TITLES: Keep reading titles accurate, clean, and concise reflecting the assigned chapter or media without invented words.
+2. SEPARATE POINT & PERCENTAGE SYSTEMS: "pointsPossible" represents rubric score points (e.g. "100 Points"), whereas "weightPercentage" represents final grade percentage weight (e.g. "20%"). If unstated, leave them null.
 3. OVERVIEW AS SOURCE OF TRUTH: The "Overview of Required Assignments" table defines the genuine course deliverables. Use this table as the authoritative list of assignments.
-4. RUBRIC IMMUNITY: NEVER extract rubric criteria (e.g. "Organization and Coherence", "Evidence and Support", "Analysis and use of Course Concepts", "Professional Ethics", "Cultural Competence", "APA", "Oral Presentation", "Self-reflection") as assignments. They belong only as internal grading rubrics.
+4. EXTRACT RUBRIC CRITERIA: When an assignment has a detailed grading criteria/rubric table (e.g. "Criteria Grade Points % of Grade", "Organization & Coherence: 10 Points 10%"), extract each row into the assignment's "rubricCriteria" array. NEVER create standalone assignments out of rubric criteria.
 5. SPLIT MULTI-BOOK READINGS: When a weekly reading list contains multiple texts (e.g. "Corey Ch. 1 & 2 Yalom Ch. 1"), split them into distinct reading items.
 6. BREAK WEEKS: Identify "Reading Week", "Spring Break", or "Exam Week" and label the week theme accordingly.
-7. ABSENT SCHEDULE FALLBACK: If a syllabus states that the course schedule is on Brightspace or LMS without an explicit weekly table, synthesize a standard 10 to 12-week course term and map the extracted assignments to their respective weeks based on their due dates.
-8. STRIP BOILERPLATE: Strip out territorial acknowledgements, social justice questions, institutional policies, accommodation procedures, and codes of conduct.
+7. ABSENT SCHEDULE FALLBACK: If a syllabus states that the course schedule is on Brightspace or LMS without an explicit weekly table, synthesize a standard 10 to 12-week course term.
+8. STRIP BOILERPLATE: Strip out territorial acknowledgements, social justice questions, institutional policies, and codes of conduct.
 9. Enforce valid mediaType values: "textbook", "article", "video", "podcast", or "other".
 10. Return ONLY valid JSON matching this schema with zero surrounding text or markdown wrappers.
 `;
@@ -132,24 +166,38 @@ export async function parseSyllabusDocument(
   const apiKey = process.env.GEMINI_API_KEY || process.env.VISION_API_KEY;
 
   if (apiKey) {
-    const modelsToTry = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
-    const textContent = rawText || (fileBuffer ? fileBuffer.toString('utf-8') : '');
+    const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+    const textContent = rawText || (fileBuffer && !fileBuffer.slice(0, 5).toString().includes('%PDF-') ? fileBuffer.toString('utf-8') : '');
 
     for (const modelName of modelsToTry) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-        const payload: any = {
-          contents: [
-            {
-              parts: fileBuffer && mimeType?.startsWith('image/') ? [
-                { text: 'Parse this scanned syllabus page into structured course weeks, readings, and assignments JSON.' },
-                { inlineData: { mimeType, data: fileBuffer.toString('base64') } }
-              ] : [
-                { text: `Parse the following syllabus text into structured JSON:\n\n${textContent}` }
-              ]
+        const parts: any[] = [];
+        const isPdf = mimeType === 'application/pdf' || (fileBuffer && fileBuffer.slice(0, 5).toString().includes('%PDF-'));
+        const isImage = mimeType?.startsWith('image/');
+
+        if (fileBuffer && (isPdf || isImage)) {
+          parts.push({
+            inlineData: {
+              mimeType: isPdf ? 'application/pdf' : mimeType,
+              data: fileBuffer.toString('base64')
             }
-          ],
+          });
+        }
+
+        if (textContent && textContent.length > 20) {
+          parts.push({
+            text: `Parse the following syllabus document into structured JSON:\n\n${textContent.slice(0, 100000)}`
+          });
+        } else if (parts.length > 0) {
+          parts.push({
+            text: 'Extract course structure, weekly schedule, readings, assignments, rubrics, and textbooks from this document into structured JSON.'
+          });
+        }
+
+        const payload: any = {
+          contents: [{ parts }],
           systemInstruction: {
             parts: [{ text: SYSTEM_PROMPT }]
           },
@@ -176,11 +224,8 @@ export async function parseSyllabusDocument(
           const parsed = JSON.parse(cleanJson);
           const validated = ParsedSyllabusSchema.parse(parsed);
 
-          validated.weeks.forEach(w => {
-            w.readings.forEach(r => {
-              r.title = formatReadingTitle5to6Words(r.title);
-            });
-          });
+          validated.parserSource = 'PROVIDER_AI';
+          validated.providerModel = modelName;
 
           return validated;
         } else {
@@ -193,7 +238,9 @@ export async function parseSyllabusDocument(
   }
 
   // Fallback intelligent heuristic parser when Vision API key is not present or on error
-  return fallbackHeuristicParser(rawText || (fileBuffer ? fileBuffer.toString('utf-8') : ''));
+  const fallback = fallbackHeuristicParser(rawText || (fileBuffer ? fileBuffer.toString('utf-8') : ''));
+  fallback.parserSource = 'BACKEND_FALLBACK';
+  return fallback;
 }
 
 const CANONICAL_ASSIGNMENTS = [
@@ -201,9 +248,9 @@ const CANONICAL_ASSIGNMENTS = [
   { keywords: ['peer review discussion board', 'discussion board activity'], title: 'Peer Review Discussion Board', defaultPoints: '100 Points', defaultWeight: '20%' },
   { keywords: ['peer-review group report', 'peer review group report', 'group report'], title: 'Peer Review Group Report', defaultPoints: '100 Points', defaultWeight: '10%' },
   { keywords: ['research study design', 'individual paper'], title: 'Research Study Design – Individual Paper', defaultPoints: '100 Points', defaultWeight: '40%' },
-  { keywords: ['sexuality reflection assignment', 'sexuality reflection'], title: 'Sexuality Reflection Assignment', defaultPoints: '100 Points', defaultWeight: '30%' },
+  { keywords: ['sexuality reflection assignment', 'sexuality reflection', 'self-reflection assignment', 'self-reflection paper', 'reflection assignment', 'reflection paper'], title: 'Sexuality Reflection Assignment', defaultPoints: '100 Points', defaultWeight: '30%' },
   { keywords: ['peer review practice', 'peer review: bridging theory', 'in class assignment: peer review'], title: 'Peer Review Practice', defaultPoints: '100 Points', defaultWeight: '10%' },
-  { keywords: ['group sexuality research paper', 'sexuality research paper'], title: 'Sexuality Research Paper (Group)', defaultPoints: '100 Points', defaultWeight: '40%' },
+  { keywords: ['group sexuality research paper', 'sexuality research paper', 'group research paper', 'sexuality research'], title: 'Sexuality Research Paper (Group)', defaultPoints: '100 Points', defaultWeight: '40%' },
   { keywords: ['professionalism, collaboration', 'professionalism and engagement', 'professionalism, collaboration, and engagement'], title: 'Professionalism & Engagement', defaultPoints: '100 Points', defaultWeight: '20%' },
   { keywords: ['attendance', 'participation'], title: 'Attendance & Participation', defaultPoints: '100 Points', defaultWeight: '10%' }
 ];
@@ -274,10 +321,9 @@ function fallbackHeuristicParser(text: string): ParsedSyllabus {
         assignmentTitleSet.add(canonical.title);
 
         let dueDate: string | undefined;
-        let pointsPossible = canonical.defaultPoints; // e.g. "100 Points"
-        let weightPercentage = canonical.defaultWeight; // e.g. "20%"
+        let pointsPossible: string | undefined;
+        let weightPercentage = canonical.defaultWeight;
 
-        // Try extracting explicit percentage weight or point value from line or context
         const weightMatch = line.match(/(\d{1,3})%/);
         if (weightMatch) weightPercentage = `${weightMatch[1]}%`;
 
@@ -294,12 +340,59 @@ function fallbackHeuristicParser(text: string): ParsedSyllabus {
           }
         }
 
+        // Look for rubric criteria table in document for this assignment
+        const rubricCriteria: { criterionName: string; points?: number; percentage?: number }[] = [];
+        let rubricStartIdx = -1;
+        for (let j = 0; j < lines.length; j++) {
+          const lLow = lines[j].toLowerCase();
+          if (
+            lLow.includes('grading criteria') ||
+            lLow.includes('grading rubric') ||
+            lLow.includes('criteria grade points') ||
+            lLow.includes('rubric') ||
+            lLow.includes('evaluation criteria')
+          ) {
+            const prevContext = lines.slice(Math.max(0, j - 6), j + 2).join(' ').toLowerCase();
+            if (canonical.keywords.some(k => prevContext.includes(k))) {
+              rubricStartIdx = j + 1;
+              break;
+            }
+          }
+        }
+
+        if (rubricStartIdx >= 0) {
+          for (let j = rubricStartIdx; j < Math.min(lines.length, rubricStartIdx + 25); j++) {
+            const l = lines[j].trim();
+            const lLow = l.toLowerCase();
+            if (lLow.includes('total') && (lLow.includes('point') || lLow.includes('pts'))) {
+              const tot = l.match(/total\s*[:\-–]?\s*(\d{1,4})\s*(?:pts|points)/i);
+              if (tot) {
+                pointsPossible = `${tot[1]} Points`;
+              }
+              break;
+            }
+            if (CANONICAL_ASSIGNMENTS.some(c => c !== canonical && c.keywords.some(k => lLow.includes(k)))) {
+              break;
+            }
+            const cleanL = l.replace(/^[\s\-\*\•\d\.\)]+/, '').trim();
+            const critMatch = cleanL.match(/^([A-Za-z\s&(),\/\-–]+?)(?:\s*[\:\-\(]|\s+)\s*(\d{1,3})\s*(?:pts|points|pt)?\)?(?:\s+(\d{1,3})%)?/i);
+            if (critMatch && !lLow.includes('grading criteria') && !lLow.includes('scale') && !lLow.includes('total') && !lLow.includes('rubric')) {
+              rubricCriteria.push({
+                criterionName: critMatch[1].trim(),
+                points: parseInt(critMatch[2], 10),
+                percentage: critMatch[3] ? parseInt(critMatch[3], 10) : undefined
+              });
+            }
+          }
+        }
+
         assignments.push({
           title: canonical.title,
           dueDate,
           fullInstructions: `Instructions for ${canonical.title} derived from course syllabus.`,
           pointsPossible,
-          weightPercentage
+          weightPercentage,
+          rubricCriteria: rubricCriteria.length > 0 ? rubricCriteria : []
         });
         break;
       }
@@ -451,7 +544,9 @@ function fallbackHeuristicParser(text: string): ParsedSyllabus {
     courseCode,
     termWeeks: parsedWeeks.length,
     weeks: parsedWeeks,
-    assignments
+    assignments,
+    textbooks: [],
+    parserSource: 'BACKEND_FALLBACK'
   };
 }
 

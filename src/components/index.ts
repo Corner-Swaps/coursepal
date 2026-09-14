@@ -20,6 +20,7 @@ export * from './DeadlinesCalendarCard';
 export * from './AssignmentsMonthCalendarCard';
 export * from './GradeWeightTrackerCard';
 export * from './InlineCalendarPicker';
+export * from './ImportStatusBanner';
 export * from './SvgIcons';
 export * from './modals';
 

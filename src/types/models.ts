@@ -62,6 +62,7 @@ export interface AssignmentDTO {
   relevantTopics?: string | null;
   mediaUrl?: string | null;
   rubric?: RubricCriterionDTO[] | null;
+  rubricCriteria?: RubricCriterionDTO[] | null;
   isFavorite?: boolean;
   isCompleted?: boolean;
   weekNumber?: number | null;
@@ -87,6 +88,8 @@ export interface ItemDTO {
   summaryText?: string | null;
   keyTakeaways?: string | null;
   estimatedTime?: string | null;
+  noteText?: string | null;
+  rubricCriteria?: RubricCriterionDTO[] | null;
   rubric?: RubricCriterionDTO[] | null;
 }
 
@@ -98,6 +101,25 @@ export type ImportOutcome =
   | 'API_FAILURE'
   | 'UNREADABLE_DOCUMENT'
   | 'SAVE_FAILURE';
+
+export interface DiagnosticImportRecord {
+  importId: string;
+  appBuildVersion: string;
+  documentHash: string;
+  receivedByteCount: number;
+  parserSource: 'PROVIDER_AI' | 'BACKEND_FALLBACK' | 'LOCAL_DEVICE_FALLBACK';
+  providerModel?: string | null;
+  responseStatus: string;
+  fallbackReason?: string | null;
+  extractedCounts: {
+    assignments: number;
+    readings: number;
+    weeks: number;
+    textbooks: number;
+  };
+  saveOutcome: 'SAVED_TO_DISK' | 'SAVE_FAILED';
+  timestamp: string;
+}
 
 export interface TextbookResource {
   title: string;

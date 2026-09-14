@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import * as FileSystem from 'expo-file-system';
-import { Course, Week, Reading, Assignment, VaultDocument, MediaType, ImportOutcome } from '../types/models';
+import { Course, Week, Reading, Assignment, VaultDocument, MediaType, ImportOutcome, DiagnosticImportRecord } from '../types/models';
 import { MasterCoursePalette } from '../constants/theme';
 import { CourseSharingService } from '../services/CourseSharingService';
 import { persistenceManager } from '../services/DataPersistenceBackupManager';
@@ -36,6 +36,13 @@ export interface ImportSyllabusParams {
   preserveCourseCode?: string;
 }
 
+export interface ImportBannerState {
+  type: 'success' | 'warning' | 'info' | 'error';
+  title: string;
+  message: string;
+  diagnosticRecord?: DiagnosticImportRecord;
+}
+
 interface CoursePalContextType {
   // State
   courses: Course[];
@@ -51,8 +58,11 @@ interface CoursePalContextType {
   hasLoadedTerms: boolean;
   showConfetti: boolean;
   confettiTitle: string;
+  latestDiagnosticRecord: DiagnosticImportRecord | null;
+  importBanner: ImportBannerState | null;
 
   // Actions
+  dismissImportBanner: () => void;
   setSelectedTab: (tab: TabKey) => void;
   setSelectedCourseFilter: (course: Course | null) => void;
   toggleReading: (id: string) => void;
@@ -326,6 +336,12 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [hasLoadedTerms, setHasLoadedTerms] = useState<boolean>(false);
   const [showConfetti, setShowConfetti] = useState<boolean>(false);
   const [confettiTitle, setConfettiTitle] = useState<string>('');
+  const [latestDiagnosticRecord, setLatestDiagnosticRecord] = useState<DiagnosticImportRecord | null>(null);
+  const [importBanner, setImportBanner] = useState<ImportBannerState | null>(null);
+
+  const dismissImportBanner = useCallback(() => {
+    setImportBanner(null);
+  }, []);
 
   const coursesRef = useRef<Course[]>(courses);
   coursesRef.current = courses;
@@ -459,6 +475,9 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         setReadings(cleanReadings);
         setAssignments(cleanAssignments);
         setVaultDocs(cleanVaultDocs);
+        if (backup.diagnosticRecord) {
+          setLatestDiagnosticRecord(backup.diagnosticRecord);
+        }
 
         persistenceManager.saveImmediate({
           courses: updatedCourses,
@@ -1281,9 +1300,10 @@ Output ONLY valid JSON.`;
 
           const aiResult = await APIService.shared.generateContentWithGemini(
             geminiPrompt,
-            undefined,
+            rawText,
             base64Pdf,
-            renderedPageBase64
+            renderedPageBase64,
+            fileName
           );
           dto = aiResult;
         } catch (aiErr: any) {
@@ -1500,11 +1520,88 @@ Output ONLY valid JSON.`;
         errorMessage: apiError
       });
 
+      // Construct and persist DiagnosticImportRecord
+      const lastDiag = APIService.shared.getLastDiagnostic();
+      const rawTextBytes = rawText ? rawText.length : 0;
+      const pdfBytes = base64Pdf ? Math.round((base64Pdf.length * 3) / 4) : 0;
+      const calcByteCount = lastDiag?.receivedByteCount || (pdfBytes > 0 ? pdfBytes : rawTextBytes);
+
+      let localHash = lastDiag?.documentHash;
+      if (!localHash) {
+        let hashNum = 0;
+        const hashTarget = rawText || fileName;
+        for (let i = 0; i < hashTarget.length; i++) {
+          hashNum = ((hashNum << 5) - hashNum) + hashTarget.charCodeAt(i);
+          hashNum |= 0;
+        }
+        localHash = Math.abs(hashNum).toString(16).padStart(16, '0');
+      }
+
+      const diagRecord: DiagnosticImportRecord = {
+        importId: lastDiag?.diagnosticImportId || `diag-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+        appBuildVersion: '2.0.0 (Build 42)',
+        documentHash: localHash,
+        receivedByteCount: calcByteCount,
+        parserSource: isFallbackUsed ? 'LOCAL_DEVICE_FALLBACK' : (lastDiag?.parserSource || 'PROVIDER_AI'),
+        providerModel: isFallbackUsed ? null : (lastDiag?.providerModel || 'gemini-2.5-flash'),
+        responseStatus: outcomeDetails.success ? 'SUCCESS' : 'FAILED',
+        fallbackReason: isFallbackUsed ? (apiError || 'Server AI unavailable; local device fallback used') : null,
+        extractedCounts: {
+          assignments: newAssignments.length,
+          readings: newReadings.length,
+          weeks: courseWeeks.length,
+          textbooks: normalized.textbooks.length
+        },
+        saveOutcome: saveSuccess ? 'SAVED_TO_DISK' : 'SAVE_FAILED',
+        timestamp: new Date().toISOString()
+      };
+
+      setLatestDiagnosticRecord(diagRecord);
+      persistenceManager.setLastDiagnosticRecord(diagRecord);
+
+      if (saveSuccess) {
+        persistenceManager.saveImmediate({
+          courses: updatedCourses,
+          readings: updatedReadings,
+          assignments: updatedAssignments,
+          vaultDocs: updatedVaultDocs,
+          diagnosticRecord: diagRecord
+        });
+      }
+
+      // Configure truthful UI status banner
+      let bannerType: 'success' | 'warning' | 'info' | 'error' = 'info';
+      let bannerTitle = '';
+      let bannerMessage = outcomeDetails.message;
+
+      if (!outcomeDetails.success) {
+        bannerType = 'error';
+        bannerTitle = 'Import failed';
+      } else if (isFallbackUsed) {
+        bannerType = 'warning';
+        bannerTitle = `Local fallback used: ${apiError || 'Server AI unavailable'}`;
+        bannerMessage = `Extracted ${newReadings.length} readings & ${newAssignments.length} assignments offline.`;
+      } else if (normalized.isPartial) {
+        bannerType = 'warning';
+        bannerTitle = 'Partial extraction—review needed';
+      } else {
+        bannerType = 'success';
+        bannerTitle = 'AI extraction completed';
+      }
+
+      setImportBanner({
+        type: bannerType,
+        title: bannerTitle,
+        message: bannerMessage,
+        diagnosticRecord: diagRecord
+      });
+
       setUploadProgress(1.0);
       setIsUploading(false);
       setUploadStatusText('');
 
-      if (outcomeDetails.celebrationAllowed) {
+      // Strictly suppress celebration confetti on local fallback or partial extraction
+      if (outcomeDetails.celebrationAllowed && !isFallbackUsed && !normalized.isPartial) {
         triggerConfetti(`Extracted ${finalCourse.courseCode || finalCourse.courseName}! Added ${newReadings.length} readings & ${newAssignments.length} assignments.`);
       }
 
@@ -1522,6 +1619,28 @@ Output ONLY valid JSON.`;
       setIsUploading(false);
       setUploadStatusText('');
       console.error('Failed to import syllabus:', err);
+
+      const errDiag: DiagnosticImportRecord = {
+        importId: `diag-err-${Date.now()}`,
+        appBuildVersion: '2.0.0 (Build 42)',
+        documentHash: '00000000',
+        receivedByteCount: 0,
+        parserSource: 'LOCAL_DEVICE_FALLBACK',
+        providerModel: null,
+        responseStatus: 'FAILED',
+        fallbackReason: err.message || 'Unknown import failure',
+        extractedCounts: { assignments: 0, readings: 0, weeks: 0, textbooks: 0 },
+        saveOutcome: 'SAVE_FAILED',
+        timestamp: new Date().toISOString()
+      };
+      setLatestDiagnosticRecord(errDiag);
+      setImportBanner({
+        type: 'error',
+        title: 'Import failed',
+        message: err.message || 'Failed to parse syllabus document.',
+        diagnosticRecord: errDiag
+      });
+
       return {
         success: false,
         message: err.message || 'Failed to parse syllabus document.'
@@ -1562,6 +1681,9 @@ Output ONLY valid JSON.`;
         hasLoadedTerms,
         showConfetti,
         confettiTitle,
+        latestDiagnosticRecord,
+        importBanner,
+        dismissImportBanner,
         setSelectedTab,
         setSelectedCourseFilter,
         toggleReading,

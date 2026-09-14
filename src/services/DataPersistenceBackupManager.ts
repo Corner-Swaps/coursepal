@@ -6,7 +6,7 @@
  */
 
 import * as FileSystem from 'expo-file-system';
-import { Course, Reading, Assignment, VaultDocument } from '../types/models';
+import { Course, Reading, Assignment, VaultDocument, DiagnosticImportRecord } from '../types/models';
 import { NotificationService } from './NotificationService';
 
 export interface BackupPayload {
@@ -17,6 +17,7 @@ export interface BackupPayload {
   assignments: Assignment[];
   vaultDocs: VaultDocument[];
   hasAcceptedTerms?: boolean;
+  diagnosticRecord?: DiagnosticImportRecord | null;
 }
 
 export class DataPersistenceBackupManager {
@@ -24,9 +25,18 @@ export class DataPersistenceBackupManager {
   private backupFileName = 'CoursePal_AutoBackup.json';
   private termsFileName = 'CoursePal_TermsAccepted.json';
   private termsAcceptedCached: boolean | null = null;
+  private cachedDiagnosticRecord: DiagnosticImportRecord | null = null;
   private backupTimer: NodeJS.Timeout | null = null;
 
   private constructor() {}
+
+  public get lastDiagnosticRecord(): DiagnosticImportRecord | null {
+    return this.cachedDiagnosticRecord;
+  }
+
+  public setLastDiagnosticRecord(record: DiagnosticImportRecord | null): void {
+    this.cachedDiagnosticRecord = record;
+  }
 
   public static get shared(): DataPersistenceBackupManager {
     if (!DataPersistenceBackupManager.instance) {
@@ -53,6 +63,7 @@ export class DataPersistenceBackupManager {
     readings: Reading[];
     assignments: Assignment[];
     vaultDocs: VaultDocument[];
+    diagnosticRecord?: DiagnosticImportRecord | null;
   }): Promise<boolean> {
     if (this.backupTimer) {
       clearTimeout(this.backupTimer);
@@ -69,6 +80,7 @@ export class DataPersistenceBackupManager {
     readings: Reading[];
     assignments: Assignment[];
     vaultDocs: VaultDocument[];
+    diagnosticRecord?: DiagnosticImportRecord | null;
   }): void {
     if (this.backupTimer) {
       clearTimeout(this.backupTimer);
@@ -85,6 +97,7 @@ export class DataPersistenceBackupManager {
       readings: Reading[];
       assignments: Assignment[];
       vaultDocs: VaultDocument[];
+      diagnosticRecord?: DiagnosticImportRecord | null;
     };
     resolve: (val: boolean) => void;
   } | null = null;
@@ -99,6 +112,7 @@ export class DataPersistenceBackupManager {
     readings: Reading[];
     assignments: Assignment[];
     vaultDocs: VaultDocument[];
+    diagnosticRecord?: DiagnosticImportRecord | null;
   }): Promise<boolean> {
     if (this.activeWritePromise) {
       return new Promise<boolean>(resolve => {
@@ -128,10 +142,15 @@ export class DataPersistenceBackupManager {
     readings: Reading[];
     assignments: Assignment[];
     vaultDocs: VaultDocument[];
+    diagnosticRecord?: DiagnosticImportRecord | null;
   }): Promise<boolean> {
     try {
       if (!FileSystem.documentDirectory) {
         return false;
+      }
+
+      if (data.diagnosticRecord !== undefined) {
+        this.cachedDiagnosticRecord = data.diagnosticRecord;
       }
 
       const payload: BackupPayload = {
@@ -141,7 +160,8 @@ export class DataPersistenceBackupManager {
         readings: data.readings,
         assignments: data.assignments,
         vaultDocs: data.vaultDocs,
-        hasAcceptedTerms: this.termsAcceptedCached ?? true
+        hasAcceptedTerms: this.termsAcceptedCached ?? true,
+        diagnosticRecord: this.cachedDiagnosticRecord
       };
 
       const jsonStr = JSON.stringify(payload);
@@ -241,6 +261,10 @@ export class DataPersistenceBackupManager {
           ...v,
           uploadedAt: reviveDate(v.uploadedAt) || new Date()
         }));
+      }
+
+      if (parsed.diagnosticRecord) {
+        this.cachedDiagnosticRecord = parsed.diagnosticRecord;
       }
 
       return parsed;

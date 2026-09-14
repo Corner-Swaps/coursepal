@@ -154,7 +154,8 @@ export class LocalSyllabusParser {
         weekNumber: undefined,
         dueDateIso: a.dueDate,
         mediaUrl: a.noteText,
-        rubric: a.rubric
+        rubric: a.rubric,
+        rubricCriteria: a.rubricCriteria ?? a.rubric
       });
     }
     for (const w of paddedWeeks) {
@@ -222,8 +223,10 @@ export class LocalSyllabusParser {
       .replace(/\b(Corey|Yalom|Creswell|Gehart|Nichols|Davis)\s*\n\s*(Ch(?:apters?|\.)?\s*[\d\s&,\-–\+]+)/gi, '$1 $2')
       .replace(/\b(Ch(?:apters?|\.)?\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)(?![/\d])/gi, '$1 $2')
       .replace(/\b(Yalom\s+Ch\.\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)(?![/\d])/gi, '$1 $2')
-      .replace(/\b(Corey\s+Ch\.\s*[\d\s&,\-–\+]+&)\s*\n\s*(\d+)(?![/\d])/gi, '$1 $2')
-      // Strip standalone page numbers on their own lines (e.g. \n 5 \n)
+      // Associate standalone week digit preceding a calendar date (e.g. "5 \n July 31st" -> "Week 5 - July 31st")
+      .replace(/(?:^|\n)\s*(\d{1,2})\s*\n\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?)/gi, '\nWeek $1 - $2\n')
+      .replace(/(?:^|\n)\s*(\d{1,2})\s*\n\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/g, '\nWeek $1 - $2\n')
+      // Strip standalone page numbers on their own lines (e.g. \n 17 \n) that do not precede dates
       .replace(/(?:^|\n)\s*\d{1,2}\s*(?:\n|$)/g, '\n')
       // Pre-split inline week headers with dates (e.g. "8 August 21st Guest Speaker...")
       .replace(/(\s+)(?=\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?\b)/gi, '\n')
@@ -480,6 +483,66 @@ export class LocalSyllabusParser {
     }
 
     if (canonicalResults.length >= 2) {
+      // Extract genuine rubric criteria table for each canonical assignment if present in document
+      const normalizedForRubrics = joinedDocument
+        .replace(/\b(Criteria\s+Grade\s+Points\s+%\s+of\s+Grade)\b/gi, '\n$1\n')
+        .replace(/(\d{1,3}\s*(?:Points|pts|pt)?\s*\d{1,3}\s*%\s*)(?=[A-Za-z])/gi, '$1\n')
+        .replace(/\b(Total\s+\d{1,3}\s*Points\s+\d{1,3}%)/gi, '\n$1\n');
+      const rubricCheckLines = normalizedForRubrics.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+      for (const assign of canonicalResults) {
+        const assignLow = assign.title.toLowerCase();
+        let startIdx = -1;
+        for (let i = 0; i < rubricCheckLines.length; i++) {
+          if (rubricCheckLines[i].toLowerCase().includes(assignLow)) {
+            startIdx = i;
+            break;
+          }
+        }
+
+        if (startIdx >= 0) {
+          const rubricCriteria: RubricCriterionDTO[] = [];
+          let inRubric = false;
+          for (let i = startIdx; i < Math.min(rubricCheckLines.length, startIdx + 60); i++) {
+            const l = rubricCheckLines[i];
+            const low = l.toLowerCase();
+
+            if (i > startIdx && canonicalResults.some(other => other !== assign && other.title.length > 5 && low.includes(other.title.toLowerCase()))) {
+              break;
+            }
+
+            if (low.includes('criteria grade points') || low.includes('grading criteria')) {
+              inRubric = true;
+              continue;
+            }
+
+            if (inRubric) {
+              if (low.includes('total') && (low.includes('point') || low.includes('100%'))) {
+                const totMatch = l.match(/total\s*[:\-–]?\s*(\d{1,4})\s*(?:pts|points)?/i);
+                if (totMatch && !assign.pointsPossible) {
+                  assign.pointsPossible = `${totMatch[1]} Points`;
+                }
+                break;
+              }
+
+              const critMatch = l.match(/^([A-Za-z\s&(),\/\-–]+?)\s*(\d{1,3})\s*(?:Points|pts|pt)?\s*(\d{1,3})%/i);
+              if (critMatch) {
+                rubricCriteria.push({
+                  criterionName: critMatch[1].trim(),
+                  points: parseInt(critMatch[2], 10),
+                  percentage: parseInt(critMatch[3], 10)
+                });
+              }
+            }
+          }
+
+          if (rubricCriteria.length > 0) {
+            assign.rubricCriteria = rubricCriteria;
+            assign.rubric = rubricCriteria;
+          }
+        }
+      }
+
       return canonicalResults;
     }
 
@@ -702,13 +765,14 @@ export class LocalSyllabusParser {
 
         const singleWordRubrics = ['support', 'information', 'attendance', 'apa', 'ethics', 'competence', 'evidence', 'coherence'];
         const multiWordRubricPhrases = [
-          'organization and coherence', 'critical analysis',
+          'organization and coherence', 'organization & coherence', 'critical analysis',
           'quality of presentation', 'oral presentation', 'self-reflection',
           'self- awareness', 'self- regulation', 'course concepts', 'personal philosophy',
           'grading criteria', 'grade points', 'participation (oral)', 'case conceptualization',
           'therapeutic conversations', 'evaluating information', 'research topic',
           'feedback on the strength', 'feedback on the improvement', 'engagement & attendance',
-          'empathy & compassion', 'evidence and support', 'analysis and use', 'cultural competence',
+          'empathy & compassion', 'evidence and support', 'evidence & support', 'analysis and use',
+          'analysis and use of course', 'cultural competence', 'professional ethics', 'identity formation',
           'timeliness'
         ];
         const trimmedClean = lowerClean.replace(/^[•\-*▪●: \t\n()]+|[•\-*▪●: \t\n()]+$/g, '');
@@ -732,9 +796,11 @@ export class LocalSyllabusParser {
               percentage: rawPct
             };
             const existing = results[lastMatchedIndex];
+            const updatedRubric = [...(existing.rubric ?? []), criterion];
             results[lastMatchedIndex] = {
               ...existing,
-              rubric: [...(existing.rubric ?? []), criterion]
+              rubric: updatedRubric,
+              rubricCriteria: updatedRubric
             };
           }
           continue;
@@ -899,7 +965,14 @@ export class LocalSyllabusParser {
       if (foundWeekNum !== null) {
         hasSeenWeekHeader = true;
         inPolicySection = false;
-        if (currentReadings.length === 0 && currentWeekTheme && !currentWeekTheme.toLowerCase().startsWith('week ') && !currentWeekTheme.toLowerCase().startsWith('module ')) {
+        if (
+          currentReadings.length === 0 &&
+          currentWeekTheme &&
+          !currentWeekTheme.toLowerCase().startsWith('week ') &&
+          !currentWeekTheme.toLowerCase().startsWith('module ') &&
+          !currentWeekTheme.toLowerCase().includes('reading week') &&
+          !currentWeekTheme.toLowerCase().includes('break')
+        ) {
           const isReadingLike = /\b(?:paper|reading|article|chapter|ch\.|textbook|handout|lecture|video)\b/i.test(currentWeekTheme);
           if (isReadingLike) {
             currentReadings.push({
@@ -1113,6 +1186,8 @@ export class LocalSyllabusParser {
           isGenericPlaceholderReadingTitle(exactTitle) ||
           lowerTitle.includes('required reading & core materials') ||
           lowerTitle.includes('required readings & core materials') ||
+          lowerTitle.includes('reading week') ||
+          lowerTitle.includes('no class') ||
           lowerTitle === 'reading' ||
           lowerTitle === 'readings' ||
           lowerTitle === 'article' ||
