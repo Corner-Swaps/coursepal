@@ -245,7 +245,6 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
                     <View style={styles.catalogItemInfo}>
                       <View style={styles.catalogItemTitleRow}>
                         <Text style={styles.catalogCourseCode}>{item.courseCode}</Text>
-                        <Text style={styles.catalogFileSize}>{item.fileSize}</Text>
                       </View>
                       <Text style={styles.catalogCourseName} numberOfLines={1}>
                         {item.courseName}
@@ -467,12 +466,14 @@ const styles = StyleSheet.create({
   sectionHeaderTitle: {
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#0F172A'
+    color: '#141F38',
+    lineHeight: 19,
+    letterSpacing: -0.2
   },
   sectionHeaderSubtitle: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#596B85',
     marginTop: 1
   },
   sectionToggleAction: {
@@ -521,9 +522,9 @@ const styles = StyleSheet.create({
     marginBottom: 2
   },
   catalogCourseCode: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#0F172A'
+    color: '#141F38'
   },
   catalogFileSize: {
     fontSize: 11,
@@ -531,9 +532,9 @@ const styles = StyleSheet.create({
     color: '#94A3B8'
   },
   catalogCourseName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#596B85',
     marginBottom: 1
   },
   catalogInstructor: {

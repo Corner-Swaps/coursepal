@@ -12,3 +12,6 @@ export { ReadingDetailModal } from './ReadingDetailModal';
 export { CourseDetailModal } from './CourseDetailModal';
 export { UploadDocumentModal } from './UploadDocumentModal';
 export { FocusStudyModal } from './FocusStudyModal';
+export { AppReviewPromptModal } from './AppReviewPromptModal';
+export { WidgetGuideModal } from './WidgetGuideModal';
+

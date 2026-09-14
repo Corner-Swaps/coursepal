@@ -15,10 +15,8 @@ echo "========================================================"
 
 cd "$PROJECT_DIR"
 
-echo "🧹 1. Cleaning build locks & stale build daemons..."
-killall -9 SWBBuildService 2>/dev/null || true
-killall xcodebuild 2>/dev/null || true
-rm -rf /Users/slava/Library/Developer/Xcode/DerivedData/CoursePal-dcvtihrefvqubfaxyzothkhyfwln/Build/Intermediates.noindex/XCBuildData
+echo "🧹 1. Cleaning build lock data..."
+rm -f /Users/slava/Library/Developer/Xcode/DerivedData/CoursePal-dcvtihrefvqubfaxyzothkhyfwln/Build/Intermediates.noindex/XCBuildData/build.db*
 
 echo "📦 2. Bundling production React Native JS code..."
 npx react-native bundle \
@@ -29,7 +27,18 @@ npx react-native bundle \
   --assets-dest ios/CoursePal
 cp ios/CoursePal/main.jsbundle ios/main.jsbundle
 
-echo "🔨 3. Compiling native iOS app in Release mode..."
+echo "📱 3. Verifying device availability ($DEVICE_ID)..."
+for i in {1..20}; do
+  STATE_LINE=$(xcrun devicectl list devices | grep "$DEVICE_ID" || true)
+  if echo "$STATE_LINE" | grep -qE "\bavailable\b|\bconnected\b"; then
+    echo "📱 iPhone ($DEVICE_ID) is awake and connected."
+    break
+  fi
+  echo "⏳ Waiting for iPhone ($DEVICE_ID) to unlock / connect... (attempt $i/20)"
+  sleep 2
+done
+
+echo "🔨 4. Compiling native iOS app in Release mode..."
 xcodebuild -workspace ios/CoursePal.xcworkspace \
   -scheme CoursePal \
   -configuration Release \
@@ -37,16 +46,23 @@ xcodebuild -workspace ios/CoursePal.xcworkspace \
   -allowProvisioningUpdates \
   build
 
-echo "🔏 4. Extracting entitlements & code-signing app bundle..."
+echo "🔏 5. Extracting entitlements & code-signing app bundle..."
 security cms -D -i "$APP_PATH/embedded.mobileprovision" > /tmp/profile.plist
 plutil -extract Entitlements xml1 -o /tmp/entitlements.plist /tmp/profile.plist
 plutil -replace application-identifier -string "$APP_ID_ENTITLEMENT" /tmp/entitlements.plist
+
+# Sign widget extension if present
+if [ -d "$APP_PATH/PlugIns/CoursePalWidget.appex" ]; then
+  echo "🔏 Signing CoursePalWidget.appex..."
+  codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$APP_PATH/PlugIns/CoursePalWidget.appex"
+fi
+
 codesign --force --sign "$SIGNING_IDENTITY" --entitlements /tmp/entitlements.plist --timestamp=none "$APP_PATH"
 
-echo "📲 5. Installing app onto physical iPhone ($DEVICE_ID)..."
+echo "📲 6. Installing app onto physical iPhone ($DEVICE_ID)..."
 xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH" --verbose
 
-echo "🚀 6. Launching CoursePal ($BUNDLE_ID)..."
+echo "🚀 7. Launching CoursePal ($BUNDLE_ID)..."
 xcrun devicectl device process launch --device "$DEVICE_ID" "$BUNDLE_ID"
 
 echo "========================================================"

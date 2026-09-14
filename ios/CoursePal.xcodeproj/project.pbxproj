@@ -12,14 +12,44 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
 		13B07FD11A68108700A75B9A /* main.jsbundle in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FD01A68108700A75B9A /* main.jsbundle */; };
+		339E2F1C94B685A56CC38B93 /* CoursePalWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0C86B63E9DF035E6AE54BB57 /* CoursePalWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		5D11A586C23347F89956844F /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51B3E0AB987544118A3CFD02 /* noop-file.swift */; };
+		6A6482E4D25D64ECECE5EE47 /* CoursePalWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B163BBF397C62132FCCB9148 /* CoursePalWidget.swift */; };
 		96905EF65AED1B983A6B3ABC /* libPods-CoursePal.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EEBF8E8E6FB1BC6CAF49B5 /* libPods-CoursePal.a */; };
 		B18059E884C0ABDD17F3DC3D /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC715A2D49A985799AEE119 /* ExpoModulesProvider.swift */; };
+		B753AA68A934D11FF415F59D /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71A7D6BA7A87F312B315FCE5 /* SwiftUI.framework */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		C402DC7D98ECD91CCA5ED29F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 555C18DCF6FA5E155AEC92F9 /* Foundation.framework */; };
+		FED18AA56276F21C3CD90B64 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FE6EFB922FC43DD0BA2C9BE3 /* WidgetKit.framework */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		7C655F52CC695CF67F14E31F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6C3453FED5C891D91F7AAF03;
+			remoteInfo = CoursePalWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		1483C474999411E94B6C9D44 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				339E2F1C94B685A56CC38B93 /* CoursePalWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		0C86B63E9DF035E6AE54BB57 /* CoursePalWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CoursePalWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07F961A680F5B00A75B9A /* CoursePal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CoursePal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FAF1A68108700A75B9A /* AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AppDelegate.h; path = CoursePal/AppDelegate.h; sourceTree = "<group>"; };
 		13B07FB01A68108700A75B9A /* AppDelegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = AppDelegate.mm; path = CoursePal/AppDelegate.mm; sourceTree = "<group>"; };
@@ -30,13 +60,18 @@
 		1FE0D9074BEC4DE2BEDF8B9C /* CoursePal-Bridging-Header.h */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.c.h; name = "CoursePal-Bridging-Header.h"; path = "CoursePal/CoursePal-Bridging-Header.h"; sourceTree = "<group>"; };
 		206D05422DA8A3804DDABC34 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = CoursePal/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		51B3E0AB987544118A3CFD02 /* noop-file.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "noop-file.swift"; path = "CoursePal/noop-file.swift"; sourceTree = "<group>"; };
+		555C18DCF6FA5E155AEC92F9 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		58EEBF8E8E6FB1BC6CAF49B5 /* libPods-CoursePal.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-CoursePal.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C2E3173556A471DD304B334 /* Pods-CoursePal.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CoursePal.debug.xcconfig"; path = "Target Support Files/Pods-CoursePal/Pods-CoursePal.debug.xcconfig"; sourceTree = "<group>"; };
+		71A7D6BA7A87F312B315FCE5 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = SwiftUI.framework; sourceTree = "<group>"; };
 		7A4D352CD337FB3A3BF06240 /* Pods-CoursePal.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CoursePal.release.xcconfig"; path = "Target Support Files/Pods-CoursePal/Pods-CoursePal.release.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = CoursePal/SplashScreen.storyboard; sourceTree = "<group>"; };
+		B163BBF397C62132FCCB9148 /* CoursePalWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CoursePalWidget.swift; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C5B3DB1EA1DE6965940FCE82 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		FAC715A2D49A985799AEE119 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-CoursePal/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		FE6EFB922FC43DD0BA2C9BE3 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = WidgetKit.framework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,9 +83,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		43FD05B45424AC492B3EDA1F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C402DC7D98ECD91CCA5ED29F /* Foundation.framework in Frameworks */,
+				FED18AA56276F21C3CD90B64 /* WidgetKit.framework in Frameworks */,
+				B753AA68A934D11FF415F59D /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		11845F447DD2A190B933CE21 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				555C18DCF6FA5E155AEC92F9 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
 		13B07FAE1A68108700A75B9A /* CoursePal */ = {
 			isa = PBXGroup;
 			children = (
@@ -74,6 +127,9 @@
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				58EEBF8E8E6FB1BC6CAF49B5 /* libPods-CoursePal.a */,
+				11845F447DD2A190B933CE21 /* iOS */,
+				FE6EFB922FC43DD0BA2C9BE3 /* WidgetKit.framework */,
+				71A7D6BA7A87F312B315FCE5 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -94,6 +150,7 @@
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				D65327D7A22EEC0BE12398D9 /* Pods */,
 				D7E4C46ADA2E9064B798F356 /* ExpoModulesProviders */,
+				EA07160216395170BA5179F7 /* CoursePalWidget */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -104,6 +161,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* CoursePal.app */,
+				0C86B63E9DF035E6AE54BB57 /* CoursePalWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -142,6 +200,16 @@
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
+		EA07160216395170BA5179F7 /* CoursePalWidget */ = {
+			isa = PBXGroup;
+			children = (
+				B163BBF397C62132FCCB9148 /* CoursePalWidget.swift */,
+				C5B3DB1EA1DE6965940FCE82 /* Info.plist */,
+			);
+			name = CoursePalWidget;
+			path = CoursePalWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -157,15 +225,34 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 				1B0F8364B2F27796DD7B3B18 /* [CP] Embed Pods Frameworks */,
+				1483C474999411E94B6C9D44 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				5F5D25EA8D7D7398EC30C605 /* PBXTargetDependency */,
 			);
 			name = CoursePal;
 			productName = CoursePal;
 			productReference = 13B07F961A680F5B00A75B9A /* CoursePal.app */;
 			productType = "com.apple.product-type.application";
+		};
+		6C3453FED5C891D91F7AAF03 /* CoursePalWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AFFF88152DCCD846BF5021ED /* Build configuration list for PBXNativeTarget "CoursePalWidget" */;
+			buildPhases = (
+				990CA85783C3248A47B0E5BB /* Sources */,
+				43FD05B45424AC492B3EDA1F /* Frameworks */,
+				FEE63B6E1B048047499D8C99 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CoursePalWidget;
+			productName = CoursePalWidget;
+			productReference = 0C86B63E9DF035E6AE54BB57 /* CoursePalWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -194,6 +281,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* CoursePal */,
+				6C3453FED5C891D91F7AAF03 /* CoursePalWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -208,6 +296,13 @@
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				0BB03C689466DE9798B68237 /* PrivacyInfo.xcprivacy in Resources */,
 				13B07FD11A68108700A75B9A /* main.jsbundle in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FEE63B6E1B048047499D8C99 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -326,7 +421,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		990CA85783C3248A47B0E5BB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6A6482E4D25D64ECECE5EE47 /* CoursePalWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5F5D25EA8D7D7398EC30C605 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = CoursePalWidget;
+			target = 6C3453FED5C891D91F7AAF03 /* CoursePalWidget */;
+			targetProxy = 7C655F52CC695CF67F14E31F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
@@ -336,7 +448,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = CoursePal/CoursePal.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = KZ8W2GCVH8;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -349,13 +461,15 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.4.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 					"-framework",
-					"PDFKit",
+					PDFKit,
+					"-framework",
+					StoreKit,
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.coursepal.app;
@@ -375,7 +489,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = CoursePal/CoursePal.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = KZ8W2GCVH8;
 				INFOPLIST_FILE = CoursePal/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 13.4;
@@ -383,13 +497,15 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.4.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 					"-framework",
-					"PDFKit",
+					PDFKit,
+					"-framework",
+					StoreKit,
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.coursepal.app;
@@ -400,6 +516,31 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
+		};
+		4D77944A25414582FDB56251 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = KZ8W2GCVH8;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CoursePalWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.4.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.coursepal.app.widget;
+				PRODUCT_NAME = CoursePalWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 		83CBBA201A601CBA00E9B192 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -532,6 +673,32 @@
 			};
 			name = Release;
 		};
+		FBB329CB5DC832A829F1FFED /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = KZ8W2GCVH8;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CoursePalWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.4.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.coursepal.app.widget;
+				PRODUCT_NAME = CoursePalWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -549,6 +716,15 @@
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
 				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AFFF88152DCCD846BF5021ED /* Build configuration list for PBXNativeTarget "CoursePalWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FBB329CB5DC832A829F1FFED /* Release */,
+				4D77944A25414582FDB56251 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

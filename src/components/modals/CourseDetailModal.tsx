@@ -403,15 +403,16 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   aiSubtitleText: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
     color: '#596B85',
     marginTop: 2
   },
   sectionHeaderTitle: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#596B85',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
     marginTop: 10,
     marginBottom: 2
@@ -460,17 +461,21 @@ const styles = StyleSheet.create({
     marginBottom: 4
   },
   itemRowTitle: {
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
-    color: '#141F38'
+    color: '#141F38',
+    lineHeight: 19,
+    letterSpacing: -0.2
   },
   itemRowSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
-    color: '#596B85'
+    color: '#596B85',
+    lineHeight: 17
   },
   itemRowDate: {
-    fontSize: 12,
+    fontSize: 12.5,
+    fontWeight: '500',
     color: '#596B85'
   },
   actionPillButton: {

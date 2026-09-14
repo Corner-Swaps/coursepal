@@ -34,6 +34,91 @@ export const CoursePalTheme = {
   dangerRed: '#EF4444'
 } as const;
 
+export const CoursePalTypography = {
+  // Page Hero / Big Header (Readings, Assignments, Syllabi, Invite)
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: '800' as const,
+    color: '#141F38',
+    letterSpacing: -0.5
+  },
+  // Subtitle directly under Page Hero
+  pageSubtitle: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#596B85',
+    lineHeight: 17
+  },
+  // Modal Sheet Navigation Bar Title
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    color: '#141F38',
+    letterSpacing: -0.2
+  },
+  // Section / Group Header (e.g. "UPLOAD CLASS MATERIAL", "SCHEDULE & DUE DATE")
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#596B85',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const
+  },
+  // Prominent Section Title
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#141F38',
+    letterSpacing: -0.3
+  },
+  // Standardized Card & Item Title (matching Readings title: THE REFERENCE STANDARD)
+  title: {
+    fontSize: 14.5,
+    fontWeight: '700' as const,
+    color: '#141F38',
+    lineHeight: 19,
+    letterSpacing: -0.2
+  },
+  // Standardized Subtitle (matching Readings author/subtext: THE REFERENCE STANDARD)
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#596B85',
+    lineHeight: 17
+  },
+  // Regular Body Text
+  body: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: '#141F38',
+    lineHeight: 20
+  },
+  // Secondary / Description Body Text
+  bodyMuted: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#596B85',
+    lineHeight: 18
+  },
+  // Small caption / metadata
+  caption: {
+    fontSize: 11.5,
+    fontWeight: '500' as const,
+    color: '#718096'
+  },
+  // Badges & Pill Labels
+  badge: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: '#FFFFFF'
+  },
+  // Compact Mini Badge
+  miniBadge: {
+    fontSize: 10,
+    fontWeight: '700' as const
+  }
+} as const;
+
 export const MasterCoursePalette = [
   '#2563EB', // 0: Vibrant Blue (Default)
   '#7C3AED', // 1: Royal Purple

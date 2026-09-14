@@ -85,13 +85,13 @@ You are an expert academic syllabus parser.
 Your task is to convert raw syllabus text or scanned document images into structured JSON format matching this exact schema:
 {
   "courseName": "string",
-  "courseCode": "string (e.g. CS101)",
-  "termWeeks": 16,
+  "courseCode": "string (e.g. CS101 or CPC 511)",
+  "termWeeks": 12,
   "weeks": [
     {
       "weekNumber": 1,
       "startDate": "YYYY-MM-DD",
-      "theme": "Introduction to Computer Science",
+      "theme": "Introduction to Group Work",
       "readings": [
         {
           "title": "Short Title Five Six Words",
@@ -102,11 +102,11 @@ Your task is to convert raw syllabus text or scanned document images into struct
   ],
   "assignments": [
     {
-      "title": "Problem Set 1",
-      "dueDate": "2026-09-15T23:59:00Z",
-      "fullInstructions": "Complete problems 1 through 5 in textbook",
+      "title": "Exact Assignment Title",
+      "dueDate": "2026-04-26T23:59:00Z",
+      "fullInstructions": "Detailed instructions from syllabus",
       "pointsPossible": "100 Points",
-      "weightPercentage": "20%"
+      "weightPercentage": "30%"
     }
   ]
 }
@@ -114,11 +114,14 @@ Your task is to convert raw syllabus text or scanned document images into struct
 CRITICAL RULES:
 1. READING TITLES: Every title in "readings" MUST be a short title of between 5 to 6 words (word count strictly >= 5 and <= 6) appropriate to the document.
 2. SEPARATE POINT & PERCENTAGE SYSTEMS: "pointsPossible" represents rubric score points (e.g. "100 Points"), whereas "weightPercentage" represents final grade percentage weight (e.g. "20%"). Keep them separate.
-3. STRIP OUT: Grading rubrics, office hours, professor bio, email, disclaimers, plagiarism rules, university policies.
-4. NON-STANDARD LAYOUTS: If syllabus lists content by topic or module without explicit week numbers, map dates and topics sequentially across weeks.
-5. FALLBACK BUCKET: If readings or deliverables are completely unbounded or unscheduled, group them into "weekNumber": 0.
-6. Enforce valid mediaType values: "textbook", "article", "video", "podcast", or "other".
-7. Return ONLY valid JSON matching this schema with zero surrounding text or markdown wrappers.
+3. OVERVIEW AS SOURCE OF TRUTH: The "Overview of Required Assignments" table defines the genuine course deliverables. Use this table as the authoritative list of assignments.
+4. RUBRIC IMMUNITY: NEVER extract rubric criteria (e.g. "Organization and Coherence", "Evidence and Support", "Analysis and use of Course Concepts", "Professional Ethics", "Cultural Competence", "APA", "Oral Presentation", "Self-reflection") as assignments. They belong only as internal grading rubrics.
+5. SPLIT MULTI-BOOK READINGS: When a weekly reading list contains multiple texts (e.g. "Corey Ch. 1 & 2 Yalom Ch. 1"), split them into distinct reading items.
+6. BREAK WEEKS: Identify "Reading Week", "Spring Break", or "Exam Week" and label the week theme accordingly.
+7. ABSENT SCHEDULE FALLBACK: If a syllabus states that the course schedule is on Brightspace or LMS without an explicit weekly table, synthesize a standard 10 to 12-week course term and map the extracted assignments to their respective weeks based on their due dates.
+8. STRIP BOILERPLATE: Strip out territorial acknowledgements, social justice questions, institutional policies, accommodation procedures, and codes of conduct.
+9. Enforce valid mediaType values: "textbook", "article", "video", "podcast", or "other".
+10. Return ONLY valid JSON matching this schema with zero surrounding text or markdown wrappers.
 `;
 
 export async function parseSyllabusDocument(
@@ -126,15 +129,7 @@ export async function parseSyllabusDocument(
   mimeType?: string,
   rawText?: string
 ): Promise<ParsedSyllabus> {
-  let apiKey = process.env.GEMINI_API_KEY || process.env.VISION_API_KEY;
-  if (!apiKey) {
-    const encoded = 'QVEuQWI4Uk42TDlyVzFxZ3NlVDBNS1R2V3JqVUdiU0tQVEhja1dtOE9oWFdLLWNETVh2Q3c=';
-    try {
-      if (typeof Buffer !== 'undefined') {
-        apiKey = Buffer.from(encoded, 'base64').toString('utf-8');
-      }
-    } catch {}
-  }
+  const apiKey = process.env.GEMINI_API_KEY || process.env.VISION_API_KEY;
 
   if (apiKey) {
     const modelsToTry = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];

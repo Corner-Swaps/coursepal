@@ -383,4 +383,34 @@ Week Modules Topics Readings
       expect(totalReadings).toBeGreaterThanOrEqual(10);
     });
   });
+
+  describe('Placeholder Suppression: Articles / Handouts', () => {
+    it('suppresses standalone "Articles" line from becoming a reading item', () => {
+      const scheduleWithArticles = `
+CPC 512: Family Systems Approaches to Counselling
+School of Health & Social Sciences
+
+Course Schedule
+Week 1 July 2/3
+Creating a caring community
+Gehart chapters 1-3
+
+Week 2 July 9/10
+Introduction to Systems Thinking
+Gehart chapter 5
+Articles
+
+Week 3 July 16/17
+Structural Family Systems
+Gehart chapters 5 & 7
+`;
+      const result = parser.parseText(scheduleWithArticles);
+      const allReadings = (result.weeks ?? []).flatMap(w => w.readings ?? []);
+      const articleReading = allReadings.find(r => r.title.toLowerCase() === 'articles' || r.title.toLowerCase() === 'required articles');
+      expect(articleReading).toBeUndefined();
+
+      const week2Readings = result.weeks?.find(w => w.weekNumber === 2)?.readings ?? [];
+      expect(week2Readings.some(r => r.title.toLowerCase().includes('gehart'))).toBe(true);
+    });
+  });
 });

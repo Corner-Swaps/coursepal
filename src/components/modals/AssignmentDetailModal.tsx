@@ -86,11 +86,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   // Schedule Toggles
   const [isWeekEnabled, setIsWeekEnabled] = useState<boolean>(assignment.weekNumber > 0);
   const [weekNumber, setWeekNumber] = useState<number>(assignment.weekNumber > 0 ? assignment.weekNumber : 1);
-  const [isModuleEnabled, setIsModuleEnabled] = useState<boolean>(
-    Boolean(assignment.moduleMention && assignment.moduleMention.trim().length > 0)
-  );
-  const [moduleText, setModuleText] = useState<string>(assignment.moduleMention || '');
-  const [hasDueDate, setHasDueDate] = useState<boolean>(assignment.dueDate != null);
   const [dueDate, setDueDate] = useState<Date>(parseSafeDate(assignment.dueDate) || new Date());
 
   // Rubric Items State
@@ -132,9 +127,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
       setIsWeekEnabled(assignment.weekNumber > 0);
       setWeekNumber(assignment.weekNumber > 0 ? assignment.weekNumber : 1);
-      setIsModuleEnabled(Boolean(assignment.moduleMention && assignment.moduleMention.trim().length > 0));
-      setModuleText(assignment.moduleMention || '');
-      setHasDueDate(assignment.dueDate != null);
       setDueDate(parseSafeDate(assignment.dueDate) || new Date());
       setMediaUrlText(assignment.mediaUrl || '');
 
@@ -169,12 +161,10 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
       fullInstructions: instructionsText.trim(),
       pointsPossible: pointsPossibleText.trim() || '100 Points',
       weightPercentage: `${gradeWeightPercent}%`,
-      weekNumber: isWeekEnabled ? weekNumber : 0,
-      moduleMention: isModuleEnabled && moduleText.trim().length > 0 ? moduleText.trim() : null,
-      dueDate: hasDueDate ? dueDate : null,
+      weekNumber: isWeekEnabled ? (weekNumber > 0 ? weekNumber : 1) : 0,
+      dueDate: dueDate,
       mediaUrl: mediaUrlText.trim() || null,
       noteText: cleanNotes || null,
-      relevantTopics: isModuleEnabled ? moduleText.trim() : null,
       rubricCriteria: cleanRubrics,
       ...overrides
     };
@@ -191,33 +181,25 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   // Toggle Handlers
   const handleToggleWeek = (enabled: boolean) => {
     setIsWeekEnabled(enabled);
-    saveAllChanges({ weekNumber: enabled ? weekNumber : 0 });
+    const resolvedWeek = enabled ? (weekNumber > 0 ? weekNumber : 1) : 0;
+    if (enabled && weekNumber <= 0) {
+      setWeekNumber(1);
+    }
+    saveAllChanges({ weekNumber: resolvedWeek });
   };
 
-  const handleToggleModule = (enabled: boolean) => {
-    setIsModuleEnabled(enabled);
-    saveAllChanges({ moduleMention: enabled ? (moduleText.trim() || 'Module 1') : null });
-  };
-
-  const handleToggleDueDate = (enabled: boolean) => {
-    setHasDueDate(enabled);
-    saveAllChanges({ dueDate: enabled ? dueDate : null });
-  };
-
-  // Steppers
+  // Stepper for Week
   const handleWeekStep = (delta: number) => {
     const next = Math.max(1, Math.min(52, weekNumber + delta));
     setWeekNumber(next);
     saveAllChanges({ weekNumber: next });
   };
 
-  const handleWeightStep = (delta: number) => {
-    const next = Math.max(0, Math.min(100, gradeWeightPercent + delta));
-    setGradeWeightPercent(next);
-    saveAllChanges({ weightPercentage: `${next}%` });
+  // Rubric Item Handlers & Total Points Recalculation
+  const computeTotalPoints = (items: RubricCriterionDTO[]): number => {
+    return items.reduce((sum, item) => sum + (Number(item.points) || 0), 0);
   };
 
-  // Rubric Item Handlers
   const handleAddRubricItem = () => {
     const newItem: RubricCriterionDTO = {
       criterionName: '',
@@ -226,13 +208,19 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
     };
     const updated = [...rubricItems, newItem];
     setRubricItems(updated);
-    saveAllChanges({ rubricCriteria: updated });
+    const newTotal = computeTotalPoints(updated);
+    const newTotalText = `${newTotal} Points`;
+    setPointsPossibleText(newTotalText);
+    saveAllChanges({ rubricCriteria: updated, pointsPossible: newTotalText });
   };
 
   const handleRemoveRubricItem = (idx: number) => {
     const updated = rubricItems.filter((_, i) => i !== idx);
     setRubricItems(updated);
-    saveAllChanges({ rubricCriteria: updated });
+    const newTotal = computeTotalPoints(updated);
+    const newTotalText = `${newTotal} Points`;
+    setPointsPossibleText(newTotalText);
+    saveAllChanges({ rubricCriteria: updated, pointsPossible: newTotalText });
   };
 
   const handleUpdateCriterionName = (idx: number, text: string) => {
@@ -246,7 +234,10 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
     const num = parseFloat(clean);
     const updated = rubricItems.map((item, i) => (i === idx ? { ...item, points: isNaN(num) ? 0 : num } : item));
     setRubricItems(updated);
-    saveAllChanges({ rubricCriteria: updated });
+    const newTotal = computeTotalPoints(updated);
+    const newTotalText = `${newTotal} Points`;
+    setPointsPossibleText(newTotalText);
+    saveAllChanges({ rubricCriteria: updated, pointsPossible: newTotalText });
   };
 
   const handleRubricPointsStep = (idx: number, delta: number) => {
@@ -254,7 +245,10 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
     const next = Math.max(0, current + delta);
     const updated = rubricItems.map((item, i) => (i === idx ? { ...item, points: next } : item));
     setRubricItems(updated);
-    saveAllChanges({ rubricCriteria: updated });
+    const newTotal = computeTotalPoints(updated);
+    const newTotalText = `${newTotal} Points`;
+    setPointsPossibleText(newTotalText);
+    saveAllChanges({ rubricCriteria: updated, pointsPossible: newTotalText });
   };
 
   // Note Handlers
@@ -279,7 +273,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   };
 
   const formattedDueDateStr = useMemo(() => {
-    if (hasDueDate && dueDate) {
+    if (dueDate) {
       return dueDate.toLocaleDateString('en-US', {
         weekday: 'long',
         month: 'long',
@@ -288,7 +282,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
       });
     }
     return isWeekEnabled ? `Week ${weekNumber}` : 'No due date specified';
-  }, [hasDueDate, dueDate, isWeekEnabled, weekNumber]);
+  }, [dueDate, isWeekEnabled, weekNumber]);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleDone}>
@@ -390,113 +384,36 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
               <View style={styles.rowDivider} />
 
-              {/* Module Row with Toggle */}
+              {/* Due Date Row (Always Visible) */}
               <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Module / Unit</Text>
-                <Switch
-                  value={isModuleEnabled}
-                  onValueChange={handleToggleModule}
-                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
-                  thumbColor="#FFFFFF"
-                  style={styles.switchControl}
-                />
+                <Text style={styles.rowLabel}>Due Date</Text>
+                <View style={styles.selectedDateBanner}>
+                  <CalendarIcon size={14} color="#2470F5" />
+                  <Text style={styles.selectedDateBannerText}>{formattedDueDateStr}</Text>
+                </View>
               </View>
-
-              {isModuleEnabled && (
-                <>
-                  <View style={styles.rowDivider} />
-                  <View style={styles.formRow}>
-                    <TextInput
-                      style={styles.rowFullInput}
-                      value={moduleText}
-                      onChangeText={t => {
-                        setModuleText(t);
-                        saveAllChanges({ moduleMention: t.trim() || null });
-                      }}
-                      placeholder="e.g. Module 2: Ethics & Research"
-                      placeholderTextColor="#94A3B8"
-                    />
-                  </View>
-                </>
-              )}
 
               <View style={styles.rowDivider} />
 
-              {/* Due Date Row with Toggle */}
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Due Date</Text>
-                <Switch
-                  value={hasDueDate}
-                  onValueChange={handleToggleDueDate}
-                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
-                  thumbColor="#FFFFFF"
-                  style={styles.switchControl}
-                />
-              </View>
-
-              {hasDueDate && (
-                <>
-                  <View style={styles.rowDivider} />
-                  <View style={styles.selectedDateBanner}>
-                    <CalendarIcon size={14} color="#2470F5" />
-                    <Text style={styles.selectedDateBannerText}>{formattedDueDateStr}</Text>
-                  </View>
-
-                  {/* Inline Calendar Picker */}
-                  <InlineCalendarPicker
-                    selectedDate={dueDate}
-                    onSelectDate={d => {
-                      setDueDate(d);
-                      saveAllChanges({ dueDate: d });
-                    }}
-                    accentColor={CoursePalTheme.accentBlue}
-                  />
-                </>
-              )}
-            </View>
-
-            {/* MARK: - Section 2: Instructions */}
-            <Text style={styles.sectionHeaderTitle}>Instructions</Text>
-            <View style={styles.sectionCard}>
-              <TextInput
-                style={styles.multilineInstructionsInput}
-                value={instructionsText}
-                onChangeText={t => {
-                  setInstructionsText(t);
-                  saveAllChanges({ fullInstructions: t });
+              {/* Inline Calendar Picker */}
+              <InlineCalendarPicker
+                selectedDate={dueDate}
+                onSelectDate={d => {
+                  setDueDate(d);
+                  saveAllChanges({ dueDate: d });
                 }}
-                placeholder="Enter assignment requirements, format guidelines, and instructions..."
-                placeholderTextColor="#94A3B8"
-                multiline={true}
+                accentColor={CoursePalTheme.accentBlue}
               />
             </View>
 
-            {/* MARK: - Section 3: Points Breakdown & Rubric */}
+            {/* MARK: - Section 2: Points Breakdown & Rubric */}
             <Text style={styles.sectionHeaderTitle}>Points Breakdown</Text>
             <View style={styles.sectionCard}>
-              {/* Grade Weight Stepper (Up & Down) */}
+              {/* Grade Weight */}
               <View style={styles.formRow}>
                 <Text style={styles.rowLabel}>Grade Weight</Text>
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => handleWeightStep(-5)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepperBtnText}>−</Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.stepperValueBox}>
-                    <Text style={styles.stepperValueText}>{gradeWeightPercent}%</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => handleWeightStep(5)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepperBtnText}>+</Text>
-                  </TouchableOpacity>
+                <View style={styles.weightBadge}>
+                  <Text style={styles.weightBadgeText}>{gradeWeightPercent}%</Text>
                 </View>
               </View>
 
@@ -517,74 +434,34 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                 />
               </View>
 
-              <View style={styles.rowDivider} />
+              {rubricItems.length > 0 && (
+                <>
+                  <View style={styles.rowDivider} />
 
-              {/* Rubric Items List */}
-              <View style={styles.rubricListContainer}>
-                {rubricItems.map((item, idx) => (
-                  <View key={`rubric-${idx}`} style={styles.rubricRowCard}>
-                    <Text style={styles.itemIndexNumber}>{idx + 1} -</Text>
-                    <TextInput
-                      style={styles.rubricNameInput}
-                      value={item.criterionName}
-                      onChangeText={t => handleUpdateCriterionName(idx, t)}
-                      placeholder="Criterion title..."
-                      placeholderTextColor="#94A3B8"
-                    />
-
-                    {/* Points Stepper: [ − ] [ X pts ] [ + ] */}
-                    <View style={styles.rubricStepperRow}>
-                      <TouchableOpacity
-                        style={styles.rubricStepperBtn}
-                        onPress={() => handleRubricPointsStep(idx, -5)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.rubricStepperBtnText}>−</Text>
-                      </TouchableOpacity>
-
-                      <View style={styles.rubricPointsPill}>
-                        <TextInput
-                          style={styles.rubricNumInput}
-                          value={item.points != null ? `${item.points}` : '0'}
-                          keyboardType="numeric"
-                          onChangeText={t => handleUpdateCriterionPoints(idx, t)}
-                        />
-                        <Text style={styles.rubricUnitLabel}>pts</Text>
+                  {/* Rubric Items List - Clean presentation without delete or steppers */}
+                  <View style={styles.rubricListContainer}>
+                    {rubricItems.map((item, idx) => (
+                      <View key={`rubric-${idx}`} style={styles.rubricRowCard}>
+                        <View style={styles.noteIndexBadge}>
+                          <Text style={styles.noteIndexBadgeText}>{idx + 1}</Text>
+                        </View>
+                        <Text style={styles.rubricNameInput} numberOfLines={2}>
+                          {item.criterionName}
+                        </Text>
+                        <View style={styles.rubricPointsPill}>
+                          <Text style={styles.rubricNumInput}>
+                            {item.points != null ? `${item.points}` : '0'}
+                          </Text>
+                          <Text style={styles.rubricUnitLabel}>pts</Text>
+                        </View>
                       </View>
-
-                      <TouchableOpacity
-                        style={styles.rubricStepperBtn}
-                        onPress={() => handleRubricPointsStep(idx, 5)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.rubricStepperBtnText}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Delete Item Button */}
-                    <TouchableOpacity
-                      onPress={() => handleRemoveRubricItem(idx)}
-                      style={styles.deleteIconBtn}
-                      activeOpacity={0.7}
-                    >
-                      <XMarkCircleFillIcon size={18} color="#94A3B8" />
-                    </TouchableOpacity>
+                    ))}
                   </View>
-                ))}
-              </View>
-
-              {/* Add Rubric Criterion Button */}
-              <TouchableOpacity
-                onPress={handleAddRubricItem}
-                style={styles.addItemBtn}
-                activeOpacity={0.7}
-              >
-                <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
-                <Text style={styles.addItemBtnText}>Add Criterion</Text>
-              </TouchableOpacity>
+                </>
+              )}
             </View>
 
-            {/* MARK: - Section 4: Resource Link */}
+            {/* MARK: - Section 3: Resource Link */}
             <Text style={styles.sectionHeaderTitle}>Resource Link</Text>
             <View style={styles.sectionCard}>
               <TextInput
@@ -617,12 +494,15 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
               )}
             </View>
 
-            {/* MARK: - Section 5: Notes (Keyboard-Aware, No Giant Bottom Gap) */}
+            {/* MARK: - Section 4: Notes (Keyboard-Aware, No Giant Bottom Gap) */}
             <Text style={styles.sectionHeaderTitle}>Notes</Text>
             <View style={styles.sectionCard}>
+
               {noteInputs.map((note, idx) => (
                 <View key={`note-${idx}`} style={styles.noteItemCard}>
-                  <Text style={styles.itemIndexNumber}>{idx + 1} -</Text>
+                  <View style={styles.noteIndexBadge}>
+                    <Text style={styles.noteIndexBadgeText}>{idx + 1}</Text>
+                  </View>
                   <TextInput
                     style={styles.noteTextInput}
                     value={note}
@@ -640,19 +520,20 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                     onPress={() => handleRemoveNote(idx)}
                     style={styles.deleteIconBtn}
                     activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <XMarkCircleFillIcon size={18} color="#94A3B8" />
+                    <XMarkCircleFillIcon size={20} color="#94A3B8" />
                   </TouchableOpacity>
                 </View>
               ))}
 
               <TouchableOpacity
                 onPress={handleAddNote}
-                style={styles.addItemBtn}
+                style={styles.addNotePillBtn}
                 activeOpacity={0.7}
               >
-                <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
-                <Text style={styles.addItemBtnText}>Add Note</Text>
+                <PlusCircleFillIcon size={15} color="#2470F5" />
+                <Text style={styles.addNotePillBtnText}>Add Note</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -759,10 +640,10 @@ const styles = StyleSheet.create({
     marginBottom: 4
   },
   assignmentTitleInput: {
-    fontSize: 20,
+    fontSize: 16.5,
     fontWeight: '700',
     color: '#141F38',
-    lineHeight: 26,
+    lineHeight: 22,
     padding: 0
   },
   sectionHeaderTitle: {
@@ -843,6 +724,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#141F38'
   },
+  weightBadge: {
+    backgroundColor: '#EEF2F6',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    minWidth: 60,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  weightBadgeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#141F38'
+  },
   rowFullInput: {
     flex: 1,
     fontSize: 15,
@@ -857,13 +752,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
-    marginBottom: 12
+    borderRadius: 10
   },
   selectedDateBannerText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2470F5'
+    color: '#2470F5',
+    includeFontPadding: false
   },
   multilineInstructionsInput: {
     fontSize: 14.5,
@@ -889,37 +784,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 10,
+    padding: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0'
   },
   itemIndexNumber: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#596B85'
   },
   rubricNameInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#141F38'
   },
   rubricStepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4
+    gap: 3
   },
   rubricStepperBtn: {
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     borderRadius: 6,
     backgroundColor: '#EEF2F6',
     alignItems: 'center',
     justifyContent: 'center'
   },
   rubricStepperBtnText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#2470F5'
   },
@@ -930,9 +825,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    minWidth: 54,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    minWidth: 46,
     justifyContent: 'center',
     gap: 2
   },
@@ -940,23 +835,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
     gap: 2
   },
   rubricNumInput: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#141F38',
-    minWidth: 26,
+    minWidth: 24,
     textAlign: 'center',
     padding: 0
   },
   rubricUnitLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     color: '#64748B'
   },
@@ -966,17 +861,17 @@ const styles = StyleSheet.create({
   addItemBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-    paddingVertical: 4
+    gap: 5,
+    marginTop: 8,
+    paddingVertical: 3
   },
   addItemBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#2470F5'
   },
   singleFieldInput: {
-    fontSize: 14.5,
+    fontSize: 14,
     color: '#141F38',
     paddingVertical: 4
   },
@@ -985,31 +880,76 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#EFF6FF',
-    padding: 10,
-    borderRadius: 10,
-    marginTop: 8
+    padding: 8,
+    borderRadius: 8,
+    marginTop: 6
   },
   openLinkPillText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
     color: '#2470F5'
   },
   noteItemCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: 10,
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 8
+    marginBottom: 8,
+    minHeight: 46
+  },
+  noteIndexBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1
+  },
+  noteIndexBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569'
   },
   noteTextInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#141F38',
-    lineHeight: 20,
-    padding: 0
+    fontSize: 13.5,
+    color: '#0F172A',
+    lineHeight: 19,
+    padding: 0,
+    paddingTop: 1,
+    minHeight: 32
+  },
+  notesEmptyPrompt: {
+    fontSize: 12.5,
+    color: '#64748B',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 6,
+    lineHeight: 17
+  },
+  addNotePillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 18,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 2
+  },
+  addNotePillBtnText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#2470F5'
   }
 });

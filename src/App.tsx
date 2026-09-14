@@ -3,11 +3,15 @@
  * 1:1 Parity with SwiftUI MainTabView and native iOS screen hierarchy.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
-  StyleSheet
+  StyleSheet,
+  AppState,
+  AppStateStatus,
+  Linking
 } from 'react-native';
+
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CoursePalTheme } from './constants/theme';
 import { CoursePalProvider, useCoursePal, TabKey } from './context/CoursePalContext';
@@ -31,6 +35,7 @@ import {
   FocusStudyModal,
   WelcomeTermsModal
 } from './components/modals';
+import { storeReviewService } from './services/StoreReviewService';
 
 export default function App() {
   return (
@@ -51,6 +56,7 @@ function MainAppView() {
     isUploading,
     uploadStatusText,
     hasAcceptedTerms,
+    hasLoadedTerms,
     acceptTerms
   } = useCoursePal();
 
@@ -65,6 +71,81 @@ function MainAppView() {
   const [selectedCategoryForAddTask, setSelectedCategoryForAddTask] = useState<'assignment' | 'reading'>('assignment');
 
   const insets = useSafeAreaInsets();
+  const hasRecordedLaunchRef = useRef<boolean>(false);
+
+  // App launch counting & review prompt lifecycle (strict 15-use threshold & 15-use recurrence)
+  // Apple's native StoreKit rating dialog is triggered directly - no custom modal!
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+
+    const checkReviewEligibility = async () => {
+      if (!hasRecordedLaunchRef.current) {
+        hasRecordedLaunchRef.current = true;
+        await storeReviewService.recordAppLaunch();
+      }
+
+      if (hasAcceptedTerms) {
+        const shouldPrompt = await storeReviewService.shouldShowReviewPrompt();
+        if (shouldPrompt) {
+          timer = setTimeout(async () => {
+            // Trigger Apple's official native StoreKit rating popup directly
+            await storeReviewService.requestReview();
+          }, 2200);
+        }
+      }
+    };
+
+    checkReviewEligibility();
+
+    let lastBackgroundTime = 0;
+    const subscription = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
+      if (nextState === 'background') {
+        lastBackgroundTime = Date.now();
+      } else if (nextState === 'active' && lastBackgroundTime > 0) {
+        const timeInBackground = Date.now() - lastBackgroundTime;
+        // If app was in background for at least 3 minutes, treat as a distinct app use session
+        if (timeInBackground >= 3 * 60 * 1000) {
+          await storeReviewService.recordAppLaunch();
+          if (hasAcceptedTerms) {
+            const shouldPrompt = await storeReviewService.shouldShowReviewPrompt();
+            if (shouldPrompt) {
+              timer = setTimeout(async () => {
+                await storeReviewService.requestReview();
+              }, 2200);
+            }
+          }
+        }
+      }
+    });
+
+    // Handle incoming deep links (e.g. from WidgetKit taps: coursepal://tab/assignments or coursepal://tab/readings)
+    const handleDeepLink = (url: string | null) => {
+      if (!url) return;
+      try {
+        if (url.includes('assignments')) {
+          setSelectedTab('assignments');
+        } else if (url.includes('readings')) {
+          setSelectedTab('readings');
+        } else if (url.includes('syllabus')) {
+          setSelectedTab('syllabus');
+        } else if (url.includes('invite')) {
+          setSelectedTab('invite');
+        }
+      } catch {
+        // Safe fallback
+      }
+    };
+
+    Linking.getInitialURL().then(handleDeepLink);
+    const linkingSub = Linking.addEventListener('url', event => handleDeepLink(event.url));
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      subscription.remove();
+      linkingSub.remove();
+    };
+  }, [hasAcceptedTerms, setSelectedTab]);
+
 
   const handleOpenAddTask = (courseId?: string, category: 'assignment' | 'reading' = 'assignment') => {
     setSelectedCourseForAddTask(courseId);
@@ -186,9 +267,9 @@ function MainAppView() {
           onClose={() => setShowFocusModal(false)}
         />
 
-        {/* First-Launch Legal & Welcome Terms Modal */}
+        {/* First-Launch Legal & Welcome Terms Modal (Shows ONLY on the very first launch after downloading, never again once accepted) */}
         <WelcomeTermsModal
-          visible={!hasAcceptedTerms}
+          visible={hasLoadedTerms && !hasAcceptedTerms}
           onAccept={acceptTerms}
         />
 

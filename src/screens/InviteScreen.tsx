@@ -6,40 +6,60 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Clipboard
+  Clipboard,
+  Share
 } from 'react-native';
 import { useCoursePal } from '../context/CoursePalContext';
 import { CoursePalTheme } from '../constants/theme';
+import { CourseSharingService } from '../services/CourseSharingService';
 import {
   QRCodeIcon,
   JoinArrowDownIcon,
   CopyDocIcon,
-  ShieldLockIcon,
+  ShieldCheckmarkIcon,
+  GraduationCapFillIcon,
+  StarFillIcon,
+  RectangleInsetTopLeftFilledIcon,
   ChevronRightIcon
 } from '../components/SvgIcons';
 import { Course } from '../types/models';
 import { QRCodeModal } from '../components/modals/QRCodeModal';
 import { InfoCreditsModal } from '../components/modals/InfoCreditsModal';
+import { WidgetGuideModal } from '../components/modals/WidgetGuideModal';
+import { storeReviewService } from '../services/StoreReviewService';
+import { NotificationService } from '../services/NotificationService';
+import { haptics } from '../services/HapticsService';
+
 
 export const InviteScreen: React.FC = () => {
   const { courses, importShareCode } = useCoursePal();
 
-  const [selectedCategory, setSelectedCategory] = useState<'share' | 'join' | 'legal'>('share');
+  const [selectedCategory, setSelectedCategory] = useState<'share' | 'join'>('share');
   const [inputCode, setInputCode] = useState<string>('');
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [isSuccessNotice, setIsSuccessNotice] = useState<boolean>(true);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [qrCodeCourse, setQrCodeCourse] = useState<Course | null>(null);
   const [showInfoSheet, setShowInfoSheet] = useState<boolean>(false);
+  const [infoSheetInitialTab, setInfoSheetInitialTab] = useState<'terms' | 'privacy' | 'about'>('terms');
+  const [showWidgetGuide, setShowWidgetGuide] = useState<boolean>(false);
+
 
   const activeCourses = courses.filter(c => !c.isDeleted);
 
-  const handleCopyCode = (code: string) => {
-    Clipboard.setString(code);
-    setCopiedCode(code);
+  const handleCopyCode = (course: Course) => {
+    const shareLink = CourseSharingService.shared.generateShareLink(course);
+    Clipboard.setString(shareLink);
+    setCopiedCode(course.sharingCode);
+    haptics.notifySuccess();
+    setNoticeMessage(`Copied full invite link for ${course.courseName}!`);
+    setIsSuccessNotice(true);
     setTimeout(() => {
       setCopiedCode(null);
-    }, 1800);
+    }, 2000);
+    setTimeout(() => {
+      setNoticeMessage(null);
+    }, 3500);
   };
 
   const handleJoinCourse = () => {
@@ -90,7 +110,7 @@ export const InviteScreen: React.FC = () => {
         </View>
       )}
 
-      {/* MARK: - Category Filter Bar (Share Codes vs Join Course vs About & Legal) */}
+      {/* MARK: - Category Filter Bar (Share Codes vs Join Course) */}
       <View style={styles.filterBarContainer}>
         {/* Tile 1: Share Codes */}
         <TouchableOpacity
@@ -103,7 +123,7 @@ export const InviteScreen: React.FC = () => {
           testID="invite-share-tab"
         >
           <QRCodeIcon
-            size={18}
+            size={22}
             color={selectedCategory === 'share' ? CoursePalTheme.accentBlue : '#596B85'}
           />
           <Text
@@ -128,7 +148,7 @@ export const InviteScreen: React.FC = () => {
           testID="invite-join-tab"
         >
           <JoinArrowDownIcon
-            size={18}
+            size={22}
             color={selectedCategory === 'join' ? '#8C45F5' : '#596B85'}
           />
           <Text
@@ -141,180 +161,281 @@ export const InviteScreen: React.FC = () => {
             Join Course
           </Text>
         </TouchableOpacity>
-
-        {/* Tile 3: About & Legal */}
-        <TouchableOpacity
-          style={[
-            styles.filterTile,
-            selectedCategory === 'legal' && styles.filterTileActive
-          ]}
-          onPress={() => setSelectedCategory('legal')}
-          activeOpacity={0.8}
-          testID="invite-legal-tab"
-        >
-          <ShieldLockIcon
-            size={18}
-            color={selectedCategory === 'legal' ? '#059669' : '#596B85'}
-          />
-          <Text
-            style={[
-              styles.filterTileText,
-              selectedCategory === 'legal' && styles.filterTileTextActive
-            ]}
-            numberOfLines={1}
-          >
-            About & Legal
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {/* MARK: - Main Content Area */}
       {selectedCategory === 'share' ? (
         // Share Codes List
         <View style={styles.listContainer}>
-          {activeCourses.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No Courses Available</Text>
-              <Text style={styles.emptyDesc}>
-                Upload a syllabus to get started — your course codes will appear here.
-              </Text>
-            </View>
-          ) : (
-            activeCourses.map(course => (
-              <View key={course.id} style={styles.shareCodeCard}>
-                {/* Left Accent Stripe */}
-                <View style={[styles.leftAccentStripe, { backgroundColor: course.hexColor }]} />
-
-                <View style={styles.courseInfoCol}>
-                  <Text style={styles.courseCode}>{course.courseCode || course.courseName}</Text>
-                  <Text style={styles.courseName}>{course.courseName}</Text>
-                </View>
-
-                {/* Sharing code pill + QR button */}
-                <View style={styles.actionsGroup}>
-                  <TouchableOpacity
-                    style={[styles.codePill, { backgroundColor: `${course.hexColor}15` }]}
-                    onPress={() => handleCopyCode(course.sharingCode)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.codePillText, { color: course.hexColor }]}>
-                      {course.sharingCode}
-                    </Text>
-                    {copiedCode === course.sharingCode ? (
-                      <Text style={styles.copiedBadgeText}>Copied</Text>
-                    ) : (
-                      <CopyDocIcon size={12} color={course.hexColor} />
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.qrButton, { backgroundColor: `${course.hexColor}18` }]}
-                    onPress={() => setQrCodeCourse(course)}
-                    activeOpacity={0.7}
-                  >
-                    <QRCodeIcon size={14} color={course.hexColor} />
-                  </TouchableOpacity>
-                </View>
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Course Sharing Codes</Text>
+            {activeCourses.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No Courses Available</Text>
+                <Text style={styles.emptyDesc}>
+                  Upload a syllabus to get started — your course codes will appear here.
+                </Text>
               </View>
-            ))
-          )}
-        </View>
-      ) : selectedCategory === 'join' ? (
-        // Join Course Section
-        <View style={styles.joinContainer}>
-          <Text style={styles.joinSectionHeader}>JOIN A COURSE</Text>
-          <View style={styles.joinCard}>
-            <Text style={styles.joinCardTitle}>Got a code or link from a classmate?</Text>
-            <Text style={styles.joinCardDesc}>
-              Paste the link or enter the course code shared with you. CoursePal will load their course schedule, readings, and assignments.
-            </Text>
+            ) : (
+              activeCourses.map(course => (
+                <View key={course.id} style={styles.shareCodeCard}>
+                  {/* Left Accent Stripe */}
+                  <View style={[styles.leftAccentStripe, { backgroundColor: course.hexColor }]} />
 
-            <View style={styles.joinInputBox}>
-              <TextInput
-                style={styles.joinInput}
-                placeholder="Enter course code or paste link..."
-                placeholderTextColor="#8E9BAE"
-                value={inputCode}
-                onChangeText={setInputCode}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
+                  <View style={styles.courseInfoCol}>
+                    <Text style={styles.courseCode}>{course.courseCode || course.courseName}</Text>
+                    <Text style={styles.courseName}>{course.courseName}</Text>
+                  </View>
 
+                  {/* Sharing code pill + QR button */}
+                  <View style={styles.actionsGroup}>
+                    <TouchableOpacity
+                      style={[styles.codePill, { backgroundColor: `${course.hexColor}15` }]}
+                      onPress={() => handleCopyCode(course)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.codePillText, { color: course.hexColor }]}>
+                        {course.sharingCode}
+                      </Text>
+                      {copiedCode === course.sharingCode ? (
+                        <Text style={styles.copiedBadgeText}>Copied Link</Text>
+                      ) : (
+                        <CopyDocIcon size={12} color={course.hexColor} />
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.qrButton}
+                      onPress={() => setQrCodeCourse(course)}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      accessibilityLabel={`View QR code for ${course.courseName}`}
+                    >
+                      <QRCodeIcon size={16} color={course.hexColor} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+
+          {/* Section: About & Legal */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>About & Legal</Text>
+
+            {/* About CoursePal Card (White Hat Icon) */}
             <TouchableOpacity
-              style={styles.joinSubmitButton}
-              onPress={handleJoinCourse}
-              activeOpacity={0.85}
+              style={styles.aboutCard}
+              onPress={() => {
+                setInfoSheetInitialTab('about');
+                setShowInfoSheet(true);
+              }}
+              activeOpacity={0.8}
             >
-              <Text style={styles.joinSubmitButtonText}>Join Course</Text>
+              <View style={[styles.aboutIconCircle, { backgroundColor: '#2470F5' }]}>
+                <GraduationCapFillIcon size={19} color="#FFFFFF" />
+              </View>
+
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>About CoursePal</Text>
+                <Text style={styles.aboutDesc}>100% on-device syllabus companion & version 1.4.1</Text>
+              </View>
+
+              <ChevronRightIcon size={13} color="#73859E" />
+            </TouchableOpacity>
+
+            {/* Terms of Service & Privacy Policy Card (White Shield Icon) */}
+            <TouchableOpacity
+              style={styles.aboutCard}
+              onPress={() => {
+                setInfoSheetInitialTab('terms');
+                setShowInfoSheet(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.aboutIconCircle, { backgroundColor: '#4F46E5' }]}>
+                <ShieldCheckmarkIcon size={18} color="#FFFFFF" innerColor="#4F46E5" />
+              </View>
+
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>Terms of Service & Privacy Policy</Text>
+                <Text style={styles.aboutDesc}>Academic disclaimers, data sovereignty & legal policies</Text>
+              </View>
+
+              <ChevronRightIcon size={13} color="#73859E" />
+            </TouchableOpacity>
+
+            {/* Rate App Store Card (White Star Icon) */}
+            <TouchableOpacity
+              style={styles.aboutCard}
+              onPress={async () => {
+                await haptics.notifySuccess();
+                await storeReviewService.markReviewCompleted();
+                await storeReviewService.requestReview();
+              }}
+              activeOpacity={0.8}
+              testID="invite-rate-app-store"
+            >
+              <View style={[styles.aboutIconCircle, { backgroundColor: '#FF9500' }]}>
+                <StarFillIcon size={18} color="#FFFFFF" />
+              </View>
+
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>Rate CoursePal on App Store</Text>
+                <Text style={styles.aboutDesc}>Leave 5 stars & help fellow university students discover CoursePal</Text>
+              </View>
+
+              <ChevronRightIcon size={13} color="#73859E" />
+            </TouchableOpacity>
+
+            {/* Add Home Screen Widget Card (Widget Icon) */}
+            <TouchableOpacity
+              style={styles.aboutCard}
+              onPress={async () => {
+                await haptics.selection();
+                await NotificationService.shared.reloadWidgetTimelines();
+                setShowWidgetGuide(true);
+              }}
+              activeOpacity={0.8}
+              testID="invite-add-widget"
+            >
+              <View style={[styles.aboutIconCircle, { backgroundColor: '#0284C7' }]}>
+                <RectangleInsetTopLeftFilledIcon size={18} color="#FFFFFF" />
+              </View>
+
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>Add Home Screen Widget</Text>
+                <Text style={styles.aboutDesc}>Place upcoming deadlines & weekly progress on your iPhone screen</Text>
+              </View>
+
+              <ChevronRightIcon size={13} color="#73859E" />
             </TouchableOpacity>
           </View>
         </View>
       ) : (
-        // About & Legal Section
-        <View style={styles.legalSectionContainer}>
-          <View style={styles.aboutHeaderBanner}>
-            <View style={styles.aboutShieldBadge}>
-              <ShieldLockIcon size={24} color={CoursePalTheme.accentBlue} />
+        // Join Course Section
+        <View style={styles.listContainer}>
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Join a Course</Text>
+            <View style={styles.joinCard}>
+              <Text style={styles.joinCardTitle}>Got a code or link from a classmate?</Text>
+              <Text style={styles.joinCardDesc}>
+                Paste the link or enter the course code shared with you. CoursePal will load their course schedule, readings, and assignments.
+              </Text>
+
+              <View style={styles.joinInputBox}>
+                <TextInput
+                  style={styles.joinInput}
+                  placeholder="Enter course code or paste link..."
+                  placeholderTextColor="#8E9BAE"
+                  value={inputCode}
+                  onChangeText={setInputCode}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={styles.joinSubmitButton}
+                onPress={handleJoinCourse}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.joinSubmitButtonText}>Join Course</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.aboutHeaderTitle}>CoursePal Legal & Privacy</Text>
-            <Text style={styles.aboutHeaderDesc}>
-              Designed with private on-device storage. Review our academic disclaimer, complete limitation of liability, and privacy terms.
-            </Text>
           </View>
 
-          {/* Action Cards */}
-          <TouchableOpacity
-            style={styles.legalOptionCard}
-            onPress={() => setShowInfoSheet(true)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.legalIconCircle, { backgroundColor: 'rgba(36, 112, 245, 0.12)' }]}>
-              <ShieldLockIcon size={18} color="#2470F5" />
-            </View>
-            <View style={styles.legalTextCol}>
-              <Text style={styles.legalTitle}>Terms of Service & Disclaimer</Text>
-              <Text style={styles.legalDesc}>Academic disclaimer, verification duty & hold harmless</Text>
-            </View>
-            <ChevronRightIcon size={13} color="#73859E" />
-          </TouchableOpacity>
+          {/* Section: About & Legal */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>About & Legal</Text>
 
-          <TouchableOpacity
-            style={styles.legalOptionCard}
-            onPress={() => setShowInfoSheet(true)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.legalIconCircle, { backgroundColor: 'rgba(5, 150, 105, 0.12)' }]}>
-              <ShieldLockIcon size={18} color="#059669" />
-            </View>
-            <View style={styles.legalTextCol}>
-              <Text style={styles.legalTitle}>Privacy Policy</Text>
-              <Text style={styles.legalDesc}>100% on-device sandbox, zero selling & zero AI training</Text>
-            </View>
-            <ChevronRightIcon size={13} color="#73859E" />
-          </TouchableOpacity>
+            {/* About CoursePal Card (White Hat Icon) */}
+            <TouchableOpacity
+              style={styles.aboutCard}
+              onPress={() => {
+                setInfoSheetInitialTab('about');
+                setShowInfoSheet(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.aboutIconCircle, { backgroundColor: '#2470F5' }]}>
+                <GraduationCapFillIcon size={19} color="#FFFFFF" />
+              </View>
 
-          <TouchableOpacity
-            style={styles.legalOptionCard}
-            onPress={() => setShowInfoSheet(true)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.legalIconCircle, { backgroundColor: 'rgba(140, 69, 245, 0.12)' }]}>
-              <ShieldLockIcon size={18} color="#8C45F5" />
-            </View>
-            <View style={styles.legalTextCol}>
-              <Text style={styles.legalTitle}>About CoursePal & Support</Text>
-              <Text style={styles.legalDesc}>Version 1.4.0, contact & engineering architecture</Text>
-            </View>
-            <ChevronRightIcon size={13} color="#73859E" />
-          </TouchableOpacity>
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>About CoursePal</Text>
+                <Text style={styles.aboutDesc}>100% on-device syllabus companion & version 1.4.1</Text>
+              </View>
 
-          {/* Academic Duty Note Pill */}
-          <View style={styles.academicWarningCard}>
-            <Text style={styles.academicWarningTitle}>Official Syllabus Primacy Notice</Text>
-            <Text style={styles.academicWarningBody}>
-              CoursePal is an auxiliary student aid. Your university syllabus, instructor communications, and LMS (Canvas, Blackboard, Brightspace, Moodle) remain the sole authoritative records. Always cross-verify deliverables with your official syllabus.
-            </Text>
+              <ChevronRightIcon size={13} color="#73859E" />
+            </TouchableOpacity>
+
+            {/* Terms of Service & Privacy Policy Card (White Shield Icon) */}
+            <TouchableOpacity
+              style={styles.aboutCard}
+              onPress={() => {
+                setInfoSheetInitialTab('terms');
+                setShowInfoSheet(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.aboutIconCircle, { backgroundColor: '#4F46E5' }]}>
+                <ShieldCheckmarkIcon size={18} color="#FFFFFF" innerColor="#4F46E5" />
+              </View>
+
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>Terms of Service & Privacy Policy</Text>
+                <Text style={styles.aboutDesc}>Academic disclaimers, data sovereignty & legal policies</Text>
+              </View>
+
+              <ChevronRightIcon size={13} color="#73859E" />
+            </TouchableOpacity>
+
+            {/* Rate App Store Card (White Star Icon) */}
+            <TouchableOpacity
+              style={styles.aboutCard}
+              onPress={async () => {
+                await haptics.notifySuccess();
+                await storeReviewService.markReviewCompleted();
+                await storeReviewService.requestReview();
+              }}
+              activeOpacity={0.8}
+              testID="invite-rate-app-store"
+            >
+              <View style={[styles.aboutIconCircle, { backgroundColor: '#FF9500' }]}>
+                <StarFillIcon size={18} color="#FFFFFF" />
+              </View>
+
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>Rate CoursePal on App Store</Text>
+                <Text style={styles.aboutDesc}>Leave 5 stars & help fellow university students discover CoursePal</Text>
+              </View>
+
+              <ChevronRightIcon size={13} color="#73859E" />
+            </TouchableOpacity>
+
+            {/* Add Home Screen Widget Card (Widget Icon) */}
+            <TouchableOpacity
+              style={styles.aboutCard}
+              onPress={async () => {
+                await haptics.selection();
+                await NotificationService.shared.reloadWidgetTimelines();
+                setShowWidgetGuide(true);
+              }}
+              activeOpacity={0.8}
+              testID="invite-add-widget-join"
+            >
+              <View style={[styles.aboutIconCircle, { backgroundColor: '#0284C7' }]}>
+                <RectangleInsetTopLeftFilledIcon size={18} color="#FFFFFF" />
+              </View>
+
+              <View style={styles.aboutTextCol}>
+                <Text style={styles.aboutTitle}>Add Home Screen Widget</Text>
+                <Text style={styles.aboutDesc}>Place upcoming deadlines & weekly progress on your iPhone screen</Text>
+              </View>
+
+              <ChevronRightIcon size={13} color="#73859E" />
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -328,7 +449,13 @@ export const InviteScreen: React.FC = () => {
 
       <InfoCreditsModal
         visible={showInfoSheet}
+        initialTab={infoSheetInitialTab}
         onClose={() => setShowInfoSheet(false)}
+      />
+
+      <WidgetGuideModal
+        visible={showWidgetGuide}
+        onClose={() => setShowWidgetGuide(false)}
       />
     </ScrollView>
   );
@@ -426,7 +553,19 @@ const styles = StyleSheet.create({
   listContainer: {
     marginHorizontal: 18,
     marginTop: 16,
-    gap: 10
+    gap: 16
+  },
+  sectionContainer: {
+    gap: 8
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#596B85',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    marginLeft: 2
   },
   shareCodeCard: {
     flexDirection: 'row',
@@ -454,12 +593,15 @@ const styles = StyleSheet.create({
   courseCode: {
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#141F38'
+    color: '#141F38',
+    lineHeight: 19,
+    letterSpacing: -0.2
   },
   courseName: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '500',
     color: '#596B85',
+    lineHeight: 17,
     marginTop: 1
   },
   actionsGroup: {
@@ -486,20 +628,14 @@ const styles = StyleSheet.create({
     color: '#2EB866'
   },
   qrButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 8
-  },
-  joinContainer: {
-    marginHorizontal: 18,
-    marginTop: 16
-  },
-  joinSectionHeader: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#596B85',
-    letterSpacing: 0.5,
-    marginBottom: 8
+    width: 29,
+    height: 29,
+    borderRadius: 8,
+    backgroundColor: '#F2F5FA',
+    borderWidth: 1,
+    borderColor: '#E3E8F0',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   joinCard: {
     backgroundColor: '#FFFFFF',
@@ -521,26 +657,29 @@ const styles = StyleSheet.create({
   },
   joinCardDesc: {
     fontSize: 13,
-    fontWeight: '400',
+    fontWeight: '500',
     color: '#596B85',
     lineHeight: 18
   },
   joinInputBox: {
-    backgroundColor: '#F8FAFD',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E3E8F0',
-    paddingHorizontal: 14,
-    paddingVertical: 10
+    backgroundColor: '#FFFFFF',
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    minHeight: 52,
+    justifyContent: 'center'
   },
   joinInput: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '500',
-    color: '#141F38'
+    color: '#141F38',
+    padding: 0
   },
   joinSubmitButton: {
     backgroundColor: '#8C45F5',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center'
@@ -549,10 +688,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14.5,
     fontWeight: '700'
-  },
-  aboutCardContainer: {
-    marginHorizontal: 18,
-    marginTop: 16
   },
   aboutCard: {
     flexDirection: 'row',
@@ -616,106 +751,5 @@ const styles = StyleSheet.create({
     color: '#596B85',
     textAlign: 'center',
     maxWidth: 240
-  },
-  legalSectionContainer: {
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    gap: 12
-  },
-  aboutHeaderBanner: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#E3E8F0',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-    alignItems: 'center',
-    marginBottom: 4
-  },
-  aboutShieldBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: 'rgba(36, 112, 245, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10
-  },
-  aboutHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#141F38',
-    marginBottom: 6,
-    textAlign: 'center'
-  },
-  aboutHeaderDesc: {
-    fontSize: 13,
-    fontWeight: '400',
-    color: '#596B85',
-    textAlign: 'center',
-    lineHeight: 19
-  },
-  legalOptionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E3E8F0',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-    gap: 12
-  },
-  legalIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  legalTextCol: {
-    flex: 1
-  },
-  legalTitle: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#141F38'
-  },
-  legalDesc: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: '#596B85',
-    marginTop: 2,
-    lineHeight: 16
-  },
-  academicWarningCard: {
-    backgroundColor: 'rgba(36, 112, 245, 0.06)',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(36, 112, 245, 0.15)',
-    marginTop: 6
-  },
-  academicWarningTitle: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#2470F5',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3
-  },
-  academicWarningBody: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: '#3B4B68',
-    lineHeight: 18
   }
 });

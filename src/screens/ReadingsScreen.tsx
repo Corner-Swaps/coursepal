@@ -11,12 +11,11 @@ import {
 import { useCoursePal } from '../context/CoursePalContext';
 import { CoursePalTheme } from '../constants/theme';
 import { DeadlinesCalendarCard } from '../components/DeadlinesCalendarCard';
+import { SwipeableRow } from '../components/SwipeableRow';
 import {
   FilterIcon,
   CheckmarkCircleFillIcon,
   TrashIcon,
-  MagnifyingGlassIcon,
-  XMarkCircleFillIcon,
   CalendarIcon,
   ArrowPathIcon
 } from '../components/SvgIcons';
@@ -25,8 +24,14 @@ import { ReadingDetailModal } from '../components/modals';
 import {
   formatDisplayTitleWithChapter,
   formatAuthorAndPagesSubtitle,
-  formatWeekHeaderDate,
-  parseSafeDate
+  formatSuggestedReadingCardText,
+  isRealDateOrRangeString,
+  resolveReadingMediaType,
+  parseSafeDate,
+  getSanitizedCoursePill,
+  deduplicateReadingsList,
+  isReadingWeekEnabled,
+  extractReadingWeekNumber
 } from '../utils/readingDisplayHelper';
 
 interface ReadingsScreenProps {
@@ -47,15 +52,20 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     setSelectedCourseFilter
   } = useCoursePal();
 
-  const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isDateFilterActive, setIsDateFilterActive] = useState<boolean>(false);
+  const [selectedWeekFilter, setSelectedWeekFilter] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<'readings' | 'completed' | 'trash'>('readings');
   const [selectedReadingForDetail, setSelectedReadingForDetail] = useState<Reading | null>(null);
 
+  // Deduplicate raw readings list to eliminate duplicate chapters & multi-week clone noise
+  const deduplicatedRawReadings = useMemo(() => {
+    return deduplicateReadingsList(readings, courses);
+  }, [readings, courses]);
+
   // Filter active (non-deleted) readings
   const activeReadings = useMemo(() => {
-    return readings.filter(r => {
+    return deduplicatedRawReadings.filter(r => {
       if (sortMode === 'trash') {
         return r.isDeleted;
       }
@@ -64,24 +74,17 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       // Filter by Course if selected
       if (selectedCourseFilter) {
         const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
-        if ((r.courseCode || '').toLowerCase() !== cCode) {
+        const matchesCourse =
+          r.courseId === selectedCourseFilter.id ||
+          (r.courseCode || '').toLowerCase() === cCode;
+        if (!matchesCourse) {
           return false;
         }
       }
 
-      // Filter by Search Query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = r.title.toLowerCase().includes(q);
-        const matchAuthor = (r.authorName || '').toLowerCase().includes(q);
-        const matchCourse = (r.courseCode || '').toLowerCase().includes(q);
-        if (!matchTitle && !matchAuthor && !matchCourse) {
-          return false;
-        }
-      }
-
-      // Filter by Date
-      if (isDateFilterActive && r.dueDate) {
+      // Filter by Specific Calendar Date
+      if (isDateFilterActive) {
+        if (!r.dueDate) return false;
         const d = parseSafeDate(r.dueDate);
         if (!d) return false;
         const isSame =
@@ -91,6 +94,13 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         if (!isSame) return false;
       }
 
+      // Filter by Academic Week
+      if (selectedWeekFilter !== null) {
+        const isWeekOn = isReadingWeekEnabled(r);
+        const w = isWeekOn ? extractReadingWeekNumber(r) : null;
+        if (w !== selectedWeekFilter) return false;
+      }
+
       // Filter by Completed mode
       if (sortMode === 'completed') {
         return r.isCompleted;
@@ -98,19 +108,19 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
 
       return true;
     });
-  }, [readings, sortMode, selectedCourseFilter, searchQuery, isDateFilterActive, selectedDate]);
+  }, [deduplicatedRawReadings, sortMode, selectedCourseFilter, isDateFilterActive, selectedDate, selectedWeekFilter]);
 
   const completedCount = useMemo(() => {
-    return readings.filter(r => !r.isDeleted && r.isCompleted).length;
-  }, [readings]);
+    return deduplicatedRawReadings.filter(r => !r.isDeleted && r.isCompleted).length;
+  }, [deduplicatedRawReadings]);
 
   const deletedCount = useMemo(() => {
-    return readings.filter(r => r.isDeleted).length;
-  }, [readings]);
+    return deduplicatedRawReadings.filter(r => r.isDeleted).length;
+  }, [deduplicatedRawReadings]);
 
   const remainingTotalCount = useMemo(() => {
-    return readings.filter(r => !r.isDeleted && !r.isCompleted).length;
-  }, [readings]);
+    return deduplicatedRawReadings.filter(r => !r.isDeleted && !r.isCompleted).length;
+  }, [deduplicatedRawReadings]);
 
   // Map of date string -> array of course hex colors for deadlines calendar dots
   const itemDatesWithColors = useMemo(() => {
@@ -125,7 +135,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       const key = `${y}-${m}-${day}`;
 
       const matchedCourse = courses.find(
-        c => (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase()
+        c => c.id === r.courseId || (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase()
       );
       const color = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
 
@@ -138,37 +148,187 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     return map;
   }, [readings, courses]);
 
-  // Group readings strictly by week number
-  const groupedReadings = useMemo(() => {
-    const getReadingWeekNum = (r: Reading): number => {
-      if (r.weekId) {
-        const m = r.weekId.match(/\d+/);
-        if (m) return parseInt(m[0], 10);
-      }
-      if (r.relevantTopics) {
-        const m = r.relevantTopics.match(/Week\s*(\d+)/i);
-        if (m) return parseInt(m[1], 10);
-      }
-      if (r.chapterText) {
-        const m = r.chapterText.match(/Week\s*(\d+)/i);
-        if (m) return parseInt(m[1], 10);
-      }
-      return 1;
-    };
-
+  // Group readings: partition into unassigned (week toggle off) and week-grouped (week toggle on)
+  const { unassignedReadings, groupedReadings } = useMemo(() => {
+    const unassigned: Reading[] = [];
     const map = new Map<number, Reading[]>();
+
     for (const r of activeReadings) {
-      const w = getReadingWeekNum(r);
-      const list = map.get(w) || [];
-      list.push(r);
-      map.set(w, list);
+      const isWeekOn = isReadingWeekEnabled(r);
+      if (!isWeekOn) {
+        unassigned.push(r);
+      } else {
+        const w = extractReadingWeekNumber(r) || 1;
+        const list = map.get(w) || [];
+        list.push(r);
+        map.set(w, list);
+      }
     }
-    return Array.from(map.entries()).sort(([w1, list1], [w2, list2]) => {
-      const d1 = list1.find(x => x.dueDate)?.dueDate ? new Date(list1.find(x => x.dueDate)!.dueDate!).getTime() : w1;
-      const d2 = list2.find(x => x.dueDate)?.dueDate ? new Date(list2.find(x => x.dueDate)!.dueDate!).getTime() : w2;
-      return d1 - d2;
-    });
+
+    return {
+      unassignedReadings: unassigned,
+      groupedReadings: Array.from(map.entries()).sort(([w1], [w2]) => w1 - w2)
+    };
   }, [activeReadings]);
+
+  const renderReadingCard = (reading: Reading, weekDateStr: string | null = null) => {
+    const matchedCourse = courses.find(
+      c =>
+        c.id === reading.courseId ||
+        (c.courseCode || c.courseName).toLowerCase() ===
+        (reading.courseCode || '').toLowerCase()
+    );
+    const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
+    const pillTitle = getSanitizedCoursePill(reading.courseCode, matchedCourse);
+    const resolvedMedia = resolveReadingMediaType(reading);
+    const suggestedReadingText = formatSuggestedReadingCardText(
+      reading.dueDate,
+      reading.dateRangeStr,
+      weekDateStr
+    );
+    const displayTitle = formatDisplayTitleWithChapter(
+      reading,
+      reading.chapterText,
+      reading.resourceTitle,
+      matchedCourse?.courseName,
+      reading.authorName
+    );
+    const displaySubtitle = formatAuthorAndPagesSubtitle(
+      reading.authorName,
+      reading.pagesText,
+      reading.resourceTitle,
+      displayTitle,
+      matchedCourse?.courseName
+    );
+
+    return (
+      <SwipeableRow
+        key={reading.id}
+        onDelete={() => deleteReading(reading.id)}
+        enabled={sortMode !== 'trash'}
+      >
+        <View style={styles.readingCard}>
+          {/* Left Vertical Course Color Line Indicator */}
+          <View style={[styles.leftAccentStripe, { backgroundColor: courseColor }]} />
+
+          {/* Middle Content Area */}
+          <TouchableOpacity
+            style={styles.cardMainContent}
+            onPress={() => setSelectedReadingForDetail({ ...reading, mediaType: resolvedMedia })}
+            activeOpacity={0.7}
+          >
+            {/* Top Line: Course Title Pill & Media Type Badge */}
+            <View style={styles.pillRow}>
+              <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
+                <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
+              </View>
+              {resolvedMedia !== 'textbook' && (
+                <View style={styles.mediaTypeBadge}>
+                  <Text style={styles.mediaTypeBadgeText}>
+                    {resolvedMedia === 'video' ? 'Video' : resolvedMedia === 'podcast' ? 'Podcast' : 'Article / Paper'}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Reading Title / Chapter Name */}
+            <Text
+              style={[
+                styles.readingTitle,
+                reading.isCompleted && styles.readingTitleCompleted
+              ]}
+              numberOfLines={3}
+            >
+              {displayTitle}
+            </Text>
+
+            {/* Suggested Reading Section (just below the chapter name, no icon, abbreviated day) */}
+            {suggestedReadingText ? (
+              <View style={styles.suggestedReadingPill}>
+                <Text style={styles.suggestedReadingPillText}>
+                  {suggestedReadingText}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Subtitle: Author · Pages */}
+            {displaySubtitle ? (
+              <Text style={styles.readingAuthor} numberOfLines={2}>
+                {displaySubtitle}
+              </Text>
+            ) : null}
+          </TouchableOpacity>
+
+          {/* Right-side Action Buttons: Checkmark Ring & Trashcan OR Restore & Permanent Delete */}
+          {sortMode === 'trash' ? (
+            <View style={styles.trashActionsRow}>
+              <TouchableOpacity
+                style={styles.restorePillButton}
+                onPress={() => restoreReading(reading.id)}
+                activeOpacity={0.7}
+              >
+                <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
+                <Text style={styles.restorePillText}>Restore</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.permanentTrashBtn}
+                onPress={() => {
+                  Alert.alert(
+                    'Delete Reading Permanently?',
+                    `Are you sure you want to permanently delete '${reading.title}'? This action cannot be undone.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => permanentlyDeleteReading(reading.id)
+                      }
+                    ]
+                  );
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <TrashIcon size={14} color="#D94033" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.cardRightActions}>
+              <TouchableOpacity
+                style={styles.touchCircleContainer}
+                onPress={() => toggleReading(reading.id)}
+                activeOpacity={0.7}
+                accessibilityLabel={`Mark ${reading.title} as ${reading.isCompleted ? 'incomplete' : 'complete'}`}
+              >
+                <View
+                  style={[
+                    styles.checkboxCircle,
+                    reading.isCompleted && {
+                      backgroundColor: CoursePalTheme.accentBlue,
+                      borderColor: CoursePalTheme.accentBlue
+                    }
+                  ]}
+                >
+                  {reading.isCompleted && <Text style={styles.checkboxCheckmark}>✓</Text>}
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.trashTouchContainer}
+                onPress={() => deleteReading(reading.id)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                accessibilityLabel={`Delete ${reading.title}`}
+              >
+                <TrashIcon size={22} color="#D94033" />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </SwipeableRow>
+    );
+  };
 
   return (
     <View style={styles.rootContainer}>
@@ -247,39 +407,61 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         onSelectDate={d => {
           setSelectedDate(d);
           setIsDateFilterActive(true);
+          setSelectedWeekFilter(null);
         }}
         isDateFilterActive={isDateFilterActive}
-        onToggleDateFilter={() => setIsDateFilterActive(!isDateFilterActive)}
+        onToggleDateFilter={() => {
+          if (isDateFilterActive || selectedWeekFilter !== null) {
+            setIsDateFilterActive(false);
+            setSelectedWeekFilter(null);
+          } else {
+            setIsDateFilterActive(true);
+          }
+        }}
+        onSelectWeek={w => {
+          if (selectedWeekFilter === w) {
+            setSelectedWeekFilter(null);
+          } else {
+            setSelectedWeekFilter(w);
+            setIsDateFilterActive(false);
+          }
+        }}
+        selectedWeekFilter={selectedWeekFilter}
         itemDatesWithColors={itemDatesWithColors}
+        startWeekNumber={1}
       />
 
-      {/* MARK: - Search Bar */}
-      <View style={styles.searchBarContainer}>
-        <MagnifyingGlassIcon size={15} color="#8E9BAE" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search readings…"
-          placeholderTextColor="#8E9BAE"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchButton}>
-            <XMarkCircleFillIcon size={16} color="#B3BCC9" />
+      {/* Active Calendar Date or Week Filter Banner */}
+      {(isDateFilterActive || selectedWeekFilter !== null) && (
+        <View style={styles.calendarFilterBanner}>
+          <CalendarIcon size={14} color="#2470F5" />
+          <Text style={styles.calendarFilterBannerText} numberOfLines={1}>
+            {selectedWeekFilter !== null
+              ? `Showing: Week ${selectedWeekFilter} Readings`
+              : `Showing: ${selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} Readings`}
+          </Text>
+          <TouchableOpacity
+            style={styles.clearFilterButton}
+            onPress={() => {
+              setIsDateFilterActive(false);
+              setSelectedWeekFilter(null);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.clearFilterText}>Show All</Text>
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      )}
 
       {/* MARK: - Per-Course Reading Progress Bars */}
       {courses.length > 0 && (
         <View style={styles.progressCardContainer}>
           {courses.map(course => {
-            const courseReadings = readings.filter(
+            const courseReadings = deduplicatedRawReadings.filter(
               r =>
                 !r.isDeleted &&
-                (r.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase()
+                (r.courseId === course.id ||
+                  (r.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
             );
             const total = courseReadings.length;
             const completed = courseReadings.filter(r => r.isCompleted).length;
@@ -387,19 +569,24 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           <Text style={styles.emptyTitle}>
             {isDateFilterActive
               ? 'No Readings on This Date'
-              : searchQuery
-              ? 'No Results Found'
+              : selectedWeekFilter !== null
+              ? `No Readings in Week ${selectedWeekFilter}`
               : 'No Readings Found'}
           </Text>
           <Text style={styles.emptySubtitle}>
             {isDateFilterActive
               ? 'There are no readings scheduled for this selected date.'
+              : selectedWeekFilter !== null
+              ? `There are no readings assigned to Week ${selectedWeekFilter}.`
               : 'Upload a syllabus to automatically populate your reading schedule.'}
           </Text>
-          {isDateFilterActive && (
+          {(isDateFilterActive || selectedWeekFilter !== null) && (
             <TouchableOpacity
               style={styles.showAllButton}
-              onPress={() => setIsDateFilterActive(false)}
+              onPress={() => {
+                setIsDateFilterActive(false);
+                setSelectedWeekFilter(null);
+              }}
             >
               <Text style={styles.showAllButtonText}>Show All Readings</Text>
             </TouchableOpacity>
@@ -407,9 +594,39 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         </View>
       ) : (
         <View style={styles.readingsListContainer}>
+          {/* Non-week readings (when week toggle is turned off) */}
+          {unassignedReadings.length > 0 && (
+            <View style={styles.unassignedGroupSection}>
+              {unassignedReadings.map(r => renderReadingCard(r, null))}
+            </View>
+          )}
+
+          {/* Week-grouped readings (when week toggle is turned on) */}
           {groupedReadings.map(([weekNum, groupList]) => {
-            const firstWithDate = groupList.find(r => r.dueDate);
-            const weekDateStr = firstWithDate?.dueDate ? formatWeekHeaderDate(new Date(firstWithDate.dueDate)) : null;
+            const firstWithRealDate = groupList.find(
+              r => r.dueDate || (r.dateRangeStr && isRealDateOrRangeString(r.dateRangeStr))
+            );
+            let weekDateStr =
+              firstWithRealDate?.dateRangeStr && isRealDateOrRangeString(firstWithRealDate.dateRangeStr)
+                ? firstWithRealDate.dateRangeStr
+                : firstWithRealDate?.dueDate
+                ? (firstWithRealDate.dueDate instanceof Date
+                    ? firstWithRealDate.dueDate.toISOString()
+                    : String(firstWithRealDate.dueDate))
+                : null;
+
+            if (!weekDateStr) {
+              for (const c of courses) {
+                const w = c.weeks?.find(wk => wk.weekNumber === weekNum);
+                if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
+                  weekDateStr = w.dateRangeStr;
+                  break;
+                } else if (w?.startDate) {
+                  weekDateStr = w.startDate instanceof Date ? w.startDate.toISOString().split('T')[0] : String(w.startDate);
+                  break;
+                }
+              }
+            }
 
             return (
               <View key={`week-${weekNum}`} style={styles.weekGroupSection}>
@@ -418,160 +635,10 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                   <View style={styles.weekPill}>
                     <Text style={styles.weekPillText}>Week {weekNum}</Text>
                   </View>
-                  {weekDateStr && (
-                    <View style={styles.calendarDateRow}>
-                      <CalendarIcon size={11} color="#718096" />
-                      <Text style={styles.dateRangeText}>{weekDateStr}</Text>
-                    </View>
-                  )}
                 </View>
 
                 {/* Reading Cards */}
-                {groupList.map(reading => {
-                  const matchedCourse = courses.find(
-                    c =>
-                      (c.courseCode || c.courseName).toLowerCase() ===
-                      (reading.courseCode || '').toLowerCase()
-                  );
-                  const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
-                  const pillTitle = matchedCourse?.courseCode || matchedCourse?.courseName || reading.courseCode || 'Reading';
-                  const displayTitle = formatDisplayTitleWithChapter(
-                    reading.title,
-                    reading.chapterText,
-                    reading.resourceTitle,
-                    matchedCourse?.courseName
-                  );
-                  const displaySubtitle = formatAuthorAndPagesSubtitle(
-                    reading.authorName,
-                    reading.pagesText,
-                    reading.resourceTitle,
-                    displayTitle,
-                    matchedCourse?.courseName
-                  );
-                  const showDueDate = reading.dueDate
-                    ? (formatWeekHeaderDate(new Date(reading.dueDate)) !== weekDateStr)
-                    : false;
-
-                  return (
-                    <View key={reading.id} style={styles.readingCard}>
-                      {/* Left Vertical Course Color Line Indicator */}
-                      <View style={[styles.leftAccentStripe, { backgroundColor: courseColor }]} />
-
-                      {/* Middle Content Area */}
-                      <TouchableOpacity
-                        style={styles.cardMainContent}
-                        onPress={() => setSelectedReadingForDetail(reading)}
-                        activeOpacity={0.7}
-                      >
-                        {/* Top Line: Course Title Pill & Media Type Badge */}
-                        <View style={styles.pillRow}>
-                          <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
-                            <Text style={styles.coursePillText}>{pillTitle}</Text>
-                          </View>
-                          {reading.mediaType && reading.mediaType !== 'textbook' && (
-                            <View style={styles.mediaTypeBadge}>
-                              <Text style={styles.mediaTypeBadgeText}>
-                                {reading.mediaType === 'video' ? 'Video' : reading.mediaType === 'podcast' ? 'Podcast' : 'Article / Paper'}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-
-                        {/* Reading Title */}
-                        <Text
-                          style={[
-                            styles.readingTitle,
-                            reading.isCompleted && styles.readingTitleCompleted
-                          ]}
-                          numberOfLines={3}
-                        >
-                          {displayTitle}
-                        </Text>
-
-                        {/* Subtitle: Author · Pages */}
-                        {displaySubtitle ? (
-                          <Text style={styles.readingAuthor} numberOfLines={2}>
-                            {displaySubtitle}
-                          </Text>
-                        ) : null}
-
-                        {/* Due Date Display (Only if different from week header) */}
-                        {showDueDate && reading.dueDate && (
-                          <View style={styles.readingDateRow}>
-                            <CalendarIcon size={10.5} color="#718096" />
-                            <Text style={styles.readingDateText}>
-                              {formatWeekHeaderDate(new Date(reading.dueDate))}
-                            </Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-
-                      {/* Right-side Action Buttons: Checkmark Ring & Trashcan OR Restore & Permanent Delete */}
-                      {sortMode === 'trash' ? (
-                        <View style={styles.trashActionsRow}>
-                          <TouchableOpacity
-                            style={styles.restorePillButton}
-                            onPress={() => restoreReading(reading.id)}
-                            activeOpacity={0.7}
-                          >
-                            <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
-                            <Text style={styles.restorePillText}>Restore</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.permanentTrashBtn}
-                            onPress={() => {
-                              Alert.alert(
-                                'Delete Reading Permanently?',
-                                `Are you sure you want to permanently delete '${reading.title}'? This action cannot be undone.`,
-                                [
-                                  { text: 'Cancel', style: 'cancel' },
-                                  {
-                                    text: 'Delete',
-                                    style: 'destructive',
-                                    onPress: () => permanentlyDeleteReading(reading.id)
-                                  }
-                                ]
-                              );
-                            }}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <TrashIcon size={14} color="#D94033" />
-                          </TouchableOpacity>
-                        </View>
-                      ) : (
-                        <View style={styles.cardRightActions}>
-                          <TouchableOpacity
-                            style={styles.touchCircleContainer}
-                            onPress={() => toggleReading(reading.id)}
-                            activeOpacity={0.7}
-                          >
-                            <View
-                              style={[
-                                styles.checkboxCircle,
-                                reading.isCompleted && {
-                                  backgroundColor: CoursePalTheme.accentBlue,
-                                  borderColor: CoursePalTheme.accentBlue
-                                }
-                              ]}
-                            >
-                              {reading.isCompleted && <Text style={styles.checkboxCheckmark}>✓</Text>}
-                            </View>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.trashTouchContainer}
-                            onPress={() => deleteReading(reading.id)}
-                            activeOpacity={0.7}
-                          >
-                            <TrashIcon size={15} color="rgba(217, 64, 51, 0.85)" />
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
+                {groupList.map(r => renderReadingCard(r, weekDateStr))}
               </View>
             );
           })}
@@ -686,32 +753,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#D94033'
-  },
-  searchBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginHorizontal: 18,
-    marginTop: 14,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '400',
-    color: '#141F38',
-    marginLeft: 8,
-    paddingVertical: 2
-  },
-  clearSearchButton: {
-    padding: 2
   },
   progressCardContainer: {
     backgroundColor: '#FFFFFF',
@@ -847,10 +888,14 @@ const styles = StyleSheet.create({
   weekGroupSection: {
     gap: 10
   },
+  unassignedGroupSection: {
+    gap: 10
+  },
   weekHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: 8,
+    flexWrap: 'wrap'
   },
   weekPill: {
     backgroundColor: '#738094',
@@ -863,15 +908,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF'
   },
-  calendarDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4
+  suggestedReadingPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF4FF',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    marginVertical: 1
   },
-  dateRangeText: {
-    fontSize: 11.5,
-    fontWeight: '500',
-    color: '#596B85'
+  suggestedReadingPillText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#1E60D5'
   },
   readingCard: {
     flexDirection: 'row',
@@ -922,6 +970,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#596B85'
   },
+  calendarFilterBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EEF4FF',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginHorizontal: 18,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#D8E6FD'
+  },
+  calendarFilterBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E60D5'
+  },
   readingTitle: {
     fontSize: 14.5,
     fontWeight: '700',
@@ -944,7 +1011,7 @@ const styles = StyleSheet.create({
   },
   readingDateText: {
     fontSize: 13,
-    fontWeight: '400',
+    fontWeight: '500',
     color: '#596B85'
   },
   cardRightActions: {
@@ -973,8 +1040,8 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   trashTouchContainer: {
-    width: 30,
-    height: 32,
+    width: 32,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center'
   },

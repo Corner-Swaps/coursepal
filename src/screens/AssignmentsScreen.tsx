@@ -10,13 +10,12 @@ import {
 } from 'react-native';
 import { useCoursePal } from '../context/CoursePalContext';
 import { CoursePalTheme } from '../constants/theme';
-import { DeadlinesCalendarCard } from '../components/DeadlinesCalendarCard';
+import { AssignmentsMonthCalendarCard } from '../components/AssignmentsMonthCalendarCard';
+import { SwipeableRow } from '../components/SwipeableRow';
 import {
   FilterIcon,
   CheckmarkCircleFillIcon,
   TrashIcon,
-  MagnifyingGlassIcon,
-  XMarkCircleFillIcon,
   CalendarIcon,
   ArrowPathIcon
 } from '../components/SvgIcons';
@@ -25,7 +24,8 @@ import { AssignmentDetailModal, EditAssignmentModal } from '../components/modals
 import {
   formatWeekHeaderDate,
   formatAssignmentDueDate,
-  parseSafeDate
+  parseSafeDate,
+  getSanitizedCoursePill
 } from '../utils/readingDisplayHelper';
 
 interface AssignmentsScreenProps {
@@ -46,7 +46,6 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     setSelectedCourseFilter
   } = useCoursePal();
 
-  const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isDateFilterActive, setIsDateFilterActive] = useState<boolean>(false);
   const [sortMode, setSortMode] = useState<'assignments' | 'completed' | 'trash'>('assignments');
@@ -64,18 +63,10 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       // Filter by Course
       if (selectedCourseFilter) {
         const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
-        if ((a.courseCode || '').toLowerCase() !== cCode) {
-          return false;
-        }
-      }
-
-      // Filter by Search Query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = a.title.toLowerCase().includes(q);
-        const matchCourse = (a.courseCode || '').toLowerCase().includes(q);
-        const matchNotes = (a.noteText || '').toLowerCase().includes(q);
-        if (!matchTitle && !matchCourse && !matchNotes) {
+        const matchesCourse =
+          a.courseId === selectedCourseFilter.id ||
+          (a.courseCode || '').toLowerCase() === cCode;
+        if (!matchesCourse) {
           return false;
         }
       }
@@ -98,7 +89,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
 
       return true;
     });
-  }, [assignments, sortMode, selectedCourseFilter, searchQuery, isDateFilterActive, selectedDate]);
+  }, [assignments, sortMode, selectedCourseFilter, isDateFilterActive, selectedDate]);
 
   const completedCount = useMemo(() => {
     return assignments.filter(a => !a.isDeleted && a.isCompleted).length;
@@ -121,7 +112,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       const key = `${y}-${m}-${day}`;
 
       const matchedCourse = courses.find(
-        c => (c.courseCode || c.courseName).toLowerCase() === (a.courseCode || '').toLowerCase()
+        c => c.id === a.courseId || (c.courseCode || c.courseName).toLowerCase() === (a.courseCode || '').toLowerCase()
       );
       const color = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
 
@@ -134,19 +125,171 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     return map;
   }, [assignments, courses]);
 
-  // Group assignments by week number
-  const groupedAssignments = useMemo(() => {
+  // Group assignments: partition into unassigned (week toggle off) and week-grouped (week toggle on)
+  const { unassignedAssignments, groupedAssignments } = useMemo(() => {
+    const unassigned: Assignment[] = [];
     const map = new Map<number, Assignment[]>();
     for (const a of activeAssignments) {
-      const w = a.weekNumber || 1;
-      const list = map.get(w) || [];
-      list.push(a);
-      map.set(w, list);
+      const isWeekOn = typeof a.weekNumber === 'number' && a.weekNumber > 0;
+      if (!isWeekOn) {
+        unassigned.push(a);
+      } else {
+        const list = map.get(a.weekNumber) || [];
+        list.push(a);
+        map.set(a.weekNumber, list);
+      }
     }
-    return Array.from(map.entries()).sort(([w1], [w2]) => w1 - w2);
+    return {
+      unassignedAssignments: unassigned,
+      groupedAssignments: Array.from(map.entries()).sort(([w1], [w2]) => w1 - w2)
+    };
   }, [activeAssignments]);
 
   // Grade weight metrics
+  const renderAssignmentCard = (assignment: Assignment) => {
+    const matchedCourse = courses.find(
+      c =>
+        c.id === assignment.courseId ||
+        (c.courseCode || c.courseName).toLowerCase() ===
+        (assignment.courseCode || '').toLowerCase()
+    );
+    const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
+    const pillTitle = getSanitizedCoursePill(assignment.courseCode, matchedCourse);
+
+    return (
+      <SwipeableRow
+        key={assignment.id}
+        onDelete={() => deleteAssignment(assignment.id)}
+        enabled={sortMode !== 'trash'}
+      >
+        <View style={styles.assignmentCard}>
+          {/* Left Vertical Course Color Line Indicator */}
+          <View style={[styles.leftAccentStripe, { backgroundColor: courseColor }]} />
+
+          {/* Middle Content Area */}
+          <TouchableOpacity
+            style={styles.cardMainContent}
+            onPress={() => setSelectedAssignmentForDetail(assignment)}
+            activeOpacity={0.7}
+          >
+            {/* Top Line: Course Title Pill with white letters & Optional Presentation Badge */}
+            <View style={styles.pillRow}>
+              <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
+                <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
+              </View>
+              {assignment.noteText && assignment.noteText.startsWith('Presentations:') && (
+                <View style={styles.presentationBadge}>
+                  <Text style={styles.presentationBadgeText}>{assignment.noteText}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Card Title */}
+            <Text
+              style={[
+                styles.assignmentTitle,
+                assignment.isCompleted && styles.assignmentTitleCompleted
+              ]}
+              numberOfLines={3}
+            >
+              {assignment.title}
+            </Text>
+
+            {/* Date Display & Points / Weight Badges */}
+            <View style={styles.assignmentDateRow}>
+              <Text style={styles.assignmentDateText}>
+                {formatAssignmentDueDate(assignment.dueDate) || (assignment.weekNumber > 0 ? `Week ${assignment.weekNumber}` : 'No due date')}
+              </Text>
+              {(() => {
+                const weight = assignment.weightPercentage;
+                const points = assignment.pointsPossible;
+                if (weight && points) {
+                  const numWeight = weight.replace(/[^\d]/g, '');
+                  const numPts = points.replace(/[^\d]/g, '');
+                  if (numWeight === numPts || numPts === '100') {
+                    return <Text style={styles.weightText}>• {weight}</Text>;
+                  }
+                  return <Text style={styles.weightText}>• {points} ({weight})</Text>;
+                } else if (weight) {
+                  return <Text style={styles.weightText}>• {weight}</Text>;
+                } else if (points) {
+                  return <Text style={styles.weightText}>• {points}</Text>;
+                }
+                return null;
+              })()}
+            </View>
+          </TouchableOpacity>
+
+          {/* Right Action: Completion Checkmark OR Restore & Permanent Delete */}
+          {sortMode === 'trash' ? (
+            <View style={styles.trashActionsRow}>
+              <TouchableOpacity
+                style={styles.restorePillButton}
+                onPress={() => restoreAssignment(assignment.id)}
+                activeOpacity={0.7}
+              >
+                <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
+                <Text style={styles.restorePillText}>Restore</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.permanentTrashBtn}
+                onPress={() => {
+                  Alert.alert(
+                    'Delete Assignment Permanently?',
+                    `Are you sure you want to permanently delete '${assignment.title}'? This action cannot be undone.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => permanentlyDeleteAssignment(assignment.id)
+                      }
+                    ]
+                  );
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <TrashIcon size={14} color="#D94033" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.cardRightActions}>
+              <TouchableOpacity
+                style={styles.touchCircleContainer}
+                onPress={() => toggleAssignment(assignment.id)}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.checkboxCircle,
+                    assignment.isCompleted && {
+                      backgroundColor: CoursePalTheme.accentBlue,
+                      borderColor: CoursePalTheme.accentBlue
+                    }
+                  ]}
+                >
+                  {assignment.isCompleted && <Text style={styles.checkboxCheckmark}>✓</Text>}
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.trashTouchContainer}
+                onPress={() => deleteAssignment(assignment.id)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                accessibilityLabel={`Delete ${assignment.title}`}
+              >
+                <TrashIcon size={22} color="#D94033" />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </SwipeableRow>
+    );
+  };
+
   return (
     <View style={styles.rootContainer}>
       <ScrollView
@@ -218,8 +361,8 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         </View>
       </View>
 
-      {/* MARK: - Deadlines Calendar Card */}
-      <DeadlinesCalendarCard
+      {/* MARK: - Assignments Month Calendar Card */}
+      <AssignmentsMonthCalendarCard
         selectedDate={selectedDate}
         onSelectDate={d => {
           setSelectedDate(d);
@@ -230,25 +373,6 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         itemDatesWithColors={itemDatesWithColors}
       />
 
-      {/* MARK: - Search Bar */}
-      <View style={styles.searchBarContainer}>
-        <MagnifyingGlassIcon size={15} color="#8E9BAE" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search assignments…"
-          placeholderTextColor="#8E9BAE"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchButton}>
-            <XMarkCircleFillIcon size={16} color="#B3BCC9" />
-          </TouchableOpacity>
-        )}
-      </View>
-
       {/* MARK: - Per-Course Assignment Progress Bars */}
       {courses.length > 0 && (
         <View style={styles.progressCardContainer}>
@@ -256,7 +380,8 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             const courseAssigns = assignments.filter(
               a =>
                 !a.isDeleted &&
-                (a.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase()
+                (a.courseId === course.id ||
+                  (a.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
             );
             const total = courseAssigns.length;
             const completed = courseAssigns.filter(a => a.isCompleted).length;
@@ -295,6 +420,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
           })}
         </View>
       )}
+
 
       {/* Active Course Filter Banner */}
       {selectedCourseFilter && (
@@ -364,8 +490,6 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
           <Text style={styles.emptyTitle}>
             {isDateFilterActive
               ? 'No Assignments on This Date'
-              : searchQuery
-              ? 'No Results Found'
               : 'No Assignments Found'}
           </Text>
           <Text style={styles.emptySubtitle}>
@@ -384,6 +508,14 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         </View>
       ) : (
         <View style={styles.assignmentsListContainer}>
+          {/* Non-week assignments (when week toggle is turned off) */}
+          {unassignedAssignments.length > 0 && (
+            <View style={styles.unassignedGroupSection}>
+              {unassignedAssignments.map(renderAssignmentCard)}
+            </View>
+          )}
+
+          {/* Week-grouped assignments (when week toggle is turned on) */}
           {groupedAssignments.map(([weekNum, weekList]) => (
             <View key={`week-${weekNum}`} style={styles.weekGroupSection}>
               {/* Week Header Pill */}
@@ -402,124 +534,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               </View>
 
               {/* Assignment Cards */}
-              {weekList.map(assignment => {
-                const matchedCourse = courses.find(
-                  c =>
-                    (c.courseCode || c.courseName).toLowerCase() ===
-                    (assignment.courseCode || '').toLowerCase()
-                );
-                const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
-                const pillTitle = matchedCourse?.courseName || assignment.courseCode || 'Assignment';
-
-                return (
-                  <View key={assignment.id} style={styles.assignmentCard}>
-                    {/* Left Vertical Course Color Line Indicator */}
-                    <View style={[styles.leftAccentStripe, { backgroundColor: courseColor }]} />
-
-                    {/* Middle Content Area */}
-                    <TouchableOpacity
-                      style={styles.cardMainContent}
-                      onPress={() => setSelectedAssignmentForDetail(assignment)}
-                      activeOpacity={0.7}
-                    >
-                      {/* Top Line: Course Title Pill with white letters */}
-                      <View style={styles.pillRow}>
-                        <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
-                          <Text style={styles.coursePillText}>{pillTitle}</Text>
-                        </View>
-                      </View>
-
-                      {/* Card Title */}
-                      <Text
-                        style={[
-                          styles.assignmentTitle,
-                          assignment.isCompleted && styles.assignmentTitleCompleted
-                        ]}
-                        numberOfLines={3}
-                      >
-                        {assignment.title}
-                      </Text>
-
-                      {/* Date Display & Points / Weight Badges */}
-                      <View style={styles.assignmentDateRow}>
-                        <Text style={styles.assignmentDateText}>
-                          {formatAssignmentDueDate(assignment.dueDate) || `Week ${assignment.weekNumber || 1}`}
-                        </Text>
-                        {assignment.pointsPossible && (
-                          <Text style={styles.weightText}>• {assignment.pointsPossible}</Text>
-                        )}
-                        {assignment.weightPercentage && (
-                          <Text style={styles.weightText}>• {assignment.weightPercentage}</Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-
-                    {/* Right Action: Completion Checkmark OR Restore & Permanent Delete */}
-                    {sortMode === 'trash' ? (
-                      <View style={styles.trashActionsRow}>
-                        <TouchableOpacity
-                          style={styles.restorePillButton}
-                          onPress={() => restoreAssignment(assignment.id)}
-                          activeOpacity={0.7}
-                        >
-                          <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
-                          <Text style={styles.restorePillText}>Restore</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.permanentTrashBtn}
-                          onPress={() => {
-                            Alert.alert(
-                              'Delete Assignment Permanently?',
-                              `Are you sure you want to permanently delete '${assignment.title}'? This action cannot be undone.`,
-                              [
-                                { text: 'Cancel', style: 'cancel' },
-                                {
-                                  text: 'Delete',
-                                  style: 'destructive',
-                                  onPress: () => permanentlyDeleteAssignment(assignment.id)
-                                }
-                              ]
-                            );
-                          }}
-                          activeOpacity={0.7}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <TrashIcon size={14} color="#D94033" />
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <View style={styles.cardRightActions}>
-                        <TouchableOpacity
-                          style={styles.touchCircleContainer}
-                          onPress={() => toggleAssignment(assignment.id)}
-                          activeOpacity={0.7}
-                        >
-                          <View
-                            style={[
-                              styles.checkboxCircle,
-                              assignment.isCompleted && {
-                                backgroundColor: CoursePalTheme.accentBlue,
-                                borderColor: CoursePalTheme.accentBlue
-                              }
-                            ]}
-                          >
-                            {assignment.isCompleted && <Text style={styles.checkboxCheckmark}>✓</Text>}
-                          </View>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.trashTouchContainer}
-                          onPress={() => deleteAssignment(assignment.id)}
-                          activeOpacity={0.7}
-                        >
-                          <TrashIcon size={15} color="rgba(217, 64, 51, 0.85)" />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
+              {weekList.map(renderAssignmentCard)}
             </View>
           ))}
         </View>
@@ -650,32 +665,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#D94033'
-  },
-  searchBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginHorizontal: 18,
-    marginTop: 14,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '400',
-    color: '#141F38',
-    marginLeft: 8,
-    paddingVertical: 2
-  },
-  clearSearchButton: {
-    padding: 2
   },
   progressCardContainer: {
     backgroundColor: '#FFFFFF',
@@ -811,6 +800,9 @@ const styles = StyleSheet.create({
   weekGroupSection: {
     gap: 10
   },
+  unassignedGroupSection: {
+    gap: 10
+  },
   weekHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -875,11 +867,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF'
   },
+  presentationBadge: {
+    backgroundColor: '#ECEFF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4
+  },
+  presentationBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4B5563'
+  },
   assignmentTitle: {
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#384761',
-    lineHeight: 19
+    color: '#141F38',
+    lineHeight: 19,
+    letterSpacing: -0.2
   },
   assignmentTitleCompleted: {
     textDecorationLine: 'line-through',
@@ -893,7 +897,7 @@ const styles = StyleSheet.create({
   },
   assignmentDateText: {
     fontSize: 13,
-    fontWeight: '400',
+    fontWeight: '500',
     color: '#596B85'
   },
   weightText: {
@@ -927,8 +931,8 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   trashTouchContainer: {
-    width: 30,
-    height: 32,
+    width: 32,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center'
   },

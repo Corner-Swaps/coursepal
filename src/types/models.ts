@@ -64,6 +64,8 @@ export interface AssignmentDTO {
   rubric?: RubricCriterionDTO[] | null;
   isFavorite?: boolean;
   isCompleted?: boolean;
+  weekNumber?: number | null;
+  moduleMention?: string | null;
 }
 
 export interface ItemDTO {
@@ -88,6 +90,22 @@ export interface ItemDTO {
   rubric?: RubricCriterionDTO[] | null;
 }
 
+export type ImportOutcome =
+  | 'SUCCESS'
+  | 'PARTIAL_EXTRACTION'
+  | 'LOCAL_FALLBACK'
+  | 'NO_TASKS_FOUND'
+  | 'API_FAILURE'
+  | 'UNREADABLE_DOCUMENT'
+  | 'SAVE_FAILURE';
+
+export interface TextbookResource {
+  title: string;
+  authorName?: string | null;
+  edition?: string | null;
+  isbn?: string | null;
+}
+
 export interface CourseDTO {
   id: string;
   creatorId?: string | null;
@@ -102,6 +120,7 @@ export interface CourseDTO {
   weeks?: WeekDTO[] | null;
   assignments?: AssignmentDTO[] | null;
   items?: ItemDTO[] | null;
+  textbooks?: TextbookResource[] | null;
   dataExtractionStats?: ExtractionStatsDTO | null;
   isFavorite?: boolean | null;
   chatHistoryJSON?: string | null;
@@ -125,6 +144,7 @@ export interface Course {
   weeks: Week[];
   assignments: Assignment[];
   syllabusDocs: SyllabusDocument[];
+  textbooks?: TextbookResource[];
 }
 
 export interface Week {
@@ -161,7 +181,9 @@ export interface Reading {
   sourceDocumentName?: string | null;
   docColorHex?: string | null;
   isFavorite: boolean;
+  courseId?: string;
   weekId?: string;
+  weekNumber?: number | null;
 }
 
 export interface Assignment {
@@ -213,5 +235,6 @@ export interface VaultDocument {
   fileContent?: string | null;
   docColorHex?: string | null;
   rawFileDataUri?: string | null;
+  pageImages?: string[] | null;
   uploadedAt: Date;
 }

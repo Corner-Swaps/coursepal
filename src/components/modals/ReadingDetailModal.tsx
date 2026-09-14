@@ -13,7 +13,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Switch,
   KeyboardAvoidingView,
   Platform,
   Linking
@@ -24,11 +23,19 @@ import { CoursePalTheme } from '../../constants/theme';
 import {
   XMarkCircleFillIcon,
   PlusCircleFillIcon,
-  CalendarIcon,
   ArrowUpRightIcon,
-  BookFillIcon
+  BookFillIcon,
+  CalendarIcon
 } from '../SvgIcons';
-import { cleanChapterFromRaw, parseSafeDate } from '../../utils/readingDisplayHelper';
+import {
+  cleanChapterFromRaw,
+  formatDisplayTitleWithChapter,
+  isReadingWeekEnabled,
+  extractReadingWeekNumber,
+  discoverReadingTopics,
+  parseSafeDate,
+  resolveReadingMediaType
+} from '../../utils/readingDisplayHelper';
 import { InlineCalendarPicker } from '../InlineCalendarPicker';
 
 export interface ReadingDetailModalProps {
@@ -69,20 +76,36 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
     ? matchedCourse.courseCode
     : null;
 
+  const deriveInitialTitle = (r: Reading): string => {
+    return formatDisplayTitleWithChapter(
+      r,
+      r.chapterText,
+      r.resourceTitle,
+      matchedCourse?.courseName,
+      r.authorName
+    );
+  };
+
   // State
-  const [titleText, setTitleText] = useState<string>(reading.title || '');
+  const [titleText, setTitleText] = useState<string>(() => deriveInitialTitle(reading));
 
-  // Schedule Toggles
-  const [isWeekEnabled, setIsWeekEnabled] = useState<boolean>(true);
-  const [weekNumber, setWeekNumber] = useState<number>(1);
-  const [isModuleEnabled, setIsModuleEnabled] = useState<boolean>(false);
-  const [moduleInput, setModuleInput] = useState<string>('');
-  const [hasDueDate, setHasDueDate] = useState<boolean>(false);
-  const [dueDate, setDueDate] = useState<Date>(new Date());
+  // Schedule Week (always visible stepper; 0 = No Week / Unassigned)
+  const [weekNumber, setWeekNumber] = useState<number>(() => {
+    const isWeekOn = isReadingWeekEnabled(reading);
+    if (!isWeekOn) return 0;
+    const extracted = extractReadingWeekNumber(reading);
+    return extracted != null ? extracted : 1;
+  });
 
-  const [chapterInput, setChapterInput] = useState<string>('');
-  const [topicInputs, setTopicInputs] = useState<string[]>([]);
-  const [mediaType, setMediaType] = useState<MediaType>('textbook');
+  const [chapterInput, setChapterInput] = useState<string>(() => reading?.chapterText || '');
+  const [authorInput, setAuthorInput] = useState<string>(() => reading?.authorName || '');
+  const [topicInputs, setTopicInputs] = useState<string[]>(() =>
+    reading ? discoverReadingTopics(reading, courses) : []
+  );
+  const [suggestedDate, setSuggestedDate] = useState<Date | null>(() =>
+    reading?.dueDate ? parseSafeDate(reading.dueDate) : null
+  );
+  const [mediaType, setMediaType] = useState<MediaType>(() => resolveReadingMediaType(reading));
   const [videoUrlInput, setVideoUrlInput] = useState<string>('');
   const [noteInputs, setNoteInputs] = useState<string[]>([]);
 
@@ -105,39 +128,23 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
 
     if (currentReadingIdRef.current !== reading.id) {
       currentReadingIdRef.current = reading.id;
-      setTitleText(reading.title || '');
+      setTitleText(deriveInitialTitle(reading));
 
-      // Derive week number
-      let derivedW = 1;
-      if (reading.weekId) {
-        const m = reading.weekId.match(/\d+/);
-        if (m) derivedW = parseInt(m[0], 10);
-      } else if (reading.relevantTopics) {
-        const m = reading.relevantTopics.match(/Week\s*(\d+)/i);
-        if (m) derivedW = parseInt(m[1], 10);
-      }
-      setWeekNumber(derivedW);
-      setIsWeekEnabled(derivedW > 0);
-
-      const modText = reading.relevantTopics && reading.relevantTopics.toLowerCase().includes('module')
-        ? reading.relevantTopics
-        : '';
-      setModuleInput(modText);
-      setIsModuleEnabled(modText.trim().length > 0);
-
-      setHasDueDate(reading.dueDate != null);
-      setDueDate(parseSafeDate(reading.dueDate) || new Date());
+      // Derive week number: 0 if no week, otherwise 1..52
+      const isWeekOn = isReadingWeekEnabled(reading);
+      const parsedWeekNum = extractReadingWeekNumber(reading);
+      setWeekNumber(isWeekOn && parsedWeekNum != null ? parsedWeekNum : 0);
 
       const chDisplay = reading.chapterText || '';
       setChapterInput(chDisplay);
+      setAuthorInput(reading.authorName || '');
 
-      const topics = (reading.relevantTopics || '')
-        .split(',')
-        .map(t => t.trim())
-        .filter(t => t.length > 0 && !t.toLowerCase().startsWith('week') && !t.toLowerCase().startsWith('mod'));
-      setTopicInputs(topics.length > 0 ? topics : [reading.title]);
+      const realTopics = discoverReadingTopics(reading, courses);
+      setTopicInputs(realTopics);
 
-      setMediaType(reading.mediaType || 'textbook');
+      setSuggestedDate(reading.dueDate ? parseSafeDate(reading.dueDate) : null);
+
+      setMediaType(resolveReadingMediaType(reading));
       setVideoUrlInput(reading.videoUrl || '');
 
       const notes = (reading.summaryText || '')
@@ -146,26 +153,36 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
         .filter(n => n.length > 0);
       setNoteInputs(notes);
     }
-  }, [reading?.id, visible]);
+  }, [reading?.id, reading?.mediaType, reading?.mediaTypeRaw, visible, courses]);
+
+  // Reset ref when modal is dismissed so reopening always re-syncs
+  useEffect(() => {
+    if (!visible) {
+      currentReadingIdRef.current = null;
+    }
+  }, [visible]);
 
   const saveAllChanges = (overrides: Partial<Reading> = {}) => {
     if (!reading) return;
     const cleanedChapter = cleanChapterFromRaw(chapterInput.trim()) || chapterInput.trim() || undefined;
-    const cleanTopics = topicInputs.filter(t => t.trim().length > 0).join(', ');
+    const cleanTopics = topicInputs
+      .filter(t => t.trim().length > 0)
+      .filter(t => weekNumber > 0 || !/^week\s*\d+$/i.test(t.trim()))
+      .join(', ');
     const cleanNotes = noteInputs.filter(n => n.trim().length > 0).join('\n');
 
     const updated: Reading = {
       ...reading,
       title: titleText.trim() || reading.title,
       chapterText: cleanedChapter,
-      relevantTopics: isModuleEnabled && moduleInput.trim().length > 0
-        ? moduleInput.trim()
-        : cleanTopics || undefined,
+      authorName: authorInput.trim() || undefined,
+      relevantTopics: cleanTopics || undefined,
+      dueDate: suggestedDate,
       mediaType: mediaType,
       mediaTypeRaw: mediaType,
       videoUrl: videoUrlInput.trim() || undefined,
-      dueDate: hasDueDate ? dueDate : undefined,
-      weekId: isWeekEnabled ? `w-${weekNumber}` : undefined,
+      weekId: weekNumber > 0 ? `w-${weekNumber}` : undefined,
+      weekNumber: weekNumber > 0 ? weekNumber : 0,
       summaryText: cleanNotes,
       ...overrides
     };
@@ -181,26 +198,13 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
     onClose();
   };
 
-  // Toggle Handlers
-  const handleToggleWeek = (enabled: boolean) => {
-    setIsWeekEnabled(enabled);
-    saveAllChanges({ weekId: enabled ? `w-${weekNumber}` : undefined });
-  };
-
-  const handleToggleModule = (enabled: boolean) => {
-    setIsModuleEnabled(enabled);
-    saveAllChanges({ relevantTopics: enabled ? (moduleInput.trim() || 'Module 1') : undefined });
-  };
-
-  const handleToggleDueDate = (enabled: boolean) => {
-    setHasDueDate(enabled);
-    saveAllChanges({ dueDate: enabled ? dueDate : undefined });
-  };
-
   const handleWeekStep = (delta: number) => {
-    const next = Math.max(1, Math.min(52, weekNumber + delta));
+    const next = Math.max(0, Math.min(52, weekNumber + delta));
     setWeekNumber(next);
-    saveAllChanges({ weekId: `w-${next}` });
+    saveAllChanges({
+      weekId: next > 0 ? `w-${next}` : undefined,
+      weekNumber: next
+    });
   };
 
   // Topics Handlers
@@ -241,20 +245,17 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
     saveAllChanges({ summaryText: updated.join('\n') });
   };
 
-  const formattedDueDateStr = useMemo(() => {
-    if (hasDueDate && dueDate) {
-      return dueDate.toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric'
-      });
-    }
-    return isWeekEnabled ? `Week ${weekNumber}` : 'No due date specified';
-  }, [hasDueDate, dueDate, isWeekEnabled, weekNumber]);
-
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleDone}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={handleDone}
+      onDismiss={() => {
+        currentReadingIdRef.current = null;
+        onClose();
+      }}
+    >
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         {/* Navigation Bar */}
         <View style={styles.navBar}>
@@ -306,116 +307,35 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               </View>
             </View>
 
-            {/* MARK: - Section 1: Systemized Schedule & Due Date */}
-            <Text style={styles.sectionHeaderTitle}>Schedule & Due Date</Text>
+            {/* MARK: - Section 1: Schedule Week */}
+            <Text style={styles.sectionHeaderTitle}>Schedule Week</Text>
             <View style={styles.sectionCard}>
-              {/* Week Row with Toggle */}
               <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Schedule Week</Text>
-                <Switch
-                  value={isWeekEnabled}
-                  onValueChange={handleToggleWeek}
-                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
-                  thumbColor="#FFFFFF"
-                  style={styles.switchControl}
-                />
-              </View>
+                <Text style={styles.rowLabel}>Week</Text>
+                <View style={styles.stepperContainer}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => handleWeekStep(-1)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepperBtnText}>−</Text>
+                  </TouchableOpacity>
 
-              {isWeekEnabled && (
-                <>
-                  <View style={styles.rowDivider} />
-                  <View style={styles.formRow}>
-                    <Text style={styles.rowSubLabel}>Select Week Number</Text>
-                    <View style={styles.stepperContainer}>
-                      <TouchableOpacity
-                        style={styles.stepperBtn}
-                        onPress={() => handleWeekStep(-1)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.stepperBtnText}>−</Text>
-                      </TouchableOpacity>
-
-                      <View style={styles.stepperValueBox}>
-                        <Text style={styles.stepperValueText}>Week {weekNumber}</Text>
-                      </View>
-
-                      <TouchableOpacity
-                        style={styles.stepperBtn}
-                        onPress={() => handleWeekStep(1)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.stepperBtnText}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </>
-              )}
-
-              <View style={styles.rowDivider} />
-
-              {/* Module Row with Toggle */}
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Module / Topic</Text>
-                <Switch
-                  value={isModuleEnabled}
-                  onValueChange={handleToggleModule}
-                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
-                  thumbColor="#FFFFFF"
-                  style={styles.switchControl}
-                />
-              </View>
-
-              {isModuleEnabled && (
-                <>
-                  <View style={styles.rowDivider} />
-                  <View style={styles.formRow}>
-                    <TextInput
-                      style={styles.rowFullInput}
-                      value={moduleInput}
-                      onChangeText={t => {
-                        setModuleInput(t);
-                        saveAllChanges({ relevantTopics: t.trim() || undefined });
-                      }}
-                      placeholder="e.g. Module 1: Foundations"
-                      placeholderTextColor="#94A3B8"
-                    />
-                  </View>
-                </>
-              )}
-
-              <View style={styles.rowDivider} />
-
-              {/* Due Date Row with Toggle */}
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Due Date</Text>
-                <Switch
-                  value={hasDueDate}
-                  onValueChange={handleToggleDueDate}
-                  trackColor={{ false: '#E2E8F0', true: '#34C759' }}
-                  thumbColor="#FFFFFF"
-                  style={styles.switchControl}
-                />
-              </View>
-
-              {hasDueDate && (
-                <>
-                  <View style={styles.rowDivider} />
-                  <View style={styles.selectedDateBanner}>
-                    <CalendarIcon size={14} color="#2470F5" />
-                    <Text style={styles.selectedDateBannerText}>{formattedDueDateStr}</Text>
+                  <View style={styles.stepperValueBox}>
+                    <Text style={styles.stepperValueText}>
+                      {weekNumber === 0 ? 'No Week' : `Week ${weekNumber}`}
+                    </Text>
                   </View>
 
-                  {/* Inline Calendar Picker */}
-                  <InlineCalendarPicker
-                    selectedDate={dueDate}
-                    onSelectDate={d => {
-                      setDueDate(d);
-                      saveAllChanges({ dueDate: d });
-                    }}
-                    accentColor={CoursePalTheme.accentBlue}
-                  />
-                </>
-              )}
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => handleWeekStep(1)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepperBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
 
             {/* MARK: - Section 2: Chapter & Pages */}
@@ -433,21 +353,88 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               />
             </View>
 
-            {/* MARK: - Section 3: Topics */}
+            {/* MARK: - Section 3: Author */}
+            <Text style={styles.sectionHeaderTitle}>Author</Text>
+            <View style={styles.sectionCard}>
+              <TextInput
+                style={styles.singleFieldInput}
+                value={authorInput}
+                onChangeText={t => {
+                  setAuthorInput(t);
+                  saveAllChanges({ authorName: t.trim() || undefined });
+                }}
+                placeholder="e.g. Diane R. Gehart"
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+
+            {/* MARK: - Section 4: Suggested Reading */}
+            <Text style={styles.sectionHeaderTitle}>Suggested Reading</Text>
+            <View style={styles.sectionCard}>
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Due Date</Text>
+                <View style={styles.dueRightRow}>
+                  <View style={styles.selectedDateBanner}>
+                    <CalendarIcon size={14} color="#2470F5" />
+                    <Text style={styles.selectedDateBannerText}>
+                      {suggestedDate
+                        ? `Read by ${suggestedDate.toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}`
+                        : 'No date set'}
+                    </Text>
+                  </View>
+                  {suggestedDate && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSuggestedDate(null);
+                        saveAllChanges({ dueDate: null });
+                      }}
+                      style={styles.clearDateBtn}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.clearDateBtnText}>Clear</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.rowDivider} />
+
+              {/* Apple-style Inline Calendar Date Picker */}
+              <InlineCalendarPicker
+                selectedDate={suggestedDate || new Date()}
+                onSelectDate={d => {
+                  setSuggestedDate(d);
+                  saveAllChanges({ dueDate: d });
+                }}
+                accentColor={CoursePalTheme.accentBlue}
+              />
+            </View>
+
+            {/* MARK: - Section 4: Topics */}
             <Text style={styles.sectionHeaderTitle}>Topics</Text>
             <View style={styles.sectionCard}>
-              {topicInputs.map((topic, idx) => (
-                <View key={`topic-${idx}`} style={styles.topicRow}>
-                  <Text style={styles.itemIndexNumber}>{idx + 1} -</Text>
-                  <TextInput
-                    style={styles.topicInput}
-                    value={topic}
-                    onChangeText={t => handleUpdateTopic(idx, t)}
-                    placeholder="Topic description..."
-                    placeholderTextColor="#94A3B8"
-                    multiline={true}
-                  />
-                  {topicInputs.length > 1 && (
+              {topicInputs.length === 0 ? (
+                <View style={styles.emptyTopicsBox}>
+                  <Text style={styles.emptyTopicsText}>No topic specified</Text>
+                </View>
+              ) : (
+                topicInputs.map((topic, idx) => (
+                  <View key={`topic-${idx}`} style={styles.topicRow}>
+                    <View style={styles.topicIndexBadge}>
+                      <Text style={styles.noteIndexBadgeText}>{idx + 1}</Text>
+                    </View>
+                    <TextInput
+                      style={styles.topicInput}
+                      value={topic}
+                      onChangeText={t => handleUpdateTopic(idx, t)}
+                      placeholder="Topic description..."
+                      placeholderTextColor="#94A3B8"
+                      multiline={true}
+                    />
                     <TouchableOpacity
                       onPress={() => handleRemoveTopic(idx)}
                       style={styles.deleteIconBtn}
@@ -455,17 +442,17 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                     >
                       <XMarkCircleFillIcon size={18} color="#94A3B8" />
                     </TouchableOpacity>
-                  )}
-                </View>
-              ))}
+                  </View>
+                ))
+              )}
 
               <TouchableOpacity
                 onPress={handleAddTopic}
-                style={styles.addItemBtn}
+                style={styles.addNotePillBtn}
                 activeOpacity={0.7}
               >
-                <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
-                <Text style={styles.addItemBtnText}>Add Topic</Text>
+                <PlusCircleFillIcon size={15} color="#2470F5" />
+                <Text style={styles.addNotePillBtnText}>Add Topic</Text>
               </TouchableOpacity>
             </View>
 
@@ -478,7 +465,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                   t === 'textbook'
                     ? 'Textbook'
                     : t === 'article'
-                    ? 'Article'
+                    ? 'Article / Paper'
                     : t === 'video'
                     ? 'Video'
                     : 'Podcast';
@@ -497,6 +484,8 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                         styles.mediaTypePillText,
                         isSelected && styles.mediaTypePillTextActive
                       ]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
                     >
                       {label}
                     </Text>
@@ -541,9 +530,12 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
             {/* MARK: - Section 6: Notes (Keyboard-Aware, No Giant Bottom Gap) */}
             <Text style={styles.sectionHeaderTitle}>Notes</Text>
             <View style={styles.sectionCard}>
+
               {noteInputs.map((note, idx) => (
                 <View key={`note-${idx}`} style={styles.noteItemCard}>
-                  <Text style={styles.itemIndexNumber}>{idx + 1} -</Text>
+                  <View style={styles.noteIndexBadge}>
+                    <Text style={styles.noteIndexBadgeText}>{idx + 1}</Text>
+                  </View>
                   <TextInput
                     style={styles.noteTextInput}
                     value={note}
@@ -561,19 +553,20 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                     onPress={() => handleRemoveNote(idx)}
                     style={styles.deleteIconBtn}
                     activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <XMarkCircleFillIcon size={18} color="#94A3B8" />
+                    <XMarkCircleFillIcon size={20} color="#94A3B8" />
                   </TouchableOpacity>
                 </View>
               ))}
 
               <TouchableOpacity
                 onPress={handleAddNote}
-                style={styles.addItemBtn}
+                style={styles.addNotePillBtn}
                 activeOpacity={0.7}
               >
-                <PlusCircleFillIcon size={16} color={CoursePalTheme.accentBlue} />
-                <Text style={styles.addItemBtnText}>Add Note</Text>
+                <PlusCircleFillIcon size={15} color="#2470F5" />
+                <Text style={styles.addNotePillBtnText}>Add Note</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -680,10 +673,10 @@ const styles = StyleSheet.create({
     marginBottom: 4
   },
   readingTitleInput: {
-    fontSize: 20,
+    fontSize: 16.5,
     fontWeight: '700',
     color: '#141F38',
-    lineHeight: 26,
+    lineHeight: 22,
     padding: 0
   },
   sectionHeaderTitle: {
@@ -771,6 +764,11 @@ const styles = StyleSheet.create({
     color: '#141F38',
     paddingVertical: 4
   },
+  dueRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
   selectedDateBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -778,13 +776,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
-    marginBottom: 12
+    borderRadius: 10
   },
   selectedDateBannerText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2470F5'
+    color: '#2470F5',
+    includeFontPadding: false
+  },
+  clearDateBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  clearDateBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#D94033'
+  },
+  emptyTopicsBox: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8
+  },
+  emptyTopicsText: {
+    fontSize: 13.5,
+    fontWeight: '500',
+    color: '#8E9BAE',
+    fontStyle: 'italic'
   },
   singleFieldInput: {
     fontSize: 14.5,
@@ -797,19 +820,28 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
-    padding: 8,
+    padding: 7,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 8
   },
+  topicIndexBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   itemIndexNumber: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#596B85'
   },
   topicInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13.5,
+    lineHeight: 19,
     color: '#141F38',
     padding: 0
   },
@@ -819,12 +851,12 @@ const styles = StyleSheet.create({
   addItemBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     marginTop: 4,
-    paddingVertical: 4
+    paddingVertical: 3
   },
   addItemBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#2470F5'
   },
@@ -839,6 +871,7 @@ const styles = StyleSheet.create({
     minWidth: 70,
     backgroundColor: '#FFFFFF',
     paddingVertical: 10,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 12,
@@ -862,31 +895,76 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#EFF6FF',
-    padding: 10,
-    borderRadius: 10,
-    marginTop: 8
+    padding: 8,
+    borderRadius: 8,
+    marginTop: 6
   },
   openLinkPillText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
     color: '#2470F5'
   },
   noteItemCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: 10,
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 8
+    marginBottom: 8,
+    minHeight: 46
+  },
+  noteIndexBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1
+  },
+  noteIndexBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569'
   },
   noteTextInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#141F38',
-    lineHeight: 20,
-    padding: 0
+    fontSize: 13.5,
+    color: '#0F172A',
+    lineHeight: 19,
+    padding: 0,
+    paddingTop: 1,
+    minHeight: 32
+  },
+  notesEmptyPrompt: {
+    fontSize: 12.5,
+    color: '#64748B',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 6,
+    lineHeight: 17
+  },
+  addNotePillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 18,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 2
+  },
+  addNotePillBtnText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#2470F5'
   }
 });

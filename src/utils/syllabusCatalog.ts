@@ -163,59 +163,112 @@ Sexuality Counseling: Theory, Research, and Practice
 • Chapter 9 — Sexual Trauma and Recovery Counseling`
   },
   {
-    id: 'cpc-527',
-    courseCode: 'CPC 527',
-    courseName: 'Group Counselling and Family Systems',
-    instructorName: 'Dr. Robert Chen, EdD',
-    instructorEmail: 'chenrobert@cityu.edu',
-    department: 'Master of Counselling Program',
-    fileName: 'CPC527_Group_Counselling_Syllabus.pdf',
-    fileSize: '472 KB',
-    hexColor: '#059669',
-    rawText: `CPC 527: Group Counselling and Family Systems
-School of Health & Social Sciences
+    id: 'cpc-511',
+    courseCode: 'CPC 511',
+    courseName: 'Psychology of Loss and Grief',
+    instructorName: 'Diana Morgan',
+    instructorEmail: 'morgandiana@cityu.edu',
+    department: 'School of Health and Social Sciences',
+    fileName: 'CPC511_Loss_and_Grief_Syllabus.pdf',
+    fileSize: '320 KB',
+    hexColor: '#EC4899',
+    rawText: `CPC 511: Psychology of Loss and Grief
+School of Health and Social Sciences
 Credits: 3
-Faculty: Dr. Robert Chen, EdD
-Email: chenrobert@cityu.edu
+Grading Type: Decimal
+Faculty Information: Diana Morgan
+Email: morgandiana@cityu.edu
 
 Overview of Required Assignments % of Final Grade:
-Group Facilitation Video Simulation (1) 30%
-Family Genogram Analysis Paper (2) 30%
-Group Protocol Manual Deliverable (3) 30%
-Class Participation and Attendance (4) 10%
-Total 100%
+Research Paper: Cultural Aspects of Mourning 30%
+Unique Topics in Grief Group Presentation 30%
+Peer-Review Group Report 10%
+Personal Grief Reflection Assignment 20%
+Participation 10%
+TOTAL 100%
 
-Assignment 1: Group Facilitation Video Simulation (30%)
-Submit recorded group roleplay by Sunday, August 9, 2026, at 11:59 pm.
+Course Assignment Details:
+Research Paper: Cultural Aspects of Mourning (30%) - DUE Sunday, April 26
+Students will write a research paper exploring mourning practices from a culture other than their own. 5 to 10 pages, double-spaced, minimum 5 to 8 peer-reviewed sources.
 Total 100 Points
 
-Assignment 2: Family Genogram Analysis Paper (30%)
-Due Friday, August 28, 2026, at 9:00 am.
+Unique Topics in Grief Group Presentations (30%) - DUE May 8 & May 15
+In groups of 3-4, students will research their chosen topic and create a group presentation for the class. Max length 40 minutes each.
 Total 100 Points
 
-Assignment 3: Group Protocol Manual Deliverable (30%)
-Due Sunday, September 20, 2026, at 11:59 pm.
+Peer Review Group Report (10%) - DUE May 8 & May 15
+Peer review is a core academic activity. Students will be reviewing each group presentation on both presentation days using a template.
 Total 100 Points
 
-Assignment 4: Class Participation and Attendance (10%)
+Personal Grief Reflection Assignment (20%) - DUE Sunday, June 14
+Students will complete a reflection assignment that explores their own experiences of grief and loss, designing a communal grief ritual. 6 - 8 pages APA paper or alternative format.
 Total 100 Points
 
-Week 1 July 6th
-Foundations of Group Dynamics and Therapeutic Factors
-Required:
-Corey Chapter 1 — Introduction to Group Work Dynamics
-Corey Chapter 2 — The Group Counselor: Person and Professional
+Participation (10%) - Self Assessment DUE Sunday, June 14
+Students will use the Participation Self Assessment Template to complete a self assessment.
+Total 100 Points
 
-Week 2 July 13th
-Ethical and Legal Issues in Group and Family Counseling
-Required:
-Corey Chapter 3 — Ethical and Legal Issues in Group Counseling
-McGoldrick Chapter 1 — Genograms: Assessment and Intervention
+Required Texts:
+Harris, D. L., & Winokuer, H. R. (2019). Principles and practice of grief counseling (3rd ed.). Springer.
+Hochstetler, L. (2021). 21 days to die: The Canadian guide to end of life. Sumeru Press.
+Neimeyer, R. A., Harris, D. L., Winokuer, H. R., & Thornton, G. F. (2011). Grief and bereavement in contemporary society: Bridging research and practice. Routledge.
 
-Week 3 July 20th
-Early Stages of Group Development and Norming
-Required:
-Corey Chapter 5 — Initial Stage of a Group: Orientation and Exploration`
+NOTE: Course schedule will be posted in a separate document on Brightspace.`
+  },
+  {
+    id: 'cpc-527',
+    courseCode: 'CPC 527',
+    courseName: 'Group Counselling Psychology',
+    instructorName: 'Kelsey Murrin',
+    instructorEmail: 'murrinkelsey@cityu.edu',
+    department: 'School of Health and Social Sciences',
+    fileName: 'CPC527_Group_Counselling_Syllabus.pdf',
+    fileSize: '480 KB',
+    hexColor: '#059669',
+    rawText: `CPC 527: Group Counselling Psychology
+School of Health and Social Sciences
+Credits: 3
+Grading Type: Decimal
+Faculty Information: Kelsey Murrin
+Email: murrinkelsey@cityu.edu
+
+Overview of Required Assignments % of Final Grade:
+Group Therapy Reflection Paper 25%
+Peer-Review Group Assignment 10%
+Group Facilitation Presentation/Project 40%
+Collaboration & Participation 25%
+TOTAL 100%
+
+Course Assignment Details:
+Group Therapy Reflection Paper (25%)
+Students will write a reflection paper critiquing their facilitation performance. 5 - 6 pages, double-spaced with minimum five peer-reviewed sources.
+Total 100 Points
+
+Peer-Review Group Report (10%)
+Students will provide feedback using a structured template to their assigned facilitation group.
+Total 100 Points
+
+Group Facilitation Presentation/Project (40%)
+Written treatment plan (6 - 8 pages) and experiential 90-minute co-facilitated group session.
+Total 100 Points
+
+Collaboration & Participation (25%)
+In-person small and large group activities, discussions, and self-assessment template.
+Total 100 Points
+
+Course Schedule:
+Week 1 4/2/26 MODULE 1 Intro to Group Work Corey Ch. 1 & 2 Yalom Ch. 1
+Week 2 4/9/26 MODULE 2 Introduction to Group Work Pt. 2 Corey Ch. 3 & 4 Yalom Ch. 2
+Week 3 4/16/26 MODULE 3 Group Stages: Initial Stages Corey Ch. 5 & 6 Yalom Ch. 3
+Week 4 4/23/26 MODULE 4 Group Stages: Transition Corey Ch. 7 Yalom Ch. 4 & 5
+Week 5 4/30/26 MODULE 5 Group Stages: Working Corey Ch. 8 Yalom Ch. 6 & 7
+Week 6 5/7/26 MODULE 6 Presentations Yalom Ch. 8 & 9
+Week 7 5/14/26 MODULE 7 Presentations Yalom Ch. 10 & 11
+Week 8 5/21/26 READING WEEK
+Week 9 5/28/26 MODULE 8 Presentations Yalom Ch. 12 & 13
+Week 10 6/4/26 MODULE 9 Group Stages: Final Corey Ch. 9 See Brightspace for Assigned Readings
+Week 11 6/11/26 MODULE 10 Groups in Diverse Settings Corey Ch. 10 & 11 Yalom Ch. 14 & 15
+Week 12 6/18/26 MODULE 11 Effective Closings See Brightspace for Assigned Readings`
   },
   {
     id: 'cs-501',
@@ -257,8 +310,8 @@ Goodfellow Chapter 6 — Deep Feedforward Networks
 Goodfellow Chapter 8 — Optimization for Training Deep Models`
   },
   {
-    id: 'cpc-511',
-    courseCode: 'CPC 511',
+    id: 'cpc-510',
+    courseCode: 'CPC 510',
     courseName: 'Theoretical Foundations of Psychotherapy',
     instructorName: 'Dr. Sarah Jenkins, PhD',
     instructorEmail: 'jenkins.s@cityu.edu',

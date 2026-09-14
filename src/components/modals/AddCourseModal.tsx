@@ -21,6 +21,7 @@ import {
   TrashIcon,
   CheckmarkCircleFillIcon
 } from '../SvgIcons';
+import { formatShortDocumentTitle } from '../../utils/readingDisplayHelper';
 
 interface AddCourseModalProps {
   visible: boolean;
@@ -76,8 +77,6 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   const isNameMissing = showValidationHighlight && !courseName.trim();
   const isDocMissing = showValidationHighlight && !hasSyllabusSource;
 
-  const chooseBadgeText = vaultDocs.length === 0 ? 'UPLOAD PDF' : 'CHOOSE 1 OF 2';
-
   const handleAttachRealDoc = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -98,10 +97,41 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       const asset = result.assets[0];
       setAttachedFileName(asset.name);
       setAttachedFileUri(asset.uri);
-      setAttachedFileSize(
-        asset.size ? `${(asset.size / (1024 * 1024)).toFixed(1)} MB` : '1.2 MB'
-      );
+      const fileSizeStr = asset.size ? `${(asset.size / (1024 * 1024)).toFixed(1)} MB` : '1.2 MB';
+      setAttachedFileSize(fileSizeStr);
       setShowValidationHighlight(false);
+
+      // Instantly start document processing on single click
+      const currentName = courseName.trim();
+      const codeMatch = currentName.match(/\b([A-Z]{2,6}\s*\d{3,4}[A-Z]?)\b/i);
+      const derivedCode = codeMatch ? codeMatch[1].toUpperCase().replace(/\s+/g, ' ') : '';
+      
+      const newCourse = addCourse({
+        courseName: currentName || asset.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
+        courseCode: derivedCode || undefined,
+        courseDescription: courseDescription.trim(),
+        hexColor: selectedColorHex
+      });
+
+      importSyllabusDocument({
+        fileName: asset.name,
+        fileUri: asset.uri,
+        fileSize: fileSizeStr,
+        targetCourseId: newCourse.id,
+        preferredHexColor: selectedColorHex,
+        preserveCourseTitle: currentName || undefined,
+        preserveCourseSubtitle: courseDescription.trim(),
+        preserveCourseCode: derivedCode || undefined
+      });
+
+      setCourseName('');
+      setCourseDescription('');
+      setAttachedFileName(null);
+      setAttachedFileUri(undefined);
+      setAttachedFileSize(undefined);
+      setSelectedVaultDocIds([]);
+      onCourseCreated?.();
+      onClose();
     } catch (err) {
       console.warn('Document picker cancelled or failed:', err);
     }
@@ -124,9 +154,17 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       return;
     }
 
+    const isGenericCourseName = /^(new\s*course|new)$/i.test(trimmedName);
+    const codeMatch = trimmedName.match(/\b([A-Z]{2,6}\s*\d{3,4}[A-Z]?)\b/i);
+    const derivedCode = codeMatch
+      ? codeMatch[1].toUpperCase().replace(/\s+/g, ' ')
+      : isGenericCourseName
+      ? ''
+      : (trimmedName.length <= 8 && /^[A-Za-z0-9\s-]+$/.test(trimmedName) ? trimmedName.toUpperCase() : '');
+
     const newCourse = addCourse({
       courseName: trimmedName,
-      courseCode: trimmedName.slice(0, 7).toUpperCase(),
+      courseCode: derivedCode || undefined,
       courseDescription: courseDescription.trim(),
       hexColor: selectedColorHex
     });
@@ -138,9 +176,9 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
         fileSize: attachedFileSize,
         targetCourseId: newCourse.id,
         preferredHexColor: selectedColorHex,
-        preserveCourseTitle: trimmedName,
+        preserveCourseTitle: isGenericCourseName ? undefined : trimmedName,
         preserveCourseSubtitle: courseDescription.trim(),
-        preserveCourseCode: newCourse.courseCode || undefined
+        preserveCourseCode: derivedCode || undefined
       });
     }
 
@@ -253,7 +291,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           <View style={styles.inputCapsule}>
             <TextInput
               style={styles.textInput}
-              placeholder="Course Description"
+              placeholder="Course Description (e.g., Intro to Cognitive Psychology)"
               placeholderTextColor="#8E9BAE"
               value={courseDescription}
               onChangeText={setCourseDescription}
@@ -296,36 +334,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
             </View>
           </View>
 
-          {/* Section 4: Educational Notice Pills */}
-          <View style={styles.noticeContainer}>
-            {/* Pill 1: Single Course Upload Notice */}
-            <View style={styles.noticePillBlue}>
-              <View style={styles.noticeIconWrap}>
-                <DocTextViewfinderIcon size={14} color="#2470F5" />
-              </View>
-              <View style={styles.noticeTextCol}>
-                <Text style={styles.noticeTitle}>Upload One Course at a Time</Text>
-                <Text style={styles.noticeDesc}>
-                  Document processing takes 1–2 minutes. You can safely exit or minimize the app while it runs in the background.
-                </Text>
-              </View>
-            </View>
-
-            {/* Pill 2: Schedule Verification Notice */}
-            <View style={styles.noticePillOrange}>
-              <View style={styles.noticeIconWrap}>
-                <CheckmarkShieldFillIcon size={14} color="#E07314" />
-              </View>
-              <View style={styles.noticeTextCol}>
-                <Text style={styles.noticeTitle}>Double-Check Your Syllabus</Text>
-                <Text style={styles.noticeDesc}>
-                  Please check your original PDF to verify all dates, readings, and assignments imported accurately.
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Section 5: Upload Class Material */}
+          {/* Section 4: Upload Class Material */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>Upload Class Material</Text>
             {hasSyllabusSource ? (
@@ -336,11 +345,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
               <View style={styles.requiredStatusBadge}>
                 <Text style={styles.badgeTextWhite}>REQUIRED</Text>
               </View>
-            ) : (
-              <View style={styles.chooseBadge}>
-                <Text style={styles.chooseBadgeText}>{chooseBadgeText}</Text>
-              </View>
-            )}
+            ) : null}
           </View>
 
           <View style={styles.uploadCard}>
@@ -364,7 +369,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
 
               <View style={styles.uploadTextCol}>
                 <Text style={styles.uploadTitle} numberOfLines={1}>
-                  {attachedFileName ? `${attachedFileName} Attached` : 'Upload Class Material'}
+                  {attachedFileName ? `${formatShortDocumentTitle(attachedFileName)} Attached` : 'Upload Class Material'}
                 </Text>
                 <Text style={styles.uploadSubtitle}>
                   {attachedFileName ? 'Tap to replace document' : 'Select PDF or Word syllabus'}
@@ -384,7 +389,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
             )}
           </View>
 
-          {/* Section 6: Choose Vault Document (Rendered if vault docs exist) */}
+          {/* Section 5: Choose Vault Document (Rendered if vault docs exist) */}
           {vaultDocs.length > 0 && (
             <View style={styles.vaultSectionWrap}>
               <View style={styles.sectionHeaderRow}>
@@ -393,11 +398,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
                   <View style={styles.attachedBadge}>
                     <Text style={styles.badgeTextWhite}>SELECTED</Text>
                   </View>
-                ) : (
-                  <View style={styles.chooseBadge}>
-                    <Text style={styles.chooseBadgeText}>CHOOSE 1 OF {vaultDocs.length + 1}</Text>
-                  </View>
-                )}
+                ) : null}
               </View>
 
               <TouchableOpacity
@@ -429,6 +430,35 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Section 6: Educational Notice Pills */}
+          <View style={styles.noticeContainer}>
+            {/* Pill 1: Single Course Upload Notice */}
+            <View style={styles.noticePillBlue}>
+              <View style={styles.noticeIconWrap}>
+                <DocTextViewfinderIcon size={14} color="#2470F5" />
+              </View>
+              <View style={styles.noticeTextCol}>
+                <Text style={styles.noticeTitle}>Upload One Course at a Time</Text>
+                <Text style={styles.noticeDesc}>
+                  Document processing takes 1–2 minutes. You can safely exit or minimize the app while it runs in the background.
+                </Text>
+              </View>
+            </View>
+
+            {/* Pill 2: Schedule Verification Notice */}
+            <View style={styles.noticePillOrange}>
+              <View style={styles.noticeIconWrap}>
+                <CheckmarkShieldFillIcon size={14} color="#E07314" />
+              </View>
+              <View style={styles.noticeTextCol}>
+                <Text style={styles.noticeTitle}>Double-Check Your Syllabus</Text>
+                <Text style={styles.noticeDesc}>
+                  Please check your original PDF to verify all dates, readings, and assignments imported accurately.
+                </Text>
+              </View>
+            </View>
+          </View>
         </ScrollView>
 
         {/* Vault Document Selection Modal Sheet */}
@@ -482,10 +512,10 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
 
                     <View style={styles.vaultItemTextCol}>
                       <Text style={styles.vaultItemTitle} numberOfLines={1}>
-                        {doc.title}
+                        {formatShortDocumentTitle(doc.title)}
                       </Text>
                       <Text style={styles.vaultItemMeta}>
-                        {doc.courseCode || 'General'} • {doc.fileSize}
+                        {doc.courseCode || 'Course Syllabus'}
                       </Text>
                     </View>
 
@@ -579,9 +609,10 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#596B85',
-    letterSpacing: 0.3
+    textTransform: 'uppercase',
+    letterSpacing: 0.5
   },
   requiredBadge: {
     backgroundColor: '#EC4545',
@@ -597,10 +628,10 @@ const styles = StyleSheet.create({
   inputCapsule: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F7FC',
+    backgroundColor: '#FFFFFF',
     borderRadius: 26,
-    borderWidth: 1,
-    borderColor: '#E3E8F0',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     paddingHorizontal: 18,
     paddingVertical: 14,
     minHeight: 52
@@ -697,13 +728,13 @@ const styles = StyleSheet.create({
     flex: 1
   },
   noticeTitle: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '700',
-    color: '#121C33',
+    color: '#141F38',
     marginBottom: 3
   },
   noticeDesc: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '500',
     color: '#596B85',
     lineHeight: 17
@@ -781,15 +812,18 @@ const styles = StyleSheet.create({
     flex: 1
   },
   uploadTitle: {
-    fontSize: 13,
+    fontSize: 14.5,
     fontWeight: '700',
-    color: '#121C33',
-    marginBottom: 2
+    color: '#141F38',
+    marginBottom: 2,
+    lineHeight: 19,
+    letterSpacing: -0.2
   },
   uploadSubtitle: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '500',
-    color: '#596B85'
+    color: '#596B85',
+    lineHeight: 17
   },
   removePill: {
     flexDirection: 'row',
@@ -849,12 +883,15 @@ const styles = StyleSheet.create({
     flex: 1
   },
   vaultItemTitle: {
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
-    color: '#121C33'
+    color: '#141F38',
+    lineHeight: 19,
+    letterSpacing: -0.2
   },
   vaultItemMeta: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
     color: '#596B85',
     marginTop: 2
   },

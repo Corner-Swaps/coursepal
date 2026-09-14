@@ -8,3 +8,6 @@ export * from './LocalSyllabusParser';
 export * from './NeuralDocumentService';
 export * from './StorageService';
 export * from './CalendarExportService';
+export * from './NotificationService';
+export * from './StoreReviewService';
+export * from './SyllabusImportManager';

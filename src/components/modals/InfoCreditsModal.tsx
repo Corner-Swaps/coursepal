@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { CoursePalTheme } from '../../constants/theme';
 import {
-  ShieldLockIcon,
+  ShieldCheckmarkIcon,
   ExclamationTriangleFillIcon,
   GraduationCapFillIcon
 } from '../SvgIcons';
@@ -27,6 +27,12 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
   initialTab = 'terms'
 }) => {
   const [selectedTab, setSelectedTab] = useState<'terms' | 'privacy' | 'about'>(initialTab);
+
+  useEffect(() => {
+    if (visible) {
+      setSelectedTab(initialTab);
+    }
+  }, [visible, initialTab]);
 
   if (!visible) return null;
 
@@ -108,8 +114,8 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
             <>
               {/* Terms Header */}
               <View style={styles.headerBlock}>
-                <View style={styles.headerIconCircle}>
-                  <ShieldLockIcon size={28} color={CoursePalTheme.accentBlue} />
+                <View style={[styles.headerIconCircle, { backgroundColor: '#2470F5' }]}>
+                  <ShieldCheckmarkIcon size={32} color="#FFFFFF" innerColor="#2470F5" />
                 </View>
                 <Text style={styles.headerTitle}>Terms of Service & Disclaimers</Text>
                 <Text style={styles.headerSubtitle}>
@@ -119,8 +125,8 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
 
               {/* Warning Banner */}
               <View style={styles.criticalNoticeBox}>
-                <View style={styles.noticeIconCircle}>
-                  <ExclamationTriangleFillIcon size={18} color="#EA580C" />
+                <View style={[styles.noticeIconCircle, { backgroundColor: '#EA580C' }]}>
+                  <ExclamationTriangleFillIcon size={18} color="#FFFFFF" />
                 </View>
                 <View style={styles.noticeTextCol}>
                   <Text style={styles.noticeTitle}>Critical Academic Disclaimer</Text>
@@ -200,8 +206,8 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
             <>
               {/* Privacy Header */}
               <View style={styles.headerBlock}>
-                <View style={[styles.headerIconCircle, { backgroundColor: 'rgba(5, 150, 105, 0.12)' }]}>
-                  <ShieldLockIcon size={28} color="#059669" />
+                <View style={[styles.headerIconCircle, { backgroundColor: '#10B981' }]}>
+                  <ShieldCheckmarkIcon size={32} color="#FFFFFF" innerColor="#10B981" />
                 </View>
                 <Text style={styles.headerTitle}>Privacy Policy & Data Governance</Text>
                 <Text style={styles.headerSubtitle}>
@@ -262,11 +268,11 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
             <>
               {/* About Header */}
               <View style={styles.headerBlock}>
-                <View style={styles.headerIconCircle}>
-                  <GraduationCapFillIcon size={32} color={CoursePalTheme.accentBlue} />
+                <View style={[styles.headerIconCircle, { backgroundColor: '#2470F5' }]}>
+                  <GraduationCapFillIcon size={34} color="#FFFFFF" />
                 </View>
                 <Text style={styles.headerTitle}>CoursePal Mobile</Text>
-                <Text style={styles.versionBadge}>Version 1.4.0 (Build 42)</Text>
+                <Text style={styles.versionBadge}>Version 1.4.1 (Build 2)</Text>
               </View>
 
               <View style={styles.legalCard}>

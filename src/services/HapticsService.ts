@@ -141,3 +141,4 @@ class HapticsService implements HapticsProvider {
 }
 
 export const haptics = new HapticsService();
+export { HapticsService };

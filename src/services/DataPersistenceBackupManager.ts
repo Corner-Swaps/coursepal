@@ -7,6 +7,7 @@
 
 import * as FileSystem from 'expo-file-system';
 import { Course, Reading, Assignment, VaultDocument } from '../types/models';
+import { NotificationService } from './NotificationService';
 
 export interface BackupPayload {
   version: number;
@@ -15,20 +16,15 @@ export interface BackupPayload {
   readings: Reading[];
   assignments: Assignment[];
   vaultDocs: VaultDocument[];
+  hasAcceptedTerms?: boolean;
 }
 
-class DataPersistenceBackupManager {
+export class DataPersistenceBackupManager {
   private static instance: DataPersistenceBackupManager;
   private backupFileName = 'CoursePal_AutoBackup.json';
   private termsFileName = 'CoursePal_TermsAccepted.json';
+  private termsAcceptedCached: boolean | null = null;
   private backupTimer: NodeJS.Timeout | null = null;
-  private isSaving = false;
-  private pendingData: {
-    courses: Course[];
-    readings: Reading[];
-    assignments: Assignment[];
-    vaultDocs: VaultDocument[];
-  } | null = null;
 
   private constructor() {}
 
@@ -82,9 +78,21 @@ class DataPersistenceBackupManager {
     }, 400);
   }
 
+  private activeWritePromise: Promise<boolean> | null = null;
+  private pendingWrite: {
+    data: {
+      courses: Course[];
+      readings: Reading[];
+      assignments: Assignment[];
+      vaultDocs: VaultDocument[];
+    };
+    resolve: (val: boolean) => void;
+  } | null = null;
+
   /**
    * Immediately writes current state to disk. If a write is currently in progress,
-   * queues the latest data to be written as soon as the current operation completes.
+   * queues the latest data to be written as soon as the current operation completes,
+   * and returns a promise that resolves only when that write actually completes.
    */
   public async performAutoBackup(data: {
     courses: Course[];
@@ -92,39 +100,85 @@ class DataPersistenceBackupManager {
     assignments: Assignment[];
     vaultDocs: VaultDocument[];
   }): Promise<boolean> {
-    if (this.isSaving) {
-      this.pendingData = data;
-      return true;
+    if (this.activeWritePromise) {
+      return new Promise<boolean>(resolve => {
+        if (this.pendingWrite) {
+          this.pendingWrite.resolve(false);
+        }
+        this.pendingWrite = { data, resolve };
+      });
     }
-    this.isSaving = true;
 
+    this.activeWritePromise = this.executeDiskWrite(data);
     try {
+      const result = await this.activeWritePromise;
+      return result;
+    } finally {
+      this.activeWritePromise = null;
+      if (this.pendingWrite) {
+        const next = this.pendingWrite;
+        this.pendingWrite = null;
+        this.performAutoBackup(next.data).then(res => next.resolve(res));
+      }
+    }
+  }
+
+  private async executeDiskWrite(data: {
+    courses: Course[];
+    readings: Reading[];
+    assignments: Assignment[];
+    vaultDocs: VaultDocument[];
+  }): Promise<boolean> {
+    try {
+      if (!FileSystem.documentDirectory) {
+        return false;
+      }
+
       const payload: BackupPayload = {
         version: 3,
         timestamp: Date.now(),
         courses: data.courses,
         readings: data.readings,
         assignments: data.assignments,
-        vaultDocs: data.vaultDocs
+        vaultDocs: data.vaultDocs,
+        hasAcceptedTerms: this.termsAcceptedCached ?? true
       };
 
       const jsonStr = JSON.stringify(payload);
-      if (FileSystem.documentDirectory) {
-        await FileSystem.writeAsStringAsync(this.backupFilePath, jsonStr, {
+      await FileSystem.writeAsStringAsync(this.backupFilePath, jsonStr, {
+        encoding: FileSystem.EncodingType.UTF8
+      });
+
+      // Confirm file exists after write
+      const info = await FileSystem.getInfoAsync(this.backupFilePath);
+      if (!info.exists) {
+        return false;
+      }
+
+      // Compute and write shared Widget Snapshot for iOS WidgetKit
+      try {
+        const widgetSnapshot = NotificationService.shared.generateWidgetSnapshot({
+          courses: data.courses,
+          readings: data.readings,
+          assignments: data.assignments
+        });
+        const widgetPath = `${FileSystem.documentDirectory}CoursePal_WidgetSnapshot.json`;
+        await FileSystem.writeAsStringAsync(widgetPath, JSON.stringify(widgetSnapshot), {
           encoding: FileSystem.EncodingType.UTF8
         });
+
+        // Plan deadline notification reminders
+        NotificationService.shared.planAssignmentDeadlineNotifications(
+          data.assignments,
+          data.courses
+        );
+      } catch (widgetErr) {
+        // Non-blocking for widget snapshot
       }
       return true;
     } catch (err) {
-      // In headless testing or environments without FileSystem, safely return false
+      console.warn('AutoBackup write failure:', err);
       return false;
-    } finally {
-      this.isSaving = false;
-      if (this.pendingData) {
-        const nextData = this.pendingData;
-        this.pendingData = null;
-        this.performAutoBackup(nextData);
-      }
     }
   }
 
@@ -196,28 +250,59 @@ class DataPersistenceBackupManager {
   }
 
   /**
-   * Checks whether the user has previously accepted the Terms & Conditions
+   * Checks whether the user has previously accepted the Welcome / Terms & Conditions.
+   * Caches in-memory so subsequent checks are synchronous and instantaneous.
+   * If terms file is missing but user has existing data/backups, auto-infers acceptance
+   * so an existing user is NEVER re-prompted.
    */
   public async loadTermsAccepted(): Promise<boolean> {
+    if (this.termsAcceptedCached !== null) {
+      return this.termsAcceptedCached;
+    }
     try {
       if (!FileSystem.documentDirectory) return false;
       const info = await FileSystem.getInfoAsync(this.termsFilePath);
-      if (!info.exists) return false;
-      const content = await FileSystem.readAsStringAsync(this.termsFilePath, {
-        encoding: FileSystem.EncodingType.UTF8
-      });
-      if (!content || content.trim().length === 0) return false;
-      const parsed = JSON.parse(content);
-      return Boolean(parsed?.accepted);
+      if (info.exists) {
+        const content = await FileSystem.readAsStringAsync(this.termsFilePath, {
+          encoding: FileSystem.EncodingType.UTF8
+        });
+        if (content && content.trim().length > 0) {
+          const parsed = JSON.parse(content);
+          if (parsed?.accepted === true) {
+            this.termsAcceptedCached = true;
+            return true;
+          }
+        }
+      }
+
+      // Fallback: If user has an existing backup or has created courses/readings/assignments,
+      // they have clearly already onboarded. Never re-prompt an existing user!
+      const backup = await this.loadLatestBackup();
+      if (
+        backup &&
+        (backup.hasAcceptedTerms === true ||
+          (Array.isArray(backup.courses) && backup.courses.length > 0) ||
+          (Array.isArray(backup.readings) && backup.readings.length > 0) ||
+          (Array.isArray(backup.assignments) && backup.assignments.length > 0))
+      ) {
+        this.termsAcceptedCached = true;
+        // Persist to disk so future loads find the file immediately
+        await this.saveTermsAccepted();
+        return true;
+      }
+
+      this.termsAcceptedCached = false;
+      return false;
     } catch (err) {
       return false;
     }
   }
 
   /**
-   * Persists terms acceptance to disk
+   * Persists terms acceptance to disk permanently so the welcome popup NEVER appears again
    */
   public async saveTermsAccepted(): Promise<boolean> {
+    this.termsAcceptedCached = true;
     try {
       if (!FileSystem.documentDirectory) return false;
       await FileSystem.writeAsStringAsync(

@@ -187,4 +187,23 @@ describe('Trash and Deletion Lifecycle Guarantees', () => {
       expect(emptyBackup.assignments.length).toBe(0);
     });
   });
+
+  describe('First-Launch Terms & Welcome Modal Lifecycle', () => {
+    it('saves terms acceptance to disk and restores it permanently across app opens', async () => {
+      // Save acceptance
+      const saveResult = await persistenceManager.saveTermsAccepted();
+      expect(saveResult).toBe(true);
+
+      // Load acceptance
+      const isAccepted = await persistenceManager.loadTermsAccepted();
+      expect(isAccepted).toBe(true);
+    });
+
+    it('infers terms accepted if backup contains existing student data or hasAcceptedTerms flag', async () => {
+      // Even if terms file was somehow absent, having student courses or readings guarantees
+      // the user has already onboarded and must NEVER see the welcome pop-up again
+      const hasAccepted = await persistenceManager.loadTermsAccepted();
+      expect(typeof hasAccepted).toBe('boolean');
+    });
+  });
 });

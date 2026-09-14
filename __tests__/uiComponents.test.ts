@@ -8,7 +8,10 @@ import {
   HighlighterText,
   MainTabBar,
   ConfettiCelebration,
-  ConfettiCelebrationView
+  ConfettiCelebrationView,
+  SwipeableRow,
+  AssignmentsMonthCalendarCard,
+  DeadlinesCalendarCard
 } from '../src/components';
 
 describe('Atomic UI Components', () => {
@@ -116,6 +119,80 @@ describe('Atomic UI Components', () => {
       const element = React.createElement(ConfettiCelebration, { active: false });
       expect(element).toBeDefined();
       expect(element.props.active).toBe(false);
+    });
+  });
+
+  describe('SwipeableRow', () => {
+    it('creates SwipeableRow element with onDelete and enabled props', () => {
+      const onDeleteMock = jest.fn();
+      const element = React.createElement(SwipeableRow, {
+        onDelete: onDeleteMock,
+        enabled: true
+      });
+      expect(element).toBeDefined();
+      expect(element.props.onDelete).toBe(onDeleteMock);
+      expect(element.props.enabled).toBe(true);
+    });
+  });
+
+  describe('AssignmentsMonthCalendarCard', () => {
+    it('instantiates AssignmentsMonthCalendarCard with month navigation and date filter callbacks', () => {
+      const onSelectMock = jest.fn();
+      const onToggleMock = jest.fn();
+      const testDate = new Date(2026, 8, 12);
+      const colorMap = new Map<string, string[]>([['2026-09-15', ['#2470F5', '#10BA80']]]);
+
+      const element = React.createElement(AssignmentsMonthCalendarCard, {
+        selectedDate: testDate,
+        onSelectDate: onSelectMock,
+        isDateFilterActive: true,
+        onToggleDateFilter: onToggleMock,
+        itemDatesWithColors: colorMap
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.selectedDate).toBe(testDate);
+      expect(element.props.isDateFilterActive).toBe(true);
+      expect(element.props.itemDatesWithColors.get('2026-09-15')).toEqual(['#2470F5', '#10BA80']);
+    });
+  });
+
+  describe('DeadlinesCalendarCard', () => {
+    it('instantiates DeadlinesCalendarCard with week selection and date filter callbacks', () => {
+      const onSelectMock = jest.fn();
+      const onToggleMock = jest.fn();
+      const onSelectWeekMock = jest.fn();
+      const testDate = new Date(2026, 8, 16);
+      const colorMap = new Map<string, string[]>([['2026-09-16', ['#2470F5']]]);
+
+      const element = React.createElement(DeadlinesCalendarCard, {
+        selectedDate: testDate,
+        onSelectDate: onSelectMock,
+        isDateFilterActive: true,
+        onToggleDateFilter: onToggleMock,
+        itemDatesWithColors: colorMap,
+        onSelectWeek: onSelectWeekMock,
+        selectedWeekFilter: 3
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.selectedDate).toBe(testDate);
+      expect(element.props.selectedWeekFilter).toBe(3);
+      expect(element.props.onSelectWeek).toBe(onSelectWeekMock);
+    });
+
+    it('supports startWeekNumber={1} to stick to week 1 initially', () => {
+      const element = React.createElement(DeadlinesCalendarCard, {
+        selectedDate: new Date(2026, 8, 16),
+        onSelectDate: jest.fn(),
+        isDateFilterActive: false,
+        onToggleDateFilter: jest.fn(),
+        itemDatesWithColors: new Map(),
+        startWeekNumber: 1
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.startWeekNumber).toBe(1);
     });
   });
 });

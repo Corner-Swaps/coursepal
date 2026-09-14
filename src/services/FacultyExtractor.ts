@@ -95,6 +95,17 @@ export class FacultyExtractor {
       }
     }
 
+    // Fallback 2: Regex match directly on document text for inline patterns
+    if (!detectedName) {
+      const inlineMatch = rawText.match(/(?:Faculty(?:\s+Information)?|Instructor(?:\s+Information)?|Professor)\s*[:\-–]?\s*([A-Z][a-z]+(?:\s*[-–—]\s*[A-Z][a-z]+|\s+[A-Z][a-z]+){1,3})(?=\s*(?:Email|Phone|Office|E-mail|Credits|\n|$))/i);
+      if (inlineMatch && inlineMatch[1]) {
+        const clean = this.cleanFacultyName(inlineMatch[1]);
+        if (this.isValidFacultyName(clean)) {
+          detectedName = clean;
+        }
+      }
+    }
+
     return { name: detectedName, email: detectedEmail };
   }
 

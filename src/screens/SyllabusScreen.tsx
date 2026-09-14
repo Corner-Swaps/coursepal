@@ -38,12 +38,12 @@ import {
   ReadingDetailModal,
   UploadDocumentModal
 } from '../components/modals';
+import { formatShortDocumentTitle } from '../utils/readingDisplayHelper';
 import {
   formatDisplayTitleWithChapter,
   formatAuthorAndPagesSubtitle,
   parseSafeDate
 } from '../utils/readingDisplayHelper';
-import { GradeWeightTrackerCard } from '../components/GradeWeightTrackerCard';
 import { CalendarExportService } from '../services/CalendarExportService';
 
 interface SyllabusScreenProps {
@@ -140,6 +140,47 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
     );
   };
 
+  const renderSyllabusReadingRow = (reading: Reading, courseName?: string | null) => {
+    const dispTitle = formatDisplayTitleWithChapter(
+      reading,
+      undefined,
+      reading.resourceTitle,
+      courseName
+    );
+    const dispSub = formatAuthorAndPagesSubtitle(
+      reading,
+      undefined,
+      reading.resourceTitle,
+      dispTitle,
+      courseName
+    );
+    return (
+      <TouchableOpacity
+        key={reading.id}
+        style={styles.itemPillRow}
+        onPress={() => setEditingReading(reading)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.itemTitleText}>{dispTitle}</Text>
+        {dispSub.length > 0 && <Text style={styles.itemAuthorText}>{dispSub}</Text>}
+        {reading.dueDate && (() => {
+          const d = parseSafeDate(reading.dueDate);
+          if (!d) return null;
+          return (
+            <Text style={styles.itemDueText}>
+              Due{' '}
+              {d.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </Text>
+          );
+        })()}
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={styles.rootContainer}>
       <ScrollView
@@ -158,9 +199,9 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         {/* MARK: - Page Header */}
         <View style={styles.headerRow}>
           <View style={styles.headerLeftCol}>
-            <Text style={styles.pageTitle}>Syllabus</Text>
+            <Text style={styles.pageTitle}>Syllabi</Text>
             <Text style={styles.pageSubtitle}>
-              {vaultDocs.length} document{vaultDocs.length === 1 ? '' : 's'} stored in syllabus
+              {vaultDocs.length} document{vaultDocs.length === 1 ? '' : 's'} stored
             </Text>
           </View>
         </View>
@@ -220,11 +261,11 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
             <View style={styles.uploadStatusTop}>
               <ActivityIndicator size="small" color={CoursePalTheme.accentBlue} />
               <Text style={styles.uploadStatusTitle} numberOfLines={1}>
-                {uploadStatusText || 'Analyzing syllabus document...'}
+                {uploadStatusText || 'Reading your syllabus...'}
               </Text>
             </View>
             <Text style={styles.uploadStatusEducational}>
-              Deep analysis takes 1–2 minutes to extract all readings and assignments accurately. You can freely browse other sections or exit the app — processing will continue in the background.
+              This takes about a minute. Feel free to browse or close the app — we’ll finish up in the background.
             </Text>
           </View>
         )}
@@ -261,13 +302,23 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                     return d1 - d2;
                   });
 
-                // Group readings by week
+                // Group readings: partition into unassigned and week-grouped
+                const unassignedCourseReadings: Reading[] = [];
                 const readingsByWeek = new Map<number, Reading[]>();
                 for (const r of courseReadings) {
-                  const wNum = r.weekId ? parseInt(r.weekId.replace(/\D/g, '') || '1', 10) : 1;
-                  const list = readingsByWeek.get(wNum) || [];
-                  list.push(r);
-                  readingsByWeek.set(wNum, list);
+                  const isWeekOn = r.weekNumber !== undefined && r.weekNumber !== null
+                    ? r.weekNumber > 0
+                    : Boolean(r.weekId && r.weekId !== 'none' && /\d+/.test(r.weekId));
+                  if (!isWeekOn) {
+                    unassignedCourseReadings.push(r);
+                  } else {
+                    const m = r.weekNumber && r.weekNumber > 0
+                      ? r.weekNumber
+                      : parseInt(r.weekId!.match(/\d+/)![0], 10);
+                    const list = readingsByWeek.get(m) || [];
+                    list.push(r);
+                    readingsByWeek.set(m, list);
+                  }
                 }
                 const sortedWeeks = Array.from(readingsByWeek.keys()).sort((a, b) => a - b);
 
@@ -308,7 +359,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           activeOpacity={0.7}
                           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                         >
-                          <TrashIcon size={14} color="#D94033" />
+                          <TrashIcon size={15} color="#D94033" />
                         </TouchableOpacity>
 
                         {/* Expand / Collapse Chevron */}
@@ -319,9 +370,9 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}
                         >
                           {isExpanded ? (
-                            <ChevronUpIcon size={12} color="#596B85" />
+                            <ChevronUpIcon size={14} color="#596B85" />
                           ) : (
-                            <ChevronDownIcon size={12} color="#596B85" />
+                            <ChevronDownIcon size={14} color="#596B85" />
                           )}
                         </TouchableOpacity>
                       </View>
@@ -362,8 +413,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           </TouchableOpacity>
                         </View>
 
-                        {/* Grade Weight Tracker & Target Calculator */}
-                        <GradeWeightTrackerCard course={course} assignments={assignments} />
 
                         {/* Assignments Section */}
                         <View style={styles.sectionContainer}>
@@ -427,71 +476,36 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                         {/* Readings Section */}
                         <View style={styles.sectionContainer}>
                           <Text style={styles.sectionTitle}>Readings</Text>
-                          {sortedWeeks.length === 0 ? (
+                          {courseReadings.length === 0 ? (
                             <View style={styles.emptyItemsBox}>
                               <Text style={styles.emptyItemsText}>No readings in this course yet.</Text>
                             </View>
                           ) : (
-                            sortedWeeks.map(wNum => {
-                              const weekReadings = readingsByWeek.get(wNum) || [];
-                              return (
-                                <View key={`week-${wNum}`} style={styles.weekSectionBox}>
-                                  {/* Week Section Header */}
-                                  <View style={styles.weekSectionHeader}>
-                                    <View style={styles.weekTagPill}>
-                                      <Text style={styles.weekTagText}>Week {wNum}</Text>
-                                    </View>
-                                  </View>
-
-                                  {weekReadings.map(reading => {
-                                    const dispTitle = formatDisplayTitleWithChapter(
-                                      reading,
-                                      undefined,
-                                      reading.resourceTitle,
-                                      course.courseName
-                                    );
-                                    const dispSub = formatAuthorAndPagesSubtitle(
-                                      reading,
-                                      undefined,
-                                      reading.resourceTitle,
-                                      dispTitle,
-                                      course.courseName
-                                    );
-                                    return (
-                                      <TouchableOpacity
-                                        key={reading.id}
-                                        style={styles.itemPillRow}
-                                        onPress={() => setEditingReading(reading)}
-                                        activeOpacity={0.7}
-                                      >
-                                        <Text style={styles.itemTitleText}>
-                                          {dispTitle}
-                                        </Text>
-                                        {dispSub.length > 0 && (
-                                          <Text style={styles.itemAuthorText}>
-                                            {dispSub}
-                                          </Text>
-                                        )}
-                                      {reading.dueDate && (() => {
-                                        const d = parseSafeDate(reading.dueDate);
-                                        if (!d) return null;
-                                        return (
-                                          <Text style={styles.itemDueText}>
-                                            Due{' '}
-                                            {d.toLocaleDateString('en-US', {
-                                              weekday: 'long',
-                                              month: 'long',
-                                              day: 'numeric'
-                                            })}
-                                          </Text>
-                                        );
-                                      })()}
-                                    </TouchableOpacity>
-                                    );
-                                  })}
+                            <>
+                              {/* Non-week readings (when week toggle is turned off) */}
+                              {unassignedCourseReadings.length > 0 && (
+                                <View style={styles.unassignedReadingsBox}>
+                                  {unassignedCourseReadings.map(r => renderSyllabusReadingRow(r, course.courseName))}
                                 </View>
-                              );
-                            })
+                              )}
+
+                              {/* Week-grouped readings (when week toggle is turned on) */}
+                              {sortedWeeks.map(wNum => {
+                                const weekReadings = readingsByWeek.get(wNum) || [];
+                                return (
+                                  <View key={`week-${wNum}`} style={styles.weekSectionBox}>
+                                    {/* Week Section Header */}
+                                    <View style={styles.weekSectionHeader}>
+                                      <View style={styles.weekTagPill}>
+                                        <Text style={styles.weekTagText}>Week {wNum}</Text>
+                                      </View>
+                                    </View>
+
+                                    {weekReadings.map(r => renderSyllabusReadingRow(r, course.courseName))}
+                                  </View>
+                                );
+                              })}
+                            </>
                           )}
 
                           {/* Add Reading Action Pill */}
@@ -522,19 +536,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 </Text>
               </View>
             ) : (
-              <>
-                <TouchableOpacity
-                  style={styles.uploadDocBannerRow}
-                  onPress={() => handleOpenUpload()}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.uploadDocBannerIcon}>
-                    <DocBadgePlusIcon size={16} color="#2563EB" />
-                  </View>
-                  <Text style={styles.uploadDocBannerText}>Upload Another Syllabus Document</Text>
-                </TouchableOpacity>
-
-                {vaultDocs.map(doc => {
+              vaultDocs.map(doc => {
                 return (
                   <View key={doc.id} style={styles.docCard}>
                     <TouchableOpacity
@@ -548,10 +550,10 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
 
                       <View style={styles.docInfoCol}>
                         <Text style={styles.docTitle} numberOfLines={1}>
-                          {doc.title}
+                          {formatShortDocumentTitle(doc.title)}
                         </Text>
                         <Text style={styles.docSubtitle} numberOfLines={1}>
-                          {doc.courseCode || 'General'} • {doc.fileSize} • {doc.fileType}
+                          {doc.courseCode || 'Course Syllabus'}
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -561,8 +563,9 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                       style={styles.eyePreviewButton}
                       onPress={() => setPreviewDoc(doc)}
                       activeOpacity={0.7}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     >
-                      <EyeFillIcon size={15} color={CoursePalTheme.accentBlue} />
+                      <EyeFillIcon size={17} color={CoursePalTheme.accentBlue} />
                     </TouchableOpacity>
 
                     {/* Delete Button */}
@@ -570,15 +573,15 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                       style={styles.deleteDocButton}
                       onPress={() => confirmDeleteDoc(doc)}
                       activeOpacity={0.7}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     >
                       <TrashIcon size={15} color="#D94033" />
                     </TouchableOpacity>
                   </View>
                 );
-              })}
-            </>
-          )}
-        </View>
+              })
+            )}
+          </View>
         )}
       </ScrollView>
 
@@ -919,18 +922,19 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '700',
     color: '#141F38',
+    lineHeight: 19,
     letterSpacing: -0.2
   },
   courseSubtitleText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
     color: '#596B85',
-    marginTop: 1
+    marginTop: 2
   },
   courseStatsSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
-    color: '#8A99AD',
+    color: '#596B85',
     marginTop: 2
   },
   cardActionsRow: {
@@ -939,8 +943,8 @@ const styles = StyleSheet.create({
     gap: 6
   },
   actionIconButton: {
-    width: 30,
-    height: 30,
+    width: 29,
+    height: 29,
     borderRadius: 8,
     backgroundColor: '#F2F5FA',
     borderWidth: 1,
@@ -973,9 +977,12 @@ const styles = StyleSheet.create({
     gap: 8
   },
   sectionTitle: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#596B85'
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#596B85',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4
   },
   facultyDetailsCard: {
     backgroundColor: '#F8FAFC',
@@ -1038,17 +1045,18 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   itemTitleText: {
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
-    color: '#141F38'
+    color: '#384761',
+    lineHeight: 19
   },
   itemAuthorText: {
-    fontSize: 12.5,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '400',
     color: '#596B85'
   },
   itemDueText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#596B85'
   },
   addItemActionPill: {
@@ -1072,6 +1080,10 @@ const styles = StyleSheet.create({
   emptyItemsText: {
     fontSize: 12,
     color: '#596B85'
+  },
+  unassignedReadingsBox: {
+    gap: 6,
+    marginTop: 4
   },
   weekSectionBox: {
     gap: 6,
@@ -1116,28 +1128,35 @@ const styles = StyleSheet.create({
     flex: 1
   },
   docTitle: {
-    fontSize: 13.5,
+    fontSize: 14.5,
     fontWeight: '700',
-    color: '#141F38'
+    color: '#141F38',
+    lineHeight: 19,
+    letterSpacing: -0.2
   },
   docSubtitle: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
     color: '#596B85',
     marginTop: 2
   },
   eyePreviewButton: {
-    width: 32,
-    height: 32,
+    width: 29,
+    height: 29,
     borderRadius: 8,
-    backgroundColor: 'rgba(36, 112, 245, 0.10)',
+    backgroundColor: '#F2F5FA',
+    borderWidth: 1,
+    borderColor: '#E3E8F0',
     alignItems: 'center',
     justifyContent: 'center'
   },
   deleteDocButton: {
-    width: 32,
-    height: 32,
+    width: 29,
+    height: 29,
     borderRadius: 8,
+    backgroundColor: '#F2F5FA',
+    borderWidth: 1,
+    borderColor: '#E3E8F0',
     alignItems: 'center',
     justifyContent: 'center'
   },

@@ -109,7 +109,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
               selectedTab === 'syllabus' ? styles.tabLabelActive : styles.tabLabelInactive
             ]}
           >
-            Syllabus
+            Syllabi
           </Text>
         </TouchableOpacity>
 

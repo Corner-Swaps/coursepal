@@ -98,4 +98,68 @@ describe('CourseSharingService URL Codecs', () => {
     expect(service.decodeCourse('')).toBeNull();
     expect(service.decodeCourse('corrupted_gibberish_string_not_valid_json_or_zlib')).toBeNull();
   });
+
+  it('correctly serializes a full Course model with Date objects and converts to CourseDTO payload', () => {
+    const fullCourse = {
+      id: 'c-local-phone-a',
+      creatorId: 'phone-a-user',
+      courseName: 'Bioethics & Law',
+      courseCode: 'BIO 400',
+      courseDescription: 'Legal and ethical analysis of medical frontiers.',
+      instructorName: 'Prof. Miller',
+      instructorEmail: 'miller@law.edu',
+      hexColor: '#2470F5',
+      termWeeks: 10,
+      sharingCode: '772183',
+      isDeleted: false,
+      isFavorite: true,
+      createdAt: new Date('2026-09-01T12:00:00Z'),
+      weeks: [
+        {
+          id: 'w-1',
+          weekNumber: 1,
+          theme: 'Foundations of Autonomy',
+          startDate: new Date('2026-09-07T00:00:00Z'),
+          readings: [
+            {
+              id: 'r-1',
+              title: 'Chapter 1: The Belmont Report',
+              chapterText: 'Chapter 1',
+              mediaType: 'textbook',
+              isCompleted: false,
+              isDeleted: false,
+              summaryText: 'Historical foundations.',
+              keyTakeawaysText: 'Three ethical pillars.',
+              estimatedTimeText: '~30 min',
+              dueDate: new Date('2026-09-10T23:59:00Z')
+            }
+          ]
+        }
+      ],
+      assignments: [
+        {
+          id: 'a-1',
+          title: 'Case Analysis: Gene Editing Ethics',
+          dueDate: new Date('2026-09-18T23:59:00Z'),
+          fullInstructions: 'Write a 4-page briefing paper.',
+          pointsPossible: '100 Points',
+          weightPercentage: '20%',
+          isCompleted: false,
+          isDeleted: false
+        }
+      ],
+      syllabusDocs: []
+    };
+
+    const shareUrl = service.generateShareLink(fullCourse);
+    expect(shareUrl).toContain('https://classpal.app/join?code=772183&data=');
+
+    // Phone B decodes the link:
+    const decodedOnPhoneB = service.decodeCourse(shareUrl);
+    expect(decodedOnPhoneB).not.toBeNull();
+    expect(decodedOnPhoneB?.courseName).toBe('Bioethics & Law');
+    expect(decodedOnPhoneB?.courseCode).toBe('BIO 400');
+    expect(decodedOnPhoneB?.weeks?.[0].readings?.[0].title).toBe('Chapter 1: The Belmont Report');
+    expect(decodedOnPhoneB?.assignments?.[0].title).toBe('Case Analysis: Gene Editing Ethics');
+  });
 });

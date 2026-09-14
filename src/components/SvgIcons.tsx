@@ -118,7 +118,7 @@ export const CheckmarkCircleFillIcon: React.FC<IconProps> = ({ size = 18, color 
   </Svg>
 );
 
-export const TrashIcon: React.FC<IconProps> = ({ size = 17, color = '#D94033' }) => (
+export const TrashIcon: React.FC<IconProps> = ({ size = 15, color = '#D94033' }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     <Line x1="10" y1="11" x2="10" y2="17" stroke={color} strokeWidth="2" strokeLinecap="round" />
@@ -176,6 +176,35 @@ export const ShieldLockIcon: React.FC<IconProps> = ({ size = 18, color = '#2470F
     <Path d="M12 2L4 6v6c0 5.5 3.5 10.5 8 12 4.5-1.5 8-6.5 8-12V6l-8-4z" fill={color} opacity={0.15} />
     <Path d="M12 2L4 6v6c0 5.5 3.5 10.5 8 12 4.5-1.5 8-6.5 8-12V6l-8-4z" stroke={color} strokeWidth="2" strokeLinejoin="round" />
     <Path d="M12 2v20c4.5-1.5 8-6.5 8-12V6l-8-4z" fill={color} />
+  </Svg>
+);
+
+export const ShieldCheckmarkIcon: React.FC<IconProps & { innerColor?: string }> = ({
+  size = 18,
+  color = '#FFFFFF',
+  innerColor = '#2470F5'
+}) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M12 2L4 5.5v6.5c0 5.3 3.4 10.2 8 11.5 4.6-1.3 8-6.2 8-11.5V5.5L12 2z"
+      fill={color}
+    />
+    <Path
+      d="M9 12.2l2.3 2.3 4.7-4.7"
+      stroke={innerColor}
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+export const StarFillIcon: React.FC<IconProps> = ({ size = 18, color = '#FFFFFF' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+      fill={color}
+    />
   </Svg>
 );
 

@@ -13,12 +13,14 @@ export * from './FuzzedScrollMask';
 export * from './SoundscapeWaveVisualizer';
 export * from './PrecisionSlider';
 export * from './BottomSheetPanContainer';
+export * from './SwipeableRow';
 export * from './SlideUpModal';
 export * from './ScreenContainer';
 export * from './DeadlinesCalendarCard';
+export * from './AssignmentsMonthCalendarCard';
 export * from './GradeWeightTrackerCard';
 export * from './InlineCalendarPicker';
 export * from './SvgIcons';
 export * from './modals';
 
-export const UI_COMPONENTS_VERSION = '1.4.0';
+export const UI_COMPONENTS_VERSION = '1.4.1';
