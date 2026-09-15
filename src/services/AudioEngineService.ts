@@ -83,7 +83,7 @@ class AudioService implements AudioProvider {
         await this.avModule.Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
           playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
+          staysActiveInBackground: false,
           interruptionModeIOS: 2, // DuckOthers
           shouldDuckAndroid: true,
           interruptionModeAndroid: 2,

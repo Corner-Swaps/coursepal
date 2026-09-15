@@ -17,27 +17,28 @@ describe('Phase 4: Native Audio Engine, Haptic Smoothing & Background Execution'
   });
 
   describe('Audio Session & Background Audio Capabilities', () => {
-    it('verifies CoursePal/Info.plist contains UIBackgroundModes with audio', () => {
+    it('verifies CoursePal/Info.plist does not declare audio in UIBackgroundModes (Guideline 2.5.4)', () => {
       const plistPath = fs.existsSync(path.join(__dirname, '../ios/CoursePal/Info.plist'))
         ? path.join(__dirname, '../ios/CoursePal/Info.plist')
         : path.join(__dirname, '../CoursePal/Info.plist');
       expect(fs.existsSync(plistPath)).toBe(true);
       const content = fs.readFileSync(plistPath, 'utf8');
 
-      expect(content.includes('<key>UIBackgroundModes</key>')).toBe(true);
-      expect(content.includes('<string>audio</string>')).toBe(true);
+      expect(content.includes('<key>UIBackgroundModes</key>')).toBe(false);
+      expect(content.includes('<string>audio</string>')).toBe(false);
     });
 
-    it('verifies app.json contains Expo background audio entitlement', () => {
+    it('verifies app.json does not declare background audio entitlement (Guideline 2.5.4)', () => {
       const appJsonPath = path.join(__dirname, '../app.json');
       expect(fs.existsSync(appJsonPath)).toBe(true);
       const appConfig = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
 
-      expect(appConfig.expo.ios.infoPlist.UIBackgroundModes).toContain('audio');
+      expect(appConfig.expo.ios.infoPlist.UIBackgroundModes).toBeUndefined();
       expect(appConfig.expo.ios.bundleIdentifier).toBe('com.coursepal.app');
+      expect(appConfig.expo.ios.buildNumber).toBe('3');
     });
 
-    it('configures audio session with background playback and ducking', async () => {
+    it('configures audio session cleanly without requiring background audio entitlement', async () => {
       await audio.configureAudioSession();
       // Audio session method executes cleanly without throwing
       expect(audio).toBeDefined();

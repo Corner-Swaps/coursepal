@@ -18,8 +18,7 @@ import { CoursePalProvider, useCoursePal, TabKey } from './context/CoursePalCont
 import {
   MainTabBar,
   ConfettiCelebration,
-  FuzzedScrollBottomFade,
-  ImportStatusBanner
+  FuzzedScrollBottomFade
 } from './components';
 import {
   ReadingsScreen,
@@ -58,9 +57,7 @@ function MainAppView() {
     uploadStatusText,
     hasAcceptedTerms,
     hasLoadedTerms,
-    acceptTerms,
-    importBanner,
-    dismissImportBanner
+    acceptTerms
   } = useCoursePal();
 
   // Modals state
@@ -282,19 +279,6 @@ function MainAppView() {
           particleCount={50}
           onAnimationComplete={dismissConfetti}
         />
-
-        {/* MARK: - Diagnostic Import Status Banner Overlay */}
-        {Boolean(importBanner) && (
-          <View
-            style={[styles.floatingBannerContainer, { top: insets.top + 8 }]}
-            pointerEvents="box-none"
-          >
-            <ImportStatusBanner
-              banner={importBanner}
-              onDismiss={dismissImportBanner}
-            />
-          </View>
-        )}
       </View>
     </View>
   );
@@ -333,11 +317,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 50
-  },
-  floatingBannerContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 999
   }
 });

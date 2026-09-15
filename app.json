@@ -13,10 +13,8 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.coursepal.app",
+      "buildNumber": "3",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "audio"
-        ],
         "NSCameraUsageDescription": "CoursePal needs camera access so you can scan physical syllabus documents to build your course schedule automatically.",
         "NSPhotoLibraryUsageDescription": "CoursePal needs photo library access to import syllabus images.",
         "NSCalendarsFullAccessUsageDescription": "CoursePal needs calendar access to schedule assignment due dates and reading schedules into your Apple Calendar.",

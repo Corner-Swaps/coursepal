@@ -1569,33 +1569,6 @@ Output ONLY valid JSON.`;
         });
       }
 
-      // Configure truthful UI status banner
-      let bannerType: 'success' | 'warning' | 'info' | 'error' = 'info';
-      let bannerTitle = '';
-      let bannerMessage = outcomeDetails.message;
-
-      if (!outcomeDetails.success) {
-        bannerType = 'error';
-        bannerTitle = 'Import failed';
-      } else if (isFallbackUsed) {
-        bannerType = 'warning';
-        bannerTitle = `Local fallback used: ${apiError || 'Server AI unavailable'}`;
-        bannerMessage = `Extracted ${newReadings.length} readings & ${newAssignments.length} assignments offline.`;
-      } else if (normalized.isPartial) {
-        bannerType = 'warning';
-        bannerTitle = 'Partial extraction—review needed';
-      } else {
-        bannerType = 'success';
-        bannerTitle = 'AI extraction completed';
-      }
-
-      setImportBanner({
-        type: bannerType,
-        title: bannerTitle,
-        message: bannerMessage,
-        diagnosticRecord: diagRecord
-      });
-
       setUploadProgress(1.0);
       setIsUploading(false);
       setUploadStatusText('');
@@ -1634,12 +1607,6 @@ Output ONLY valid JSON.`;
         timestamp: new Date().toISOString()
       };
       setLatestDiagnosticRecord(errDiag);
-      setImportBanner({
-        type: 'error',
-        title: 'Import failed',
-        message: err.message || 'Failed to parse syllabus document.',
-        diagnosticRecord: errDiag
-      });
 
       return {
         success: false,
