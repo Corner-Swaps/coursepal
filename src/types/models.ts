@@ -146,6 +146,7 @@ export interface CourseDTO {
   dataExtractionStats?: ExtractionStatsDTO | null;
   isFavorite?: boolean | null;
   chatHistoryJSON?: string | null;
+  externalScheduleNotice?: string | null;
 }
 
 export interface Course {
@@ -162,6 +163,7 @@ export interface Course {
   isDeleted: boolean;
   isFavorite: boolean;
   chatHistoryJSON?: string | null;
+  externalScheduleNotice?: string | null;
   createdAt: Date;
   weeks: Week[];
   assignments: Assignment[];

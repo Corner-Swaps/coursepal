@@ -189,6 +189,18 @@ export class LocalSyllabusParser {
     const sharingCode = Math.floor(100000 + Math.random() * 900000).toString();
     const facultyInfo = FacultyExtractor.extractFaculty(rawText);
 
+    let externalScheduleNotice: string | null = null;
+    for (const line of reconstitutedLines) {
+      if (
+        /(?:course schedule|schedule).*(?:posted|provided|available|distributed|uploaded).*(?:separate document|brightspace|canvas|moodle|blackboard)/i.test(line) ||
+        /(?:separate document|brightspace|canvas|moodle|blackboard).*(?:course schedule|schedule)/i.test(line) ||
+        /^NOTE:\s*Course schedule will be posted/i.test(line)
+      ) {
+        externalScheduleNotice = line.trim();
+        break;
+      }
+    }
+
     return {
       id: `course-${Math.random().toString(36).substring(2, 10)}`,
       creatorId: 'local-user',
@@ -201,7 +213,8 @@ export class LocalSyllabusParser {
       weeks: paddedWeeks,
       assignments,
       items: synthesizedItems,
-      textbooks: textbookCatalog
+      textbooks: textbookCatalog,
+      externalScheduleNotice
     };
   }
 
