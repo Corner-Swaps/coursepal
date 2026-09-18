@@ -184,19 +184,29 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
                 </Text>
               </View>
 
-              {/* Section 6: Intellectual Property & Fair Use */}
+              {/* Section 6: Intellectual Property & Fair Dealing */}
               <View style={styles.legalCard}>
-                <Text style={styles.cardHeader}>6. INTELLECTUAL PROPERTY & FAIR USE</Text>
+                <Text style={styles.cardHeader}>6. INTELLECTUAL PROPERTY & CANADIAN FAIR DEALING</Text>
                 <Text style={styles.cardBody}>
-                  CoursePal is designed solely for personal, non-commercial academic study and organization. Uploading course documents for personal schedule organization constitutes Fair Dealing and Fair Use (17 U.S.C. § 107). Syllabus documents remain the intellectual property of their respective creators and institutions.
+                  CoursePal is designed strictly for personal, non-commercial educational study and time management. Uploading and organizing your course materials constitutes Fair Dealing for Education and Private Study under Section 29 of the Copyright Act of Canada (R.S.C., 1985, c. C-42) and Fair Use (17 U.S.C. § 107) in the United States. Syllabi and course materials remain the intellectual property of their respective instructors and institutions.
                 </Text>
               </View>
 
               {/* Section 7: Governing Law */}
               <View style={styles.legalCard}>
-                <Text style={styles.cardHeader}>7. GOVERNING LAW & SEVERABILITY</Text>
+                <Text style={styles.cardHeader}>7. GOVERNING LAW & JURISDICTION</Text>
                 <Text style={styles.cardBody}>
-                  These Terms are governed by and construed in accordance with applicable laws. If any provision of these Terms is found to be unenforceable, the remaining provisions shall remain in full force and effect.
+                  These Terms are governed by and construed in accordance with the laws of the Province of British Columbia and the federal laws of Canada applicable therein. Any dispute arising under these Terms shall be resolved exclusively within the courts of British Columbia, Canada.
+                </Text>
+              </View>
+
+              {/* Section 8: Copyright Agent & Notice-and-Notice */}
+              <View style={styles.legalCard}>
+                <Text style={styles.cardHeader}>8. COPYRIGHT AGENT & NOTICE-AND-NOTICE</Text>
+                <Text style={styles.cardBody}>
+                  For copyright inquiries, notifications under Canada&apos;s Notice-and-Notice regime, or DMCA safe harbor communications, please contact our designated representative:{'\n'}
+                  Email: legal@coursepal.app{'\n'}
+                  CoursePal Legal & Compliance (Vancouver, BC, Canada)
                 </Text>
               </View>
             </>
