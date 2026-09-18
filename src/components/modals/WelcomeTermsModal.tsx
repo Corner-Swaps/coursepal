@@ -133,7 +133,7 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
 
             {/* Micro Legal Caption */}
             <Text style={styles.microLegalCaption}>
-              By tapping Agree & Continue, you acknowledge our Terms of Service & Privacy Policy.
+              By tapping Agree & Continue, you confirm you are at least 13 years old and agree to our Terms of Service & Privacy Policy.
             </Text>
 
             {/* Full Terms & Privacy Reader In-Modal Sheet */}
