@@ -9,8 +9,7 @@ import {
   SafeAreaView
 } from 'react-native';
 import {
-  RectangleInsetTopLeftFilledIcon,
-  CheckmarkCircleFillIcon
+  RectangleInsetTopLeftFilledIcon
 } from '../SvgIcons';
 
 interface WidgetGuideModalProps {
@@ -97,48 +96,6 @@ export const WidgetGuideModal: React.FC<WidgetGuideModalProps> = ({
                   Scroll or search for <Text style={styles.boldText}>CoursePal</Text> (or ClassPal Deadlines) in the list of widgets.
                 </Text>
               </View>
-            </View>
-
-            <View style={styles.stepDivider} />
-
-            {/* Step 4 */}
-            <View style={styles.stepRow}>
-              <View style={styles.stepBadge}>
-                <Text style={styles.stepBadgeText}>4</Text>
-              </View>
-              <View style={styles.stepContent}>
-                <Text style={styles.stepTitle}>Choose Size & Add</Text>
-                <Text style={styles.stepDesc}>
-                  Swipe to choose between <Text style={styles.boldText}>Small</Text> (priority deadline) or <Text style={styles.boldText}>Medium</Text> (upcoming deadlines overview), then tap <Text style={styles.boldText}>Add Widget</Text>.
-                </Text>
-
-              </View>
-            </View>
-          </View>
-
-          {/* Features highlight */}
-          <Text style={styles.sectionHeader}>WIDGET HIGHLIGHTS</Text>
-
-          <View style={styles.highlightsCard}>
-            <View style={styles.highlightItem}>
-              <CheckmarkCircleFillIcon size={18} color="#2EB866" />
-              <Text style={styles.highlightText}>
-                <Text style={styles.boldText}>Edge-to-Edge Pure White:</Text> Clean, minimalist look on any wallpaper.
-              </Text>
-            </View>
-
-            <View style={styles.highlightItem}>
-              <CheckmarkCircleFillIcon size={18} color="#2EB866" />
-              <Text style={styles.highlightText}>
-                <Text style={styles.boldText}>Instant Sync:</Text> Automatically updates whenever you check off assignments or import new syllabi.
-              </Text>
-            </View>
-
-            <View style={styles.highlightItem}>
-              <CheckmarkCircleFillIcon size={18} color="#2EB866" />
-              <Text style={styles.highlightText}>
-                <Text style={styles.boldText}>100% Private:</Text> Runs locally on your device without transmitting schedule data.
-              </Text>
             </View>
           </View>
 
@@ -302,31 +259,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     marginVertical: 12,
     marginLeft: 42
-  },
-  highlightsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 28,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2
-  },
-  highlightItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10
-  },
-  highlightText: {
-    fontSize: 13,
-    color: '#475569',
-    lineHeight: 18,
-    flex: 1
   },
   actionButton: {
     backgroundColor: '#2470F5',

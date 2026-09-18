@@ -22,14 +22,6 @@ export const ConfettiPhysics = {
   cullingMargin: 40
 } as const;
 
-export const NeuralProjectionConstants = {
-  vectorDimension: 64,
-  matrixRows: 300,
-  initialSeed: 42n,
-  lcgMultiplier: 6364136223846793005n,
-  lcgIncrement: 1442695040888963407n
-} as const;
-
 export const AnimationCurves = {
   springStandard: { damping: 0.8, response: 0.3 },
   springValidation: { damping: 0.8, response: 0.45 },

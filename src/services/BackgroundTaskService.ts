@@ -2,33 +2,39 @@ import { NativeModules, Platform } from 'react-native';
 
 const BackgroundTaskManager = NativeModules?.BackgroundTaskManager;
 
+let androidTaskCounter = 1000;
+
 /**
- * Requests iOS background execution time for critical operations like syllabus upload.
- * Keeps JS thread, file I/O, and network alive for up to 30 seconds when app is minimized.
+ * Requests background execution time for critical operations like syllabus upload.
+ * Keeps JS thread, file I/O, and network alive when app is minimized.
  */
 export async function beginBackgroundTask(name: string): Promise<number | null> {
-  if (Platform.OS !== 'ios' || !BackgroundTaskManager) {
-    return null;
+  if (BackgroundTaskManager?.beginBackgroundTask) {
+    try {
+      const id = await BackgroundTaskManager.beginBackgroundTask(name);
+      return typeof id === 'number' ? id : null;
+    } catch (err) {
+      console.warn('Failed to begin native background task:', err);
+    }
   }
-  try {
-    const id = await BackgroundTaskManager.beginBackgroundTask(name);
-    return typeof id === 'number' ? id : null;
-  } catch (err) {
-    console.warn('Failed to begin background task:', err);
-    return null;
+
+  // Graceful fallback for Android / Expo environment
+  if (Platform.OS === 'android') {
+    return ++androidTaskCounter;
   }
+
+  return null;
 }
 
 /**
- * Signals to iOS that the background task is complete.
+ * Signals that the background task is complete.
  */
 export async function endBackgroundTask(name: string): Promise<void> {
-  if (Platform.OS !== 'ios' || !BackgroundTaskManager) {
-    return;
-  }
-  try {
-    await BackgroundTaskManager.endBackgroundTask(name);
-  } catch (err) {
-    console.warn('Failed to end background task:', err);
+  if (BackgroundTaskManager?.endBackgroundTask) {
+    try {
+      await BackgroundTaskManager.endBackgroundTask(name);
+    } catch (err) {
+      console.warn('Failed to end native background task:', err);
+    }
   }
 }

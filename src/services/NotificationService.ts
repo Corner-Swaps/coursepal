@@ -341,12 +341,12 @@ export class NotificationService {
   }
 
   /**
-   * Triggers native WidgetKit timeline reload if running on iOS.
+   * Triggers native WidgetKit (iOS) or AppWidget (Android) timeline reload if native module is linked.
    */
   public async reloadWidgetTimelines(): Promise<boolean> {
     try {
-      const { NativeModules, Platform } = require('react-native');
-      if (Platform.OS === 'ios' && NativeModules?.CoursePalWidgetManager?.reloadTimelines) {
+      const { NativeModules } = require('react-native');
+      if (NativeModules?.CoursePalWidgetManager?.reloadTimelines) {
         await NativeModules.CoursePalWidgetManager.reloadTimelines();
         return true;
       }

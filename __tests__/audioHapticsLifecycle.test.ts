@@ -121,21 +121,26 @@ describe('Phase 4: Native Audio Engine, Haptic Smoothing & Background Execution'
 
     it('throttles rapid selection haptic bursts within minIntervalMs (40ms)', async () => {
       const selectionSpy = jest.spyOn(haptics, 'selection');
+      let simulatedTime = 10000;
+      const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => simulatedTime);
 
       // First call should trigger
       await haptics.throttledSelection(40);
       expect(selectionSpy).toHaveBeenCalledTimes(1);
 
       // Immediate subsequent calls within 40ms should be dropped
+      simulatedTime += 10;
       await haptics.throttledSelection(40);
+      simulatedTime += 10;
       await haptics.throttledSelection(40);
       expect(selectionSpy).toHaveBeenCalledTimes(1);
 
-      // Wait 50ms (> 40ms interval)
-      await new Promise((resolve) => setTimeout(resolve, 55));
+      // Advance simulated time past 40ms interval
+      simulatedTime += 50;
       await haptics.throttledSelection(40);
       expect(selectionSpy).toHaveBeenCalledTimes(2);
 
+      nowSpy.mockRestore();
       selectionSpy.mockRestore();
     });
 

@@ -68,7 +68,7 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
   // Filter assignments & readings for this course
   const courseCodeKey = (course.courseCode || course.courseName).toLowerCase();
   const courseAssignments = assignments
-    .filter(a => !a.isDeleted && (a.courseId === course.id || (a.courseCode || '').toLowerCase() === courseCodeKey))
+    .filter(a => !a.isDeleted && (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === courseCodeKey))
     .sort((a, b) => {
       const d1 = a.dueDate ? new Date(a.dueDate).getTime() : 0;
       const d2 = b.dueDate ? new Date(b.dueDate).getTime() : 0;
@@ -76,7 +76,7 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
     });
 
   const courseReadings = readings
-    .filter(r => !r.isDeleted && (r.courseCode || '').toLowerCase() === courseCodeKey);
+    .filter(r => !r.isDeleted && (r.courseId ? r.courseId === course.id : (r.courseCode || '').toLowerCase() === courseCodeKey));
 
   const handleSave = () => {
     const cleanName = courseName.trim();
@@ -249,15 +249,22 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
             <Text style={styles.sectionHeaderTitle}>Readings</Text>
             <View style={styles.sectionCard}>
               {courseReadings.map(reading => {
+                const matchedWeek = reading.weekNumber
+                  ? (course.weeks || []).find(w => w.weekNumber === reading.weekNumber)
+                  : null;
+                const readingWithTopic = {
+                  ...reading,
+                  relevantTopics: reading.relevantTopics || matchedWeek?.theme || undefined
+                };
                 const dispTitle = formatDisplayTitleWithChapter(
-                  reading,
-                  undefined,
+                  readingWithTopic,
+                  reading.chapterText,
                   reading.resourceTitle,
                   course.courseName
                 );
                 const dispSub = formatAuthorAndPagesSubtitle(
-                  reading,
-                  undefined,
+                  readingWithTopic,
+                  reading.pagesText,
                   reading.resourceTitle,
                   dispTitle,
                   course.courseName

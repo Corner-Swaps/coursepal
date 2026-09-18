@@ -44,13 +44,11 @@ src/
 │   ├── DataPersistenceBackupManager.ts # Encrypted JSON state snapshots & migration
 │   ├── FacultyExtractor.ts  # Academic faculty name, email, and contact parsing
 │   ├── HapticsService.ts    # Throttled 60Hz CoreHaptics impact and notification engine
-│   ├── LocalSyllabusParser.ts # Offline regex & heuristic document extraction engine
-│   ├── NeuralDocumentService.ts # On-device 64-D random projection semantic text search
-│   └── StorageService.ts    # Secure AsyncStorage persistence layer
+│   └── LocalSyllabusParser.ts # Offline regex & heuristic document extraction engine
 │
 ├── hooks/                   # Custom React Hooks
 │   ├── useAudio.ts          # Audio playback lifecycle & volume fading
-│   ├── useHaptics.ts        # Throttled tactile feedback triggers
+│   ├── useScreenGeometry.ts # Dynamic Island, Notch, and responsive safe area calculus
 │   └── useTimer.ts          # Pomodoro study timer with wall-clock background synchronization
 │
 ├── constants/               # Physics & Styling Systems
@@ -63,7 +61,7 @@ src/
 │   └── index.ts             # Master domain type barrel
 │
 └── utils/                   # Mathematics & Helper Functions
-    ├── mathPhysics.ts       # Parabolic gravity, cosine similarity & 64-D projection math
+    ├── mathPhysics.ts       # Parabolic gravity, confetti trajectory & alpha decay physics
     ├── soundCatalog.ts      # Catalog of 5 curated ambient soundscape tracks
     └── timeFormatters.ts    # Academic term start dates, due date calculus, and timers
 ```
@@ -75,7 +73,7 @@ src/
 1. **Local-First Privacy**: All courses, assignments, student notes, and reading checklists persist in the local device sandbox (`AsyncStorage`). No login walls or tracking.
 2. **Zero-Latency Navigation**: The 4 primary screens reside in an alive `ZStack` layout in [`src/App.tsx`](App.tsx). Switching tabs produces zero layout reflow or network latency.
 3. **Apple Human Interface Guidelines (HIG)**: Slide-up modal sheets, spring damping physics, and quantized haptic sliders mimic first-party iOS system behavior.
-4. **On-Device Semantic Search**: [`NeuralDocumentService`](services/NeuralEngineService.ts) runs a 64-dimensional random projection matrix to compute semantic cosine similarities for syllabus and chapter search without external dependencies.
+4. **On-Device Intelligence**: On-device Apple Vision Neural OCR (`VNRecognizeTextRequest`) and deterministic layout parsing extract course schedules from syllabi privately without external dependencies.
 
 ---
 

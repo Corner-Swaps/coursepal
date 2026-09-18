@@ -3,6 +3,8 @@
  * Enables instant offline syllabus imports, live document simulation, and automated testing.
  */
 
+import cityuSyllabi from './cityu_syllabi_texts.json';
+
 export interface BundledSyllabusItem {
   id: string;
   courseCode: string;
@@ -18,6 +20,78 @@ export interface BundledSyllabusItem {
 
 export const BundledSyllabiCatalog: BundledSyllabusItem[] = [
   {
+    id: 'psyc-612',
+    courseCode: 'PSYC 612',
+    courseName: 'Advanced Cognitive Behavioural Interventions',
+    instructorName: 'Dr. Aris Thorne, Ph.D., R.Psych.',
+    instructorEmail: 'athorne@appliedpsych.edu',
+    department: 'Department of Applied Psychology & Behavioural Sciences',
+    fileName: 'PSYC612_Advanced_CBT_Interventions.pdf',
+    fileSize: '410 KB',
+    hexColor: '#4F46E5',
+    rawText: `COURSE SYLLABUS & SCHEMA
+PSYC 612: Advanced Cognitive Behavioural Interventions
+Department of Applied Psychology & Behavioural Sciences • Graduate Studies
+INSTRUCTOR
+Dr. Aris Thorne, Ph.D., R.Psych.
+athorne@appliedpsych.edu
+COURSE DETAILS
+Credits: 3.0
+Grading: Decimal / Percentage
+Term: Fall 2026
+OFFICE HOURS
+Tuesdays 2:00 PM – 4:00 PM PST
+Virtual Clinical Supervision Suite
+
+COURSE CATALOG DESCRIPTION
+This graduate-level seminar provides a rigorous, experiential examination of cognitive-behavioral interventions with a core emphasis on contemporary third-wave modalities, including Acceptance and Commitment Therapy (ACT), Dialectical Behaviour Therapy (DBT) core skills, and standard Beckian longitudinal case conceptualization. Students will participate actively as both clinicians and reflective peers through clinical role-plays, dyadic live demonstrations, exposure protocol design, and behavioural experiment construction.
+
+PROGRAM LEARNING OUTCOMES & ETHICAL STANDARDS
+• PLO 1 (Clinical Formulation): Synthesize presenting psychological symptomatology into comprehensive, culturally-responsive cognitive case conceptualizations.
+• PLO 2 (Intervention Execution): Demonstrate therapeutic attunement, cognitive restructuring, defusion techniques, and distress tolerance training in clinical simulations.
+• PLO 3 (Supervisory Reflexivity): Conduct structured peer supervision using validated evaluative frameworks while recognizing transference and power dynamics.
+• PLO 4 (Ethical Boundaries): Apply jurisdictional legal standards and professional ethics codes governing client privacy, risk mitigation, and documented consent.
+
+COURSE ASSIGNMENTS & GRADING SUMMARY
+ASSESSMENT TITLE WEIGHT TARGET DUE DELIVERABLE FORMAT
+Comprehensive Clinical Case Formulation 35% Module 05 7–9 Page Formal Report (APA 7th)
+Simulated Dyadic Clinical Demonstration 30% Modules 07–08 45-Minute Live Simulation & Recording
+Critical Peer Supervision & Consultation 15% Module 09 Structured CTRS Evaluation Matrix
+Seminar Engagement & Clinical Reflexivity 20% Continuous Weekly Prompts & 2-Page Reflection Log
+Total Course Assessment 100% End of Term Cumulative Decimal Grade Scale
+PSYC 612: Advanced Cognitive Behavioural Interventions — Syllabus 1
+
+DETAILED ASSIGNMENT REQUIREMENTS
+1. Comprehensive Clinical Case Formulation (35%)
+Students select an assigned complex client dossier and formulate a biopsychosocial assessment and Beckian longitudinal diagram. Submissions must detail predispositions, precipitating stressors, maintenance cycles, and an evidence-informed 12-week stepped-care plan. A minimum of six peer-reviewed empirical studies from the past 5 years is mandatory.
+
+2. Simulated Dyadic Clinical Demonstration (30%)
+Working in assigned dyads, each student conducts a 45-minute clinical intervention role-playing a designated therapeutic impasse (e.g., exposure avoidance, cognitive fusion, or severe affective dysregulation). Students are evaluated on empathetic presence, Socratic dialogue, and intervention fidelity.
+
+3. Critical Peer Supervision & Consultation (15%)
+Adopting a supervisory role, students analyze a peer dyad's recorded demonstration utilizing the Cognitive Therapy Rating Scale (CTRS). Feedback must be delivered via a standardized consultation rubric focusing on pacing, collaborative empiricism, and specific actionable recommendations.
+
+4. Seminar Engagement & Clinical Reflexivity (20%)
+Evaluated through prepared contributions in small-group break-out clinics, active listening, adherence to classroom confidentiality, and a closing 2-page personal reflexivity log documenting therapist self-regulation and countertransference insights.
+
+WEEKLY TERM SCHEDULE & ASSIGNED READINGS
+TIMELINE MODULE CORE TOPIC FOCUS REQUIRED LITERATURE
+Week 01 Module 01 Cognitive Case Conceptualization Frameworks Beck (Ch. 1–3); Persons (Ch. 1)
+Week 02 Module 02 Socratic Dialogue & Cognitive Restructuring Beck (Ch. 7–9); Clark (Ch. 4)
+Week 03 Module 03 Behavioural Experiments & Exposure Design Craske & Barlow (Ch. 2 & 5)
+Week 04 Module 04 Acceptance & Mindfulness Architecture (ACT) Hayes et al. (Ch. 3–5)
+Week 05 Module 05 Distress Tolerance & Emotion Regulation (DBT) Linehan (Ch. 6–8)
+Week 06 Module 06 Mid-Term Clinical Review & Dyad Setup Clinical Dossier Packets
+Week 07 Module 07 Live Dyadic Demonstrations: Cohort A CTRS Manual & Scoring Guides
+Week 08 Module 08 Live Dyadic Demonstrations: Cohort B CTRS Manual & Scoring Guides
+Week 09 Module 09 Supervision Lab & Consultation Exchange Peer Consultation Protocol Sheets
+Week 10 Module 10 Culturally Responsive Adaptation in CBT Hays (Ch. 2 & 7); Indigenous Perspectives
+Week 11 Module 11 Relapse Prevention, Termination & Closings Beck (Ch. 18); Canadian Code of Ethics
+
+Extension & Late Policy: Extensions must be requested in writing at least 48 hours in advance of the deadline. Late assignments without an approved extension are subject to a 1-point deduction per day for the first 10 days, followed by 5 points per day thereafter.
+`
+  },
+  {
     id: 'cpc-514',
     courseCode: 'CPC 514',
     courseName: 'Research Methods and Statistics',
@@ -27,72 +101,7 @@ export const BundledSyllabiCatalog: BundledSyllabusItem[] = [
     fileName: 'CPC514_Research_Methods_Syllabus.pdf',
     fileSize: '300 KB',
     hexColor: '#2563EB',
-    rawText: `Syllabus
-School of Health & Social Sciences
-CPC 514: Research Methods and Statistics
-3 Credits
-Effective Date: 07/02/2026
-Course Dates: 7/1 - 9/24, 2026
-Faculty: Dr. Alireza Sedghi Taromi, PhD, RCC-ACS
-Email: sedghitaromialireza@cityu.edu
-
-Territorial Acknowledgement & Statement of Inclusion
-Course Resources:
-Creswell, J.W., & Creswell, J.D. (2022). Research Design: Qualitative, quantitative, and mixed methods approaches (6th ed). California: Sage. Required.
-
-Overview of Required Assignments % of Final Grade:
-Research Article Analysis - Group Presentation (1) 20%
-Peer Review Discussion Board Activity - Instructor Determined Assignment (2) 20%
-Peer-Review Group Report (3) 10%
-Research Study Design - Individual Paper (4) 40%
-Attendance / Participation (5) 10%
-Total 100%
-
-Assignment 1: Research Article Analysis - Group Presentation
-Beginning in Week 4 and continuing through Week 8, each group will present live in each class. The deadline to submit your article is Wednesday, July 8, 11:59 pm.
-Total 100 Points
-
-Assignment 2: Peer Review Discussion Board Activity
-Each week, submit feedback post by Monday at 11:59 PM and reply by Wednesday at 11:59 PM.
-Total 100 Points
-
-Assignment 3: Peer Review Group Report
-The video and one page summary, due no later than Sunday, Sep. 13, 2026, at 11:59 PM.
-Total 100 Points
-
-Assignment 4: Research Study Design Individual Paper
-This paper, scheduled for submission on Sunday, Sep. 6, 2026, at 11:59 pm must be 10 - 12 pages.
-Total 100 Points
-
-Assignment 5: Attendance / Participation
-Attendance 50 Points, Participation 50 Points. Total 100 Points.
-
-Week 1 July 3rd
-Introduction to Quantitative and Qualitative Research Methodologies
-Required:
-Creswell Chapter 1 — The Selection of a Research Approach
-Creswell Chapter 2 — Review of the Academic Literature
-
-Week 2 July 10th
-Formulating Hypotheses and Research Questions
-Required:
-Creswell Chapter 5 — The Introduction to Empirical Inquiries
-Creswell Chapter 6 — The Purpose Statement and Directional Hypotheses
-
-Week 3 July 17th
-Quantitative Research Designs and Statistical Sampling
-Required:
-Creswell Chapter 8 — Quantitative Methods and Sampling Schemes
-
-Week 4 July 24th
-Qualitative Approaches: Phenomenology, Ethnography and Grounded Theory
-Required:
-Creswell Chapter 9 — Qualitative Methods and Interview Coding
-
-Week 5 July 31st
-Mixed Methods Research Frameworks and Pragmatism
-Required:
-Creswell Chapter 10 — Mixed Methods Procedures in Social Sciences`
+    rawText: cityuSyllabi.cpc514
   },
   {
     id: 'cpc-523',
@@ -104,63 +113,7 @@ Creswell Chapter 10 — Mixed Methods Procedures in Social Sciences`
     fileName: 'CPC523_Human_Sexuality_Syllabus.pdf',
     fileSize: '265 KB',
     hexColor: '#7C3AED',
-    rawText: `CPC 523: Psychology of Sexuality and Human Development
-School of Health and Social Sciences
-Credits: 3
-Faculty Information: Marie-Pier Gilbert
-Email: gilbertmariepier@cityu.edu
-
-Overview of Required Assignments % of Final Grade:
-Sexuality Reflection Assignment 30%
-Peer Review Practice 10%
-Sexuality Research Paper 40%
-Professionalism, Collaboration, Engagement 20%
-TOTAL 100%
-
-Course Assignments Details:
-Sexuality Reflection Assignment (30%) – DUE JULY 31st at 9 am.
-Prepare an 8–10 page paper exploring sexual development.
-Total 100 Points 100%
-
-Peer Review Practice (10%) – In class practice on August 21st.
-Formulating empathic statements.
-Total 100 Points 100%
-
-Group Sexuality Research Paper (40%) - DUE FRIDAY SEPTEMBER 4th at 9 am.
-Write an 8–10-page literature review.
-Total 100 Points 100%
-
-Professionalism, Collaboration, and Engagement (20%) – OVER THE COURSE OF THE SEMESTER
-Total 100 Points 100%
-
-1 July 3rd
-Introduction to Sex Therapy and Clinical Assessment
-Required:
-Watch: The keys to a happier, healthier sex life, Emily Nagoski - TED
-Sexuality Counseling: Theory, Research, and Practice
-• Chapter 1 — Addressing Sexuality in Professional Counseling
-• Chapter 2 — Professional Issues and Ethics in Sexuality Counseling
-Human Sexuality in a World of Diversity, 7th Canadian Edition
-• Chapter 1 — Studying Human Sexuality
-• Chapter 2 — Theoretical Perspectives on Sexuality
-
-2 July 10th
-Cultural & Familial Influences on Intimacy
-Required:
-Watch: https://www.youtube.com/watch?v=JrTvI6lGi4s
-Sexuality Counseling: Theory, Research, and Practice
-• Chapter 3 — Cultural and Contextual Dimensions of Sexuality
-• Chapter 5 — Gender, Identity, and Sexuality Development
-Human Sexuality in a World of Diversity, 7th Canadian Edition
-• Chapter 6 — Attraction and Love
-• Chapter 7 — Relationships, Intimacy, and Communication
-
-3 July 17th
-Sexuality, Trauma & Mental Health Interventions
-Required:
-Watch: https://www.ted.com/talks/rena_martine_the_truth_about_sexual_shame
-Sexuality Counseling: Theory, Research, and Practice
-• Chapter 9 — Sexual Trauma and Recovery Counseling`
+    rawText: cityuSyllabi.cpc523
   },
   {
     id: 'cpc-511',
@@ -172,48 +125,7 @@ Sexuality Counseling: Theory, Research, and Practice
     fileName: 'CPC511_Loss_and_Grief_Syllabus.pdf',
     fileSize: '320 KB',
     hexColor: '#EC4899',
-    rawText: `CPC 511: Psychology of Loss and Grief
-School of Health and Social Sciences
-Credits: 3
-Grading Type: Decimal
-Faculty Information: Diana Morgan
-Email: morgandiana@cityu.edu
-
-Overview of Required Assignments % of Final Grade:
-Research Paper: Cultural Aspects of Mourning 30%
-Unique Topics in Grief Group Presentation 30%
-Peer-Review Group Report 10%
-Personal Grief Reflection Assignment 20%
-Participation 10%
-TOTAL 100%
-
-Course Assignment Details:
-Research Paper: Cultural Aspects of Mourning (30%) - DUE Sunday, April 26
-Students will write a research paper exploring mourning practices from a culture other than their own. 5 to 10 pages, double-spaced, minimum 5 to 8 peer-reviewed sources.
-Total 100 Points
-
-Unique Topics in Grief Group Presentations (30%) - DUE May 8 & May 15
-In groups of 3-4, students will research their chosen topic and create a group presentation for the class. Max length 40 minutes each.
-Total 100 Points
-
-Peer Review Group Report (10%) - DUE May 8 & May 15
-Peer review is a core academic activity. Students will be reviewing each group presentation on both presentation days using a template.
-Total 100 Points
-
-Personal Grief Reflection Assignment (20%) - DUE Sunday, June 14
-Students will complete a reflection assignment that explores their own experiences of grief and loss, designing a communal grief ritual. 6 - 8 pages APA paper or alternative format.
-Total 100 Points
-
-Participation (10%) - Self Assessment DUE Sunday, June 14
-Students will use the Participation Self Assessment Template to complete a self assessment.
-Total 100 Points
-
-Required Texts:
-Harris, D. L., & Winokuer, H. R. (2019). Principles and practice of grief counseling (3rd ed.). Springer.
-Hochstetler, L. (2021). 21 days to die: The Canadian guide to end of life. Sumeru Press.
-Neimeyer, R. A., Harris, D. L., Winokuer, H. R., & Thornton, G. F. (2011). Grief and bereavement in contemporary society: Bridging research and practice. Routledge.
-
-NOTE: Course schedule will be posted in a separate document on Brightspace.`
+    rawText: cityuSyllabi.cpc511
   },
   {
     id: 'cpc-527',
@@ -225,50 +137,7 @@ NOTE: Course schedule will be posted in a separate document on Brightspace.`
     fileName: 'CPC527_Group_Counselling_Syllabus.pdf',
     fileSize: '480 KB',
     hexColor: '#059669',
-    rawText: `CPC 527: Group Counselling Psychology
-School of Health and Social Sciences
-Credits: 3
-Grading Type: Decimal
-Faculty Information: Kelsey Murrin
-Email: murrinkelsey@cityu.edu
-
-Overview of Required Assignments % of Final Grade:
-Group Therapy Reflection Paper 25%
-Peer-Review Group Assignment 10%
-Group Facilitation Presentation/Project 40%
-Collaboration & Participation 25%
-TOTAL 100%
-
-Course Assignment Details:
-Group Therapy Reflection Paper (25%)
-Students will write a reflection paper critiquing their facilitation performance. 5 - 6 pages, double-spaced with minimum five peer-reviewed sources.
-Total 100 Points
-
-Peer-Review Group Report (10%)
-Students will provide feedback using a structured template to their assigned facilitation group.
-Total 100 Points
-
-Group Facilitation Presentation/Project (40%)
-Written treatment plan (6 - 8 pages) and experiential 90-minute co-facilitated group session.
-Total 100 Points
-
-Collaboration & Participation (25%)
-In-person small and large group activities, discussions, and self-assessment template.
-Total 100 Points
-
-Course Schedule:
-Week 1 4/2/26 MODULE 1 Intro to Group Work Corey Ch. 1 & 2 Yalom Ch. 1
-Week 2 4/9/26 MODULE 2 Introduction to Group Work Pt. 2 Corey Ch. 3 & 4 Yalom Ch. 2
-Week 3 4/16/26 MODULE 3 Group Stages: Initial Stages Corey Ch. 5 & 6 Yalom Ch. 3
-Week 4 4/23/26 MODULE 4 Group Stages: Transition Corey Ch. 7 Yalom Ch. 4 & 5
-Week 5 4/30/26 MODULE 5 Group Stages: Working Corey Ch. 8 Yalom Ch. 6 & 7
-Week 6 5/7/26 MODULE 6 Presentations Yalom Ch. 8 & 9
-Week 7 5/14/26 MODULE 7 Presentations Yalom Ch. 10 & 11
-Week 8 5/21/26 READING WEEK
-Week 9 5/28/26 MODULE 8 Presentations Yalom Ch. 12 & 13
-Week 10 6/4/26 MODULE 9 Group Stages: Final Corey Ch. 9 See Brightspace for Assigned Readings
-Week 11 6/11/26 MODULE 10 Groups in Diverse Settings Corey Ch. 10 & 11 Yalom Ch. 14 & 15
-Week 12 6/18/26 MODULE 11 Effective Closings See Brightspace for Assigned Readings`
+    rawText: cityuSyllabi.cpc527
   },
   {
     id: 'cs-501',

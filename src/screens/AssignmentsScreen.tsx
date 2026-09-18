@@ -21,12 +21,15 @@ import {
 } from '../components/SvgIcons';
 import { Assignment } from '../types/models';
 import { AssignmentDetailModal, EditAssignmentModal } from '../components/modals';
+import { PulsingColorDot } from '../components/PulsingColorDot';
 import {
   formatWeekHeaderDate,
   formatAssignmentDueDate,
   parseSafeDate,
-  getSanitizedCoursePill
+  getSanitizedCoursePill,
+  isInvalidAssignmentTitle
 } from '../utils/readingDisplayHelper';
+import { calculateAcademicWeek } from '../utils/timeFormatters';
 
 interface AssignmentsScreenProps {
   onOpenFilterModal: () => void;
@@ -52,34 +55,23 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
   const [selectedAssignmentForDetail, setSelectedAssignmentForDetail] = useState<Assignment | null>(null);
   const [assignmentForEdit, setAssignmentForEdit] = useState<Assignment | null>(null);
 
-  // Filter active assignments
+  // Filter active assignments (all coursework for selected course or all courses)
   const activeAssignments = useMemo(() => {
     return assignments.filter(a => {
       if (sortMode === 'trash') {
         return a.isDeleted;
       }
       if (a.isDeleted) return false;
+      if (isInvalidAssignmentTitle(a.title)) return false;
 
       // Filter by Course
       if (selectedCourseFilter) {
         const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
         const matchesCourse =
-          a.courseId === selectedCourseFilter.id ||
-          (a.courseCode || '').toLowerCase() === cCode;
+          a.courseId ? a.courseId === selectedCourseFilter.id : (a.courseCode || '').toLowerCase() === cCode;
         if (!matchesCourse) {
           return false;
         }
-      }
-
-      // Filter by Date
-      if (isDateFilterActive && a.dueDate) {
-        const d = parseSafeDate(a.dueDate);
-        if (!d) return false;
-        const isSame =
-          d.getFullYear() === selectedDate.getFullYear() &&
-          d.getMonth() === selectedDate.getMonth() &&
-          d.getDate() === selectedDate.getDate();
-        if (!isSame) return false;
       }
 
       // Filter by Completed mode
@@ -89,7 +81,22 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
 
       return true;
     });
-  }, [assignments, sortMode, selectedCourseFilter, isDateFilterActive, selectedDate]);
+  }, [assignments, sortMode, selectedCourseFilter]);
+
+  // Assignments matching selected calendar date (for highlight section)
+  const dateFilteredAssignments = useMemo(() => {
+    if (!isDateFilterActive) return [];
+    return activeAssignments.filter(a => {
+      if (!a.dueDate) return false;
+      const d = parseSafeDate(a.dueDate);
+      if (!d) return false;
+      return (
+        d.getFullYear() === selectedDate.getFullYear() &&
+        d.getMonth() === selectedDate.getMonth() &&
+        d.getDate() === selectedDate.getDate()
+      );
+    });
+  }, [activeAssignments, isDateFilterActive, selectedDate]);
 
   const completedCount = useMemo(() => {
     return assignments.filter(a => !a.isDeleted && a.isCompleted).length;
@@ -98,6 +105,17 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
   const deletedCount = useMemo(() => {
     return assignments.filter(a => a.isDeleted).length;
   }, [assignments]);
+
+  const remainingTotalCount = useMemo(() => {
+    return assignments.filter(a => {
+      if (a.isDeleted || a.isCompleted) return false;
+      if (selectedCourseFilter) {
+        const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
+        return a.courseId ? a.courseId === selectedCourseFilter.id : (a.courseCode || '').toLowerCase() === cCode;
+      }
+      return true;
+    }).length;
+  }, [assignments, selectedCourseFilter]);
 
   // Map of date string -> array of course hex colors for deadlines calendar dots
   const itemDatesWithColors = useMemo(() => {
@@ -112,7 +130,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       const key = `${y}-${m}-${day}`;
 
       const matchedCourse = courses.find(
-        c => c.id === a.courseId || (c.courseCode || c.courseName).toLowerCase() === (a.courseCode || '').toLowerCase()
+        c => (a.courseId ? c.id === a.courseId : (c.courseCode || c.courseName).toLowerCase() === (a.courseCode || '').toLowerCase())
       );
       const color = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
 
@@ -124,6 +142,70 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     }
     return map;
   }, [assignments, courses]);
+
+  // Earliest academic start date of the courses/assignments in view
+  const termStartDate = useMemo(() => {
+    if (selectedCourseFilter) {
+      if (selectedCourseFilter.weeks && selectedCourseFilter.weeks.length > 0) {
+        for (const w of selectedCourseFilter.weeks) {
+          if (w.startDate) {
+            const d = parseSafeDate(w.startDate);
+            if (d) return d;
+          }
+        }
+      }
+      const courseAssignments = assignments.filter(
+        a => !a.isDeleted && (a.courseId ? a.courseId === selectedCourseFilter.id : (a.courseCode || '').toLowerCase() === (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase())
+      );
+      for (const a of courseAssignments) {
+        if (a.dueDate) {
+          const d = parseSafeDate(a.dueDate);
+          if (d) return d;
+        }
+      }
+    }
+
+    let earliest: Date | null = null;
+    for (const c of courses) {
+      if (c.weeks) {
+        for (const w of c.weeks) {
+          if (w.startDate) {
+            const d = parseSafeDate(w.startDate);
+            if (d && (!earliest || d.getTime() < earliest.getTime())) earliest = d;
+          }
+        }
+      }
+    }
+    for (const a of assignments) {
+      if (a.isDeleted) continue;
+      if (a.dueDate) {
+        const d = parseSafeDate(a.dueDate);
+        if (d && (!earliest || d.getTime() < earliest.getTime())) earliest = d;
+      }
+    }
+
+    return earliest || null;
+  }, [selectedCourseFilter, courses, assignments]);
+
+  const availableWeekNumbers = useMemo(() => {
+    const set = new Set<number>();
+    const activeCourse = selectedCourseFilter || courses[0];
+    if (activeCourse && activeCourse.weeks) {
+      for (const w of activeCourse.weeks) {
+        set.add(w.weekNumber);
+      }
+    }
+    for (const a of assignments) {
+      if (a.weekNumber && a.weekNumber > 0) set.add(a.weekNumber);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  }, [selectedCourseFilter, courses, assignments]);
+
+  // Determine the current academic week that the student is in today
+  const currentAcademicWeek = useMemo(() => {
+    const activeCourse = selectedCourseFilter || courses[0];
+    return calculateAcademicWeek(new Date(), activeCourse, termStartDate, availableWeekNumbers);
+  }, [selectedCourseFilter, courses, termStartDate, availableWeekNumbers]);
 
   // Group assignments: partition into unassigned (week toggle off) and week-grouped (week toggle on)
   const { unassignedAssignments, groupedAssignments } = useMemo(() => {
@@ -149,9 +231,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
   const renderAssignmentCard = (assignment: Assignment) => {
     const matchedCourse = courses.find(
       c =>
-        c.id === assignment.courseId ||
-        (c.courseCode || c.courseName).toLowerCase() ===
-        (assignment.courseCode || '').toLowerCase()
+        (assignment.courseId ? c.id === assignment.courseId : (c.courseCode || c.courseName).toLowerCase() === (assignment.courseCode || '').toLowerCase())
     );
     const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
     const pillTitle = getSanitizedCoursePill(assignment.courseCode, matchedCourse);
@@ -172,7 +252,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             onPress={() => setSelectedAssignmentForDetail(assignment)}
             activeOpacity={0.7}
           >
-            {/* Top Line: Course Title Pill with white letters & Optional Presentation Badge */}
+            {/* Top Line: Course Title Pill with white letters, Presentation Badge, Grade Weight Badge & Video Badge */}
             <View style={styles.pillRow}>
               <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
                 <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
@@ -180,6 +260,67 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               {assignment.noteText && assignment.noteText.startsWith('Presentations:') && (
                 <View style={styles.presentationBadge}>
                   <Text style={styles.presentationBadgeText}>{assignment.noteText}</Text>
+                </View>
+              )}
+              {(() => {
+                let weight = assignment.weightPercentage;
+                if (!weight) {
+                  const wm = (assignment.title + ' ' + (assignment.fullInstructions || '')).match(/(?:worth\s+|weight:\s*)?(\d{1,2}(?:\.\d+)?)\s*%/i);
+                  if (wm) weight = `${wm[1]}%`;
+                }
+                if (weight) {
+                  return (
+                    <View style={styles.gradeBadge}>
+                      <Text style={styles.gradeBadgeText}>{weight}</Text>
+                    </View>
+                  );
+                }
+                return null;
+              })()}
+              {(() => {
+                let formatTag: string | null = null;
+                const note = assignment.noteText || '';
+                const title = assignment.title || '';
+                const parts = note && !note.startsWith('Presentations:') ? note.split('·').map(p => p.trim()) : [];
+
+                if (parts.length > 0 && /continuous/i.test(parts[0])) {
+                  formatTag = 'Continuous';
+                } else if (parts.length > 1 && parts[1].length > 2) {
+                  let deliverable = parts[1];
+                  if (deliverable.length > 35) {
+                    const firstClause = deliverable.split(/[,;&]/)[0].trim();
+                    deliverable = firstClause.length >= 8 && firstClause.length <= 35 ? firstClause : `${deliverable.slice(0, 32).trim()}...`;
+                  }
+                  formatTag = deliverable;
+                } else if (/continuous/i.test(title) || /seminar engagement/i.test(title) || /^(?:continuous|ongoing)\b/i.test(note.trim()) || /continuous\s+(?:assessment|evaluation|participation|engagement|grading)\b/i.test(note)) {
+                  formatTag = 'Continuous';
+                } else {
+                  const combined = `${title} ${note}`.toLowerCase();
+                  if (combined.includes('live deployment') || combined.includes('canary deployment') || combined.includes('capstone')) {
+                    formatTag = 'Live Production Deployment';
+                  } else if (combined.includes('apa') || combined.includes('formal report') || combined.includes('written report') || combined.includes('case formulation')) {
+                    formatTag = 'Written Report';
+                  } else if (combined.includes('live simulation') || combined.includes('role-play') || combined.includes('clinical demonstration')) {
+                    formatTag = 'Live Simulation';
+                  } else if (combined.includes('ctrs') || combined.includes('peer supervision') || combined.includes('rubric evaluation') || combined.includes('consultation')) {
+                    formatTag = 'CTRS Evaluation';
+                  }
+                }
+
+                if (formatTag) {
+                  return (
+                    <View style={styles.deliverableBadge}>
+                      <Text style={styles.deliverableBadgeText}>{formatTag}</Text>
+                    </View>
+                  );
+                }
+                return null;
+              })()}
+              {assignment.mediaUrl && (
+                <View style={styles.videoBadge}>
+                  <Text style={styles.videoBadgeText}>
+                    {/youtube\.com|youtu\.be/i.test(assignment.mediaUrl) ? 'YouTube' : 'Video'}
+                  </Text>
                 </View>
               )}
             </View>
@@ -195,24 +336,41 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               {assignment.title}
             </Text>
 
-            {/* Date Display & Points / Weight Badges */}
+            {/* Date Display & Points Badges (No week or percentage) */}
             <View style={styles.assignmentDateRow}>
-              <Text style={styles.assignmentDateText}>
-                {formatAssignmentDueDate(assignment.dueDate) || (assignment.weekNumber > 0 ? `Week ${assignment.weekNumber}` : 'No due date')}
-              </Text>
               {(() => {
-                const weight = assignment.weightPercentage;
-                const points = assignment.pointsPossible;
-                if (weight && points) {
-                  const numWeight = weight.replace(/[^\d]/g, '');
-                  const numPts = points.replace(/[^\d]/g, '');
-                  if (numWeight === numPts || numPts === '100') {
-                    return <Text style={styles.weightText}>• {weight}</Text>;
-                  }
-                  return <Text style={styles.weightText}>• {points} ({weight})</Text>;
-                } else if (weight) {
-                  return <Text style={styles.weightText}>• {weight}</Text>;
-                } else if (points) {
+                let resolvedDate: Date | string | null | undefined = assignment.dueDate;
+                if (!resolvedDate && assignment.weekNumber > 0) {
+                  const c = courses.find(
+                    crs => (assignment.courseId ? crs.id === assignment.courseId : (crs.courseCode || crs.courseName).toLowerCase() === (assignment.courseCode || '').toLowerCase())
+                  );
+                  const w = c?.weeks?.find(wk => wk.weekNumber === assignment.weekNumber);
+                  if (w?.startDate) resolvedDate = w.startDate;
+                  else if (w?.dateRangeStr) resolvedDate = w.dateRangeStr;
+                }
+                const formattedDate = resolvedDate ? formatAssignmentDueDate(resolvedDate) : null;
+                const dateDisplay = formattedDate || 'No due date';
+                return (
+                  <Text style={styles.assignmentDateText}>
+                    {dateDisplay}
+                  </Text>
+                );
+              })()}
+              {(() => {
+                let points = assignment.pointsPossible;
+                if (!points && assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
+                  const sum = assignment.rubricCriteria.reduce((s, r) => s + (Number(r.points) || 0), 0);
+                  if (sum > 0) points = `${sum} pts`;
+                }
+                if (!points) {
+                  const m = (assignment.title + ' ' + (assignment.fullInstructions || '')).match(/(\d{1,4})\s*(?:points|pts)\b/i);
+                  if (m) points = `${m[1]} pts`;
+                }
+                if (!points && assignment.weightPercentage) {
+                  const num = parseInt(assignment.weightPercentage.replace(/[^0-9]/g, ''), 10);
+                  if (!isNaN(num) && num > 0) points = `${num} pts`;
+                }
+                if (points) {
                   return <Text style={styles.weightText}>• {points}</Text>;
                 }
                 return null;
@@ -308,10 +466,13 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       {/* MARK: - Page Header */}
       <View style={styles.headerRow}>
         <View style={styles.headerLeftCol}>
-          <Text style={styles.pageTitle}>Assignments</Text>
-          <Text style={styles.pageSubtitle}>
-            {activeAssignments.length} assignment{activeAssignments.length === 1 ? '' : 's'} this term
-          </Text>
+          <View style={styles.titlePill}>
+            <Text style={styles.pageSubtitle} numberOfLines={1}>
+              {selectedCourseFilter
+                ? `${selectedCourseFilter.courseCode || selectedCourseFilter.courseName} • ${remainingTotalCount} Remaining`
+                : `All Courses • ${remainingTotalCount} Remaining`}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.topRightPills}>
@@ -360,7 +521,6 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
           </TouchableOpacity>
         </View>
       </View>
-
       {/* MARK: - Assignments Month Calendar Card */}
       <AssignmentsMonthCalendarCard
         selectedDate={selectedDate}
@@ -371,6 +531,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         isDateFilterActive={isDateFilterActive}
         onToggleDateFilter={() => setIsDateFilterActive(!isDateFilterActive)}
         itemDatesWithColors={itemDatesWithColors}
+        currentAcademicWeek={currentAcademicWeek}
       />
 
       {/* MARK: - Per-Course Assignment Progress Bars */}
@@ -380,17 +541,25 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             const courseAssigns = assignments.filter(
               a =>
                 !a.isDeleted &&
-                (a.courseId === course.id ||
-                  (a.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
+                (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
             );
             const total = courseAssigns.length;
             const completed = courseAssigns.filter(a => a.isCompleted).length;
             const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
+            const isSelected = selectedCourseFilter?.id === course.id;
+
             return (
-              <View key={course.id} style={styles.courseProgressRow}>
+              <TouchableOpacity
+                key={course.id}
+                style={styles.courseProgressRow}
+                onPress={() => setSelectedCourseFilter(isSelected ? null : course)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.courseProgressHeader}>
-                  <View style={[styles.courseColorDot, { backgroundColor: course.hexColor }]} />
+                  <View style={styles.courseColorDotContainer}>
+                    <PulsingColorDot color={course.hexColor} isPulsing={isSelected} size={8} />
+                  </View>
                   <Text style={styles.courseCodeText} numberOfLines={1}>
                     {course.courseCode || course.courseName}
                   </Text>
@@ -403,50 +572,23 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                         styles.capsuleFill,
                         {
                           backgroundColor: course.hexColor,
-                          width: `${Math.max(4, pct)}%`
+                          width: `${pct === 0 ? 0 : Math.max(4, pct)}%`
                         }
                       ]}
                     />
                   </View>
 
-                  <View style={[styles.percentageBadge, { backgroundColor: course.hexColor }]}>
-                    <Text style={styles.percentageBadgeText}>
-                      {completed} of {total} ({pct}%)
-                    </Text>
-                  </View>
+                  {total > 0 && (
+                    <View style={[styles.percentageBadge, { backgroundColor: course.hexColor }]}>
+                      <Text style={styles.percentageBadgeText}>
+                        {`${completed} of ${total} (${pct}%)`}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })}
-        </View>
-      )}
-
-
-      {/* Active Course Filter Banner */}
-      {selectedCourseFilter && (
-        <View
-          style={[
-            styles.filterBanner,
-            { backgroundColor: `${selectedCourseFilter.hexColor}18` }
-          ]}
-        >
-          <View
-            style={[styles.courseColorDot, { backgroundColor: selectedCourseFilter.hexColor }]}
-          />
-          <Text style={styles.filterBannerLabel}>Showing:</Text>
-          <Text
-            style={[styles.filterBannerCourseName, { color: selectedCourseFilter.hexColor }]}
-            numberOfLines={1}
-          >
-            {selectedCourseFilter.courseName}
-          </Text>
-
-          <TouchableOpacity
-            style={styles.clearFilterButton}
-            onPress={() => setSelectedCourseFilter(null)}
-          >
-            <Text style={styles.clearFilterText}>Clear</Text>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -456,7 +598,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
           <View style={styles.trashModeLeft}>
             <TrashIcon size={16} color="#D94033" />
             <Text style={styles.trashModeTitle}>
-              Trash Bin ({deletedCount} item{deletedCount === 1 ? '' : 's'})
+              Viewing Trash ({deletedCount} deleted items)
             </Text>
           </View>
           {deletedCount > 0 && (
@@ -464,8 +606,8 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               style={styles.emptyTrashBtn}
               onPress={() => {
                 Alert.alert(
-                  'Empty Trash?',
-                  'This will permanently delete all assignments in the trash. This action cannot be undone.',
+                  'Empty Trash',
+                  'Are you sure you want to permanently delete all items in the trash? This cannot be undone.',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     {
@@ -484,30 +626,45 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         </View>
       )}
 
+      {/* Active Calendar Date Highlight Banner / Section */}
+      {isDateFilterActive && dateFilteredAssignments.length > 0 && (
+        <View style={styles.dateFilterSection}>
+          <View style={styles.dateFilterHeader}>
+            <View style={styles.dateFilterTitleRow}>
+              <CalendarIcon size={14} color={CoursePalTheme.accentBlue} />
+              <Text style={styles.dateFilterTitle}>
+                Due on {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.clearDateFilterBtn}
+              onPress={() => setIsDateFilterActive(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.clearDateFilterBtnText}>Show All</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.dateFilterCardsList}>
+            {dateFilteredAssignments.map(renderAssignmentCard)}
+          </View>
+        </View>
+      )}
+
       {/* MARK: - Deliverables List */}
       {activeAssignments.length === 0 ? (
         <View style={styles.emptyStateCard}>
-          <Text style={styles.emptyTitle}>
-            {isDateFilterActive
-              ? 'No Assignments on This Date'
-              : 'No Assignments Found'}
-          </Text>
+          <Text style={styles.emptyTitle}>No Assignments Found</Text>
           <Text style={styles.emptySubtitle}>
-            {isDateFilterActive
-              ? 'There are no deliverables due on this selected date.'
-              : 'Add an assignment or upload a syllabus to automatically generate tasks.'}
+            Add an assignment or upload a syllabus to automatically generate tasks.
           </Text>
-          {isDateFilterActive && (
-            <TouchableOpacity
-              style={styles.showAllButton}
-              onPress={() => setIsDateFilterActive(false)}
-            >
-              <Text style={styles.showAllButtonText}>Show All Assignments</Text>
-            </TouchableOpacity>
-          )}
         </View>
       ) : (
         <View style={styles.assignmentsListContainer}>
+          {isDateFilterActive && (
+            <View style={styles.allSectionHeader}>
+              <Text style={styles.allSectionTitle}>All Course Deliverables</Text>
+            </View>
+          )}
           {/* Non-week assignments (when week toggle is turned off) */}
           {unassignedAssignments.length > 0 && (
             <View style={styles.unassignedGroupSection}>
@@ -606,11 +763,24 @@ const styles = StyleSheet.create({
     color: '#141F38',
     letterSpacing: -0.4
   },
+  titlePill: {
+    alignSelf: 'flex-start',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    minHeight: 34,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2
+  },
   pageSubtitle: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#596B85',
-    marginTop: 2
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#596B85'
   },
   topRightPills: {
     flexDirection: 'row',
@@ -686,11 +856,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center'
   },
+  courseColorDotContainer: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6
+  },
+  courseColorDotGlowRing: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5
+  },
   courseColorDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    marginRight: 6
+    borderRadius: 4
   },
   courseCodeText: {
     fontSize: 13,
@@ -855,28 +1038,79 @@ const styles = StyleSheet.create({
   pillRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6
   },
   coursePill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 5
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   coursePillText: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#FFFFFF'
   },
   presentationBadge: {
-    backgroundColor: '#ECEFF5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4
+    backgroundColor: '#475569',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   presentationBadgeText: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#4B5563'
+    color: '#FFFFFF'
+  },
+  gradeBadge: {
+    backgroundColor: '#475569',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  gradeBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  deliverableBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  deliverableBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569'
+  },
+  videoBadge: {
+    backgroundColor: '#475569',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  videoBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
   },
   assignmentTitle: {
     fontSize: 14.5,
@@ -1002,5 +1236,72 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700'
+  },
+  dateFilterSection: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    marginBottom: 8,
+    backgroundColor: '#F0F6FF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#D4E4FC',
+    padding: 12
+  },
+  dateFilterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 4
+  },
+  dateFilterTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  dateFilterTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue
+  },
+  clearDateFilterBtn: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#D4E4FC'
+  },
+  clearDateFilterBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue
+  },
+  dateFilterCardsList: {
+    gap: 8
+  },
+  dateFilterEmptyCard: {
+    paddingVertical: 12,
+    alignItems: 'center'
+  },
+  dateFilterEmptyText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#718096',
+    textAlign: 'center'
+  },
+  allSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 18,
+    marginTop: 14,
+    marginBottom: 4
+  },
+  allSectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#718096',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase'
   }
 });

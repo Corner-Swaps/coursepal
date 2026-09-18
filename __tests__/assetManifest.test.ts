@@ -9,11 +9,10 @@ describe('Asset Manifest & Physical Asset Integrity', () => {
     it('defines required application image keys', () => {
       expect(ImageAssets.appLogo).toBeDefined();
       expect(ImageAssets.appIcon1024).toBeDefined();
-      expect(ImageAssets.appIcon180).toBeDefined();
     });
 
     it('verifies physical image files exist with non-zero size', () => {
-      const images = ['AppLogo.png', 'AppIcon-1024.png', 'AppIcon-180.png'];
+      const images = ['AppIcon-1024.png'];
       for (const img of images) {
         const filePath = path.join(assetsDir, 'images', img);
         expect(fs.existsSync(filePath)).toBe(true);
@@ -32,18 +31,13 @@ describe('Asset Manifest & Physical Asset Integrity', () => {
       expect(AudioAssets.waves).toBeDefined();
     });
 
-    it('verifies physical audio files (both MP3 and WAV) exist with valid size', () => {
+    it('verifies physical MP3 audio files exist with valid size', () => {
       const audioFiles = [
         'completion_chime.mp3',
-        'completion_chime.wav',
         'white_noise.mp3',
-        'white_noise.wav',
         'rain.mp3',
-        'rain.wav',
         'library.mp3',
-        'library.wav',
-        'waves.mp3',
-        'waves.wav'
+        'waves.mp3'
       ];
 
       for (const audio of audioFiles) {

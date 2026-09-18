@@ -76,14 +76,14 @@ describe('CPC 523 Real Syllabus End-to-End Pipeline Verification', () => {
     const result = LocalSyllabusParser.shared.parseText(syllabusText);
     const peerReview = result.assignments?.find(a => a.title.toLowerCase().includes('peer review'));
     expect(peerReview).toBeDefined();
-    // In the syllabus, Peer Review has 10% weight but no individual points specified
-    expect(peerReview?.pointsPossible).toBeUndefined();
+    // In the syllabus, Peer Review has 10% weight and 100 Points from its rubric
+    expect(peerReview?.pointsPossible).toBe('100 Points');
     expect(peerReview?.weightPercentage).toBe('10%');
 
-    // Feed through SyllabusImportManager to verify candidate creation doesn't inject fabricated defaults
+    // Feed through SyllabusImportManager to verify candidate creation preserves extracted points
     const normalized = SyllabusImportManager.normalizeAndValidateSyllabusPayload(result, syllabusText);
     const candPeerReview = normalized.candidateAssignments.find((a: any) => (a.title || '').toLowerCase().includes('peer review'));
-    expect(candPeerReview?.pointsPossible).toBeUndefined();
+    expect(candPeerReview?.pointsPossible).toBe('100 Points');
     expect(candPeerReview?.weightPercentage).toBe('10%');
   });
 });

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert
+  Alert,
+  Linking
 } from 'react-native';
 import { useCoursePal } from '../context/CoursePalContext';
 import { CoursePalTheme } from '../constants/theme';
@@ -21,6 +22,7 @@ import {
 } from '../components/SvgIcons';
 import { Course, Reading } from '../types/models';
 import { ReadingDetailModal } from '../components/modals';
+import { PulsingColorDot } from '../components/PulsingColorDot';
 import {
   formatDisplayTitleWithChapter,
   formatAuthorAndPagesSubtitle,
@@ -31,8 +33,12 @@ import {
   getSanitizedCoursePill,
   deduplicateReadingsList,
   isReadingWeekEnabled,
-  extractReadingWeekNumber
+  extractReadingWeekNumber,
+  getReadingChapterSortKey,
+  cleanDateRangeDisplay,
+  formatWeekHeaderDate
 } from '../utils/readingDisplayHelper';
+import { getStartOfWeek, getBaseTermStartDate, calculateAcademicWeek } from '../utils/timeFormatters';
 
 interface ReadingsScreenProps {
   onOpenFilterModal: () => void;
@@ -56,6 +62,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
   const [isDateFilterActive, setIsDateFilterActive] = useState<boolean>(false);
   const [selectedWeekFilter, setSelectedWeekFilter] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<'readings' | 'completed' | 'trash'>('readings');
+  const [groupingViewMode, setGroupingViewMode] = useState<'weeks' | 'modules'>('weeks');
   const [selectedReadingForDetail, setSelectedReadingForDetail] = useState<Reading | null>(null);
 
   // Deduplicate raw readings list to eliminate duplicate chapters & multi-week clone noise
@@ -75,23 +82,10 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       if (selectedCourseFilter) {
         const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
         const matchesCourse =
-          r.courseId === selectedCourseFilter.id ||
-          (r.courseCode || '').toLowerCase() === cCode;
+          r.courseId ? r.courseId === selectedCourseFilter.id : (r.courseCode || '').toLowerCase() === cCode;
         if (!matchesCourse) {
           return false;
         }
-      }
-
-      // Filter by Specific Calendar Date
-      if (isDateFilterActive) {
-        if (!r.dueDate) return false;
-        const d = parseSafeDate(r.dueDate);
-        if (!d) return false;
-        const isSame =
-          d.getFullYear() === selectedDate.getFullYear() &&
-          d.getMonth() === selectedDate.getMonth() &&
-          d.getDate() === selectedDate.getDate();
-        if (!isSame) return false;
       }
 
       // Filter by Academic Week
@@ -108,7 +102,22 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
 
       return true;
     });
-  }, [deduplicatedRawReadings, sortMode, selectedCourseFilter, isDateFilterActive, selectedDate, selectedWeekFilter]);
+  }, [deduplicatedRawReadings, sortMode, selectedCourseFilter, selectedWeekFilter]);
+
+  // Items due on currently selected calendar date (for highlight banner)
+  const dateFilteredReadings = useMemo(() => {
+    if (!isDateFilterActive) return [];
+    return activeReadings.filter(r => {
+      if (!r.dueDate) return false;
+      const d = parseSafeDate(r.dueDate);
+      if (!d) return false;
+      return (
+        d.getFullYear() === selectedDate.getFullYear() &&
+        d.getMonth() === selectedDate.getMonth() &&
+        d.getDate() === selectedDate.getDate()
+      );
+    });
+  }, [activeReadings, isDateFilterActive, selectedDate]);
 
   const completedCount = useMemo(() => {
     return deduplicatedRawReadings.filter(r => !r.isDeleted && r.isCompleted).length;
@@ -119,10 +128,17 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
   }, [deduplicatedRawReadings]);
 
   const remainingTotalCount = useMemo(() => {
-    return deduplicatedRawReadings.filter(r => !r.isDeleted && !r.isCompleted).length;
-  }, [deduplicatedRawReadings]);
+    return deduplicatedRawReadings.filter(r => {
+      if (r.isDeleted || r.isCompleted) return false;
+      if (selectedCourseFilter) {
+        const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
+        return r.courseId ? r.courseId === selectedCourseFilter.id : (r.courseCode || '').toLowerCase() === cCode;
+      }
+      return true;
+    }).length;
+  }, [deduplicatedRawReadings, selectedCourseFilter]);
 
-  // Map of date string -> array of course hex colors for deadlines calendar dots
+  // Map of date string -> array of course hex colors for deadlines calendar dots (readings only)
   const itemDatesWithColors = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const r of readings) {
@@ -135,7 +151,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       const key = `${y}-${m}-${day}`;
 
       const matchedCourse = courses.find(
-        c => c.id === r.courseId || (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase()
+        c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
       );
       const color = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
 
@@ -148,35 +164,176 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     return map;
   }, [readings, courses]);
 
-  // Group readings: partition into unassigned (week toggle off) and week-grouped (week toggle on)
-  const { unassignedReadings, groupedReadings } = useMemo(() => {
-    const unassigned: Reading[] = [];
-    const map = new Map<number, Reading[]>();
+  // Earliest academic start date of the courses/readings in view
+  const termStartDate = useMemo(() => {
+    // 1. If a course is selected, use that course's earliest date
+    if (selectedCourseFilter) {
+      if (selectedCourseFilter.weeks && selectedCourseFilter.weeks.length > 0) {
+        for (const w of selectedCourseFilter.weeks) {
+          if (w.startDate) {
+            const d = parseSafeDate(w.startDate);
+            if (d) return d;
+          }
+        }
+      }
+      const courseReadings = readings.filter(
+        r => !r.isDeleted && (r.courseId ? r.courseId === selectedCourseFilter.id : (r.courseCode || '').toLowerCase() === (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase())
+      );
+      for (const r of courseReadings) {
+        if (r.dueDate) {
+          const d = parseSafeDate(r.dueDate);
+          if (d) return d;
+        }
+      }
+    }
+
+    // 2. Otherwise, find the earliest date across all courses/readings
+    let earliest: Date | null = null;
+    for (const c of courses) {
+      if (c.weeks) {
+        for (const w of c.weeks) {
+          if (w.startDate) {
+            const d = parseSafeDate(w.startDate);
+            if (d && (!earliest || d.getTime() < earliest.getTime())) earliest = d;
+          }
+        }
+      }
+    }
+    for (const r of readings) {
+      if (r.isDeleted) continue;
+      if (r.dueDate) {
+        const d = parseSafeDate(r.dueDate);
+        if (d && (!earliest || d.getTime() < earliest.getTime())) earliest = d;
+      }
+    }
+
+    return earliest || null;
+  }, [selectedCourseFilter, courses, readings]);
+
+  // Available academic week numbers across all active readings and courses
+  const availableWeekNumbers = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of deduplicatedRawReadings) {
+      if (r.isDeleted) continue;
+      const w = extractReadingWeekNumber(r);
+      if (w && w > 0) set.add(w);
+    }
+    for (const c of courses) {
+      if (c.weeks) {
+        for (const w of c.weeks) {
+          if (w.weekNumber && w.weekNumber > 0) set.add(w.weekNumber);
+        }
+      }
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  }, [deduplicatedRawReadings, courses]);
+
+  // Determine the current academic week that the student is in today
+  const currentAcademicWeek = useMemo(() => {
+    const activeCourse = selectedCourseFilter || courses[0];
+    return calculateAcademicWeek(new Date(), activeCourse, termStartDate, availableWeekNumbers);
+  }, [selectedCourseFilter, courses, termStartDate, availableWeekNumbers]);
+
+  // Group coursework (readings only): partition into unassigned and week-grouped modules
+  const { unassignedReadings, groupedWeeks } = useMemo(() => {
+    const unReadings: Reading[] = [];
+    const readingsByWeek = new Map<number, Reading[]>();
+    const allWeeks = new Set<number>();
 
     for (const r of activeReadings) {
       const isWeekOn = isReadingWeekEnabled(r);
       if (!isWeekOn) {
-        unassigned.push(r);
+        unReadings.push(r);
       } else {
         const w = extractReadingWeekNumber(r) || 1;
-        const list = map.get(w) || [];
-        list.push(r);
-        map.set(w, list);
+        if (selectedWeekFilter === null || selectedWeekFilter === w) {
+          allWeeks.add(w);
+          const list = readingsByWeek.get(w) || [];
+          list.push(r);
+          readingsByWeek.set(w, list);
+        }
       }
     }
 
+    const sortedUnReadings = [...unReadings].sort((a, b) => {
+      const chA = getReadingChapterSortKey(a);
+      const chB = getReadingChapterSortKey(b);
+      if (chA !== chB) return chA - chB;
+      const dA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+      const dB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+      if (dA !== dB) return dA - dB;
+      return (a.title || '').localeCompare(b.title || '');
+    });
+
+    const sortedWeeks = Array.from(allWeeks)
+      .sort((a, b) => a - b)
+      .map(w => {
+        const rList = (readingsByWeek.get(w) || []).sort((a, b) => {
+          const chA = getReadingChapterSortKey(a);
+          const chB = getReadingChapterSortKey(b);
+          if (chA !== chB) return chA - chB;
+          const dA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+          const dB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+          if (dA !== dB) return dA - dB;
+          return (a.title || '').localeCompare(b.title || '');
+        });
+        return {
+          weekNum: w,
+          readings: rList
+        };
+      });
+
     return {
-      unassignedReadings: unassigned,
-      groupedReadings: Array.from(map.entries()).sort(([w1], [w2]) => w1 - w2)
+      unassignedReadings: sortedUnReadings,
+      groupedWeeks: sortedWeeks
     };
+  }, [activeReadings, selectedWeekFilter]);
+
+  // Group readings by Module curriculum if modules exist
+  const groupedModules = useMemo(() => {
+    const readingsByMod = new Map<number, Reading[]>();
+    const allMods = new Set<number>();
+
+    for (const r of activeReadings) {
+      const mNum = (r.moduleNumber && r.moduleNumber > 0)
+        ? r.moduleNumber
+        : (r.moduleMention && /\d+/.test(r.moduleMention) ? parseInt(r.moduleMention.match(/\d+/)![0], 10) : null);
+      if (mNum) {
+        allMods.add(mNum);
+        const list = readingsByMod.get(mNum) || [];
+        list.push(r);
+        readingsByMod.set(mNum, list);
+      }
+    }
+
+    return Array.from(allMods)
+      .sort((a, b) => a - b)
+      .map(m => {
+        const rList = (readingsByMod.get(m) || []).sort((a, b) => {
+          const chA = getReadingChapterSortKey(a);
+          const chB = getReadingChapterSortKey(b);
+          if (chA !== chB) return chA - chB;
+          return (a.title || '').localeCompare(b.title || '');
+        });
+        const sampleReading = rList[0];
+        return {
+          moduleNum: m,
+          theme: sampleReading?.relevantTopics || `Module ${m}`,
+          readings: rList
+        };
+      });
   }, [activeReadings]);
 
-  const renderReadingCard = (reading: Reading, weekDateStr: string | null = null) => {
+  const hasModules = groupedModules.length > 0;
+
+  const renderReadingCard = (
+    reading: Reading,
+    weekDateStr: string | null = null,
+    isUnderDatedHeader: boolean = false
+  ) => {
     const matchedCourse = courses.find(
       c =>
-        c.id === reading.courseId ||
-        (c.courseCode || c.courseName).toLowerCase() ===
-        (reading.courseCode || '').toLowerCase()
+        (reading.courseId ? c.id === reading.courseId : (c.courseCode || c.courseName).toLowerCase() === (reading.courseCode || '').toLowerCase())
     );
     const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
     const pillTitle = getSanitizedCoursePill(reading.courseCode, matchedCourse);
@@ -186,15 +343,33 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       reading.dateRangeStr,
       weekDateStr
     );
+    const resolvedAuthor = reading.authorName || (() => {
+      if ((reading.title || '').toLowerCase().includes('groth-marnat') || /\bMarnat\b/i.test(reading.title || '')) {
+        return 'Groth-Marnat';
+      }
+      if ((reading.resourceTitle || '').toLowerCase().includes('groth-marnat') || /\bMarnat\b/i.test(reading.resourceTitle || '')) {
+        return 'Groth-Marnat';
+      }
+      const m = (reading.title || '').match(/^([A-Z][a-zA-Z\s.&–-]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|pp?\.?|\d)/i);
+      return m ? m[1].trim() : null;
+    })();
+    const matchedWeek = reading.weekNumber
+      ? (matchedCourse?.weeks || []).find(w => w.weekNumber === reading.weekNumber)
+      : null;
+    const weekTheme = matchedWeek?.theme;
+    const readingWithTopic = {
+      ...reading,
+      relevantTopics: reading.relevantTopics || weekTheme || undefined
+    };
     const displayTitle = formatDisplayTitleWithChapter(
-      reading,
+      readingWithTopic,
       reading.chapterText,
       reading.resourceTitle,
       matchedCourse?.courseName,
-      reading.authorName
+      resolvedAuthor
     );
     const displaySubtitle = formatAuthorAndPagesSubtitle(
-      reading.authorName,
+      resolvedAuthor,
       reading.pagesText,
       reading.resourceTitle,
       displayTitle,
@@ -217,18 +392,45 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             onPress={() => setSelectedReadingForDetail({ ...reading, mediaType: resolvedMedia })}
             activeOpacity={0.7}
           >
-            {/* Top Line: Course Title Pill & Media Type Badge */}
+            {/* Top Line: Course Title Pill, Gray Module Pill & Media Type Badge */}
             <View style={styles.pillRow}>
               <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
                 <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
               </View>
-              {resolvedMedia !== 'textbook' && (
-                <View style={styles.mediaTypeBadge}>
-                  <Text style={styles.mediaTypeBadgeText}>
-                    {resolvedMedia === 'video' ? 'Video' : resolvedMedia === 'podcast' ? 'Podcast' : 'Article / Paper'}
+              {Boolean(reading.moduleMention || reading.moduleNumber) && (
+                <View style={styles.cardModulePill}>
+                  <Text style={styles.cardModulePillText}>
+                    {(reading.moduleMention || `Module ${reading.moduleNumber}`).toUpperCase()}
                   </Text>
                 </View>
               )}
+              {reading.videoUrl ? (
+                <TouchableOpacity
+                  style={[styles.mediaTypeBadge, styles.youtubeMediaTypeBadge]}
+                  onPress={() => {
+                    const url = reading.videoUrl!.startsWith('http') ? reading.videoUrl! : `https://${reading.videoUrl}`;
+                    Linking.openURL(url).catch(() => {});
+                  }}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Text style={styles.mediaTypeBadgeText}>
+                    {/youtube\.com|youtu\.be/i.test(reading.videoUrl) ? 'YouTube' : 'Video'}
+                  </Text>
+                </TouchableOpacity>
+              ) : resolvedMedia !== 'textbook' ? (
+                <View style={styles.mediaTypeBadge}>
+                  <Text style={styles.mediaTypeBadgeText}>
+                    {resolvedMedia === 'video'
+                      ? 'Video'
+                      : resolvedMedia === 'podcast'
+                      ? 'Podcast'
+                      : resolvedMedia === 'article'
+                      ? 'Article'
+                      : 'Paper'}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             {/* Reading Title / Chapter Name */}
@@ -242,21 +444,27 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
               {displayTitle}
             </Text>
 
-            {/* Suggested Reading Section (just below the chapter name, no icon, abbreviated day) */}
-            {suggestedReadingText ? (
-              <View style={styles.suggestedReadingPill}>
-                <Text style={styles.suggestedReadingPillText}>
-                  {suggestedReadingText}
-                </Text>
-              </View>
-            ) : null}
+            {/* Subtitle & Suggested Reading: Author · Pages (never repeating dates under dated headers) */}
+            {(() => {
+              const cleanSub = (displaySubtitle || '').replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
 
-            {/* Subtitle: Author · Pages */}
-            {displaySubtitle ? (
-              <Text style={styles.readingAuthor} numberOfLines={2}>
-                {displaySubtitle}
-              </Text>
-            ) : null}
+              // When displayed inside a dated week section or date filter, suppress suggested reading date so we never repeat dates
+              const shouldShowDate = !isUnderDatedHeader && !weekDateStr && !!suggestedReadingText;
+
+              const cleanDate = shouldShowDate && suggestedReadingText
+                ? suggestedReadingText.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim()
+                : '';
+
+              const bottomText = cleanSub && cleanDate
+                ? `${cleanSub} · ${cleanDate}`
+                : (cleanSub || cleanDate);
+              if (!bottomText) return null;
+              return (
+                <Text style={styles.readingAuthor} numberOfLines={2}>
+                  {bottomText}
+                </Text>
+              );
+            })()}
           </TouchableOpacity>
 
           {/* Right-side Action Buttons: Checkmark Ring & Trashcan OR Restore & Permanent Delete */}
@@ -330,6 +538,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     );
   };
 
+
+
   return (
     <View style={styles.rootContainer}>
       <ScrollView
@@ -348,10 +558,13 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       {/* MARK: - Page Header */}
       <View style={styles.headerRow}>
         <View style={styles.headerLeftCol}>
-          <Text style={styles.pageTitle}>Readings</Text>
-          <Text style={styles.pageSubtitle}>
-            {remainingTotalCount} reading{remainingTotalCount === 1 ? '' : 's'} remaining
-          </Text>
+          <View style={styles.titlePill}>
+            <Text style={styles.pageSubtitle} numberOfLines={1}>
+              {selectedCourseFilter
+                ? `${selectedCourseFilter.courseCode || selectedCourseFilter.courseName} • ${remainingTotalCount} Remaining`
+                : `All Courses • ${remainingTotalCount} Remaining`}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.topRightPills}>
@@ -400,14 +613,22 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           </TouchableOpacity>
         </View>
       </View>
-
       {/* MARK: - Deadlines Calendar Card */}
       <DeadlinesCalendarCard
         selectedDate={selectedDate}
         onSelectDate={d => {
-          setSelectedDate(d);
-          setIsDateFilterActive(true);
-          setSelectedWeekFilter(null);
+          const isSame =
+            isDateFilterActive &&
+            d.getFullYear() === selectedDate.getFullYear() &&
+            d.getMonth() === selectedDate.getMonth() &&
+            d.getDate() === selectedDate.getDate();
+          if (isSame) {
+            setIsDateFilterActive(false);
+          } else {
+            setSelectedDate(d);
+            setIsDateFilterActive(true);
+            setSelectedWeekFilter(null);
+          }
         }}
         isDateFilterActive={isDateFilterActive}
         onToggleDateFilter={() => {
@@ -419,7 +640,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           }
         }}
         onSelectWeek={w => {
-          if (selectedWeekFilter === w) {
+          if (w === 0 || w === null || selectedWeekFilter === w) {
             setSelectedWeekFilter(null);
           } else {
             setSelectedWeekFilter(w);
@@ -429,29 +650,9 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         selectedWeekFilter={selectedWeekFilter}
         itemDatesWithColors={itemDatesWithColors}
         startWeekNumber={1}
+        termStartDate={termStartDate}
+        currentAcademicWeek={currentAcademicWeek}
       />
-
-      {/* Active Calendar Date or Week Filter Banner */}
-      {(isDateFilterActive || selectedWeekFilter !== null) && (
-        <View style={styles.calendarFilterBanner}>
-          <CalendarIcon size={14} color="#2470F5" />
-          <Text style={styles.calendarFilterBannerText} numberOfLines={1}>
-            {selectedWeekFilter !== null
-              ? `Showing: Week ${selectedWeekFilter} Readings`
-              : `Showing: ${selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} Readings`}
-          </Text>
-          <TouchableOpacity
-            style={styles.clearFilterButton}
-            onPress={() => {
-              setIsDateFilterActive(false);
-              setSelectedWeekFilter(null);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.clearFilterText}>Show All</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* MARK: - Per-Course Reading Progress Bars */}
       {courses.length > 0 && (
@@ -460,17 +661,25 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             const courseReadings = deduplicatedRawReadings.filter(
               r =>
                 !r.isDeleted &&
-                (r.courseId === course.id ||
-                  (r.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
+                (r.courseId ? r.courseId === course.id : (r.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
             );
             const total = courseReadings.length;
             const completed = courseReadings.filter(r => r.isCompleted).length;
             const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
+            const isSelected = selectedCourseFilter?.id === course.id;
+
             return (
-              <View key={course.id} style={styles.courseProgressRow}>
+              <TouchableOpacity
+                key={course.id}
+                style={styles.courseProgressRow}
+                onPress={() => setSelectedCourseFilter(isSelected ? null : course)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.courseProgressHeader}>
-                  <View style={[styles.courseColorDot, { backgroundColor: course.hexColor }]} />
+                  <View style={styles.courseColorDotContainer}>
+                    <PulsingColorDot color={course.hexColor} isPulsing={isSelected} size={8} />
+                  </View>
                   <Text style={styles.courseCodeText} numberOfLines={1}>
                     {course.courseCode || course.courseName}
                   </Text>
@@ -483,7 +692,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                         styles.capsuleFill,
                         {
                           backgroundColor: course.hexColor,
-                          width: `${Math.max(4, pct)}%`
+                          width: `${pct === 0 ? 0 : Math.max(4, pct)}%`
                         }
                       ]}
                     />
@@ -491,41 +700,13 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
 
                   <View style={[styles.percentageBadge, { backgroundColor: course.hexColor }]}>
                     <Text style={styles.percentageBadgeText}>
-                      {completed} of {total} ({pct}%)
+                      {total === 0 ? '0 readings' : `${completed} of ${total} (${pct}%)`}
                     </Text>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })}
-        </View>
-      )}
-
-      {/* Active Course Filter Banner */}
-      {selectedCourseFilter && (
-        <View
-          style={[
-            styles.filterBanner,
-            { backgroundColor: `${selectedCourseFilter.hexColor}18` }
-          ]}
-        >
-          <View
-            style={[styles.courseColorDot, { backgroundColor: selectedCourseFilter.hexColor }]}
-          />
-          <Text style={styles.filterBannerLabel}>Showing:</Text>
-          <Text
-            style={[styles.filterBannerCourseName, { color: selectedCourseFilter.hexColor }]}
-            numberOfLines={1}
-          >
-            {selectedCourseFilter.courseName}
-          </Text>
-
-          <TouchableOpacity
-            style={styles.clearFilterButton}
-            onPress={() => setSelectedCourseFilter(null)}
-          >
-            <Text style={styles.clearFilterText}>Clear</Text>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -563,47 +744,126 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         </View>
       )}
 
-      {/* MARK: - Grouped Reading Cards */}
-      {activeReadings.length === 0 ? (
+      {/* Active Calendar Date Highlight Banner / Section */}
+      {isDateFilterActive && dateFilteredReadings.length > 0 && (
+        <View style={styles.dateFilterSection}>
+          <View style={styles.dateFilterHeader}>
+            <View style={styles.dateFilterTitleRow}>
+              <CalendarIcon size={14} color={CoursePalTheme.accentBlue} />
+              <Text style={styles.dateFilterTitle}>
+                Scheduled for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.clearDateFilterBtn}
+              onPress={() => setIsDateFilterActive(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.clearDateFilterBtnText}>Show All</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.dateFilterCardsList}>
+            {dateFilteredReadings.map(r => renderReadingCard(r, null, true))}
+          </View>
+        </View>
+      )}
+
+      {/* MARK: - Coursework List (Readings Only) */}
+      {groupedWeeks.length === 0 && unassignedReadings.length === 0 ? (
         <View style={styles.emptyStateCard}>
           <Text style={styles.emptyTitle}>
-            {isDateFilterActive
-              ? 'No Readings on This Date'
-              : selectedWeekFilter !== null
+            {selectedWeekFilter !== null
               ? `No Readings in Week ${selectedWeekFilter}`
               : 'No Readings Found'}
           </Text>
           <Text style={styles.emptySubtitle}>
-            {isDateFilterActive
-              ? 'There are no readings scheduled for this selected date.'
-              : selectedWeekFilter !== null
+            {selectedWeekFilter !== null
               ? `There are no readings assigned to Week ${selectedWeekFilter}.`
               : 'Upload a syllabus to automatically populate your reading schedule.'}
           </Text>
-          {(isDateFilterActive || selectedWeekFilter !== null) && (
+          {selectedWeekFilter !== null && (
             <TouchableOpacity
               style={styles.showAllButton}
-              onPress={() => {
-                setIsDateFilterActive(false);
-                setSelectedWeekFilter(null);
-              }}
+              onPress={() => setSelectedWeekFilter(null)}
             >
-              <Text style={styles.showAllButtonText}>Show All Readings</Text>
+              <Text style={styles.showAllButtonText}>Show All Weeks</Text>
             </TouchableOpacity>
           )}
         </View>
       ) : (
         <View style={styles.readingsListContainer}>
-          {/* Non-week readings (when week toggle is turned off) */}
-          {unassignedReadings.length > 0 && (
-            <View style={styles.unassignedGroupSection}>
-              {unassignedReadings.map(r => renderReadingCard(r, null))}
+          {/* Segmented Switcher between Weeks and Modules (when course has modules) */}
+          {hasModules && (
+            <View style={styles.viewModeSegmentContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.viewModeSegmentBtn,
+                  groupingViewMode === 'weeks' && styles.viewModeSegmentBtnActive
+                ]}
+                onPress={() => setGroupingViewMode('weeks')}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.viewModeSegmentText,
+                    groupingViewMode === 'weeks' && styles.viewModeSegmentTextActive
+                  ]}
+                >
+                  Weekly Schedule ({groupedWeeks.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.viewModeSegmentBtn,
+                  groupingViewMode === 'modules' && styles.viewModeSegmentBtnActive
+                ]}
+                onPress={() => setGroupingViewMode('modules')}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.viewModeSegmentText,
+                    groupingViewMode === 'modules' && styles.viewModeSegmentTextActive
+                  ]}
+                >
+                  Modules ({groupedModules.length})
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 
-          {/* Week-grouped readings (when week toggle is turned on) */}
-          {groupedReadings.map(([weekNum, groupList]) => {
-            const firstWithRealDate = groupList.find(
+          {isDateFilterActive && (
+            <View style={styles.allSectionHeader}>
+              <Text style={styles.allSectionTitle}>All Weeks</Text>
+            </View>
+          )}
+
+          {/* Non-week readings (when week toggle is turned off) */}
+          {unassignedReadings.length > 0 && (
+            <View style={styles.unassignedGroupSection}>
+              {unassignedReadings.map(r => {
+                let fallbackDate: string | null = null;
+                const wk = r.weekNumber || (r.weekId && /\d+/.test(r.weekId) ? parseInt(r.weekId.match(/\d+/)![0], 10) : null);
+                if (wk) {
+                  const matchedCourse = courses.find(
+                    c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
+                  );
+                  const w = matchedCourse?.weeks?.find(wItem => wItem.weekNumber === wk);
+                  if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
+                    fallbackDate = w.dateRangeStr;
+                  } else if (w?.startDate) {
+                    fallbackDate = w.startDate instanceof Date ? w.startDate.toISOString().split('T')[0] : String(w.startDate);
+                  }
+                }
+                return renderReadingCard(r, fallbackDate, false);
+              })}
+            </View>
+          )}
+
+          {/* Week-grouped readings (when in Weekly Schedule view) */}
+          {groupingViewMode === 'weeks' && groupedWeeks.map(({ weekNum, readings: weekReadingsList }) => {
+            const firstWithRealDate = weekReadingsList.find(
               r => r.dueDate || (r.dateRangeStr && isRealDateOrRangeString(r.dateRangeStr))
             );
             let weekDateStr =
@@ -616,14 +876,19 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                 : null;
 
             if (!weekDateStr) {
-              for (const c of courses) {
-                const w = c.weeks?.find(wk => wk.weekNumber === weekNum);
+              const targetCourse = selectedCourseFilter || courses.find(
+                c => {
+                  const sample = weekReadingsList[0];
+                  if (!sample) return false;
+                  return sample.courseId ? c.id === sample.courseId : (c.courseCode || c.courseName).toLowerCase() === (sample.courseCode || '').toLowerCase();
+                }
+              );
+              if (targetCourse) {
+                const w = targetCourse.weeks?.find(wk => wk.weekNumber === weekNum);
                 if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
                   weekDateStr = w.dateRangeStr;
-                  break;
                 } else if (w?.startDate) {
                   weekDateStr = w.startDate instanceof Date ? w.startDate.toISOString().split('T')[0] : String(w.startDate);
-                  break;
                 }
               }
             }
@@ -635,10 +900,71 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                   <View style={styles.weekPill}>
                     <Text style={styles.weekPillText}>Week {weekNum}</Text>
                   </View>
+                  {weekNum === currentAcademicWeek && (
+                    <View style={styles.currentWeekHeaderBadge}>
+                      <Text style={styles.currentWeekHeaderBadgeText}>Current Week</Text>
+                    </View>
+                  )}
+                  {weekDateStr && (() => {
+                    const parsed = parseSafeDate(weekDateStr);
+                    if (parsed && !isNaN(parsed.getTime())) {
+                      const fullMonth = parsed.toLocaleDateString('en-US', { month: 'long' });
+                      const day = parsed.getDate();
+                      const year = parsed.getFullYear();
+                      return (
+                        <Text style={styles.weekDateHeaderText}>
+                          {fullMonth} {day}, {year}
+                        </Text>
+                      );
+                    }
+                    if (isRealDateOrRangeString(weekDateStr)) {
+                      return (
+                        <Text style={styles.weekDateHeaderText}>
+                          {cleanDateRangeDisplay(weekDateStr)}
+                        </Text>
+                      );
+                    }
+                    return (
+                      <Text style={styles.weekDateHeaderText}>
+                        {formatWeekHeaderDate(weekDateStr)}
+                      </Text>
+                    );
+                  })()}
+                  {selectedWeekFilter !== null && (
+                    <TouchableOpacity
+                      style={styles.showAllPillBtn}
+                      onPress={() => setSelectedWeekFilter(null)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.showAllPillBtnText}>Show All Weeks</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
-                {/* Reading Cards */}
-                {groupList.map(r => renderReadingCard(r, weekDateStr))}
+                {/* Readings for this Week */}
+                {weekReadingsList.map(r => renderReadingCard(r, weekDateStr, !!weekDateStr))}
+              </View>
+            );
+          })}
+
+          {/* Module-grouped readings (when in Course Modules view) */}
+          {groupingViewMode === 'modules' && groupedModules.map(({ moduleNum, theme, readings: moduleReadingsList }) => {
+            return (
+              <View key={`module-${moduleNum}`} style={styles.weekGroupSection}>
+                {/* Module Header Row */}
+                <View style={styles.weekHeaderRow}>
+                  <View style={styles.weekPill}>
+                    <Text style={styles.weekPillText}>Module {moduleNum}</Text>
+                  </View>
+                  {theme && (
+                    <Text style={styles.weekDateHeaderText} numberOfLines={1}>
+                      {theme}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Readings for this Module */}
+                {moduleReadingsList.map(r => renderReadingCard(r, null, false))}
               </View>
             );
           })}
@@ -694,11 +1020,24 @@ const styles = StyleSheet.create({
     color: '#141F38',
     letterSpacing: -0.4
   },
+  titlePill: {
+    alignSelf: 'flex-start',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    minHeight: 34,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2
+  },
   pageSubtitle: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#596B85',
-    marginTop: 2
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#596B85'
   },
   topRightPills: {
     flexDirection: 'row',
@@ -774,11 +1113,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center'
   },
+  courseColorDotContainer: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6
+  },
+  courseColorDotGlowRing: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5
+  },
   courseColorDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    marginRight: 6
+    borderRadius: 4
   },
   courseCodeText: {
     fontSize: 13,
@@ -908,18 +1260,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF'
   },
-  suggestedReadingPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#EEF4FF',
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 6,
-    marginVertical: 1
-  },
-  suggestedReadingPillText: {
-    fontSize: 10.5,
+  weekDateHeaderText: {
+    fontSize: 12.5,
     fontWeight: '600',
-    color: '#1E60D5'
+    color: '#64748B'
+  },
+  currentWeekHeaderBadge: {
+    backgroundColor: '#475569',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  currentWeekHeaderBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.2
+  },
+  showAllPillBtn: {
+    marginLeft: 'auto',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  showAllPillBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569'
   },
   readingCard: {
     flexDirection: 'row',
@@ -950,44 +1322,90 @@ const styles = StyleSheet.create({
     gap: 6
   },
   coursePill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 5
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   coursePillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  cardModulePill: {
+    backgroundColor: '#738094',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  cardModulePillText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#FFFFFF'
   },
-  mediaTypeBadge: {
-    backgroundColor: '#ECEFF5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4
-  },
-  mediaTypeBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#596B85'
-  },
-  calendarFilterBanner: {
+  viewModeSegmentContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#EEF4FF',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginHorizontal: 18,
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#D8E6FD'
+    backgroundColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 14
   },
-  calendarFilterBannerText: {
+  viewModeSegmentBtn: {
     flex: 1,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8
+  },
+  viewModeSegmentBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2
+  },
+  viewModeSegmentText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#1E60D5'
+    color: '#64748B'
+  },
+  viewModeSegmentTextActive: {
+    color: '#1E293B',
+    fontWeight: '700'
+  },
+  mediaTypeBadge: {
+    backgroundColor: '#475569',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  mediaTypeBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  youtubeMediaTypeBadge: {
+    backgroundColor: '#475569'
+  },
+  youtubeMediaTypeBadgeText: {
+    color: '#FFFFFF',
+    fontWeight: '700'
+  },
+  videoMediaTypeBadge: {
+    backgroundColor: '#475569'
+  },
+  videoMediaTypeBadgeText: {
+    color: '#FFFFFF',
+    fontWeight: '700'
   },
   readingTitle: {
     fontSize: 14.5,
@@ -1111,5 +1529,155 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700'
+  },
+  assignmentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+    gap: 10
+  },
+  assignmentTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#141F38',
+    lineHeight: 19
+  },
+  assignmentTitleCompleted: {
+    textDecorationLine: 'line-through',
+    color: '#8E9BAE'
+  },
+  assignmentDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 1,
+    gap: 4
+  },
+  assignmentDateText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#596B85'
+  },
+  weightText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: CoursePalTheme.accentBlue
+  },
+  deliverableBadge: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#BFDBFE'
+  },
+  deliverableBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#2470F5',
+    letterSpacing: 0.5
+  },
+  presentationBadge: {
+    backgroundColor: '#FAF5FF',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#E9D5FF'
+  },
+  presentationBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9333EA'
+  },
+  dateFilterSection: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    marginBottom: 8,
+    backgroundColor: '#F0F6FF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#D4E4FC',
+    padding: 12
+  },
+  dateFilterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 4
+  },
+  dateFilterTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  dateFilterTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue
+  },
+  clearDateFilterBtn: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#D4E4FC'
+  },
+  clearDateFilterBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue
+  },
+  dateFilterCardsList: {
+    gap: 8
+  },
+  dateFilterEmptyCard: {
+    paddingVertical: 12,
+    alignItems: 'center'
+  },
+  dateFilterEmptyText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#718096',
+    textAlign: 'center'
+  },
+  allSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 18,
+    marginTop: 14,
+    marginBottom: 4
+  },
+  allSectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#718096',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase'
+  },
+  subCategorySection: {
+    gap: 8,
+    marginBottom: 6
+  },
+  subCategoryHeaderRow: {
+    paddingHorizontal: 4,
+    paddingTop: 6,
+    paddingBottom: 2
+  },
+  subCategoryTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#718096',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase'
   }
 });

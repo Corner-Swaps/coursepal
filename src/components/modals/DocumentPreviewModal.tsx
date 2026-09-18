@@ -8,7 +8,8 @@ import {
   ScrollView,
   Image,
   Dimensions,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system';
@@ -20,7 +21,8 @@ import {
   BookFillIcon,
   CheckmarkCircleFillIcon
 } from '../SvgIcons';
-import { renderPDFPages } from '../../services/PDFTextExtractor';
+import { renderPDFPages, openNativeDocumentViewer } from '../../services/PDFTextExtractor';
+import { ensureBundledPdfFile } from '../../utils/bundledPdfService';
 import { useCoursePal } from '../../context/CoursePalContext';
 import { formatShortDocumentTitle } from '../../utils/readingDisplayHelper';
 
@@ -56,16 +58,21 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   const [pages, setPages] = useState<string[]>([]);
   const [isLoadingPages, setIsLoadingPages] = useState<boolean>(false);
   const [hasFailedImages, setHasFailedImages] = useState<boolean>(false);
+  const [effectiveFileUri, setEffectiveFileUri] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible || !document) {
       setPages([]);
       setIsLoadingPages(false);
       setHasFailedImages(false);
+      setEffectiveFileUri(null);
       return;
     }
 
-    const resolvedRawUri = resolveLocalPath(document.rawFileDataUri);
+    let activeRawUri = resolveLocalPath(document.rawFileDataUri);
+    if (activeRawUri) {
+      setEffectiveFileUri(activeRawUri);
+    }
 
     // If pre-existing page images exist, map to current container
     if (document.pageImages && document.pageImages.length > 0) {
@@ -75,26 +82,39 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       if (resolvedImages.length > 0) {
         setPages(resolvedImages);
         setIsLoadingPages(false);
-        return;
+        if (activeRawUri) return;
       }
     }
 
-    // If we have the raw file, render high-res pages dynamically
-    if (resolvedRawUri) {
-      setIsLoadingPages(true);
-      renderPDFPages(resolvedRawUri, 30)
-        .then(res => {
+    const loadPagesAndFile = async () => {
+      if (!activeRawUri) {
+        setIsLoadingPages(true);
+        const ensured = await ensureBundledPdfFile(document.id || document.courseCode || document.title);
+        if (ensured) {
+          activeRawUri = ensured;
+          setEffectiveFileUri(ensured);
+          document.rawFileDataUri = ensured;
+        }
+      }
+
+      if (activeRawUri) {
+        setIsLoadingPages(true);
+        try {
+          const res = await renderPDFPages(activeRawUri, 30);
           if (res.imageUris && res.imageUris.length > 0) {
             setPages(res.imageUris);
           }
-        })
-        .catch(err => {
+        } catch (err) {
           console.warn('Failed to dynamically render document pages:', err);
-        })
-        .finally(() => {
+        } finally {
           setIsLoadingPages(false);
-        });
-    }
+        }
+      } else {
+        setIsLoadingPages(false);
+      }
+    };
+
+    loadPagesAndFile();
   }, [visible, document]);
 
   if (!visible || !document) return null;
@@ -181,6 +201,18 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             <Text style={styles.docMeta}>
               {document.courseCode || 'Course Syllabus'}{pages.length > 0 ? ` • ${pages.length} Pages` : ''}
             </Text>
+            {(effectiveFileUri || resolvedRawUri) ? (
+              <TouchableOpacity
+                style={styles.openExternalButton}
+                activeOpacity={0.8}
+                onPress={() => openNativeDocumentViewer((effectiveFileUri || resolvedRawUri)!)}
+              >
+                <DocFillIcon size={15} color="#FFFFFF" />
+                <Text style={styles.openExternalButtonText}>
+                  {Platform.OS === 'ios' ? 'Open in Quick Look' : 'Open in Device PDF Reader'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {/* Visual PDF Page Photos */}
@@ -355,6 +387,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: '#596B85'
+  },
+  openExternalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#2470F5',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginTop: 10
+  },
+  openExternalButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF'
   },
   documentBodyCard: {
     backgroundColor: '#FFFFFF',

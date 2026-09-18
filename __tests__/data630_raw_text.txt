@@ -1,0 +1,131 @@
+GRADUATE ENGINEERING SYLLABUS
+DATA 630: Scalable Machine Learning Systems & Cloud
+AI Architectures
+School of Computing & Data Engineering • Fall Term 2026
+LEAD INSTRUCTOR
+Dr. Marcus Vance, Ph.D.
+mvance@eng.cloudtech.edu 
+COURSE STRUCTURE
+Credits: 4.0
+Grading: Letter / Percentage (0–100%) 
+OFFICE & LAB HOURS
+Thursdays 10:00 AM – 12:30 PM PST
+Turing Lab 304 & Virtual Stream 
+COURSE CATALOG DESCRIPTION
+This graduate-level systems course provides an in-depth study of distributed machine learning pipelines, scalable
+model training, inference serving, and enterprise MLOps architectures. Students will implement real-time feature stores,
+containerized model deployment with Kubernetes, distributed gradient descent using PyTorch DDP and Ray, and
+automated continuous integration/continuous deployment (CI/CD) pipelines for foundation models. 
+PROGRAM LEARNING OUTCOMES & TECHNICAL COMPETENCIES
+PLO 1 (Distributed Infrastructure): Architect and scale distributed model training clusters across multi-node GPU
+instances using PyTorch DDP and Ray Train.
+PLO 2 (Production Serving & Low Latency): Deploy high-throughput, sub-100ms model inference endpoints
+utilizing Triton Inference Server, vLLM, and Redis cache clusters.
+PLO 3 (Continuous Pipeline Orchestration): Implement reproducible CI/CD for machine learning (MLOps) with
+automated data drift monitoring and model registry management.
+PLO 4 (Ethical AI & Data Governance): Implement audit logging, data lineage tracking, privacy-preserving
+machine learning, and cost-optimization governance in cloud environments.
+COURSE ASSIGNMENTS & WEIGHT DISTRIBUTION
+• 
+• 
+• 
+• 
+ASSIGNMENT DESCRIPTION WEIGHT DUE MODULE DELIVERABLE FORMAT
+Distributed Training Benchmark Project30% Module 05 GitHub Repo, Profiling Logs & 8-
+Page Whitepaper
+Production Inference Microservice &
+Load Test
+25% Module 08 Containerized Service,
+Benchmark Dashboard &
+Dockerfile
+Automated End-to-End MLOps Pipeline
+Capstone
+30% Module 11 Live Production Deployment, IaC
+Manifests & Final Pitch
+Architecture Seminar & Code Reviews15% Continuous Bi-Weekly Lab Code Reviews &
+Tech Briefs
+Total Course Assessment 100% Term End
+DATA 630: Scalable Machine Learning Systems & Cloud AI Architectures 1
+ASSIGNMENT SPECIFICATIONS
+1. Distributed Training Benchmark Project (30%)
+Students implement and profile data-parallel and pipeline-parallel distributed training routines for a 3-billion-parameter
+Transformer architecture using PyTorch DDP and Ray on a multi-GPU cluster. The deliverable includes a reproducible
+GitHub repository, distributed GPU utilization flame graphs, scaling efficiency analysis, and an 8-page IEEE-format
+technical whitepaper. 
+2. Production Inference Microservice & Load Test (25%)
+Students containerize a quantized deep learning model and expose low-latency gRPC/REST endpoints using Triton
+Inference Server or vLLM. The deliverable requires Locust or k6 load test results demonstrating sustained throughput
+under 1,000 concurrent RPS with p99 latency < 85ms, complete with Prometheus/Grafana monitoring configurations. 
+3. Automated End-to-End MLOps Pipeline Capstone (30%)
+In teams of two, students design a complete cloud-native pipeline: automated feature engineering (Feast), model
+tracking and registry (MLflow), scheduled continuous training (Kubeflow/Airflow), automated Canary deployment on
+Kubernetes, and drift detection (Evidently AI). Includes live deployment validation and an oral technical pitch. 
+4. Architecture Seminar & Code Reviews (15%)
+Evaluated through structured peer code reviews in GitHub pull requests, participation in technical whitepaper
+discussions, and bi-weekly architecture decision records (ADRs) submitted during lab sessions. 
+WEEKLY TERM SCHEDULE & READING REQUIREMENTS
+ASSIGNMENT DESCRIPTION WEIGHT DUE MODULE DELIVERABLE FORMAT
+Comprehensive Cumulative
+Evaluation
+TIMELINE MODULE TECHNICAL TOPIC FOCUS ASSIGNED READINGS & DOCS
+Week 01 Module 01 ML Systems Architecture & Data
+Ingestion Pipelines
+Huyen (Ch. 1–3); Kleppmann (Ch. 1)
+Week 02 Module 02 Feature Engineering at Scale & Feature
+Stores
+Huyen (Ch. 4 & 5); Feast Architecture
+Specs
+Week 03 Module 03 Distributed Data-Parallel Training (DDP &
+Horovod)
+PyTorch Distributed Docs; Li et al. (2020)
+Week 04 Module 04 Model Parallelism, ZeRO & DeepSpeed
+Optimization
+Rajbhandari et al. (2020); Shoeybi et al.
+(Megatron)
+Week 05 Module 05 Model Compression: Quantization, LoRA
+& Distillation
+Dettmers et al. (QLoRA); Hu et al. (LoRA)
+Week 06 Module 06 Serving Infrastructure & Continuous
+Batching
+vLLM Technical Paper; Triton User Guide
+DATA 630: Scalable Machine Learning Systems & Cloud AI Architectures 2
+Late Submission & Extension Policy: Production releases wait for no one. Late code submissions incur an
+automatic 5% deduction per 24 hours late (up to 72 hours max). Extension requests must be submitted via formal
+instructor communication at least 48 hours in advance of the deadline. 
+COURSEPAL PARSER & APPLICATION MAPPING GUIDE
+This document structure has been optimized for clean automated parsing into your CoursePal architecture. Below are
+the precise app views and fields populated upon upload: 
+1. ASSIGNMENTS & GRADES DASHBOARD
+• Distributed Training Benchmark: Maps as a major technical deliverable, weight: 30%, due Module 05.
+• Production Inference Microservice: Maps as a systems lab benchmark, weight: 25%, due Module 08.
+• MLOps Pipeline Capstone: Maps as the term capstone project, weight: 30%, due Module 11.
+• Seminar & Code Reviews: Maps as a continuous recurring contribution, weight: 15%. 
+2. WEEKLY READING & RESOURCE TRACKER
+• Extracts 11 weekly reading blocks into clickable to-do checkboxes (e.g., Huyen Ch. 1–3, PyTorch Distributed
+Docs, vLLM Paper).
+• Automatically indexes engineering docs and architectural whitepapers into the course resource drawer. 
+3. SMART CALENDAR & REMINDER ALERTS
+• Schedules 11 weekly Thursday lecture and lab sessions (10:00 AM – 12:30 PM PST).
+• Configures automated 48-hour deadline alert triggers matching the course extension window. 
+TIMELINE MODULE TECHNICAL TOPIC FOCUS ASSIGNED READINGS & DOCS
+Week 07 Module 07 Container Orchestration & Kubernetes for
+Machine Learning
+Burns et al. (Ch. 4–6); Kubeflow Operator
+Docs
+Week 08 Module 08 Monitoring, Observability & Data Drift
+Detection
+Huyen (Ch. 8 & 9); Evidently AI
+Whitepaper
+Week 09 Module 09 Workflow Orchestration with Airflow &
+Prefect
+Huyen (Ch. 6); Apache Airflow Core
+Architecture
+Week 10 Module 10 Cost Governance, Spot Instances &
+Cloud FinOps for AI
+Cloud AI Pricing Guides; Stoica et al.
+(Ray Paper)
+Week 11 Module 11 Final Capstone Showcase, Live Demos &
+Term Retrospective
+Industry System Architecture
+Whitepapers
+DATA 630: Scalable Machine Learning Systems & Cloud AI Architectures 3

@@ -47,7 +47,7 @@ export const FuzzedScrollTopFade: React.FC<{ height?: number; color?: string }> 
 };
 
 export const FuzzedScrollBottomFade: React.FC<{ height?: number; color?: string }> = ({
-  height = 85,
+  height = 115,
   color = CoursePalTheme.bgCanvas
 }) => {
   return (
@@ -56,9 +56,9 @@ export const FuzzedScrollBottomFade: React.FC<{ height?: number; color?: string 
         <Defs>
           <SvgLinearGradient id="fuzzedBottomGradient" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor={color} stopOpacity="0.0" />
-            <Stop offset="0.30" stopColor={color} stopOpacity="0.20" />
-            <Stop offset="0.55" stopColor={color} stopOpacity="0.55" />
-            <Stop offset="0.80" stopColor={color} stopOpacity="0.88" />
+            <Stop offset="0.25" stopColor={color} stopOpacity="0.15" />
+            <Stop offset="0.50" stopColor={color} stopOpacity="0.50" />
+            <Stop offset="0.75" stopColor={color} stopOpacity="0.85" />
             <Stop offset="1.0" stopColor={color} stopOpacity="1.0" />
           </SvgLinearGradient>
         </Defs>

@@ -103,7 +103,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
 
       // Instantly start document processing on single click
       const currentName = courseName.trim();
-      const codeMatch = currentName.match(/\b([A-Z]{2,6}\s*\d{3,4}[A-Z]?)\b/i);
+      const codeMatch = currentName.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
       const derivedCode = codeMatch ? codeMatch[1].toUpperCase().replace(/\s+/g, ' ') : '';
       
       const newCourse = addCourse({
@@ -155,7 +155,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
     }
 
     const isGenericCourseName = /^(new\s*course|new)$/i.test(trimmedName);
-    const codeMatch = trimmedName.match(/\b([A-Z]{2,6}\s*\d{3,4}[A-Z]?)\b/i);
+    const codeMatch = trimmedName.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
     const derivedCode = codeMatch
       ? codeMatch[1].toUpperCase().replace(/\s+/g, ' ')
       : isGenericCourseName

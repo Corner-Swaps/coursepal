@@ -217,7 +217,7 @@ export class StoreReviewService {
   }
 
   /**
-   * Deep-links directly to the App Store product page with ?action=write-review
+   * Deep-links directly to the App Store or Google Play Store product page with write-review action
    */
   public async openAppStoreReviewPage(): Promise<boolean> {
     if (Platform.OS === 'ios' && AppleStoreReviewManager?.openStoreReviewPage) {
@@ -227,6 +227,25 @@ export class StoreReviewService {
       } catch (err) {
         // Fallback to Linking
       }
+    }
+
+    if (Platform.OS === 'android') {
+      const playMarketUrl = 'market://details?id=com.coursepal.app';
+      const playWebUrl = 'https://play.google.com/store/apps/details?id=com.coursepal.app';
+      try {
+        if (Linking?.canOpenURL && Linking?.openURL) {
+          const canOpenMarket = await Linking.canOpenURL(playMarketUrl).catch(() => false);
+          if (canOpenMarket) {
+            await Linking.openURL(playMarketUrl);
+            return true;
+          }
+          await Linking.openURL(playWebUrl);
+          return true;
+        }
+      } catch (err) {
+        // Handled safely
+      }
+      return false;
     }
 
     const appStoreUrl = 'https://apps.apple.com/app/coursepal?action=write-review';
@@ -243,6 +262,11 @@ export class StoreReviewService {
     }
     return false;
   }
+
+  /**
+   * Cross-platform alias for openAppStoreReviewPage.
+   */
+  public openStoreReviewPage = this.openAppStoreReviewPage.bind(this);
 
   /**
    * Helper for tests to inspect in-memory state

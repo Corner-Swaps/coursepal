@@ -50,4 +50,9 @@ project.xcworkspace/xcshareddata/SwiftPM/Package.resolved
 *.swiftsourceinfo
 *.swiftmodule
 *.abi.json
+ 
+# Cloudflare Workers
+.wrangler/
+cloudflare-worker/.wrangler/
+cloudflare-worker/node_modules/
 

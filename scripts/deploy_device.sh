@@ -19,32 +19,41 @@ echo "🧹 1. Cleaning build lock data..."
 rm -f /Users/slava/Library/Developer/Xcode/DerivedData/CoursePal-dcvtihrefvqubfaxyzothkhyfwln/Build/Intermediates.noindex/XCBuildData/build.db*
 
 echo "📦 2. Bundling production React Native JS code..."
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
 npx react-native bundle \
   --entry-file index.js \
   --platform ios \
   --dev false \
   --bundle-output ios/CoursePal/main.jsbundle \
   --assets-dest ios/CoursePal
-cp ios/CoursePal/main.jsbundle ios/main.jsbundle
 
 echo "📱 3. Verifying device availability ($DEVICE_ID)..."
-for i in {1..20}; do
+for i in {1..60}; do
   STATE_LINE=$(xcrun devicectl list devices | grep "$DEVICE_ID" || true)
   if echo "$STATE_LINE" | grep -qE "\bavailable\b|\bconnected\b"; then
     echo "📱 iPhone ($DEVICE_ID) is awake and connected."
     break
   fi
-  echo "⏳ Waiting for iPhone ($DEVICE_ID) to unlock / connect... (attempt $i/20)"
+  echo "⏳ Waiting for iPhone ($DEVICE_ID) to unlock / connect... (attempt $i/60)"
   sleep 2
 done
 
-echo "🔨 4. Compiling native iOS app in Release mode..."
-xcodebuild -workspace ios/CoursePal.xcworkspace \
-  -scheme CoursePal \
-  -configuration Release \
-  -destination "id=$DEVICE_ID" \
-  -allowProvisioningUpdates \
-  build
+if [ "$1" == "--native" ] || [ ! -d "$APP_PATH" ]; then
+  echo "🔨 4. Compiling native iOS app in Release mode..."
+  xcodebuild -workspace ios/CoursePal.xcworkspace \
+    -scheme CoursePal \
+    -configuration Release \
+    -destination "id=$DEVICE_ID" \
+    -allowProvisioningUpdates \
+    build
+else
+  echo "⚡️ 4. Native binary exists; injecting fresh production bundle into CoursePal.app..."
+  cp ios/CoursePal/main.jsbundle "$APP_PATH/main.jsbundle"
+fi
 
 echo "🔏 5. Extracting entitlements & code-signing app bundle..."
 security cms -D -i "$APP_PATH/embedded.mobileprovision" > /tmp/profile.plist
@@ -60,10 +69,23 @@ fi
 codesign --force --sign "$SIGNING_IDENTITY" --entitlements /tmp/entitlements.plist --timestamp=none "$APP_PATH"
 
 echo "📲 6. Installing app onto physical iPhone ($DEVICE_ID)..."
-xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH" --verbose
+INSTALL_SUCCESS=false
+for attempt in {1..4}; do
+  if xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH"; then
+    INSTALL_SUCCESS=true
+    break
+  fi
+  echo "⚠️ Installation attempt $attempt encountered a tunnel reset, retrying in 2 seconds..."
+  sleep 2
+done
+
+if [ "$INSTALL_SUCCESS" != "true" ]; then
+  echo "❌ Failed to install app after 4 attempts."
+  exit 1
+fi
 
 echo "🚀 7. Launching CoursePal ($BUNDLE_ID)..."
-xcrun devicectl device process launch --device "$DEVICE_ID" "$BUNDLE_ID"
+xcrun devicectl device process launch --device "$DEVICE_ID" --terminate-existing "$BUNDLE_ID"
 
 echo "========================================================"
 echo "✅ DEPLOYMENT COMPLETE! CoursePal is running on your iPhone."

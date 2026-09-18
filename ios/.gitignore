@@ -25,6 +25,8 @@ project.xcworkspace
 
 # Bundle artifacts
 *.jsbundle
+assets/
+CoursePal/assets/
 
 # CocoaPods
 /Pods/

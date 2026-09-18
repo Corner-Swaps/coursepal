@@ -70,10 +70,15 @@ module.exports = {
     linear: (t) => t,
     ease: (t) => t,
     inOut: () => (t) => t,
+    out: () => (t) => t,
   },
   Share: {
     share: jest.fn(() => Promise.resolve({ action: 'sharedAction' })),
     sharedAction: 'sharedAction',
     dismissedAction: 'dismissedAction',
+  },
+  Linking: {
+    canOpenURL: jest.fn(() => Promise.resolve(true)),
+    openURL: jest.fn(() => Promise.resolve(true)),
   },
 };

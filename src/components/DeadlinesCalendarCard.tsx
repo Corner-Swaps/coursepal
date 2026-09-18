@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
 import { CoursePalTheme } from '../constants/theme';
 import { ChevronLeftIcon, ChevronRightIcon } from './SvgIcons';
-import { weekNumberForDate } from '../utils/timeFormatters';
+import { weekNumberForDate, getBaseTermStartDate } from '../utils/timeFormatters';
 
 interface DeadlinesCalendarCardProps {
   selectedDate: Date;
@@ -13,6 +13,8 @@ interface DeadlinesCalendarCardProps {
   onSelectWeek?: (weekNumber: number) => void;
   selectedWeekFilter?: number | null;
   startWeekNumber?: number; // Defaults to 1 so the section starts at Week 1
+  termStartDate?: Date | null;
+  currentAcademicWeek?: number;
 }
 
 // Helper: Get Sunday of the week for a given date
@@ -31,68 +33,124 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
   itemDatesWithColors,
   onSelectWeek,
   selectedWeekFilter,
-  startWeekNumber = 1
+  startWeekNumber = 1,
+  termStartDate,
+  currentAcademicWeek
 }) => {
-  // Current week start (Sunday)
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStartOfWeek(selectedDate));
-  const startWeek = startWeekNumber ?? 1;
-  const [weekOffset, setWeekOffset] = useState<number>(() => {
-    if (selectedWeekFilter != null && selectedWeekFilter >= startWeek) {
-      return selectedWeekFilter - startWeek;
+  // Base term start (Sunday)
+  const baseTermStartSunday = useMemo(() => {
+    if (termStartDate) {
+      return getStartOfWeek(termStartDate);
     }
-    return 0;
+    return getStartOfWeek(getBaseTermStartDate(selectedDate));
+  }, [termStartDate, selectedDate]);
+
+  // Current week start (Sunday) - initialize to selectedWeekFilter if provided, else selectedDate
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
+    if (selectedWeekFilter != null && selectedWeekFilter >= 1) {
+      const base = termStartDate ? getStartOfWeek(termStartDate) : getStartOfWeek(getBaseTermStartDate(selectedDate));
+      const target = new Date(base);
+      target.setDate(target.getDate() + (selectedWeekFilter - 1) * 7);
+      return target;
+    }
+    return getStartOfWeek(selectedDate);
   });
 
-  // Re-sync current week if selectedDate changes drastically outside the week
+  // Re-sync current week if selectedDate changes drastically outside the week while date filter is active
   useEffect(() => {
-    const selWeekStart = getStartOfWeek(selectedDate);
-    const diffTime = selWeekStart.getTime() - currentWeekStart.getTime();
-    const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
-    if (diffDays < 0 || diffDays >= 7) {
-      setCurrentWeekStart(selWeekStart);
-    }
-  }, [selectedDate]);
-
-  // Sync weekOffset if selectedWeekFilter is passed in (e.g. from parent filter)
-  useEffect(() => {
-    if (selectedWeekFilter != null && selectedWeekFilter >= startWeek) {
-      const targetOffset = selectedWeekFilter - startWeek;
-      if (targetOffset !== weekOffset) {
-        setWeekOffset(targetOffset);
+    if (isDateFilterActive) {
+      const selWeekStart = getStartOfWeek(selectedDate);
+      const diffTime = selWeekStart.getTime() - currentWeekStart.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+      if (diffDays < 0 || diffDays >= 7) {
+        setCurrentWeekStart(selWeekStart);
       }
     }
-  }, [selectedWeekFilter, startWeek]);
+  }, [selectedDate, isDateFilterActive]);
 
-  // Display week label: starts at Week 1 (or startWeekNumber) and steps with user navigation
+  // Sync currentWeekStart if selectedWeekFilter is passed in
+  useEffect(() => {
+    if (selectedWeekFilter != null && selectedWeekFilter >= 1) {
+      const targetDate = new Date(baseTermStartSunday);
+      targetDate.setDate(targetDate.getDate() + (selectedWeekFilter - 1) * 7);
+      setCurrentWeekStart(targetDate);
+    }
+  }, [selectedWeekFilter, baseTermStartSunday]);
+
+  // Derive week number directly from currentWeekStart relative to baseTermStartSunday
   const displayWeekNumber = useMemo(() => {
-    return Math.max(1, startWeek + weekOffset);
-  }, [startWeek, weekOffset]);
+    const diffMs = currentWeekStart.getTime() - baseTermStartSunday.getTime();
+    const diffWeeks = Math.round(diffMs / (7 * 86400000));
+    const raw = diffWeeks + 1;
+    if (raw >= 1 && raw <= 16) {
+      return raw;
+    }
+    return weekNumberForDate(currentWeekStart);
+  }, [currentWeekStart, baseTermStartSunday]);
+
+  const targetCurrentWeekNum = currentAcademicWeek != null ? currentAcademicWeek : 1;
+  const isCurrentWeekActive = useMemo(() => {
+    if (selectedWeekFilter != null) {
+      return selectedWeekFilter === targetCurrentWeekNum;
+    }
+    if (isDateFilterActive) {
+      return (
+        selectedDate.getFullYear() === new Date().getFullYear() &&
+        selectedDate.getMonth() === new Date().getMonth() &&
+        selectedDate.getDate() === new Date().getDate()
+      );
+    }
+    return false;
+  }, [selectedWeekFilter, targetCurrentWeekNum, isDateFilterActive, selectedDate]);
+
+  const handleToggleCurrentWeek = () => {
+    if (isCurrentWeekActive) {
+      if (onSelectWeek) {
+        onSelectWeek(0);
+      }
+      if (isDateFilterActive) {
+        onToggleDateFilter();
+      }
+    } else {
+      const today = new Date();
+      const todaySunday = getStartOfWeek(today);
+      setCurrentWeekStart(todaySunday);
+      if (onSelectWeek) {
+        onSelectWeek(targetCurrentWeekNum);
+      } else {
+        onSelectDate(today);
+      }
+    }
+  };
 
   const prevWeek = () => {
     if (displayWeekNumber <= 1) return;
-    setCurrentWeekStart(prev => {
-      const next = new Date(prev);
-      next.setDate(next.getDate() - 7);
-      return next;
-    });
-    setWeekOffset(prev => Math.max(0, prev - 1));
+    const newWeek = displayWeekNumber - 1;
+    if (newWeek === 1) {
+      setCurrentWeekStart(new Date(baseTermStartSunday));
+    } else {
+      setCurrentWeekStart(prev => {
+        const next = new Date(prev);
+        next.setDate(next.getDate() - 7);
+        return next;
+      });
+    }
+    if (onSelectWeek) {
+      onSelectWeek(newWeek);
+    }
   };
 
   const nextWeek = () => {
+    const newWeek = displayWeekNumber + 1;
     setCurrentWeekStart(prev => {
       const next = new Date(prev);
       next.setDate(next.getDate() + 7);
       return next;
     });
-    setWeekOffset(prev => prev + 1);
+    if (onSelectWeek) {
+      onSelectWeek(newWeek);
+    }
   };
-
-  // Month & Year string based on Thursday of the current week
-  const monthYearString = useMemo(() => {
-    const midWeek = new Date(currentWeekStart);
-    midWeek.setDate(midWeek.getDate() + 3);
-    return midWeek.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  }, [currentWeekStart]);
 
   // Days in this week: Sunday through Saturday (7 days)
   const weekDays = useMemo(() => {
@@ -105,7 +163,28 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
     return days;
   }, [currentWeekStart]);
 
-  // Formatted week date range, e.g. "Sep 13 – Sep 19"
+  // Accurate month & year string: ensures Week 1 correctly displays the starting month
+  const monthYearString = useMemo(() => {
+    if (weekDays.length < 7) {
+      return currentWeekStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+    const start = weekDays[0];
+    const end = weekDays[6];
+    const startMonth = start.toLocaleDateString('en-US', { month: 'long' });
+    const endMonth = end.toLocaleDateString('en-US', { month: 'long' });
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
+
+    if (startMonth === endMonth && startYear === endYear) {
+      return `${startMonth} ${startYear}`;
+    }
+    if (startYear === endYear) {
+      return `${startMonth} – ${endMonth} ${startYear}`;
+    }
+    return `${startMonth} ${startYear} – ${endMonth} ${endYear}`;
+  }, [weekDays, currentWeekStart]);
+
+  // Formatted week date range, e.g. "Sep 13 – Sep 19" or "Aug 30 – Sep 5"
   const weekRangeString = useMemo(() => {
     if (weekDays.length < 7) return '';
     const start = weekDays[0];
@@ -137,72 +216,38 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
   const isWeekSelected = selectedWeekFilter === displayWeekNumber;
 
   return (
-    <View style={styles.cardContainer} testID="deadlines-calendar-card">
-      {/* Month Nav Header (< Month Year >) */}
-      <View style={styles.monthHeader}>
-        <TouchableOpacity
-          onPress={prevWeek}
-          style={[styles.navButton, displayWeekNumber <= 1 && styles.navButtonDisabled]}
-          activeOpacity={0.7}
-          disabled={displayWeekNumber <= 1}
-          testID="cal-prev-month"
-        >
-          <ChevronLeftIcon size={14} color={displayWeekNumber <= 1 ? '#BAC4D4' : '#596B85'} />
-        </TouchableOpacity>
+    <View style={styles.outerWrapper}>
+      {/* Calendar 7-Day Card */}
+      <View style={styles.cardContainer} testID="deadlines-calendar-card">
+        {/* Month Nav Header (< Month Year >) */}
+        <View style={styles.monthHeader}>
+          <TouchableOpacity
+            onPress={prevWeek}
+            style={[styles.navButton, displayWeekNumber <= 1 && styles.navButtonDisabled]}
+            activeOpacity={0.7}
+            disabled={displayWeekNumber <= 1}
+            testID="cal-prev-month"
+          >
+            <ChevronLeftIcon size={14} color={displayWeekNumber <= 1 ? '#BAC4D4' : '#596B85'} />
+          </TouchableOpacity>
 
-        <View style={styles.monthTitleCenter}>
-          <Text style={styles.monthTitleText}>{monthYearString}</Text>
-          <Text style={styles.weekRangeSubtitleText}>
-            Week {displayWeekNumber} · {weekRangeString}
-          </Text>
+          <View style={styles.monthTitleCenter}>
+            <Text style={styles.monthTitleText}>{monthYearString}</Text>
+            <Text style={styles.weekRangeSubtitleText}>{weekRangeString}</Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={nextWeek}
+            style={styles.navButton}
+            activeOpacity={0.7}
+            testID="cal-next-month"
+          >
+            <ChevronRightIcon size={14} color="#596B85" />
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          onPress={nextWeek}
-          style={styles.navButton}
-          activeOpacity={0.7}
-          testID="cal-next-month"
-        >
-          <ChevronRightIcon size={14} color="#596B85" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Split Row: Left Week Badge ("Week X") + Right Horizontal 7-Day Row */}
-      <View style={styles.splitRow}>
-        {/* Left Hero Week Box */}
-        <TouchableOpacity
-          style={[
-            styles.leftHeroContainer,
-            isWeekSelected && styles.leftHeroContainerActive
-          ]}
-          onPress={() => {
-            if (onSelectWeek) {
-              onSelectWeek(displayWeekNumber);
-            } else {
-              onToggleDateFilter();
-            }
-          }}
-          activeOpacity={0.8}
-          testID="cal-hero-date-button"
-        >
-          <Text style={[styles.heroWeekLabel, isWeekSelected && styles.heroWeekLabelActive]}>
-            Week
-          </Text>
-          <Text
-            style={[
-              styles.heroWeekNumber,
-              (isDateFilterActive || isWeekSelected) && styles.heroWeekNumberActive
-            ]}
-          >
-            {displayWeekNumber}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Vertical Divider */}
-        <View style={styles.verticalDivider} />
-
-        {/* Right Horizontal 7-Day Week Strip */}
-        <View style={styles.rightDaysContainer}>
+        {/* Horizontal 7-Day Week Strip */}
+        <View style={styles.daysContainer}>
           {weekDays.map((dateObj, idx) => {
             const isSelected = isDateFilterActive && isSameDay(dateObj, selectedDate);
             const dateKey = formatDateKey(dateObj);
@@ -258,11 +303,38 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
           })}
         </View>
       </View>
+
+      {/* Standalone Current Week Pill Card - Styled like the course percentage capsule */}
+      <View style={styles.currentWeekCardContainer}>
+        <TouchableOpacity
+          style={styles.currentWeekCardRow}
+          onPress={handleToggleCurrentWeek}
+          activeOpacity={0.7}
+          testID="cal-current-week-toggle"
+        >
+          <View style={styles.currentWeekLeftWrap}>
+            <View style={[styles.statusDot, isCurrentWeekActive && styles.statusDotActive]} />
+            <View style={[styles.currentWeekPill, isCurrentWeekActive && styles.currentWeekPillActive]}>
+              <Text style={[styles.currentWeekPillText, isCurrentWeekActive && styles.currentWeekPillTextActive]}>
+                Current week{currentAcademicWeek != null ? ` · Wk ${currentAcademicWeek}` : ''}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.toggleTrack, isCurrentWeekActive && styles.toggleTrackActive]}>
+            <View style={[styles.toggleThumb, isCurrentWeekActive && styles.toggleThumbActive]} />
+          </View>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  outerWrapper: {
+    width: '100%',
+    gap: 10
+  },
   cardContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
@@ -291,6 +363,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
+  monthTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6
+  },
   monthTitleText: {
     fontSize: 14.5,
     fontWeight: '700',
@@ -303,51 +381,81 @@ const styles = StyleSheet.create({
     color: '#718096',
     marginTop: 2
   },
-  splitRow: {
+  daysContainer: {
     flexDirection: 'row',
-    alignItems: 'center'
-  },
-  leftHeroContainer: {
-    width: 68,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
+    justifyContent: 'space-between',
     paddingVertical: 2
   },
-  leftHeroContainerActive: {
-    backgroundColor: '#EEF4FF'
+  currentWeekCardContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 18,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2
   },
-  heroWeekLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#596B85',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 1
-  },
-  heroWeekLabelActive: {
-    color: CoursePalTheme.accentBlue
-  },
-  heroWeekNumber: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: CoursePalTheme.accentBlue,
-    lineHeight: 38
-  },
-  heroWeekNumberActive: {
-    color: CoursePalTheme.accentBlue
-  },
-  verticalDivider: {
-    width: 1,
-    height: 52,
-    backgroundColor: '#E3E8F0',
-    marginHorizontal: 10
-  },
-  rightDaysContainer: {
-    flex: 1,
+  currentWeekCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between'
+  },
+  currentWeekLeftWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#BAC4D4'
+  },
+  statusDotActive: {
+    backgroundColor: CoursePalTheme.accentBlue
+  },
+  currentWeekPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9'
+  },
+  currentWeekPillActive: {
+    backgroundColor: 'rgba(36, 112, 245, 0.10)'
+  },
+  currentWeekPillText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#475569',
+    letterSpacing: -0.1
+  },
+  currentWeekPillTextActive: {
+    color: CoursePalTheme.accentBlue
+  },
+  toggleTrack: {
+    width: 32,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#D1D9E4',
+    padding: 2,
+    justifyContent: 'center'
+  },
+  toggleTrackActive: {
+    backgroundColor: CoursePalTheme.accentBlue
+  },
+  toggleThumb: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#FFFFFF',
+    alignSelf: 'flex-start'
+  },
+  toggleThumbActive: {
+    alignSelf: 'flex-end'
   },
   dayCol: {
     flex: 1,

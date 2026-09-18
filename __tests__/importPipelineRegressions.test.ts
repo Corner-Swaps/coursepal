@@ -594,4 +594,113 @@ describe('Document Import Pipeline Regression Test Suite (9 Core Repairs)', () =
       expect(outcome.message).toContain('scanned or image-only');
     });
   });
+
+  // --------------------------------------------------------------------------
+  // REPAIR 10: Dual-Engine Local Enrichment of AI Payloads (Rubrics & Weights)
+  // --------------------------------------------------------------------------
+  describe('Repair 10: Dual-Engine local enrichment fills missing weights and rubrics from AI payload', () => {
+    it('enriches AI payload where Peer Review Group Report had unspecified weight and missing rubrics', () => {
+      // Simulate raw AI output from Gemini that missed weight and rubrics
+      const mockAiPayload = {
+        courseName: 'Family Systems Approaches to Counselling',
+        courseCode: 'CPC 512',
+        assignments: [
+          {
+            title: 'Peer Review Group Report',
+            dueDate: '2026-08-20',
+            pointsPossible: '100 Points',
+            weightPercentage: null, // AI failed to cross-reference Overview table 10%
+            fullInstructions: 'Provide classmates with feedback on their in-class interventions presentation.',
+            rubricCriteria: [] // AI previously lacked rubric schema
+          },
+          {
+            title: 'Genogram/Family Mapping Paper',
+            dueDate: '2026-07-30',
+            pointsPossible: '100 Points',
+            weightPercentage: '30%',
+            fullInstructions: 'Write a comprehensive genogram paper.'
+          }
+        ],
+        readings: [],
+        weeks: []
+      };
+
+      const normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(mockAiPayload);
+      expect(normalized.candidateAssignments[0].weightPercentage).toBeNull();
+      expect(normalized.candidateAssignments[0].rubricCriteria?.length || 0).toBe(0);
+
+      // Local parser result with extracted overview table weights and rubric criteria
+      const mockLocalDto = {
+        id: 'local-cpc-512',
+        courseName: 'Family Systems Approaches to Counselling',
+        courseCode: 'CPC 512',
+        termWeeks: 12,
+        weeks: [],
+        readings: [],
+        assignments: [
+          {
+            id: 'la-1',
+            title: 'Peer Review Group Report',
+            pointsPossible: '100 Points',
+            weightPercentage: '10%',
+            rubricCriteria: [
+              { criterionName: 'Feedback Quality', points: 20 },
+              { criterionName: 'Application of Theory', points: 20 },
+              { criterionName: 'Intervention Critiques', points: 20 },
+              { criterionName: 'Constructive Tone', points: 20 },
+              { criterionName: 'Formatting and Clarity', points: 10 },
+              { criterionName: 'Timeliness', points: 10 }
+            ]
+          },
+          {
+            id: 'la-2',
+            title: 'Genogram/Family Mapping Paper',
+            pointsPossible: '100 Points',
+            weightPercentage: '30%',
+            rubricCriteria: [
+              { criterionName: 'Genogram Construction', points: 20 },
+              { criterionName: 'Family History Analysis', points: 20 }
+            ]
+          },
+          {
+            id: 'la-3',
+            title: 'Collaboration & Participation',
+            pointsPossible: '100 Points',
+            weightPercentage: '20%',
+            rubricCriteria: [
+              { criterionName: 'Attendance', points: 50 },
+              { criterionName: 'Engagement', points: 50 }
+            ]
+          }
+        ]
+      };
+
+      // Enrich payload
+      const enriched = SyllabusImportManager.shared.enrichPayloadWithLocalExtraction(
+        normalized,
+        mockLocalDto as any
+      );
+
+      // Verify AI's Peer Review was enriched with 10% weight and 6 rubric criteria
+      const peerReview = enriched.candidateAssignments.find(a => /Peer Review/i.test(a.title || ''));
+      expect(peerReview).toBeDefined();
+      expect(peerReview?.weightPercentage).toBe('10%');
+      expect(peerReview?.rubricCriteria?.length).toBe(6);
+      expect(peerReview?.pointsPossible).toBe('100 Points');
+
+      // Verify AI completely missed deliverable "Collaboration & Participation" was preserved from overview table
+      const collab = enriched.candidateAssignments.find(a => /Collaboration/i.test(a.title || ''));
+      expect(collab).toBeDefined();
+      expect(collab?.weightPercentage).toBe('20%');
+
+      // Test clean assignments list deduplication
+      const cleanAssignments = SyllabusImportManager.shared.deduplicateAssignments(enriched.candidateAssignments);
+      const cleanPeerReview = cleanAssignments.find(a => /Peer Review/i.test(a.title));
+      expect(cleanPeerReview).toBeDefined();
+      expect(cleanPeerReview?.weightPercentage).toBe('10%');
+      expect(cleanPeerReview?.rubricCriteria?.length).toBe(6);
+      expect(cleanPeerReview?.pointsPossible).toBe('100 Points');
+    });
+  });
 });
+

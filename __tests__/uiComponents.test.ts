@@ -4,7 +4,7 @@ import {
   AppIconLogoView,
   ContinuousProgressRing,
   ContinuousProgressBar,
-  UploadProgressBanner,
+  PulsingColorDot,
   HighlighterText,
   MainTabBar,
   ConfettiCelebration,
@@ -70,19 +70,16 @@ describe('Atomic UI Components', () => {
     });
   });
 
-  describe('UploadProgressBanner', () => {
-    it('defines component with default title and visibility', () => {
-      const element = React.createElement(UploadProgressBanner, {
-        title: 'Processing Syllabus...',
-        visible: true
+  describe('PulsingColorDot', () => {
+    it('defines component with color, size, and pulsing state', () => {
+      const element = React.createElement(PulsingColorDot, {
+        color: '#4F46E5',
+        isPulsing: true,
+        size: 10
       });
-      expect(element.props.title).toBe('Processing Syllabus...');
-      expect(element.props.visible).toBe(true);
-    });
-
-    it('renders null when visible is false', () => {
-      const element = UploadProgressBanner({ visible: false });
-      expect(element).toBeNull();
+      expect(element.props.color).toBe('#4F46E5');
+      expect(element.props.isPulsing).toBe(true);
+      expect(element.props.size).toBe(10);
     });
   });
 
@@ -181,18 +178,18 @@ describe('Atomic UI Components', () => {
       expect(element.props.onSelectWeek).toBe(onSelectWeekMock);
     });
 
-    it('supports startWeekNumber={1} to stick to week 1 initially', () => {
+    it('supports currentAcademicWeek prop for current week badges and navigation', () => {
       const element = React.createElement(DeadlinesCalendarCard, {
         selectedDate: new Date(2026, 8, 16),
         onSelectDate: jest.fn(),
         isDateFilterActive: false,
         onToggleDateFilter: jest.fn(),
         itemDatesWithColors: new Map(),
-        startWeekNumber: 1
+        currentAcademicWeek: 11
       });
 
       expect(element).toBeDefined();
-      expect(element.props.startWeekNumber).toBe(1);
+      expect(element.props.currentAcademicWeek).toBe(11);
     });
   });
 });

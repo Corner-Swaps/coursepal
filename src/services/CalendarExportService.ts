@@ -5,6 +5,7 @@
  */
 
 import { Share, Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system';
 import { Assignment, Reading, Course } from '../types/models';
 import { parseSafeDate } from '../utils/readingDisplayHelper';
 
@@ -167,7 +168,7 @@ export class CalendarExportService {
       a =>
         !a.isDeleted &&
         a.dueDate &&
-        (a.courseId === course.id || (a.courseCode || '').toLowerCase() === courseCodeKey)
+        (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === courseCodeKey)
     );
     for (const a of courseAssigns) {
       const d = parseSafeDate(a.dueDate);
@@ -185,7 +186,7 @@ export class CalendarExportService {
 
     // Add readings with due dates
     const courseReadings = readings.filter(
-      r => !r.isDeleted && r.dueDate && (r.courseCode || '').toLowerCase() === courseCodeKey
+      r => !r.isDeleted && r.dueDate && (r.courseId ? r.courseId === course.id : (r.courseCode || '').toLowerCase() === courseCodeKey)
     );
     for (const r of courseReadings) {
       const d = parseSafeDate(r.dueDate);
@@ -215,10 +216,10 @@ export class CalendarExportService {
     try {
       let fileUri: string | null = null;
       try {
-        const FileSystem = require('expo-file-system');
-        if (FileSystem && FileSystem.cacheDirectory) {
+        const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+        if (baseDir) {
           const cleanFilename = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-          const finalPath = `${FileSystem.cacheDirectory}${cleanFilename}.ics`;
+          const finalPath = `${baseDir}${cleanFilename}.ics`;
           await FileSystem.writeAsStringAsync(finalPath, icsContent, {
             encoding: FileSystem.EncodingType?.UTF8 || 'utf8'
           });
@@ -228,14 +229,26 @@ export class CalendarExportService {
         fileUri = null;
       }
 
-      if (fileUri && Platform.OS === 'ios') {
+      if (fileUri) {
+        let shareUrl = fileUri;
+        if (Platform.OS === 'android') {
+          try {
+            if (typeof FileSystem.getContentUriAsync === 'function') {
+              shareUrl = await FileSystem.getContentUriAsync(fileUri);
+            }
+          } catch {
+            shareUrl = fileUri;
+          }
+        }
+
         await Share.share(
           {
             title: subjectTitle,
-            url: fileUri
+            url: shareUrl
           },
           {
-            subject: subjectTitle
+            subject: subjectTitle,
+            dialogTitle: subjectTitle
           }
         );
       } else {

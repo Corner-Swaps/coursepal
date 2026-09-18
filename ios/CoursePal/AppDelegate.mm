@@ -73,6 +73,7 @@
 @end
 
 #import <PDFKit/PDFKit.h>
+#import <Vision/Vision.h>
 #import <React/RCTBridgeModule.h>
 #include <zlib.h>
 
@@ -496,6 +497,145 @@ static NSDictionary* RenderPdfDocumentPages(PDFDocument *doc, NSInteger maxPages
   };
 }
 
+// MARK: - Apple Vision OCR Neural Engine Helpers
+
+static NSString *PerformVisionOCROnCGImage(CGImageRef cgImage) {
+  if (!cgImage) return @"";
+
+  __block NSMutableString *recognizedString = [NSMutableString string];
+  VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:^(VNRequest * _Nonnull req, NSError * _Nullable error) {
+    if (error || !req.results || req.results.count == 0) return;
+
+    // Sort observations into human natural reading order: top-to-bottom, left-to-right
+    // Vision bounding boxes are normalized in [0, 1] with (0,0) at bottom-left.
+    NSArray *sortedObservations = [req.results sortedArrayUsingComparator:^NSComparisonResult(id obj1, id obj2) {
+      if (![obj1 isKindOfClass:[VNRecognizedTextObservation class]] || ![obj2 isKindOfClass:[VNRecognizedTextObservation class]]) {
+        return NSOrderedSame;
+      }
+      VNRecognizedTextObservation *o1 = (VNRecognizedTextObservation *)obj1;
+      VNRecognizedTextObservation *o2 = (VNRecognizedTextObservation *)obj2;
+
+      CGFloat top1 = CGRectGetMaxY(o1.boundingBox);
+      CGFloat top2 = CGRectGetMaxY(o2.boundingBox);
+
+      // Lines within ~1.8% vertical height are treated as the same line
+      if (fabs(top1 - top2) > 0.018) {
+        return top1 > top2 ? NSOrderedAscending : NSOrderedDescending;
+      }
+      // Left-to-right ordering within the same line
+      CGFloat left1 = CGRectGetMinX(o1.boundingBox);
+      CGFloat left2 = CGRectGetMinX(o2.boundingBox);
+      if (left1 < left2) return NSOrderedAscending;
+      if (left1 > left2) return NSOrderedDescending;
+      return NSOrderedSame;
+    }];
+
+    for (id obj in sortedObservations) {
+      if ([obj isKindOfClass:[VNRecognizedTextObservation class]]) {
+        VNRecognizedTextObservation *obs = (VNRecognizedTextObservation *)obj;
+        NSArray<VNRecognizedText *> *topCandidates = [obs topCandidates:1];
+        if (topCandidates.count > 0) {
+          NSString *str = topCandidates.firstObject.string;
+          if (str && str.length > 0) {
+            NSString *trimmed = [str stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if (trimmed.length > 0) {
+              [recognizedString appendString:trimmed];
+              [recognizedString appendString:@"\n"];
+            }
+          }
+        }
+      }
+    }
+  }];
+
+  request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
+  request.usesLanguageCorrection = YES;
+  if (@available(iOS 16.0, *)) {
+    request.automaticallyDetectsLanguage = YES;
+  }
+
+  VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:cgImage options:@{}];
+  NSError *err = nil;
+  [handler performRequests:@[request] error:&err];
+  if (err) {
+    NSLog(@"[CoursePal Vision OCR] Request error: %@", err.localizedDescription);
+    return @"";
+  }
+
+  return [recognizedString copy];
+}
+
+static UIImage *RenderPDFPageForOCR(PDFPage *page) {
+  if (!page) return nil;
+  CGRect pageBounds = [page boundsForBox:kPDFDisplayBoxCropBox];
+  if (pageBounds.size.width <= 0 || pageBounds.size.height <= 0) {
+    pageBounds = [page boundsForBox:kPDFDisplayBoxMediaBox];
+  }
+  if (pageBounds.size.width <= 0 || pageBounds.size.height <= 0) {
+    pageBounds = CGRectMake(0, 0, 612, 792);
+  }
+
+  // Target width of 1800px provides ~250-300 DPI for standard 8.5x11 documents, optimal for Vision OCR accuracy
+  CGFloat targetWidth = 1800.0;
+  CGFloat scale = targetWidth / pageBounds.size.width;
+  CGSize targetSize = CGSizeMake(targetWidth, ceil(pageBounds.size.height * scale));
+
+  // Method 1: Apple PDFPage thumbnailOfSize API
+  UIImage *img = [page thumbnailOfSize:targetSize forBox:kPDFDisplayBoxCropBox];
+  if (!img || img.size.width <= 0) {
+    img = [page thumbnailOfSize:targetSize forBox:kPDFDisplayBoxMediaBox];
+  }
+
+  // Fallback Method 2: UIGraphicsImageRenderer if thumbnail is nil
+  if (!img || img.size.width <= 0) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
+    format.scale = 1.0;
+    format.opaque = YES;
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:targetSize format:format];
+
+    img = [renderer imageWithActions:^(UIGraphicsImageRendererContext * _Nonnull context) {
+      CGContextRef cg = context.CGContext;
+      [[UIColor whiteColor] setFill];
+      CGContextFillRect(cg, CGRectMake(0, 0, targetSize.width, targetSize.height));
+
+      CGContextSetInterpolationQuality(cg, kCGInterpolationHigh);
+      CGContextSetRenderingIntent(cg, kCGRenderingIntentDefault);
+
+      CGContextSaveGState(cg);
+      CGContextTranslateCTM(cg, 0.0, targetSize.height);
+      CGContextScaleCTM(cg, scale, -scale);
+      CGContextTranslateCTM(cg, -pageBounds.origin.x, -pageBounds.origin.y);
+
+      [page drawWithBox:kPDFDisplayBoxCropBox toContext:cg];
+      CGContextRestoreGState(cg);
+    }];
+  }
+
+  return img;
+}
+
+static NSString *PerformVisionOCROnPDFDocument(PDFDocument *doc) {
+  if (!doc || doc.pageCount == 0) return @"";
+
+  NSMutableString *allText = [NSMutableString string];
+  for (NSUInteger i = 0; i < doc.pageCount; i++) {
+    PDFPage *page = [doc pageAtIndex:i];
+    if (!page) continue;
+    UIImage *pageImg = RenderPDFPageForOCR(page);
+    if (!pageImg) continue;
+
+    CGImageRef cgImage = pageImg.CGImage;
+    if (cgImage) {
+      NSString *pageText = PerformVisionOCROnCGImage(cgImage);
+      if (pageText && pageText.length > 0) {
+        [allText appendString:pageText];
+        [allText appendString:@"\n\n"];
+      }
+    }
+  }
+  return [allText copy];
+}
+
 @interface PDFTextExtractor : NSObject <RCTBridgeModule>
 @end
 
@@ -553,7 +693,7 @@ RCT_EXPORT_METHOD(extractText:(NSString *)filePath
         }
       }
 
-      // Check 2: PDF extraction (PDFKit with layout-aware line sorting)
+      // Check 2: PDF extraction (PDFKit with layout-aware line sorting + Vision OCR for scanned/sparse pages)
       PDFDocument *doc = [[PDFDocument alloc] initWithData:fileData];
       if (doc && doc.pageCount > 0) {
         NSMutableString *fullText = [NSMutableString string];
@@ -561,57 +701,96 @@ RCT_EXPORT_METHOD(extractText:(NSString *)filePath
           PDFPage *page = [doc pageAtIndex:i];
           if (!page) continue;
           NSString *rawStr = page.string;
-          if (!rawStr || rawStr.length == 0) continue;
+          NSString *trimmed = rawStr ? [rawStr stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : @"";
 
-          PDFSelection *pageSel = [page selectionForRange:NSMakeRange(0, rawStr.length)];
-          NSArray<PDFSelection *> *lines = [pageSel selectionsByLine];
-          if (lines && lines.count > 0) {
-            NSMutableArray<PDFSelection *> *sortedLines = [lines mutableCopy];
-            [sortedLines sortUsingComparator:^NSComparisonResult(PDFSelection *l1, PDFSelection *l2) {
-              CGRect b1 = [l1 boundsForPage:page];
-              CGRect b2 = [l2 boundsForPage:page];
-              CGFloat midY1 = CGRectGetMidY(b1);
-              CGFloat midY2 = CGRectGetMidY(b2);
-              if (fabs(midY1 - midY2) > 8.0) {
-                return midY1 > midY2 ? NSOrderedAscending : NSOrderedDescending;
-              }
-              CGFloat minX1 = CGRectGetMinX(b1);
-              CGFloat minX2 = CGRectGetMinX(b2);
-              if (minX1 < minX2) return NSOrderedAscending;
-              if (minX1 > minX2) return NSOrderedDescending;
-              return NSOrderedSame;
-            }];
-
-            for (PDFSelection *line in sortedLines) {
-              NSString *s = line.string;
-              if (s && s.length > 0) {
-                NSString *trimmed = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                if (trimmed.length > 0) {
-                  [fullText appendString:trimmed];
-                  [fullText appendString:@"\n"];
-                }
+          // If page text is missing or sparse (< 40 characters), run Apple Vision OCR on this page
+          if (trimmed.length < 40) {
+            UIImage *pageImg = RenderPDFPageForOCR(page);
+            if (pageImg && pageImg.CGImage) {
+              NSString *ocrResult = PerformVisionOCROnCGImage(pageImg.CGImage);
+              if (ocrResult && ocrResult.length > 20) {
+                [fullText appendString:ocrResult];
+                [fullText appendString:@"\n\n"];
+                continue;
               }
             }
-            [fullText appendString:@"\n"];
-          } else {
-            [fullText appendString:rawStr];
-            [fullText appendString:@"\n"];
+          }
+
+          if (trimmed.length > 0) {
+            PDFSelection *pageSel = [page selectionForRange:NSMakeRange(0, rawStr.length)];
+            NSArray<PDFSelection *> *lines = [pageSel selectionsByLine];
+            if (lines && lines.count > 0) {
+              NSMutableArray<PDFSelection *> *sortedLines = [lines mutableCopy];
+              [sortedLines sortUsingComparator:^NSComparisonResult(PDFSelection *l1, PDFSelection *l2) {
+                CGRect b1 = [l1 boundsForPage:page];
+                CGRect b2 = [l2 boundsForPage:page];
+                CGFloat midY1 = CGRectGetMidY(b1);
+                CGFloat midY2 = CGRectGetMidY(b2);
+                if (fabs(midY1 - midY2) > 8.0) {
+                  return midY1 > midY2 ? NSOrderedAscending : NSOrderedDescending;
+                }
+                CGFloat minX1 = CGRectGetMinX(b1);
+                CGFloat minX2 = CGRectGetMinX(b2);
+                if (minX1 < minX2) return NSOrderedAscending;
+                if (minX1 > minX2) return NSOrderedDescending;
+                return NSOrderedSame;
+              }];
+
+              for (PDFSelection *line in sortedLines) {
+                NSString *s = line.string;
+                if (s && s.length > 0) {
+                  NSString *t = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                  if (t.length > 0) {
+                    [fullText appendString:t];
+                    [fullText appendString:@"\n"];
+                  }
+                }
+              }
+              [fullText appendString:@"\n"];
+            } else {
+              [fullText appendString:rawStr];
+              [fullText appendString:@"\n"];
+            }
           }
         }
+
+        // If the document yielded fewer than 50 characters total (e.g. fully scanned PDF),
+        // execute a comprehensive Apple Vision OCR pass across all pages!
+        if (fullText.length < 50) {
+          NSString *fullOcr = PerformVisionOCROnPDFDocument(doc);
+          if (fullOcr && fullOcr.length > 20) {
+            resolve(fullOcr);
+            return;
+          }
+        }
+
         if (fullText.length > 0) {
           resolve(fullText);
           return;
         }
       }
 
-      // Check 3: Plain text UTF-8 / ASCII
+      // Check 3: Raw Image file (JPEG / PNG / HEIC photo of syllabus)
+      UIImage *directImage = [UIImage imageWithData:fileData];
+      if (directImage && directImage.size.width > 50 && directImage.size.height > 50) {
+        CGImageRef cg = directImage.CGImage;
+        if (cg) {
+          NSString *imgOcr = PerformVisionOCROnCGImage(cg);
+          if (imgOcr && imgOcr.length > 20) {
+            resolve(imgOcr);
+            return;
+          }
+        }
+      }
+
+      // Check 4: Plain text UTF-8 / ASCII
       NSString *utf8 = [[NSString alloc] initWithData:fileData encoding:NSUTF8StringEncoding];
       if (utf8 && utf8.length > 20 && ![utf8 hasPrefix:@"%PDF-"]) {
         resolve(utf8);
         return;
       }
 
-      // Check 4: RTF / HTML via NSAttributedString
+      // Check 5: RTF / HTML via NSAttributedString
       NSError *attrErr = nil;
       NSAttributedString *attrStr = [[NSAttributedString alloc] initWithData:fileData
                                                                      options:@{NSDocumentTypeDocumentAttribute: NSPlainTextDocumentType}
@@ -619,6 +798,65 @@ RCT_EXPORT_METHOD(extractText:(NSString *)filePath
                                                                        error:&attrErr];
       if (attrStr && attrStr.string && attrStr.string.length > 20) {
         resolve(attrStr.string);
+        return;
+      }
+
+      resolve(@"");
+    } @finally {
+      if (isSecurityScoped) {
+        [url stopAccessingSecurityScopedResource];
+      }
+    }
+  } @catch (NSException *exception) {
+    resolve(@"");
+  }
+}
+
+RCT_EXPORT_METHOD(extractTextViaVision:(NSString *)filePath
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  @try {
+    if (!filePath || filePath.length == 0) {
+      resolve(@"");
+      return;
+    }
+
+    NSString *cleanPath = ResolveLocalFilePath(filePath);
+    NSURL *url = cleanPath ? [NSURL fileURLWithPath:cleanPath] : nil;
+
+    BOOL isSecurityScoped = NO;
+    if (url && [url respondsToSelector:@selector(startAccessingSecurityScopedResource)]) {
+      isSecurityScoped = [url startAccessingSecurityScopedResource];
+    }
+
+    @try {
+      NSData *fileData = nil;
+      if (cleanPath) {
+        fileData = [NSData dataWithContentsOfFile:cleanPath];
+      }
+      if ((!fileData || fileData.length == 0) && url) {
+        fileData = [NSData dataWithContentsOfURL:url];
+      }
+
+      if (!fileData || fileData.length == 0) {
+        resolve(@"");
+        return;
+      }
+
+      // 1. PDF Document Vision OCR
+      PDFDocument *doc = [[PDFDocument alloc] initWithData:fileData];
+      if (doc && doc.pageCount > 0) {
+        NSString *ocrResult = PerformVisionOCROnPDFDocument(doc);
+        resolve(ocrResult ?: @"");
+        return;
+      }
+
+      // 2. Direct Image Vision OCR
+      UIImage *img = [UIImage imageWithData:fileData];
+      if (img && img.CGImage) {
+        NSString *ocrResult = PerformVisionOCROnCGImage(img.CGImage);
+        resolve(ocrResult ?: @"");
         return;
       }
 
@@ -666,9 +904,31 @@ RCT_EXPORT_METHOD(renderPDFPages:(NSString *)filePath
         return;
       }
 
-      NSString *docDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-      NSString *targetDir = [docDir stringByAppendingPathComponent:@"CoursePal_Rendered_Pages"];
+      // Relocate rendered preview pages to NSCachesDirectory so they are not synced to iCloud
+      NSString *cachesDir = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+      NSString *targetDir = [cachesDir stringByAppendingPathComponent:@"CoursePal_Rendered_Pages"];
       NSString *docId = [[NSUUID UUID] UUIDString];
+
+      // Prune legacy files from Documents directory if present
+      NSString *legacyDocDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+      NSString *legacyTarget = [legacyDocDir stringByAppendingPathComponent:@"CoursePal_Rendered_Pages"];
+      if ([[NSFileManager defaultManager] fileExistsAtPath:legacyTarget]) {
+        [[NSFileManager defaultManager] removeItemAtPath:legacyTarget error:nil];
+      }
+
+      // Purge cached rendered pages older than 1 hour to prevent disk bloat
+      NSFileManager *fm = [NSFileManager defaultManager];
+      [fm createDirectoryAtPath:targetDir withIntermediateDirectories:YES attributes:nil error:nil];
+      NSArray<NSString *> *cachedFiles = [fm contentsOfDirectoryAtPath:targetDir error:nil];
+      NSDate *cutoff = [NSDate dateWithTimeIntervalSinceNow:-3600];
+      for (NSString *f in cachedFiles) {
+        NSString *p = [targetDir stringByAppendingPathComponent:f];
+        NSDictionary *attrs = [fm attributesOfItemAtPath:p error:nil];
+        NSDate *mod = attrs[NSFileModificationDate];
+        if (mod && [mod compare:cutoff] == NSOrderedAscending) {
+          [fm removeItemAtPath:p error:nil];
+        }
+      }
 
       // Check 1: Real PDF Document
       PDFDocument *doc = [[PDFDocument alloc] initWithData:fileData];

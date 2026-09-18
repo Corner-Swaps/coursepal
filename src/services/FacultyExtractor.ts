@@ -6,12 +6,14 @@
 export interface FacultyInfo {
   name?: string;
   email?: string;
+  officeHours?: string;
 }
 
 export class FacultyExtractor {
   public static extractFaculty(rawText: String): FacultyInfo {
     let detectedName: string | undefined = undefined;
     let detectedEmail: string | undefined = undefined;
+    let detectedOfficeHours: string | undefined = undefined;
 
     const lines = rawText.split(/\r?\n/);
     const searchLines = lines.slice(0, 150);
@@ -95,18 +97,31 @@ export class FacultyExtractor {
       }
     }
 
-    // Fallback 2: Regex match directly on document text for inline patterns
-    if (!detectedName) {
-      const inlineMatch = rawText.match(/(?:Faculty(?:\s+Information)?|Instructor(?:\s+Information)?|Professor)\s*[:\-–]?\s*([A-Z][a-z]+(?:\s*[-–—]\s*[A-Z][a-z]+|\s+[A-Z][a-z]+){1,3})(?=\s*(?:Email|Phone|Office|E-mail|Credits|\n|$))/i);
-      if (inlineMatch && inlineMatch[1]) {
-        const clean = this.cleanFacultyName(inlineMatch[1]);
-        if (this.isValidFacultyName(clean)) {
-          detectedName = clean;
+    // 3. Office Hours Extraction
+    const ohRegex = /(?:virtual\s+)?office\s+hours\s*[:\-–]?\s*([^\n]+)/i;
+    const timeOrDayRegex = /\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|by\s+appointment|\d{1,2}:\d{2}\s*(?:am|pm)?)\b/i;
+    for (let i = 0; i < searchLines.length; i++) {
+      const line = searchLines[i].trim();
+      const m = line.match(ohRegex);
+      if (m && m[1].trim().length > 0 && timeOrDayRegex.test(m[1].trim())) {
+        detectedOfficeHours = m[1].trim();
+        break;
+      }
+      if (/^(?:virtual\s+)?office\s+hours\s*[:\-–]?\s*$/i.test(line)) {
+        for (let offset = 1; offset <= 4; offset++) {
+          if (i + offset < searchLines.length) {
+            const candidate = searchLines[i + offset].trim();
+            if (timeOrDayRegex.test(candidate)) {
+              detectedOfficeHours = candidate.replace(/\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}.*$/, '').trim();
+              break;
+            }
+          }
         }
+        if (detectedOfficeHours) break;
       }
     }
 
-    return { name: detectedName, email: detectedEmail };
+    return { name: detectedName, email: detectedEmail, officeHours: detectedOfficeHours };
   }
 
   public static cleanFacultyName(raw: string): string {

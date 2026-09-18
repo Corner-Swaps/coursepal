@@ -3,7 +3,7 @@
  * 1:1 parity with SwiftData @Model and Codable DTOs
  */
 
-export type MediaType = 'textbook' | 'article' | 'video' | 'podcast';
+export type MediaType = 'textbook' | 'paper' | 'article' | 'video' | 'podcast';
 
 export type SemanticItemType = 'media' | 'reading' | 'assignment' | 'in_class';
 
@@ -38,6 +38,8 @@ export interface ReadingDTO {
   relevantTopics?: string | null;
   chapterText?: string | null;
   pagesText?: string | null;
+  moduleMention?: string | null;
+  moduleNumber?: number | null;
   isFavorite?: boolean;
 }
 
@@ -67,6 +69,8 @@ export interface AssignmentDTO {
   isCompleted?: boolean;
   weekNumber?: number | null;
   moduleMention?: string | null;
+  points?: number | null;
+  totalPoints?: number | null;
 }
 
 export interface ItemDTO {
@@ -208,6 +212,8 @@ export interface Reading {
   courseId?: string;
   weekId?: string;
   weekNumber?: number | null;
+  moduleMention?: string | null;
+  moduleNumber?: number | null;
 }
 
 export interface Assignment {
@@ -256,6 +262,7 @@ export interface VaultDocument {
   fileSize: string;
   fileType: string;
   courseCode?: string | null;
+  courseId?: string;
   fileContent?: string | null;
   docColorHex?: string | null;
   rawFileDataUri?: string | null;

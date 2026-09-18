@@ -1,11 +1,9 @@
 import {
   calculateConfettiParticlePosition,
   calculateConfettiAlpha,
-  generateNeuralProjectionMatrix,
-  cosineSimilarity,
   ConfettiParticleState
 } from '../src/utils/mathPhysics';
-import { ConfettiPhysics, NeuralProjectionConstants } from '../src/constants/physics';
+import { ConfettiPhysics } from '../src/constants/physics';
 
 describe('Mathematical Physics & Neural Calculations', () => {
   describe('Confetti Physics Trajectory', () => {
@@ -65,70 +63,6 @@ describe('Mathematical Physics & Neural Calculations', () => {
         expect(calculateConfettiAlpha(3.5)).toBe(0.0);
         expect(calculateConfettiAlpha(10.0)).toBe(0.0);
       });
-    });
-  });
-
-  describe('Neural Random Projection Matrix', () => {
-    it('generates a 300x64 projection matrix matching Swift NeuralDocumentService specs', () => {
-      const matrix = generateNeuralProjectionMatrix();
-      expect(matrix).toHaveLength(NeuralProjectionConstants.matrixRows); // 300
-      for (const row of matrix) {
-        expect(row).toHaveLength(NeuralProjectionConstants.vectorDimension); // 64
-      }
-    });
-
-    it('bounds all projected weights strictly within [-1.0, 1.0]', () => {
-      const matrix = generateNeuralProjectionMatrix();
-      for (const row of matrix) {
-        for (const val of row) {
-          expect(val).toBeGreaterThanOrEqual(-1.0);
-          expect(val).toBeLessThanOrEqual(1.0);
-        }
-      }
-    });
-
-    it('generates completely deterministic pseudo-random values with seed 42n', () => {
-      const matrix1 = generateNeuralProjectionMatrix();
-      const matrix2 = generateNeuralProjectionMatrix();
-
-      expect(matrix1[0][0]).toBe(matrix2[0][0]);
-      expect(matrix1[100][32]).toBe(matrix2[100][32]);
-      expect(matrix1[299][63]).toBe(matrix2[299][63]);
-    });
-  });
-
-  describe('Vector Cosine Similarity', () => {
-    it('returns 1.0 for identical vectors', () => {
-      const vec = [0.2, 0.8, -0.4, 0.1];
-      expect(cosineSimilarity(vec, vec)).toBeCloseTo(1.0, 6);
-    });
-
-    it('returns -1.0 for exact opposite vectors', () => {
-      const vecA = [1.0, 2.0, 3.0];
-      const vecB = [-1.0, -2.0, -3.0];
-      expect(cosineSimilarity(vecA, vecB)).toBeCloseTo(-1.0, 6);
-    });
-
-    it('returns 0.0 for orthogonal vectors', () => {
-      const vecA = [1.0, 0.0, 0.0];
-      const vecB = [0.0, 1.0, 0.0];
-      expect(cosineSimilarity(vecA, vecB)).toBeCloseTo(0.0, 6);
-    });
-
-    it('returns 0.0 for zero vectors or mismatched lengths', () => {
-      expect(cosineSimilarity([0, 0, 0], [1, 2, 3])).toBe(0.0);
-      expect(cosineSimilarity([1, 2], [1, 2, 3])).toBe(0.0);
-      expect(cosineSimilarity([], [])).toBe(0.0);
-    });
-
-    it('computes accurate cosine similarity for typical embedding vectors', () => {
-      const vecA = [0.5, 0.5, 0.5, 0.5];
-      const vecB = [0.5, 0.5, 0.0, 0.0];
-      // dot = 0.25 + 0.25 = 0.5
-      // normA = sqrt(4 * 0.25) = 1.0
-      // normB = sqrt(2 * 0.25) = sqrt(0.5)
-      // cos = 0.5 / sqrt(0.5) = sqrt(0.5) ≈ 0.70710678
-      expect(cosineSimilarity(vecA, vecB)).toBeCloseTo(Math.SQRT1_2, 6);
     });
   });
 });

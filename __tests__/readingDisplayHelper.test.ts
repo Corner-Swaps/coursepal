@@ -23,7 +23,13 @@ import {
   isRealDateOrRangeString,
   isGenericDatePlaceholder,
   cleanDateRangeDisplay,
-  resolveReadingMediaType
+  resolveReadingMediaType,
+  parseChapterNumbers,
+  formatChapterList,
+  splitInstructionsIntoParagraphs,
+  cleanRubricCriterionName,
+  deduplicateReadingTitle,
+  isInvalidAssignmentTitle
 } from '../src/utils/readingDisplayHelper';
 import { sanitizeAssignment, sanitizeReading } from '../src/context/CoursePalContext';
 import { Reading, Course } from '../src/types/models';
@@ -271,6 +277,72 @@ describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
         'Family Therapy'
       );
       expect(displaySubtitle).toBe('Gehart');
+    });
+
+    it('formats PSYC 612 readings cleanly without repeating digits, et al., or punctuation artifacts', () => {
+      const courseName = 'Advanced Cognitive Behavioural Interventions';
+
+      // Beck (Ch. 7–9)
+      const rBeck = {
+        title: 'Beck (Ch. 7–9)',
+        chapterText: 'Chapters 7–9',
+        authorName: 'Beck'
+      };
+      const tBeck = formatDisplayTitleWithChapter(rBeck, rBeck.chapterText, undefined, courseName, rBeck.authorName);
+      const sBeck = formatAuthorAndPagesSubtitle(rBeck.authorName, undefined, undefined, tBeck, courseName);
+      expect(tBeck).toBe('Beck (Ch. 7–9)');
+      expect(sBeck).toBe('');
+
+      // Hayes et al. (Ch. 3–5)
+      const rHayes = {
+        title: 'Hayes et al. (Ch. 3–5)',
+        chapterText: 'Chapters 3–5',
+        authorName: 'Hayes et al.'
+      };
+      const tHayes = formatDisplayTitleWithChapter(rHayes, rHayes.chapterText, undefined, courseName, rHayes.authorName);
+      const sHayes = formatAuthorAndPagesSubtitle(rHayes.authorName, undefined, undefined, tHayes, courseName);
+      expect(tHayes).toBe('Hayes et al. (Ch. 3–5)');
+      expect(sHayes).toBe('');
+
+      // Linehan (Ch. 6–8)
+      const rLinehan = {
+        title: 'Linehan (Ch. 6–8)',
+        chapterText: 'Chapters 6–8',
+        authorName: 'Linehan'
+      };
+      const tLinehan = formatDisplayTitleWithChapter(rLinehan, rLinehan.chapterText, undefined, courseName, rLinehan.authorName);
+      const sLinehan = formatAuthorAndPagesSubtitle(rLinehan.authorName, undefined, undefined, tLinehan, courseName);
+      expect(tLinehan).toBe('Linehan (Ch. 6–8)');
+      expect(sLinehan).toBe('');
+
+      // Clark (Ch. 4)
+      const rClark = {
+        title: 'Clark (Ch. 4)',
+        chapterText: 'Chapter 4',
+        authorName: 'Clark'
+      };
+      const tClark = formatDisplayTitleWithChapter(rClark, rClark.chapterText, undefined, courseName, rClark.authorName);
+      const sClark = formatAuthorAndPagesSubtitle(rClark.authorName, undefined, undefined, tClark, courseName);
+      expect(tClark).toBe('Clark (Ch. 4)');
+      expect(sClark).toBe('');
+
+      // Craske & Barlow (Ch. 2 & 5)
+      const rCraske = {
+        title: 'Craske & Barlow (Ch. 2 & 5)',
+        chapterText: 'Chapters 2 & 5',
+        authorName: 'Craske & Barlow'
+      };
+      const tCraske = formatDisplayTitleWithChapter(rCraske, rCraske.chapterText, undefined, courseName, rCraske.authorName);
+      const sCraske = formatAuthorAndPagesSubtitle(rCraske.authorName, undefined, undefined, tCraske, courseName);
+      expect(tCraske).toBe('Craske & Barlow (Ch. 2 & 5)');
+      expect(sCraske).toBe('');
+
+      // Even if authorName is not explicitly passed, auto-detects from title
+      const tBeckAuto = formatDisplayTitleWithChapter('Beck (Ch. 7–9)');
+      expect(tBeckAuto).toBe('Beck (Ch. 7–9)');
+
+      const tHayesAuto = formatDisplayTitleWithChapter('Hayes et al. (Ch. 3–5)');
+      expect(tHayesAuto).toBe('Hayes et al. (Ch. 3–5)');
     });
   });
 
@@ -847,22 +919,22 @@ describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
   describe('resolveReadingMediaType', () => {
     it('resolves explicit mediaType "article" or "paper"', () => {
       expect(resolveReadingMediaType({ mediaType: 'article' })).toBe('article');
-      expect(resolveReadingMediaType({ mediaType: 'paper' })).toBe('article');
-      expect(resolveReadingMediaType({ mediaType: 'Article / Paper' })).toBe('article');
+      expect(resolveReadingMediaType({ mediaType: 'paper' })).toBe('paper');
+      expect(resolveReadingMediaType({ mediaType: 'Article / Paper' })).toBe('paper');
     });
 
     it('resolves from mediaTypeRaw when mediaType is missing', () => {
       expect(resolveReadingMediaType({ mediaTypeRaw: 'journal article' })).toBe('article');
-      expect(resolveReadingMediaType({ mediaTypeRaw: 'research paper' })).toBe('article');
+      expect(resolveReadingMediaType({ mediaTypeRaw: 'research paper' })).toBe('paper');
       expect(resolveReadingMediaType({ mediaTypeRaw: 'youtube video' })).toBe('video');
       expect(resolveReadingMediaType({ mediaTypeRaw: 'podcast episode' })).toBe('podcast');
     });
 
-    it('infers "article" from title or resource hints when non-textbook', () => {
+    it('infers "article" and "paper" from title or resource hints when non-textbook', () => {
       expect(resolveReadingMediaType({ title: 'Grief in Contemporary Society (Article)' })).toBe('article');
       expect(resolveReadingMediaType({ title: 'Corey Chapter 3', resourceTitle: 'Journal Article' })).toBe('article');
-      expect(resolveReadingMediaType({ title: 'The Role of Attachment Theory (Article / Paper)' })).toBe('article');
-      expect(resolveReadingMediaType({ title: 'White Paper on Cognitive Architectures' })).toBe('article');
+      expect(resolveReadingMediaType({ title: 'The Role of Attachment Theory (Article / Paper)' })).toBe('paper');
+      expect(resolveReadingMediaType({ title: 'White Paper on Cognitive Architectures' })).toBe('paper');
       expect(resolveReadingMediaType({ title: 'TED Talk on Mindsets' })).toBe('video');
       expect(resolveReadingMediaType({ title: 'Podcast: The Daily' })).toBe('podcast');
     });
@@ -873,5 +945,552 @@ describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
       expect(resolveReadingMediaType(undefined)).toBe('textbook');
     });
   });
+
+  describe('User Request: Repeated Chapter Elimination & Colon/Dash Cleansing', () => {
+    it('normalizes colon ranges like 1: 3 and 4: 10 to canonical Chapters 1–3 and Chapters 4–10', () => {
+      expect(cleanChapterFromRaw('1: 3')).toBe('Chapters 1–3');
+      expect(cleanChapterFromRaw('4: 10')).toBe('Chapters 4–10');
+      expect(cleanChapterFromRaw('1:3')).toBe('Chapters 1–3');
+      expect(cleanChapterFromRaw('1: 3 · Chapters 1-3')).toBe('Chapters 1–3');
+    });
+
+    it('eradicates "1: 3 · Chapters 1–3" and "4: 10 · Chapters 4–10" artifacts from formatDisplayTitleWithChapter', () => {
+      const title1 = formatDisplayTitleWithChapter({
+        title: '1: 3 · Chapters 1–3',
+        chapterText: '1: 3',
+        resourceTitle: '1: 3',
+        authorName: 'Gehart'
+      });
+      expect(title1).toBe('Chapters 1–3');
+
+      const title2 = formatDisplayTitleWithChapter({
+        title: '4: 10 · Chapters 4–10',
+        chapterText: '4: 10',
+        resourceTitle: '4: 10',
+        authorName: 'Gehart'
+      });
+      expect(title2).toBe('Chapters 4–10');
+
+      const title3 = formatDisplayTitleWithChapter({
+        title: 'Chapters 1–3',
+        chapterText: 'Chapters 1-3',
+        resourceTitle: '1: 3',
+        authorName: 'Gehart'
+      });
+      expect(title3).toBe('Chapters 1–3');
+    });
+
+    it('parses chapter numbers and formats canonical chapter lists accurately', () => {
+      expect(parseChapterNumbers('Chapter 1')).toEqual([1]);
+      expect(parseChapterNumbers('Chapters 1–3')).toEqual([1, 2, 3]);
+      expect(parseChapterNumbers('1: 3')).toEqual([1, 2, 3]);
+      expect(parseChapterNumbers('4: 10')).toEqual([4, 5, 6, 7, 8, 9, 10]);
+      expect(parseChapterNumbers('Chapters 5 & 7')).toEqual([5, 7]);
+      expect(parseChapterNumbers('Chapters 1 and 7')).toEqual([1, 7]);
+      expect(parseChapterNumbers('Reading')).toEqual([]);
+
+      expect(formatChapterList([1])).toBe('Chapter 1');
+      expect(formatChapterList([7])).toBe('Chapter 7');
+      expect(formatChapterList([5, 7])).toBe('Chapters 5 & 7');
+      expect(formatChapterList([1, 2, 3])).toBe('Chapters 1–3');
+      expect(formatChapterList([4, 5, 6, 7, 8, 9, 10])).toBe('Chapters 4–10');
+    });
+
+    it('implements user requirement: "if it says one, you don\'t need to say in the next one chapter one and seven"', () => {
+      const readings = [
+        {
+          id: 'r1',
+          title: 'Chapter 1',
+          chapterText: 'Chapter 1',
+          authorName: 'Corey',
+          weekNumber: 1,
+          courseCode: 'CPC 512'
+        },
+        {
+          id: 'r2',
+          title: 'Chapters 1 & 7',
+          chapterText: 'Chapters 1 & 7',
+          authorName: 'Corey',
+          weekNumber: 1,
+          courseCode: 'CPC 512'
+        }
+      ];
+
+      const deduplicated = deduplicateReadingsList(readings);
+      expect(deduplicated).toHaveLength(2);
+      expect(deduplicated[0].title).toBe('Chapter 1');
+      // In the second item, Chapter 1 was already stated, so it does NOT say "Chapters 1 & 7", it says "Chapter 7"!
+      expect(deduplicated[1].title).toBe('Chapter 7');
+      expect(deduplicated[1].chapterText).toBe('Chapter 7');
+    });
+
+    it('resolves the exact user screenshot (CPC 512 Week 2): removes 1: 3 colon artifact and deduplicates 5 & 7 redundancy', () => {
+      const readings = [
+        {
+          id: 'r1',
+          title: '1: 3 · Chapters 1–3',
+          chapterText: '1: 3',
+          resourceTitle: '1: 3',
+          authorName: 'Gehart',
+          weekNumber: 2,
+          courseCode: 'CPC 512',
+          dueDate: new Date(2026, 7, 6)
+        },
+        {
+          id: 'r2',
+          title: 'Chapter 5',
+          chapterText: 'Chapter 5',
+          authorName: 'Gehart',
+          weekNumber: 2,
+          courseCode: 'CPC 512',
+          dueDate: new Date(2026, 7, 6)
+        },
+        {
+          id: 'r3',
+          title: 'Chapters 5 & 7',
+          chapterText: 'Chapters 5 & 7',
+          authorName: 'Gehart',
+          weekNumber: 2,
+          courseCode: 'CPC 512',
+          dueDate: new Date(2026, 7, 6)
+        },
+        {
+          id: 'r4',
+          title: 'Chapter 7',
+          chapterText: 'Chapter 7',
+          authorName: 'Gehart',
+          weekNumber: 2,
+          courseCode: 'CPC 512',
+          dueDate: new Date(2026, 7, 6)
+        },
+        // Week 3
+        {
+          id: 'r5',
+          title: '4: 10 · Chapters 4–10',
+          chapterText: '4: 10',
+          resourceTitle: '4: 10',
+          authorName: 'Gehart',
+          weekNumber: 3,
+          courseCode: 'CPC 512'
+        },
+        {
+          id: 'r6',
+          title: 'Chapter 11',
+          chapterText: 'Chapter 11',
+          authorName: 'Gehart',
+          weekNumber: 3,
+          courseCode: 'CPC 512'
+        }
+      ];
+
+      const deduplicated = deduplicateReadingsList(readings);
+
+      // Week 2 readings:
+      const week2 = deduplicated.filter(r => r.weekNumber === 2);
+      expect(week2).toHaveLength(3);
+      expect(week2[0].title).toBe('Chapters 1–3');
+      expect(week2[1].title).toBe('Chapter 5');
+      expect(week2[2].title).toBe('Chapter 7');
+
+      // Week 3 readings:
+      const week3 = deduplicated.filter(r => r.weekNumber === 3);
+      expect(week3).toHaveLength(2);
+      expect(week3[0].title).toBe('Chapters 4–10');
+      expect(week3[1].title).toBe('Chapter 11');
+    });
+
+    it('deduplicates when combined reading is listed first (Chapters 5 & 7 followed by Chapter 5 and Chapter 7)', () => {
+      const readings = [
+        {
+          id: 'r1',
+          title: 'Chapters 5 & 7',
+          chapterText: 'Chapters 5 & 7',
+          authorName: 'Gehart',
+          weekNumber: 2,
+          courseCode: 'CPC 512'
+        },
+        {
+          id: 'r2',
+          title: 'Chapter 5',
+          chapterText: 'Chapter 5',
+          authorName: 'Gehart',
+          weekNumber: 2,
+          courseCode: 'CPC 512'
+        },
+        {
+          id: 'r3',
+          title: 'Chapter 7',
+          chapterText: 'Chapter 7',
+          authorName: 'Gehart',
+          weekNumber: 2,
+          courseCode: 'CPC 512'
+        }
+      ];
+
+      const deduplicated = deduplicateReadingsList(readings);
+      expect(deduplicated).toHaveLength(1);
+      expect(deduplicated[0].title).toBe('Chapters 5 & 7');
+    });
+  });
+
+  describe('splitInstructionsIntoParagraphs', () => {
+    it('returns empty array for empty or whitespace-only inputs', () => {
+      expect(splitInstructionsIntoParagraphs('')).toEqual([]);
+      expect(splitInstructionsIntoParagraphs('   ')).toEqual([]);
+      expect(splitInstructionsIntoParagraphs(null)).toEqual([]);
+      expect(splitInstructionsIntoParagraphs(undefined)).toEqual([]);
+    });
+
+    it('splits double-newline separated paragraphs', () => {
+      const text = 'Paragraph 1 instructions.\n\nParagraph 2 requirements.\n\nParagraph 3 submission guidelines.';
+      const result = splitInstructionsIntoParagraphs(text);
+      expect(result).toEqual([
+        'Paragraph 1 instructions.',
+        'Paragraph 2 requirements.',
+        'Paragraph 3 submission guidelines.'
+      ]);
+    });
+
+    it('splits long walls of text into readable chunks', () => {
+      const wall = 'This is the first sentence of the assignment. Here is a second sentence describing what students should analyze. Then students must provide a critique based on peer-reviewed literature. Finally, write a conclusion summarizing the key themes and personal reflections on clinical practice.';
+      const result = splitInstructionsIntoParagraphs(wall);
+      expect(result.length).toBeGreaterThanOrEqual(2);
+      expect(result.every(p => p.length > 0)).toBe(true);
+    });
+
+    it('separates explicit assignment sections into distinct paragraphs', () => {
+      const sectionText = 'Understanding family systems is key. For the first part, students create a genogram. Requirements: Must have 3-4 generations. Part 2: Write a reflection paper. Format: APA 7th edition with 5 scholarly sources.';
+      const result = splitInstructionsIntoParagraphs(sectionText);
+      expect(result.length).toBeGreaterThanOrEqual(4);
+      expect(result.some(p => p.startsWith('Requirements:'))).toBe(true);
+      expect(result.some(p => p.startsWith('Part 2:'))).toBe(true);
+      expect(result.some(p => p.startsWith('Format:'))).toBe(true);
+    });
+  });
+
+  describe('cleanRubricCriterionName Capitalization (Downstairs Points Breakdown)', () => {
+    it('always capitalizes the first letter of rubric criterion names', () => {
+      expect(cleanRubricCriterionName('evidence and support (Scholarly Sources)')).toBe('Evidence and support (Scholarly Sources)');
+      expect(cleanRubricCriterionName('analysis and use of course concepts')).toBe('Analysis and use of Course Concepts');
+      expect(cleanRubricCriterionName('self-awareness & reflection')).toBe('Self-awareness & reflection');
+      expect(cleanRubricCriterionName('cultural competence')).toBe('Cultural Competence');
+      expect(cleanRubricCriterionName('oral presentation')).toBe('Oral presentation');
+    });
+  });
+
+  describe('deduplicateReadingTitle & strict non-repetition', () => {
+    it('deduplicates identical phrases joined by dashes or colons', () => {
+      expect(
+        deduplicateReadingTitle('Sexual and Gender Minority Youth in Canada – Sexual and Gender Minority Youth in Canada')
+      ).toBe('Sexual and Gender Minority Youth in Canada');
+
+      expect(
+        deduplicateReadingTitle('Chapter 1 · Sexual and Gender Minority Youth in Canada – Sexual and Gender Minority Youth in Canada')
+      ).toBe('Chapter 1 · Sexual and Gender Minority Youth in Canada');
+
+      expect(
+        deduplicateReadingTitle('Chapter 4 · Chapter 4')
+      ).toBe('Chapter 4');
+
+      expect(
+        deduplicateReadingTitle('Chapter 4 · Chapter 4: Gender Identity')
+      ).toBe('Chapter 4 · Gender Identity');
+    });
+
+    it('formats display titles without repeating book subtitle matching chapter title', () => {
+      const reading = {
+        title: 'Growing into Resilience: Sexual and Gender Minority Youth in Canada: Chapter 1 — Sexual and Gender Minority Youth in Canada',
+        chapterText: 'Chapter 1',
+        resourceTitle: 'Growing into Resilience: Sexual and Gender Minority Youth in Canada'
+      };
+      const displayTitle = formatDisplayTitleWithChapter(reading);
+      expect(displayTitle).toBe('Chapter 1 · Sexual and Gender Minority Youth in Canada');
+    });
+
+    it('formats subsequent chapters cleanly without book subtitle stutter', () => {
+      const reading = {
+        title: 'Growing into Resilience: Sexual and Gender Minority Youth in Canada: Chapter 2 — Resilience and Identity',
+        chapterText: 'Chapter 2',
+        resourceTitle: 'Growing into Resilience: Sexual and Gender Minority Youth in Canada'
+      };
+      const displayTitle = formatDisplayTitleWithChapter(reading);
+      expect(displayTitle).toBe('Chapter 2 · Resilience and Identity');
+    });
+  });
+
+  describe('isInvalidAssignmentTitle & table header rejection', () => {
+    it('rejects description weight and table header artifacts', () => {
+      expect(isInvalidAssignmentTitle('Description Weight')).toBe(true);
+      expect(isInvalidAssignmentTitle('description / weight')).toBe(true);
+      expect(isInvalidAssignmentTitle('Description & Weight')).toBe(true);
+      expect(isInvalidAssignmentTitle('Description')).toBe(true);
+      expect(isInvalidAssignmentTitle('Weight')).toBe(true);
+      expect(isInvalidAssignmentTitle('Assessment Item')).toBe(true);
+      expect(isInvalidAssignmentTitle('Assessment Title')).toBe(true);
+      expect(isInvalidAssignmentTitle('Assessment Structure & Grade Breakdown')).toBe(true);
+      expect(isInvalidAssignmentTitle('Target Format')).toBe(true);
+      expect(isInvalidAssignmentTitle('Due Module')).toBe(true);
+      expect(isInvalidAssignmentTitle('Module 5')).toBe(true);
+      expect(isInvalidAssignmentTitle('Week 2')).toBe(true);
+    });
+
+    it('accepts genuine assignment titles', () => {
+      expect(isInvalidAssignmentTitle('Comprehensive Clinical Case Formulation')).toBe(false);
+      expect(isInvalidAssignmentTitle('Group Therapy Reflection Paper')).toBe(false);
+      expect(isInvalidAssignmentTitle('Midterm Examination')).toBe(false);
+      expect(isInvalidAssignmentTitle('Peer Review Assignment')).toBe(false);
+    });
+  });
+
+  describe('NEUR 740 Author Citation Formatting & Groth-Marnat Healing', () => {
+    it('formats author citation titles consistently as Author (Ch. X) or Author (Ch. X & Y)', () => {
+      expect(formatDisplayTitleWithChapter('Lezak et al. (Ch. 1–3)')).toBe('Lezak et al. (Ch. 1–3)');
+      expect(formatDisplayTitleWithChapter('Luria (Ch. 2)')).toBe('Luria (Ch. 2)');
+      expect(formatDisplayTitleWithChapter('Lichtenberger (Ch. 2)')).toBe('Lichtenberger (Ch. 2)');
+      expect(formatDisplayTitleWithChapter('Squire (Ch. 3)')).toBe('Squire (Ch. 3)');
+      expect(formatDisplayTitleWithChapter('Lezak et al. (Ch. 11 & 12)')).toBe('Lezak et al. (Ch. 11 & 12)');
+      expect(formatDisplayTitleWithChapter('Delis et al. (Ch. 1–4)')).toBe('Delis et al. (Ch. 1–4)');
+    });
+
+    it('heals and formats Groth-Marnat from raw Groth-Marnat (Chapters 4 & 5)', () => {
+      const res = formatDisplayTitleWithChapter({
+        title: 'Groth-Marnat (Chapters 4 & 5)',
+        chapterText: 'Chapters 4 & 5',
+        authorName: 'Groth-Marnat',
+        resourceTitle: 'Groth-Marnat'
+      });
+      expect(res).toBe('Groth-Marnat (Ch. 4 & 5)');
+    });
+
+    it('heals corrupted artifact "Chapters 4 & 5 · Marnat ( )" and "Groth: Marnat ( ) · Groth-Marnat"', () => {
+      const res = formatDisplayTitleWithChapter({
+        title: 'Chapters 4 & 5 · Marnat ( )',
+        chapterText: 'Chapters 4 & 5',
+        resourceTitle: 'Groth: Marnat ( ) · Groth-Marnat'
+      });
+      expect(res).toBe('Groth-Marnat (Ch. 4 & 5)');
+    });
+
+    it('produces empty subtitle for author-chapter card matching other NEUR 740 cards', () => {
+      const sub1 = formatAuthorAndPagesSubtitle(
+        'Groth-Marnat',
+        '',
+        'Groth-Marnat',
+        'Groth-Marnat (Ch. 4 & 5)',
+        'NEUR 740'
+      );
+      expect(sub1).toBe('');
+
+      const sub2 = formatAuthorAndPagesSubtitle(
+        'Groth: Marnat',
+        '',
+        'Groth: Marnat ( ) · Groth-Marnat',
+        'Groth-Marnat (Ch. 4 & 5)',
+        'NEUR 740'
+      );
+      expect(sub2).toBe('');
+
+      const sub3 = formatAuthorAndPagesSubtitle(
+        'Lezak et al.',
+        '',
+        '',
+        'Lezak et al. (Ch. 1–3)',
+        'NEUR 740'
+      );
+      expect(sub3).toBe('');
+    });
+
+    it('heals reading end-to-end via sanitizeReading', () => {
+      const corrupted = {
+        id: 'read-neur-2',
+        title: 'Chapters 4 & 5 · Marnat ( )',
+        chapterText: 'Chapters 4 & 5',
+        resourceTitle: 'Groth: Marnat ( ) · Groth-Marnat',
+        isCompleted: false
+      } as Reading;
+      const sanitized = sanitizeReading(corrupted);
+      expect(sanitized.title).toBe('Groth-Marnat (Ch. 4 & 5)');
+      expect(sanitized.authorName).toBe('Groth-Marnat');
+      expect(sanitized.chapterText).toBe('Chapters 4 & 5');
+
+      const sub = formatAuthorAndPagesSubtitle(
+        sanitized.authorName,
+        sanitized.pagesText,
+        sanitized.resourceTitle,
+        sanitized.title,
+        'NEUR 740'
+      );
+      expect(sub).toBe('');
+    });
+  });
+
+  describe('Academic Citation Title Formatting & Publication Year Preservation', () => {
+    it('preserves publication years and topics in academic paper citations', () => {
+      const r1 = { title: 'Li et al. (2020)', authorName: 'Li et al.' };
+      expect(formatDisplayTitleWithChapter(r1, null, null, 'DATA 630', 'Li et al.')).toBe('Li et al. (2020)');
+
+      const r2 = { title: 'Rajbhandari et al. (2020)', authorName: 'Rajbhandari et al.' };
+      expect(formatDisplayTitleWithChapter(r2, null, null, 'DATA 630', 'Rajbhandari et al.')).toBe('Rajbhandari et al. (2020)');
+
+      const r3 = { title: 'Shoeybi et al. (Megatron)', authorName: 'Shoeybi et al.' };
+      expect(formatDisplayTitleWithChapter(r3, null, null, 'DATA 630', 'Shoeybi et al.')).toBe('Shoeybi et al. (Megatron)');
+
+      const r4 = { title: 'Dettmers et al. (QLoRA)', authorName: 'Dettmers et al.' };
+      expect(formatDisplayTitleWithChapter(r4, null, null, 'DATA 630', 'Dettmers et al.')).toBe('Dettmers et al. (QLoRA)');
+
+      const r5 = { title: 'Burns et al. (Ch. 4–6)', authorName: 'Burns et al.' };
+      expect(formatDisplayTitleWithChapter(r5, 'Chapters 4–6', null, 'DATA 630', 'Burns et al.')).toBe('Burns et al. (Ch. 4–6)');
+    });
+  });
+
+  describe('Textbook Subtitle Non-Repetition & Canonical Module Topics (CPC 512 Fix)', () => {
+    it('eradicates textbook publisher subtitle repetition from card title and subtitle', () => {
+      const readingWithTopic = {
+        title: 'Mastering Competency in Family Therapy: A Practical Approach to Theory and Clinical Case Documentation',
+        chapterText: 'Chapters 1-3',
+        resourceTitle: 'Mastering Competency in Family Therapy: A Practical Approach to Theory and Clinical Case Documentation',
+        authorName: 'Diane R. Gehart',
+        relevantTopics: 'Systems Theory and the History of Family Therapy'
+      };
+
+      const title = formatDisplayTitleWithChapter(
+        readingWithTopic,
+        readingWithTopic.chapterText,
+        readingWithTopic.resourceTitle,
+        'Family Systems Approaches to Counselling',
+        readingWithTopic.authorName
+      );
+      const subtitle = formatAuthorAndPagesSubtitle(
+        readingWithTopic.authorName,
+        null,
+        readingWithTopic.resourceTitle,
+        title,
+        'Family Systems Approaches to Counselling'
+      );
+
+      // Must NOT repeat "A Practical Approach to Theory and Clinical Case Documentation"
+      expect(title).not.toContain('A Practical Approach to Theory and Clinical Case Documentation');
+      expect(subtitle).not.toContain('A Practical Approach to Theory and Clinical Case Documentation');
+
+      expect(title).toBe('Chapters 1–3 · Systems Theory and the History of Family Therapy');
+      expect(subtitle).toBe('Mastering Competency in Family Therapy · Diane R. Gehart');
+    });
+
+    it('formats clean author and chapter when no specific subtopic is provided without repeating book subtitle or textbook title', () => {
+      const readingWithoutTopic = {
+        title: 'Mastering Competency in Family Therapy: A Practical Approach to Theory and Clinical Case Documentation',
+        chapterText: 'Chapter 2',
+        resourceTitle: 'Mastering Competency in Family Therapy: A Practical Approach to Theory and Clinical Case Documentation',
+        authorName: 'Diane R. Gehart'
+      };
+
+      const title = formatDisplayTitleWithChapter(
+        readingWithoutTopic,
+        readingWithoutTopic.chapterText,
+        readingWithoutTopic.resourceTitle,
+        'Family Systems Approaches to Counselling',
+        readingWithoutTopic.authorName
+      );
+      const subtitle = formatAuthorAndPagesSubtitle(
+        readingWithoutTopic.authorName,
+        null,
+        readingWithoutTopic.resourceTitle,
+        title,
+        'Family Systems Approaches to Counselling'
+      );
+
+      expect(title).toBe('Mastering Competency in Family Therapy · Chapter 2');
+      expect(subtitle).toBe('Diane R. Gehart');
+    });
+
+    it('verifies all 10 canonical modules for CPC 512 display without repeated chapters or textbook subtitle stutter', () => {
+      const modules = [
+        { modNum: 1, weekNum: 1, chapter: 'Chapters 1–3', theme: 'Systems Theory and the History of Family Therapy' },
+        { modNum: 2, weekNum: 2, chapter: 'Chapter 2', theme: 'Family of Origin/ Genograms' },
+        { modNum: 3, weekNum: 3, chapter: 'Chapters 11–15', theme: 'Diverse Populations and Family Therapy Case Conceptualization and Application' },
+        { modNum: 4, weekNum: 4, chapter: 'Chapter 7', theme: 'Bowen Family Systems' },
+        { modNum: 5, weekNum: 5, chapter: 'Chapter 5', theme: 'Structural Family Therapy' },
+        { modNum: 6, weekNum: 7, chapter: 'Chapter 4', theme: 'Strategic Family Therapy' },
+        { modNum: 7, weekNum: 8, chapter: 'Chapter 6', theme: 'Experiential Family Therapy' },
+        { modNum: 8, weekNum: 9, chapter: 'Chapter 7', theme: 'Psychoanalytic Family Therapy' },
+        { modNum: 9, weekNum: 10, chapter: 'Chapter 8', theme: 'Cognitive Behavioural Family Therapy' },
+        { modNum: 10, weekNum: 11, chapter: 'Chapter 10', theme: 'Social Constructionist Family Therapy' }
+      ];
+
+      for (const m of modules) {
+        const item = {
+          title: m.chapter,
+          chapterText: m.chapter,
+          resourceTitle: 'Mastering Competency in Family Therapy: A Practical Approach to Theory and Clinical Case Documentation',
+          authorName: 'Diane R. Gehart',
+          relevantTopics: m.theme
+        };
+        const title = formatDisplayTitleWithChapter(
+          item,
+          item.chapterText,
+          item.resourceTitle,
+          'Family Systems Approaches to Counselling',
+          item.authorName
+        );
+        const subtitle = formatAuthorAndPagesSubtitle(
+          item.authorName,
+          null,
+          item.resourceTitle,
+          title,
+          'Family Systems Approaches to Counselling'
+        );
+
+        expect(title).not.toContain('A Practical Approach to Theory and Clinical Case Documentation');
+        expect(subtitle).not.toContain('A Practical Approach to Theory and Clinical Case Documentation');
+        expect(title).toContain(m.theme);
+        expect(subtitle).toBe('Mastering Competency in Family Therapy · Diane R. Gehart');
+      }
+    });
+
+    it('verifies CPC 512 canonical modules with null resourceTitle display clean author and full chapter topic', () => {
+      const modules = [
+        { modNum: 1, weekNum: 1, chapter: 'Chapters 1–3', theme: 'Systems Theory and the History of Family Therapy' },
+        { modNum: 2, weekNum: 2, chapter: 'Chapter 2', theme: 'Family of Origin/ Genograms' },
+        { modNum: 3, weekNum: 3, chapter: 'Chapters 11–15', theme: 'Diverse Populations and Family Therapy Case Conceptualization and Application' },
+        { modNum: 4, weekNum: 4, chapter: 'Chapter 7', theme: 'Bowen Family Systems' },
+        { modNum: 5, weekNum: 5, chapter: 'Chapter 5', theme: 'Structural Family Therapy' },
+        { modNum: 6, weekNum: 7, chapter: 'Chapter 4', theme: 'Strategic Family Therapy' },
+        { modNum: 7, weekNum: 8, chapter: 'Chapter 6', theme: 'Experiential Family Therapy' },
+        { modNum: 8, weekNum: 9, chapter: 'Chapter 7', theme: 'Psychoanalytic Family Therapy' },
+        { modNum: 9, weekNum: 10, chapter: 'Chapter 8', theme: 'Cognitive Behavioural Family Therapy' },
+        { modNum: 10, weekNum: 11, chapter: 'Chapter 10', theme: 'Social Constructionist Family Therapy' }
+      ];
+
+      for (const m of modules) {
+        const item = {
+          title: `${m.chapter} · ${m.theme}`,
+          chapterText: m.chapter,
+          resourceTitle: null,
+          authorName: 'Diane R. Gehart',
+          relevantTopics: m.theme
+        };
+        const title = formatDisplayTitleWithChapter(
+          item,
+          item.chapterText,
+          null,
+          'Family Systems Approaches to Counselling',
+          item.authorName
+        );
+        const subtitle = formatAuthorAndPagesSubtitle(
+          item.authorName,
+          null,
+          null,
+          title,
+          'Family Systems Approaches to Counselling'
+        );
+
+        expect(title).toBe(`${m.chapter} · ${m.theme}`);
+        expect(subtitle).toBe('Diane R. Gehart');
+        expect(title).not.toContain('Mastering Competency');
+        expect(subtitle).not.toContain('Mastering Competency');
+      }
+    });
+  });
 });
+
 

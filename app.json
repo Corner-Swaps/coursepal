@@ -21,6 +21,21 @@
         "NSRemindersFullAccessUsageDescription": "CoursePal needs reminders access to alert you before upcoming assignment deadlines."
       }
     },
+    "android": {
+      "package": "com.coursepal.app",
+      "versionCode": 3,
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/images/AppIcon-1024.png",
+        "backgroundColor": "#F2F5FA"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR"
+      ]
+    },
     "plugins": [
       [
         "expo-av",

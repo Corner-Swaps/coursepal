@@ -30,8 +30,7 @@ export const GradeWeightTrackerCard: React.FC<GradeWeightTrackerCardProps> = ({
     return assignments.filter(
       a =>
         !a.isDeleted &&
-        (a.courseId === course.id ||
-          (a.courseCode || '').toLowerCase() === courseCodeKey)
+        (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === courseCodeKey)
     );
   }, [assignments, course.id, courseCodeKey]);
 

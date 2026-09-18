@@ -10,6 +10,7 @@ import { deriveWeekNumber, weekNumberForDate } from './timeFormatters';
 
 export function repairChapterArtifacts(text: string): string {
   let str = text;
+  str = str.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat');
   str = str.replace(/\bc[\s\xa0]+hapters\b/gi, 'chapters');
   str = str.replace(/\bc[\s\xa0]+hapter\b/gi, 'chapter');
   str = str.replace(/\bch[\s\xa0]+apters\b/gi, 'chapters');
@@ -24,16 +25,37 @@ export function repairChapterArtifacts(text: string): string {
 export function sanitizeDanglingPunctuation(str: string): string {
   if (!str) return '';
   let s = str.trim();
-  // Strip complete parenthesized year or edition like (2014), (4th ed.)
-  s = s.replace(/\s*\(\s*(?:\d{4}|[a-z0-9\s.,]+ed\.?|[a-z\s]+)\s*\)/gi, ' ').trim();
+  // Strip complete parenthesized edition like (4th ed.), (2nd edition) - NEVER strip publication years in academic citations!
+  s = s.replace(/\s*\(\s*(?:[a-z0-9\s.,]*\b(?:ed|edition)\.?)\s*\)/gi, ' ').trim();
+  // Strip empty parentheses e.g. "( )" or "()"
+  s = s.replace(/\s*\(\s*\)/g, ' ').trim();
   // If there is an unclosed '(' or unstarted ')'
   const openCount = (s.match(/\(/g) || []).length;
   const closeCount = (s.match(/\)/g) || []).length;
   if (openCount !== closeCount) {
     s = s.replace(/[()]/g, ' ');
   }
-  // Strip leading and trailing punctuation brackets/quotes/dashes/bullets
-  s = s.replace(/^[:;•·\-–—~`!@#$%^&*()[\]{}<>,?'"\s.]+|[:;•·\-–—~`!@#$%^&*()[\]{}<>,?'"\s.]+$/g, '').trim();
+  // Strip trailing unclosed parens with digits e.g. "( 5" or "(5"
+  s = s.replace(/\s*\(\s*\d+\s*$/g, '').trim();
+  // Strip empty parentheses again in case closing was removed
+  s = s.replace(/\s*\(\s*\)/g, ' ').trim();
+  // Collapse doubled punctuation (multiple commas, multiple dots, repeated dashes/colons)
+  s = s.replace(/[,;]{2,}/g, ',');
+  s = s.replace(/\.{2,}/g, '.');
+  s = s.replace(/\s*[:·•\-–—]\s*[:·•\-–—]\s*/g, ' · ');
+  s = s.replace(/\s*,\s*·\s*/g, ' · ');
+  s = s.replace(/\s*·\s*,\s*/g, ' · ');
+  s = s.replace(/\s*-\s*·\s*/g, ' · ');
+  s = s.replace(/\s*·\s*-\s*/g, ' · ');
+  s = s.replace(/\s*,\s*-\s*/g, ' - ');
+  // Strip leading and trailing punctuation brackets/quotes/dashes/bullets (preserve balanced parens)
+  const isBalanced = (s.match(/\(/g) || []).length === (s.match(/\)/g) || []).length;
+  if (isBalanced) {
+    s = s.replace(/^[:;•·\-–—~`!@#$%^&*[\]{}<>,?'"\s.]+|[:;•·\-–—~`!@#$%^&*[\]{}<>,?'"\s.]+$/g, '').trim();
+  } else {
+    s = s.replace(/^[:;•·\-–—~`!@#$%^&*()[\]{}<>,?'"\s.]+|[:;•·\-–—~`!@#$%^&*()[\]{}<>,?'"\s.]+$/g, '').trim();
+  }
+  s = s.replace(/\s*\(\s*\)/g, ' ').trim();
   s = s.replace(/\s+/g, ' ');
   return s;
 }
@@ -72,24 +94,62 @@ export function cleanChapterFromRaw(rawCh?: string | null): string | null {
 
   // Check if string contains explicit chapter keywords: chapter, chapters, ch., ch, chap., etc.
   const hasChapterKeyword = /\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\b/i.test(cleaned);
-  // Check if string is purely digits/connectors e.g. "12", "12 & 13", "1-4", "1, 2"
-  const isPureNumbers = /^\d+[\s&,\-–andto\d]*$/i.test(cleaned);
+  // Check if string is purely digits/connectors e.g. "12", "12 & 13", "1-4", "1, 2", "1: 3", "4: 10"
+  const isPureNumbers = /^\d+[\s&,:\-–andto\d]*$/i.test(cleaned);
   // Check if string starts with a leading chapter number e.g. "7 Experiential Family Therapy" or "7: Overview"
   const leadingNumMatch = cleaned.match(/^(\d{1,2})(?:[:.\s–-]+|\s+)(?!jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec\b)[A-Za-z]/i);
+
+  // If string is a standalone 4-digit year (1800-2099) without explicit chapter keywords, it is a publication year, NOT a chapter!
+  if (!hasChapterKeyword && /^(?:18|19|20)\d{2}$/.test(cleaned.trim())) {
+    return null;
+  }
 
   if (!hasChapterKeyword && !isPureNumbers && !leadingNumMatch) {
     // Not a chapter! Prevents dates, years, or topic titles from being misidentified as chapters
     return null;
   }
 
+  // 1. If explicit chapter keyword exists, extract digits directly following it
+  if (hasChapterKeyword) {
+    const keywordDigitsMatch = cleaned.match(/\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\s*[:\-–.]*\s*(\d+[\s&,:\-–andto\d]*)/i);
+    if (keywordDigitsMatch) {
+      let numPart = keywordDigitsMatch[1].trim();
+      // Normalize colons between digits to en-dash: e.g. "1: 3" -> "1–3", "4: 10" -> "4–10"
+      numPart = numPart.replace(/(\d+)\s*:\s*(\d+)/g, '$1–$2');
+      // Normalize connectors: replace "and" with "&", "-" with en-dash "–"
+      numPart = numPart
+        .replace(/\band\b/gi, '&')
+        .replace(/\s*-\s*/g, '–')
+        .replace(/\s*–\s*/g, '–')
+        .replace(/\s+/g, ' ');
+      // Clean trailing/leading connectors
+      numPart = numPart.replace(/^[,&–:\s]+|[,&–:\s]+$/g, '').trim();
+
+      const isPlural = numPart.includes('&') || numPart.includes('–') || numPart.includes(',') || /\bto\b/i.test(numPart);
+      return isPlural ? `Chapters ${numPart}` : `Chapter ${numPart}`;
+    }
+
+    // If chapter keyword exists without digits (e.g. "Chapter One", "Chapter IV")
+    const keywordWordMatch = cleaned.match(/\b(?:chapters?)\s+([A-Za-z]+)\b/i);
+    if (keywordWordMatch && !/^(?:and|to|the|of|in|for|from|with)\b/i.test(keywordWordMatch[1])) {
+      const wordPart = keywordWordMatch[1].trim();
+      return `Chapter ${wordPart.charAt(0).toUpperCase() + wordPart.slice(1)}`;
+    }
+  }
+
   if (leadingNumMatch && !hasChapterKeyword) {
     return `Chapter ${leadingNumMatch[1]}`;
   }
 
-  // Extract all digit groups with connectors e.g. "12 & 13", "1, 2", "1-4", "12"
-  const digitsMatch = cleaned.match(/\b\d+[\s&,\-–andto\d]*\b/i);
+  // Extract all digit groups with connectors e.g. "12 & 13", "1, 2", "1-4", "1: 3", "4: 10", "12"
+  const digitsMatch = cleaned.match(/\b\d+[\s&,:\-–andto\d]*\b/i);
   if (digitsMatch) {
+    if (!hasChapterKeyword && /^(?:18|19|20)\d{2}$/.test(digitsMatch[0].trim())) {
+      return null;
+    }
     let numPart = digitsMatch[0].trim();
+    // Normalize colons between digits to en-dash: e.g. "1: 3" -> "1–3", "4: 10" -> "4–10"
+    numPart = numPart.replace(/(\d+)\s*:\s*(\d+)/g, '$1–$2');
     // Normalize connectors: replace "and" with "&", "-" with en-dash "–"
     numPart = numPart
       .replace(/\band\b/gi, '&')
@@ -97,17 +157,10 @@ export function cleanChapterFromRaw(rawCh?: string | null): string | null {
       .replace(/\s*–\s*/g, '–')
       .replace(/\s+/g, ' ');
     // Clean trailing/leading connectors
-    numPart = numPart.replace(/^[,&–\s]+|[,&–\s]+$/g, '').trim();
+    numPart = numPart.replace(/^[,&–:\s]+|[,&–:\s]+$/g, '').trim();
 
     const isPlural = numPart.includes('&') || numPart.includes('–') || numPart.includes(',') || /\bto\b/i.test(numPart);
     return isPlural ? `Chapters ${numPart}` : `Chapter ${numPart}`;
-  }
-
-  // If chapter keyword exists without digits (e.g. "Chapter One", "Chapter IV")
-  const keywordMatch = cleaned.match(/\b(?:chapters?)\s+([A-Za-z]+)\b/i);
-  if (keywordMatch) {
-    const wordPart = keywordMatch[1].trim();
-    return `Chapter ${wordPart.charAt(0).toUpperCase() + wordPart.slice(1)}`;
   }
 
   return null;
@@ -122,6 +175,8 @@ export function stripChapterMentions(text: string): string {
   // Matches "Chapter 1 · Ch. 1", "Chapters 12 & 13", "Ch. 12", "Ch 1 & 2", etc.
   const chapterPattern = /\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)*[:\-–·•.]*\s*/gi;
   let stripped = healed.replace(chapterPattern, ' ');
+  // Clean empty parentheses left behind when parenthesized chapter is stripped e.g. (Chapters 4 & 5) -> ( )
+  stripped = stripped.replace(/\s*\(\s*\)/g, ' ');
   // Clean dangling separators and whitespace
   stripped = stripped.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '');
   stripped = stripped.replace(/\s+/g, ' ').trim();
@@ -195,10 +250,75 @@ export function isGenericPlaceholderReadingTitle(rawTitle: string | null | undef
   return false;
 }
 
+/**
+ * Determines if a title represents a student assignment, project, paper, presentation,
+ * exam, or deliverable rather than genuine reading material.
+ * Readings must strictly contain actual reading material (textbooks, chapters, articles, PDFs, media).
+ */
+export function isDeliverableNotReading(rawTitle: string | null | undefined): boolean {
+  if (!rawTitle) return false;
+  const t = rawTitle
+    .toLowerCase()
+    .replace(/^[•\-*▪●(): \t\n ]+|[•\-*▪●(): \t\n ]+$/g, '')
+    .trim();
+  if (t.length === 0) return false;
+
+  // Explicit reading citations with chapter or page markers
+  const hasChapterOrPage =
+    /\b(?:chapters?|chps?\.?|chs?\.?|chap\.?|ch\b\.?|sections?|sec\.?)\s*\d+/i.test(t) ||
+    /\b(?:pp?\.?|pages?)\s*\d+/i.test(t);
+
+  const hasAuthorBookCitation =
+    /(?:gehart|corey|yalom|creswell|nichols|neimeyer|hochstetler|bishop)\b/i.test(t) &&
+    !/\b(?:feedback|worth\s*\d{1,3}%|due\b|assignment|exam|quiz)\b/i.test(t);
+
+  // If it has explicit chapter or textbook citation and no deliverable marker (like "due", "worth X%", "rubric"), it's reading
+  if ((hasChapterOrPage || hasAuthorBookCitation) && !/\b(?:worth\s*\d{1,3}%|due\s*:|rubric|students\s+will\s+complete)\b/i.test(t)) {
+    return false;
+  }
+
+  // Common student deliverables that should never be in reading lists
+  const deliverableRegexes = [
+    /\bcase\s+conceptualizations?\b/i,
+    /\bconceptualizations?\b/i,
+    /\bfamily\s+map(?:ping)?(?:\s+papers?)?\b/i,
+    /\bgenograms?(?:\/family\s+mapping)?\b/i,
+    /\bmapping\s+papers?\b/i,
+    /\bin[\s-]class\s+(?:case|assignment|activity|presentation|exam|quiz|conceptualization)/i,
+    /\bin[\s-]class\b/i,
+    /\bgroup\s+presentations?\b/i,
+    /\bpresentations?\b/i,
+    /\bpeer\s+reviews?\b/i,
+    /\breflection\s+papers?\b/i,
+    /\bresearch\s+papers?\b/i,
+    /\bterm\s+papers?\b/i,
+    /\bfinal\s+papers?\b/i,
+    /\bfeedback\s+case\s+conceptualizations?\b/i,
+    /\bworth\s*\d{1,3}%\b/i,
+    /\bdue\s*:\s*[a-z0-9]/i,
+    /\bexams?\b/i,
+    /\bquiz(?:zes)?\b/i,
+    /\bmidterms?\b/i,
+    /\bfinal\s+exams?\b/i,
+    /\brubrics?\b/i,
+    /\bassignments?\s*\d*\b/i,
+    /\bdeliverables?\b/i
+  ];
+
+  for (const regex of deliverableRegexes) {
+    if (regex.test(t)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function deduplicateRepeatedPhrases(text: string): string {
   if (!text) return '';
   let str = text.trim();
-  const parts = str.split(/\s*[:\-–·]\s*/);
+  // Never split hyphenated compound words like "Groth-Marnat" or "evidence-based" (hyphen without whitespace)
+  const parts = str.split(/\s*[:·•]\s*|\s+[-–—]\s+|\s*[–—]\s*/);
   if (parts.length > 1) {
     const uniqueParts: string[] = [];
     for (const p of parts) {
@@ -211,6 +331,97 @@ export function deduplicateRepeatedPhrases(text: string): string {
     }
     str = uniqueParts.join(': ');
   }
+  return str;
+}
+
+/**
+ * Deduplicates repeated chapter titles, phrases, and segments across separators.
+ * Guarantees that no chapter name, book subtitle, or topic is stated more than once.
+ * Handles patterns like:
+ * - "Chapter 1 · Sexual and Gender Minority Youth in Canada – Sexual and Gender Minority Youth in Canada"
+ * - "Chapter 4 · Chapter 4"
+ * - "Chapter 4 · Chapter 4: Gender Identity"
+ * - "A – A" or "A: A"
+ */
+export function deduplicateReadingTitle(title: string): string {
+  if (!title || typeof title !== 'string') return '';
+  let str = title.trim();
+
+  // 1. Remove duplicate adjacent phrases joined by dashes, colons, or bullets:
+  // e.g. "Sexual and Gender Minority Youth in Canada – Sexual and Gender Minority Youth in Canada"
+  str = str.replace(/\b([A-Za-z0-9\s'&,.-]{3,60})\b\s*(?:[:—–·•\-]\s*)+\1\b/gi, '$1');
+
+  // 2. Deduplicate segments joined by ' · '
+  if (str.includes('·')) {
+    const segments = str.split(/\s*·\s*/).map(s => s.trim()).filter(Boolean);
+    const uniqueSegs: string[] = [];
+    for (let i = 0; i < segments.length; i++) {
+      let seg = segments[i];
+      // Inside this segment, also deduplicate dashes/colons
+      if (/[:—–-]/.test(seg)) {
+        const parts = seg.split(/\s*(?:[—–-]|:)\s+/).map(p => p.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+          const uParts: string[] = [];
+          for (const p of parts) {
+            const pNorm = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!pNorm) continue;
+            if (!uParts.some(u => u.toLowerCase().replace(/[^a-z0-9]/g, '') === pNorm)) {
+              uParts.push(p);
+            }
+          }
+          seg = uParts.join(' – ');
+        }
+      }
+
+      const segNorm = seg.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!segNorm) continue;
+
+      // If segment is identical to an already included segment, skip it (e.g. "Chapter 4 · Chapter 4")
+      if (uniqueSegs.some(u => u.toLowerCase().replace(/[^a-z0-9]/g, '') === segNorm)) {
+        continue;
+      }
+
+      // If previous segment is a chapter (e.g. "Chapter 1") and this segment starts with that chapter, strip it
+      if (uniqueSegs.length > 0) {
+        const prev = uniqueSegs[uniqueSegs.length - 1];
+        const chM = prev.match(/^(?:Chapter|Ch\.?)\s*(\d+)/i);
+        if (chM) {
+          const num = chM[1];
+          const rep = new RegExp(`^(?:chapters?\\s*${num}|ch\\.?\\s*${num})[:·•\\-–—\\s]*`, 'i');
+          seg = seg.replace(rep, '').trim();
+        }
+      }
+
+      if (seg) {
+        uniqueSegs.push(seg);
+      }
+    }
+    str = uniqueSegs.join(' · ');
+  } else if (/[:—–-]/.test(str)) {
+    // No ' · ' but contains dashes/colons: deduplicate parts
+    const parts = str.split(/\s*(?:[—–-]|:)\s+/).map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const uParts: string[] = [];
+      for (const p of parts) {
+        const pNorm = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!pNorm) continue;
+        if (!uParts.some(u => u.toLowerCase().replace(/[^a-z0-9]/g, '') === pNorm)) {
+          uParts.push(p);
+        }
+      }
+      if (uParts.length >= 2) {
+        const isCh = /^(?:Chapter|Ch\.?)\s*\d+$/i.test(uParts[0]);
+        str = uParts.join(isCh ? ' · ' : ' – ');
+      } else if (uParts.length === 1) {
+        str = uParts[0];
+      }
+    }
+  }
+
+  // Final cleanup of duplicate adjacent phrases that might have been revealed
+  str = str.replace(/\b([A-Za-z0-9\s'&,.-]{3,60})\b\s*(?:[:—–·•\-]\s*)+\1\b/gi, '$1');
+  str = str.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
+
   return str;
 }
 
@@ -240,7 +451,44 @@ export function formatDisplayTitleWithChapter(
     rawTitle = titleOrReading || '';
   }
 
+  rawTitle = rawTitle.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat');
+  if (resTitle) resTitle = resTitle.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat');
+  if (authorName) authorName = authorName.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat');
+
+  // If authorName is not explicitly provided, detect author citation prefix or name
+  if (!authorName) {
+    if (rawTitle) {
+      const authMatch = rawTitle.match(/^([A-Z][a-zA-Z\s.&–-]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|pp?\.?|\d)/i);
+      if (authMatch) {
+        authorName = authMatch[1].trim();
+      } else if (rawTitle.toLowerCase().includes('groth-marnat') || /\bMarnat\b/i.test(rawTitle)) {
+        authorName = 'Groth-Marnat';
+      }
+    }
+    if (!authorName && resTitle) {
+      if (resTitle.toLowerCase().includes('groth-marnat') || /\bMarnat\b/i.test(resTitle)) {
+        authorName = 'Groth-Marnat';
+      } else {
+        const resAuthMatch = resTitle.match(/^([A-Z][a-zA-Z\s.&–-]+?)(?:\s*\(|\s*·|$)/);
+        if (resAuthMatch && resAuthMatch[1].trim().length >= 3 && !/^(?:chapter|reading|textbook|required)/i.test(resAuthMatch[1].trim())) {
+          authorName = resAuthMatch[1].trim();
+        }
+      }
+    }
+  }
+
   rawTitle = cleanMultilineTitle(rawTitle);
+  // Strip leading number range artifact like "1: 3 · ", "4: 10 - ", "1-3 · " etc.
+  rawTitle = rawTitle.replace(/^\d+[\s:.\-–—]+\d+\s*[:·•\-–—]\s*/, '').trim();
+  // Strip textbook/book title prefix before chapter keywords or colons, even if the book title contains colons/dashes:
+  // e.g. "Growing into Resilience: Sexual and Gender Minority Youth in Canada: Chapter 1 — Sexual and Gender Minority Youth in Canada"
+  // e.g. "Sexuality Counseling: Theory, Research, and Practice: Chapter 11 — Assessment in Sexuality Counseling"
+  // e.g. "Human Sexuality in a World of Diversity, 7th Canadian Edition: Chapter 3 — Anatomy and Physiology"
+  rawTitle = rawTitle.replace(/^.+?(?:[:—–-]\s*)+(?=(?:chapters?|chps?\.?|chs?\.?|ch\b\.?|sections?|sec\.?)\s*\d+)/i, '').trim();
+  if (resTitle && resTitle.trim()) {
+    const escRes = resTitle.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    rawTitle = rawTitle.replace(new RegExp(`^${escRes}[:—–-\\s]+`, 'i'), '').trim();
+  }
 
   // Detect chapter candidate from either chapterText or rawTitle
   const chapterCandidate = rawCh || rawTitle;
@@ -264,34 +512,75 @@ export function formatDisplayTitleWithChapter(
     // 2. Strip trailing list numbers, e.g. "Family Therapy 3", "overview 3"
     substantiveTitle = substantiveTitle.replace(/[:.\s–-]+\d+$/, '').trim();
 
-    // 3. If substantiveTitle is purely numbers/punctuation, discard it
-    if (/^[\d\s:.\-–—]+$/.test(substantiveTitle)) {
+    // 3. If substantiveTitle is purely numbers/punctuation or lacks letters, discard it
+    if (/^[\d\s:.\-–—&]+$/.test(substantiveTitle) || !/[a-zA-Z]/.test(substantiveTitle)) {
       substantiveTitle = '';
     }
 
     // 4. Strip textbook/generic noise words
     substantiveTitle = substantiveTitle.replace(/\b(?:textbooks?|readings?|required|optional)\b/gi, '').trim();
     substantiveTitle = substantiveTitle.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+
+    // 5. If substantiveTitle contains "Book Title — Chapter Topic" or "Book Title: Chapter Topic", isolate genuine chapter topic
+    if (/[:—–-]/.test(substantiveTitle)) {
+      const parts = substantiveTitle.split(/\s*(?:[—–-]|:)\s+/);
+      if (parts.length >= 2) {
+        const uniqueParts: string[] = [];
+        for (const p of parts) {
+          const pt = p.trim();
+          if (!pt) continue;
+          const pNorm = pt.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (!uniqueParts.some(u => u.toLowerCase().replace(/[^a-z0-9]/g, '') === pNorm)) {
+            uniqueParts.push(pt);
+          }
+        }
+        if (uniqueParts.length === 1) {
+          substantiveTitle = uniqueParts[0];
+        } else {
+          const first = uniqueParts[0];
+          const rest = uniqueParts.slice(1).join(' – ').trim();
+          const normRest = rest.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const normFirst = first.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const normRes = (resTitle || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          // If first AND rest together make up resTitle, rest is just the book subtitle, NOT a chapter topic
+          if (normRes.length > 0 && normRes.includes(normFirst) && normRes.includes(normRest) && normRest.length > 10) {
+            substantiveTitle = '';
+          } else if (
+            /\b(?:edition|textbook|handbook|reader|diversity|counselling|psychology|resilience|growing)\b/i.test(first) ||
+            (resTitle && resTitle.toLowerCase().includes(first.toLowerCase())) ||
+            (first.length > 15 && /[a-zA-Z]/.test(rest))
+          ) {
+            substantiveTitle = rest;
+          } else {
+            substantiveTitle = uniqueParts.join(' – ');
+          }
+        }
+      }
+    }
   }
 
-  // If author is inside substantive title (e.g. "Gehart" or "Corey" or "Yalom"), strip it
-  if (authorName && authorName.trim()) {
-    const authParts = authorName.trim().split(/[\s,&]+/).filter(w => w.length >= 3);
+  // If author is inside substantive title and canonicalChapter is present, strip it
+  if (canonicalChapter && authorName && authorName.trim()) {
+    const authParts = authorName.trim().split(/[\s,&-]+/).filter(w => w.length >= 2);
     for (const ap of authParts) {
       const reg = new RegExp(`\\b${ap}\\b`, 'gi');
       substantiveTitle = substantiveTitle.replace(reg, '').trim();
     }
+    const fullAuth = authorName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    substantiveTitle = substantiveTitle.replace(new RegExp(`\\b${fullAuth}\\b`, 'gi'), '').trim();
+    substantiveTitle = substantiveTitle.replace(/\bet\s+al\.?\b/gi, '').trim();
     substantiveTitle = substantiveTitle.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
   }
 
   // Sanitize any dangling brackets/parens/colons in substantive title
   substantiveTitle = sanitizeDanglingPunctuation(substantiveTitle);
 
-  // If substantive title is just a truncated fragment like "overview" or "an overview"
+  // If substantive title is just a truncated fragment, digits, or lacks real substantive letters
   if (
-    substantiveTitle.toLowerCase() === 'overview' ||
-    substantiveTitle.toLowerCase() === 'an overview' ||
-    substantiveTitle.toLowerCase() === 'introduction'
+    substantiveTitle.length < 3 ||
+    !/[a-zA-Z]{3,}/.test(substantiveTitle) ||
+    /^(?:et\s+al\.?|ch(?:apter)?\.?|\d+|overview|an\s+overview|introduction)$/i.test(substantiveTitle.trim())
   ) {
     substantiveTitle = '';
   }
@@ -304,11 +593,20 @@ export function formatDisplayTitleWithChapter(
   let cleanResForTitle = '';
   if (resTitle && resTitle.trim()) {
     let clean = sanitizeDanglingPunctuation(stripChapterMentions(deduplicateRepeatedPhrases(resTitle.trim())));
+    clean = clean.replace(/,?\s*\b\d+(?:st|nd|rd|th)?\s+(?:Canadian\s+)?Edition\b/gi, '').trim();
+    if (clean.length > 50 && clean.includes(':')) {
+      const colonParts = clean.split(':');
+      const mainBookTitle = colonParts[0].trim();
+      if (mainBookTitle.length >= 5 && /[a-zA-Z]{3,}/.test(mainBookTitle)) {
+        clean = mainBookTitle;
+      }
+    }
     if (authorName && authorName.trim()) {
-      const authParts = authorName.trim().split(/[\s,&]+/).filter(w => w.length >= 3);
+      const authParts = authorName.trim().split(/[\s,&]+/).filter(w => w.length >= 2);
       for (const ap of authParts) {
         clean = clean.replace(new RegExp(`\\b${ap}\\b`, 'gi'), '').trim();
       }
+      clean = clean.replace(/\bet\s+al\.?\b/gi, '').trim();
     }
     clean = sanitizeDanglingPunctuation(clean);
     const lowerClean = clean.toLowerCase();
@@ -318,10 +616,16 @@ export function formatDisplayTitleWithChapter(
     const isJustCourse =
       normCourse.length > 0 &&
       (cleanAlpha === normCourse || (normCourse.length > 5 && cleanAlpha.startsWith(normCourse)));
+    const hasLetters = /[a-zA-Z]/.test(clean);
     const isJustNumbersOrChapter =
-      /^(?:chapters?|chps?\.?|chs?\.?|ch\b\.?)?\s*[\d\s&,\.\-–—]+$/i.test(clean);
+      !hasLetters ||
+      /^(?:chapters?|chps?\.?|chs?\.?|ch\b\.?)?\s*[\d\s&,:.\-–—]+$/i.test(clean) ||
+      /^[\d\s&,:.\-–—]+$/.test(clean);
     if (
-      clean.length > 0 &&
+      clean.length >= 4 &&
+      hasLetters &&
+      /[a-zA-Z]{3,}/.test(clean) &&
+      !/^(?:et\s+al\.?|ch(?:apter)?\.?|\d+|chapters?|readings?)$/i.test(clean.trim()) &&
       lowerClean !== 'overview' &&
       lowerClean !== 'an overview' &&
       !isJustCourse &&
@@ -333,37 +637,114 @@ export function formatDisplayTitleWithChapter(
   }
 
   // Check if substantive title matches or overlaps the textbook or course name
-  const isBookOrCourseName =
+  let isBookOrCourseName =
     normSubstantive.length === 0 ||
-    (normRes.length > 0 && (normSubstantive === normRes || normRes.includes(normSubstantive) || normSubstantive.includes(normRes))) ||
+    (normRes.length > 0 && (normSubstantive === normRes || (normSubstantive.length > 10 && normSubstantive.startsWith(normRes)))) ||
     (normCourse.length > 0 && (normSubstantive === normCourse || normCourse.includes(normSubstantive) || normSubstantive.includes(normCourse)));
 
-  if (canonicalChapter && isBookOrCourseName) {
-    if (cleanResForTitle) {
-      return `${cleanResForTitle} · ${canonicalChapter}`;
+  // Check if rawTitle is already an explicit author citation like "Beck (Ch. 1–3)" or "Persons (Ch. 1)"
+  const isAuthorCitation = /^[A-Z][a-zA-Z\s.&–-]+?\s*\(\s*(?:ch(?:apter)?s?\.?|pp?\.?|\d)/i.test(rawTitle);
+
+  // If substantiveTitle is empty (or matches book/course name) and reading has a topic:
+  // (Do not append course week themes to self-contained author citations like "Beck (Ch. 1–3)")
+  if (!isAuthorCitation) {
+    const rawTopic = typeof titleOrReading === 'object' && titleOrReading !== null
+      ? ((titleOrReading as any).topic || (titleOrReading as any).relevantTopics)
+      : null;
+    if (rawTopic && typeof rawTopic === 'string' && rawTopic.trim()) {
+      let cleanTopic = rawTopic.trim();
+      cleanTopic = cleanTopic.replace(/^(?:module|mod|week|wk|session|unit)\s*\d+[:\-–—\s]*/i, '').trim();
+      cleanTopic = cleanTopic.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
+      if (
+        cleanTopic.length >= 3 &&
+        !/^(?:week|module|unit|reading\s*week|no\s*class)\b/i.test(cleanTopic) &&
+        (!substantiveTitle || isBookOrCourseName || substantiveTitle.toLowerCase() === 'reading')
+      ) {
+        substantiveTitle = cleanTopic;
+        isBookOrCourseName = false;
+      }
     }
-    return canonicalChapter;
   }
 
-  // If no substantive title remains, or it duplicates the chapter, return Book Title · Chapter or ONLY the chapter
+  // If rawTitle is an academic citation e.g. "Shoeybi et al. (Megatron)", "Li et al. (2020)", "Dettmers et al. (QLoRA)"
+  // and no canonical chapter exists, preserve the full citation as the result title!
+  const isPaperCitation = /^[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\s.&–-]+?\s*\([A-Za-z0-9\s\-–—/]+\)$/.test(rawTitle.trim());
+  if (isPaperCitation && !canonicalChapter) {
+    return rawTitle.trim();
+  }
+
+  let resultTitle = '';
+  if (canonicalChapter && substantiveTitle) {
+    const escCh = canonicalChapter.replace(/\s+/g, '\\s*');
+    const chRep = new RegExp(`^(?:${escCh}|ch(?:apter)?\\.?\\s*\\d+)[:·•\\-–—\\s]*`, 'i');
+    substantiveTitle = substantiveTitle.replace(chRep, '').trim();
+    if (substantiveTitle.toLowerCase().replace(/[^a-z0-9]/g, '') === canonicalChapter.toLowerCase().replace(/[^a-z0-9]/g, '')) {
+      substantiveTitle = '';
+    }
+  }
+
   if (
+    canonicalChapter &&
+    authorName &&
+    authorName.trim() &&
+    (rawTitle.toLowerCase().includes(authorName.toLowerCase().trim()) ||
+     rawTitle.toLowerCase().includes('marnat') ||
+     (resTitle && resTitle.toLowerCase().includes(authorName.toLowerCase().trim())) ||
+     (resTitle && resTitle.toLowerCase().includes('marnat')) ||
+     /^[A-Z][a-zA-Z\s.&–-]+?\s*\(\s*(?:ch(?:apter)?s?\.?|pp?\.?|\d)/i.test(rawTitle)) &&
+    !rawTitle.toLowerCase().includes('overview gehart')
+  ) {
+    const shortCh = canonicalChapter.replace(/^Chapters?\s*/i, 'Ch. ');
+    if (substantiveTitle && !isBookOrCourseName && substantiveTitle.toLowerCase() !== canonicalChapter.toLowerCase()) {
+      resultTitle = `${authorName.trim()} (${shortCh}) · ${substantiveTitle}`;
+    } else {
+      resultTitle = `${authorName.trim()} (${shortCh})`;
+    }
+  } else if (canonicalChapter && substantiveTitle && !isBookOrCourseName && substantiveTitle.toLowerCase() !== canonicalChapter.toLowerCase()) {
+    resultTitle = `${canonicalChapter} · ${substantiveTitle}`;
+  } else if (canonicalChapter && isBookOrCourseName) {
+    resultTitle = cleanResForTitle ? `${cleanResForTitle} · ${canonicalChapter}` : canonicalChapter;
+  } else if (
     !substantiveTitle ||
     (canonicalChapter && substantiveTitle.toLowerCase() === canonicalChapter.toLowerCase()) ||
     substantiveTitle.toLowerCase() === 'reading' ||
     (substantiveTitle.toLowerCase() === 'assigned readings' && canonicalChapter)
   ) {
     if (canonicalChapter && cleanResForTitle) {
-      return `${cleanResForTitle} · ${canonicalChapter}`;
+      resultTitle = `${cleanResForTitle} · ${canonicalChapter}`;
+    } else {
+      resultTitle = canonicalChapter || distillSmartReadingTitle(rawTitle);
     }
-    return canonicalChapter || distillSmartReadingTitle(rawTitle);
+  } else if (canonicalChapter) {
+    resultTitle = `${canonicalChapter} · ${substantiveTitle}`;
+  } else {
+    resultTitle = substantiveTitle;
   }
 
-  // If there is both a chapter and a distinct substantive title, combine them cleanly
-  if (canonicalChapter) {
-    return `${canonicalChapter} · ${substantiveTitle}`;
+  // Sanitize any remaining leading or trailing number-range colon artifacts e.g. "1: 3 · " or " · 4: 10"
+  resultTitle = resultTitle.replace(/^\d+[\s:.\-–—]+\d+\s*[:·•\-–—]\s*/, '').trim();
+  resultTitle = resultTitle.replace(/\s*[:·•\-–—]\s*\d+[\s:.\-–—]+\d+$/, '').trim();
+  // Sanitize duplicate separators and dangling punctuation
+  resultTitle = resultTitle
+    .replace(/\s*[:·•\-–—]\s*[:·•\-–—]\s*/g, ' · ')
+    .replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '')
+    .trim();
+
+  // Strip trailing dangling fragments: e.g. " · 9", " · 8", " · et al. ( 5", " · et al.", " · ("
+  resultTitle = resultTitle.replace(/\s*·\s*(?:et\s+al\.?[\s(]*\d*|\d+|\(\s*\d*|\b[a-z]{1,2}\b)\s*$/i, '').trim();
+  resultTitle = sanitizeDanglingPunctuation(resultTitle);
+  resultTitle = deduplicateReadingTitle(resultTitle);
+
+  // Naked parenthetical guard: Never allow bare "(Megatron)" or "(QLoRA)" to display
+  if (/^\([A-Za-z0-9\s\-–—/]+\)$/.test(resultTitle)) {
+    if (authorName && authorName.trim()) {
+      resultTitle = `${authorName.trim()} ${resultTitle}`;
+    } else if (rawTitle && rawTitle.trim()) {
+      resultTitle = rawTitle.trim();
+    }
   }
 
-  return substantiveTitle;
+  return resultTitle;
 }
 
 /**
@@ -390,11 +771,16 @@ export function formatAuthorAndPagesSubtitle(
     author = authorOrReading;
   }
 
+  if (author) author = author.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat').trim();
+  if (resource) resource = resource.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat').trim();
+
   const parts: string[] = [];
 
   // 1. Clean Resource / Textbook Title (strip any chapter mentions)
   if (resource && resource.trim()) {
     let cleanRes = sanitizeDanglingPunctuation(stripChapterMentions(deduplicateRepeatedPhrases(resource.trim())));
+    cleanRes = cleanRes.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat').trim();
+    cleanRes = cleanRes.replace(/,?\s*\b\d+(?:st|nd|rd|th)?\s+(?:Canadian\s+)?Edition\b/gi, '').trim();
 
     // Discard pure digits / colons (e.g. "4: 10" or "3" or "10")
     if (/^[\d\s:.\-–—]+$/.test(cleanRes)) {
@@ -403,19 +789,45 @@ export function formatAuthorAndPagesSubtitle(
 
     // Strip author name if contained inside cleanRes (e.g. "overview Gehart 3" -> "overview 3")
     if (author && author.trim()) {
-      const authParts = author.trim().split(/[\s,&]+/).filter(w => w.length >= 3);
+      const authParts = author.trim().split(/[\s,&-]+/).filter(w => w.length >= 2);
       for (const ap of authParts) {
         const reg = new RegExp(`\\b${ap}\\b`, 'gi');
         cleanRes = cleanRes.replace(reg, '').trim();
       }
+      const fullAuth = author.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      cleanRes = cleanRes.replace(new RegExp(`\\b${fullAuth}\\b`, 'gi'), '').trim();
+      cleanRes = cleanRes.replace(/\bet\s+al\.?\b/gi, '').trim();
     }
 
     // Strip stray numbers from cleanRes (e.g. "overview 3" -> "overview")
     cleanRes = cleanRes.replace(/^\d+[:.\s–-]+|[:.\s–-]+\d+$/g, '').trim();
     cleanRes = sanitizeDanglingPunctuation(cleanRes);
 
-    // Discard fragments like "overview" or "an overview"
-    if (cleanRes.toLowerCase() === 'overview' || cleanRes.toLowerCase() === 'an overview') {
+    // Discard fragments like "overview" or "an overview", or if lacks real substantive words
+    if (
+      cleanRes.length < 3 ||
+      !/[a-zA-Z]{3,}/.test(cleanRes) ||
+      cleanRes.toLowerCase() === 'overview' ||
+      cleanRes.toLowerCase() === 'an overview' ||
+      /^(?:et\s+al\.?|ch(?:apter)?\.?|\d+)$/i.test(cleanRes.trim())
+    ) {
+      cleanRes = '';
+    }
+
+    // If cleanRes has a colon and long publisher subtitle (>50 chars), e.g. "Mastering Competency in Family Therapy: A Practical Approach..."
+    // Clean it to the primary title to avoid multi-line textbook blurb clutter
+    if (cleanRes.length > 50 && cleanRes.includes(':')) {
+      const colonParts = cleanRes.split(':');
+      const mainBookTitle = colonParts[0].trim();
+      if (mainBookTitle.length >= 5 && /[a-zA-Z]{3,}/.test(mainBookTitle)) {
+        cleanRes = mainBookTitle;
+      }
+    }
+
+    // Suppress cleanRes if it is redundant with author
+    const normCleanRes = cleanRes.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normAuth = (author || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normCleanRes && normAuth && (normCleanRes === normAuth || normAuth.includes(normCleanRes) || normCleanRes.includes(normAuth))) {
       cleanRes = '';
     }
 
@@ -435,9 +847,10 @@ export function formatAuthorAndPagesSubtitle(
     }
   }
 
-  // 2. Clean Author (strip any chapter mentions)
+  // 2. Clean Author (strip any chapter mentions and publication years in subtitle)
   if (author && author.trim()) {
     let cleanAuth = sanitizeDanglingPunctuation(stripChapterMentions(author.trim()));
+    cleanAuth = cleanAuth.replace(/\s*\(\s*\d{4}\s*\)/g, '').trim();
     // Discard pure digits / colons
     if (/^[\d\s:.\-–—]+$/.test(cleanAuth)) {
       cleanAuth = '';
@@ -471,7 +884,22 @@ export function formatAuthorAndPagesSubtitle(
     }
   }
 
-  return parts.join(' · ');
+  const sanitizedParts = parts
+    .map(p => p.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim())
+    .filter(p => p.length > 0);
+
+  // Strictly ensure no part duplicates any word or phrase in displayTitle
+  const cleanParts: string[] = [];
+  const lowDisp = (displayTitle || '').toLowerCase();
+  for (const p of sanitizedParts) {
+    const lowP = p.toLowerCase();
+    if (lowDisp.includes(lowP) && lowP.length > 3) {
+      continue;
+    }
+    cleanParts.push(p);
+  }
+
+  return cleanParts.join(' · ');
 }
 
 /**
@@ -657,18 +1085,35 @@ export function isRealDateOrRangeString(str?: string | null): boolean {
 export function isDateRangeString(str?: string | null): boolean {
   if (!str || !isRealDateOrRangeString(str)) return false;
   const s = str.trim();
-  return /[-–—]|(\bto\b)|(\bbetween\b)/i.test(s) && /\d+/.test(s);
+  // Exclude single ISO date strings YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  // Exclude single date strings like "July 2", "7/2/2026", "Sep 10"
+  if (/^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?$/i.test(s)) return false;
+  if (/^\d{1,2}\/\d{1,2}(?:\/\d{2,4})?$/.test(s)) return false;
+
+  return (/[-–—]|(\bto\b)|(\bbetween\b)/i.test(s) && /\d+/.test(s)) || /\b\d{1,2}\s*[\/\-–]\s*\d{1,2}\b/.test(s);
 }
 
 /**
  * Normalizes a date range string to a clean, concise format (e.g. "Sep 1 – Sep 5" or "Sep 1 – 5").
  */
 export function cleanDateRangeDisplay(rangeStr: string): string {
-  let s = rangeStr.trim();
+  if (!rangeStr) return '';
+  const trimmed = rangeStr.trim();
+  // If it's a single ISO date (e.g. "2026-11-12"), format it cleanly
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const d = parseSafeDate(trimmed);
+    if (d && !isNaN(d.getTime())) {
+      const m = d.toLocaleDateString('en-US', { month: 'short' });
+      return `${m} ${d.getDate()}`;
+    }
+  }
+
+  let s = trimmed;
   // Strip leading prefixes
   s = s.replace(/^between\s+/i, '').replace(/^suggested:\s*/i, '').replace(/^suggested reading:\s*/i, '');
-  // Remove year if present, e.g. ", 2026" or " 2026"
-  s = s.replace(/,?\s*\b20\d{2}\b/g, '').trim();
+  // Remove 4-digit year if present, e.g. ", 2026" or " 2026" (ensure it is preceded by a word or space, not part of YYYY-MM-DD)
+  s = s.replace(/(?:,\s*|\s+)\b20\d{2}\b/g, '').trim();
   // Standardize hyphens to en-dash with single spaces
   s = s.replace(/\s*[-–—]\s*/g, ' – ');
   // Replace "to" or "and" with "–" if between dates
@@ -683,6 +1128,8 @@ export function cleanDateRangeDisplay(rangeStr: string): string {
        .replace(/\bMarch\b/gi, 'Mar')
        .replace(/\bApril\b/gi, 'Apr')
        .replace(/\bAugust\b/gi, 'Aug');
+  // Strip any leading or trailing dashes/punctuation
+  s = s.replace(/^[–—\-\s,.:]+|[–—\-\s,.:]+$/g, '').trim();
   // Clean up duplicate spaces
   s = s.replace(/\s+/g, ' ').trim();
   return s;
@@ -701,13 +1148,13 @@ export function formatSuggestedReadingCardText(
   // 1. If dateRangeStr is a genuine date range from the document (e.g. "Sep 1 – Sep 5" or "Sep 14 – Sep 20")
   if (dateRangeStr && isDateRangeString(dateRangeStr)) {
     const cleanRange = cleanDateRangeDisplay(dateRangeStr);
-    return `Suggested: ${cleanRange}`;
+    if (cleanRange) return `Suggested: ${cleanRange}`;
   }
 
   // 2. If fallbackWeekDateStr is a genuine date range from the document
   if (fallbackWeekDateStr && isDateRangeString(fallbackWeekDateStr)) {
     const cleanRange = cleanDateRangeDisplay(fallbackWeekDateStr);
-    return `Suggested: ${cleanRange}`;
+    if (cleanRange) return `Suggested: ${cleanRange}`;
   }
 
   // 3. If dateInput is a valid Date or ISO string
@@ -728,7 +1175,7 @@ export function formatSuggestedReadingCardText(
       const day = d.getDate();
       return `Suggested: Read by ${monthName} ${day}`;
     }
-    const clean = dateRangeStr.trim().replace(/,?\s*\b20\d{2}\b/g, '').trim();
+    const clean = cleanDateRangeDisplay(dateRangeStr);
     if (clean.length > 0) {
       return `Suggested: ${clean}`;
     }
@@ -742,7 +1189,7 @@ export function formatSuggestedReadingCardText(
       const day = d.getDate();
       return `Suggested: Read by ${monthName} ${day}`;
     }
-    const clean = fallbackWeekDateStr.replace(/^suggested:\s*/i, '').trim();
+    const clean = cleanDateRangeDisplay(fallbackWeekDateStr);
     if (clean.length > 0) {
       return `Suggested: ${clean}`;
     }
@@ -766,12 +1213,16 @@ export function resolveReadingMediaType(reading?: {
 
   const rawType = (reading.mediaType || reading.mediaTypeRaw || '').toString().trim().toLowerCase();
   if (
-    rawType === 'article' ||
-    rawType === 'paper' ||
     rawType === 'article / paper' ||
     rawType === 'article/paper' ||
-    rawType.includes('article') ||
+    rawType === 'paper' ||
     rawType.includes('paper')
+  ) {
+    return 'paper';
+  }
+  if (
+    rawType === 'article' ||
+    rawType.includes('article')
   ) {
     return 'article';
   }
@@ -790,9 +1241,16 @@ export function resolveReadingMediaType(reading?: {
   if (
     combined.includes('article / paper') ||
     combined.includes('article/paper') ||
-    /\b(?:journal article|research paper)\b/i.test(combined) ||
-    /\b(?:article|paper)\b/i.test(res) ||
-    (/\b(?:article|paper)\b/i.test(title) && !/\b(?:chapter|chs?\.?|chap\.?|textbook)\b/i.test(title))
+    /\b(?:research paper|white paper|paper)\b/i.test(combined) ||
+    /\b(?:paper)\b/i.test(res) ||
+    (/\b(?:paper)\b/i.test(title) && !/\b(?:chapter|chs?\.?|chap\.?|textbook)\b/i.test(title))
+  ) {
+    return 'paper';
+  }
+  if (
+    /\b(?:journal article|article)\b/i.test(combined) ||
+    /\b(?:article)\b/i.test(res) ||
+    (/\b(?:article)\b/i.test(title) && !/\b(?:chapter|chs?\.?|chap\.?|textbook)\b/i.test(title))
   ) {
     return 'article';
   }
@@ -910,10 +1368,83 @@ export interface MinimalReadingItem {
 }
 
 /**
+ * Extracts an ordered list of unique chapter numbers from a text string.
+ * Handles ranges ("1-3", "1–3", "1: 3", "4: 10", "4 to 10"), lists ("5 & 7", "1, 2"), and singles ("Chapter 5").
+ */
+export function parseChapterNumbers(text?: string | null): number[] {
+  if (!text || !text.trim()) return [];
+  const str = text.trim();
+
+  // 1. Range check: e.g. "1-3", "1–3", "1: 3", "4: 10", "Chapters 1 to 3"
+  const rangeMatch = str.match(/\b(\d{1,3})\s*(?:[-–—:]|\bto\b)\s*(\d{1,3})\b/i);
+  if (rangeMatch) {
+    const start = parseInt(rangeMatch[1], 10);
+    const end = parseInt(rangeMatch[2], 10);
+    if (!isNaN(start) && !isNaN(end) && start < end && end - start <= 30) {
+      const nums: number[] = [];
+      for (let i = start; i <= end; i++) {
+        nums.push(i);
+      }
+      return nums;
+    }
+  }
+
+  // 2. Extract from chapter section or whole string
+  const chapterSectionMatch = str.match(/\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\s*([\d\s&,–\-+andto]+)/i);
+  const targetStr = chapterSectionMatch ? chapterSectionMatch[1] : str;
+  const numMatches = targetStr.match(/\b\d{1,3}\b/g);
+  if (!numMatches) return [];
+
+  const seen = new Set<number>();
+  const nums: number[] = [];
+  for (const nm of numMatches) {
+    const val = parseInt(nm, 10);
+    // Exclude 4-digit years or 0
+    if (val > 0 && val < 1000 && !seen.has(val)) {
+      seen.add(val);
+      nums.push(val);
+    }
+  }
+  return nums.sort((a, b) => a - b);
+}
+
+/**
+ * Formats a list of chapter numbers into canonical string:
+ * e.g. [5] -> "Chapter 5"
+ * e.g. [5, 7] -> "Chapters 5 & 7"
+ * e.g. [1, 2, 3] -> "Chapters 1–3"
+ * e.g. [4, 5, 6, 7, 8, 9, 10] -> "Chapters 4–10"
+ */
+export function formatChapterList(chapters: number[]): string {
+  if (!chapters || chapters.length === 0) return '';
+  const sorted = [...new Set(chapters)].sort((a, b) => a - b);
+  if (sorted.length === 1) {
+    return `Chapter ${sorted[0]}`;
+  }
+
+  // Check if fully contiguous range
+  const isContiguous = sorted.every((num, idx) => idx === 0 || num === sorted[idx - 1] + 1);
+  if (isContiguous && sorted.length >= 2) {
+    return `Chapters ${sorted[0]}–${sorted[sorted.length - 1]}`;
+  }
+
+  if (sorted.length === 2) {
+    return `Chapters ${sorted[0]} & ${sorted[1]}`;
+  }
+
+  // List with Oxford/comma format e.g. Chapters 1, 2 & 4
+  const lead = sorted.slice(0, -1).join(', ');
+  return `Chapters ${lead} & ${sorted[sorted.length - 1]}`;
+}
+
+/**
  * Deduplicates and consolidates reading items:
  * 1. Merges intra-week duplicate chapter cards (e.g. "Chapters 1-3" + "overview Gehart").
- * 2. Consolidates identical inter-week range clones that share the exact same chapter, author, and due date.
- * 3. Preserves completion status and chooses the most descriptive title and metadata.
+ * 2. Eliminates repeated chapters within the same week ("once a chapter is repeated you don't need to say it again").
+ *    If an earlier card already has Chapter 1, subsequent "Chapters 1 & 7" prunes 1 to become "Chapter 7".
+ *    Subsets like "Chapter 5" and "Chapter 7" merge into "Chapters 5 & 7" without clutter.
+ * 3. Consolidates identical inter-week range clones that share the exact same chapter, author, and due date.
+ * 4. Preserves completion status and chooses the most descriptive title and metadata.
  */
 export function deduplicateReadingsList<T extends MinimalReadingItem>(
   readings: T[],
@@ -923,9 +1454,19 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
 
   const result: T[] = [];
   const seenKeys = new Map<string, number>(); // key -> index in result
+  const seenChaptersPerBookWeek = new Map<string, Set<number>>();
 
-  for (const r of readings) {
-    if (isGenericPlaceholderReadingTitle(r.title)) continue;
+  for (const rawR of readings) {
+    if (isGenericPlaceholderReadingTitle(rawR.title)) continue;
+    if (isDeliverableNotReading(rawR.title)) continue;
+    let r = { ...rawR };
+
+    // Pre-clean leading number-range artifact like "1: 3 · " or "4: 10 · "
+    r.title = r.title.replace(/^\d+[\s:.\-–—]+\d+\s*[:·•\-–—]\s*/, '').trim();
+    if (r.chapterText) {
+      r.chapterText = r.chapterText.replace(/^\d+[\s:.\-–—]+\d+\s*[:·•\-–—]\s*/, '').trim();
+    }
+
     const weekNum = extractReadingWeekNumber(r) ?? 0;
     const matchedCourse = courses?.find(
       c => (c.courseCode || c.courseName || '').toLowerCase() === (r.courseCode || '').toLowerCase()
@@ -934,15 +1475,6 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
       .trim()
       .toLowerCase();
 
-    const canonicalCh = cleanChapterFromRaw(r.chapterText || r.title);
-    const displayTitle = formatDisplayTitleWithChapter(
-      r.title,
-      r.chapterText,
-      r.resourceTitle,
-      matchedCourse?.courseName
-    );
-    const normTitle = displayTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const dateStr = r.dueDate ? (typeof r.dueDate === 'string' ? r.dueDate : (r.dueDate instanceof Date ? r.dueDate.toISOString() : String(r.dueDate))) : '';
     // Extract author and resource key
     const authorKey = (r.authorName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
     let resKey = (r.resourceTitle || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -954,6 +1486,78 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
         bookKey = prefixMatch[1].toLowerCase();
       }
     }
+
+    const bookWeekKey = `${courseKey}_w${weekNum}_bk_${bookKey}`;
+    const seenChapters = seenChaptersPerBookWeek.get(bookWeekKey) || new Set<number>();
+
+    // Parse chapter numbers for repeated chapter detection
+    const chapters = parseChapterNumbers(r.chapterText || r.title);
+    if (chapters.length > 0) {
+      const remainingChapters = chapters.filter(c => !seenChapters.has(c));
+
+      if (remainingChapters.length === 0) {
+        // All chapters in this item were already seen/assigned earlier in this week!
+        let substantiveTopic = stripChapterMentions(distillSmartReadingTitle(r.title));
+        if (/^[\d\s:.\-–—&]+$/.test(substantiveTopic) || !/[a-zA-Z]/.test(substantiveTopic)) {
+          substantiveTopic = '';
+        }
+        const isGeneric =
+          !substantiveTopic ||
+          /^(?:overview|an overview|reading|readings|textbook|assigned readings|chapter\s*\d+)$/i.test(substantiveTopic.trim());
+
+        if (isGeneric) {
+          // Pure redundant duplicate! Merge completion/flags into the earlier reading
+          const existingIdx = result.findIndex(ex => {
+            const exWeek = extractReadingWeekNumber(ex) ?? 0;
+            if (exWeek !== weekNum) return false;
+            const exChs = parseChapterNumbers(ex.chapterText || ex.title);
+            return chapters.some(c => exChs.includes(c));
+          });
+          if (existingIdx >= 0) {
+            const existing = result[existingIdx];
+            result[existingIdx] = {
+              ...existing,
+              isCompleted: Boolean(existing.isCompleted || r.isCompleted),
+              isDeleted: Boolean(existing.isDeleted && r.isDeleted),
+              videoUrl: existing.videoUrl || r.videoUrl
+            };
+          }
+          continue; // Skip adding this redundant duplicate card!
+        }
+      } else if (remainingChapters.length < chapters.length) {
+        // Some chapters were already seen, prune them!
+        // "once a chapter is repeated you don't need to say it again so if it says one, you don't need to say in the next one chapter one and seven"
+        const newChText = formatChapterList(remainingChapters);
+        r.chapterText = newChText;
+        r.title = formatDisplayTitleWithChapter(
+          r,
+          newChText,
+          r.resourceTitle,
+          matchedCourse?.courseName,
+          r.authorName
+        );
+        for (const c of remainingChapters) {
+          seenChapters.add(c);
+        }
+        seenChaptersPerBookWeek.set(bookWeekKey, seenChapters);
+      } else {
+        for (const c of chapters) {
+          seenChapters.add(c);
+        }
+        seenChaptersPerBookWeek.set(bookWeekKey, seenChapters);
+      }
+    }
+
+    const canonicalCh = cleanChapterFromRaw(r.chapterText || r.title);
+    const displayTitle = formatDisplayTitleWithChapter(
+      r.title,
+      r.chapterText,
+      r.resourceTitle,
+      matchedCourse?.courseName,
+      r.authorName
+    );
+    const normTitle = displayTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const dateStr = r.dueDate ? (typeof r.dueDate === 'string' ? r.dueDate : (r.dueDate instanceof Date ? r.dueDate.toISOString() : String(r.dueDate))) : '';
 
     // Primary intra-week key (same course, same week, same book, and same chapter OR same title)
     const intraWeekKey = canonicalCh
@@ -1404,4 +2008,419 @@ export function formatSuggestedDatePill(dateInput?: string | Date | null, dateRa
   return null;
 }
 
+/**
+ * Sanitizes extracted rubric criterion titles by removing leaked table headers,
+ * letter-spaced table text (e.g. "G r a d e  P o i n t s  %  o f  G r a d e"),
+ * and broken line artifacts.
+ */
+export function cleanRubricCriterionName(rawName?: string | null): string {
+  if (!rawName) return '';
+  let name = rawName.trim();
 
+  // 1. Strip letter-spaced table text like "G r a d e   P o i n t s   %   o f   G r a d e"
+  name = name.replace(/\b(?:g\s+r\s+a\s+d\s+e\s+p\s+o\s+i\s+n\s+t\s+s\s+%\s+o\s+f\s+g\s+r\s+a\s+d\s+e)\b/gi, ' ');
+  name = name.replace(/g\s*r\s*a\s*d\s*e\s*p\s*o\s*i\s*n\s*t\s*s\s*%\s*o\s*f\s*g\s*r\s*a\s*d\s*e/gi, ' ');
+  name = name.replace(/g\s*r\s*a\s*d\s*e\s*p\s*o\s*i\s*n\s*t\s*s/gi, ' ');
+  name = name.replace(/%\s*o\s*f\s*g\s*r\s*a\s*d\s*e/gi, ' ');
+  name = name.replace(/c\s*r\s*i\s*t\s*e\s*r\s*i\s*a/gi, ' ');
+  name = name.replace(/g\s*r\s*a\s*d\s*i\s*n\s*g/gi, ' ');
+
+  // 2. Strip standard table header phrases
+  name = name.replace(/\b(?:Grading\s+Criteria|Criteria\s+Grade\s+Points|Grade\s+Points|Criteria|%\s+of\s+Grade|%\s+of\s+Final\s+Grade)\b/gi, ' ');
+
+  // 3. Strip orphaned "Concepts" if at the very beginning (from wrapped "Concepts Grade Points...")
+  name = name.replace(/^\s*Concepts\s+/i, '');
+
+  // 4. Strip known leaked assignment title prefixes/suffixes
+  name = name.replace(/\b(?:Group\s+Facilitation\s+Presentation\/Project|Article\s+Analysis\s+Assignment|Peer-Review\s+Group\s+Report|Group\s+Therapy\s+Reflection\s+Paper|Research\s+Paper|Unique\s+Topics\s+in\s+Grief\s+Group\s+Presentation|Personal\s+Grief\s+Reflection\s+Assignment|Group\s+Sexuality\s+Research\s+Paper|Professionalism,\s*Collaboration,\s*and\s*Engagement)\b/gi, ' ');
+
+  // 5. Clean leading and trailing punctuation, numbers, bullets, colons, dashes, pipes (preserve valid parens)
+  name = name.replace(/^[\s•\-\*▪●:–—\d\.\)\(|~_§·]+|[\s•\-\*▪●:–—\d\.|~_§·]+$/g, '').trim();
+  if (name.endsWith(')') && !name.includes('(')) {
+    name = name.slice(0, -1).trim();
+  }
+  name = name.replace(/\s+/g, ' ').trim();
+
+  // 6. If an unclosed paren exists, either close it or simplify
+  if (/\bdemonstration\s*(?:\([^)]*)?$/i.test(name)) {
+    name = 'Demonstration & Practice';
+  } else if (/^cultural\s+competence(?:\s*\(.*)?$/i.test(name)) {
+    name = 'Cultural Competence';
+  } else if (name.includes('(') && !name.includes(')')) {
+    name = `${name})`;
+  }
+
+  // 7. Repair common split / abbreviated phrases
+  if (/^analysis\s+and\s+use\s+of\s+course(?:\s+concepts?)?$/i.test(name)) {
+    name = 'Analysis and use of Course Concepts';
+  }
+  if (/^case\s+conceptualization\s*\/\s*treatment(?:\s+plan)?$/i.test(name)) {
+    name = 'Case Conceptualization / Treatment Plan';
+  }
+
+  // 8. Length & sentence safeguard: criterion titles in rubrics are concise (e.g. 2-6 words)
+  // If an entire sentence or instruction paragraph leaked into the name, distill it
+  if (name.length > 55) {
+    const sepMatch = name.match(/^([^:–—\n.]{3,45})[:–—\n.]/);
+    if (sepMatch) {
+      name = sepMatch[1].trim();
+    } else {
+      const words = name.split(/\s+/);
+      if (words.length > 5) {
+        name = words.slice(0, 5).join(' ');
+      }
+    }
+  }
+
+  name = name.replace(/^[\s•\-\*▪●:–—\d\.\)\(|~_§·]+|[\s•\-\*▪●:–—\d\.|~_§·]+$/g, '').trim();
+  if (name.endsWith(')') && !name.includes('(')) {
+    name = name.slice(0, -1).trim();
+  }
+  if (name.length > 0) {
+    name = name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  return name;
+}
+
+/**
+ * Validates whether a string is a genuine assignment title or an invalid instructional sentence / outcome fragment.
+ * Prevents prompt lines like "examine and discuss the following aspects of the study:" or loose clinical terms like "treatment plan".
+ */
+export function isInvalidAssignmentTitle(raw: string): boolean {
+  if (!raw || typeof raw !== 'string') return true;
+  const t = raw.trim();
+  if (t.length < 3) return true;
+  if (!/[a-zA-Z]{3,}/.test(t)) return true; // Purely numeric like "31"
+
+  const lower = t.toLowerCase();
+
+  // Purely boilerplate or metadata headers
+  if (
+    lower === 'item title' ||
+    lower === 'assignment' ||
+    lower === 'assignments' ||
+    lower === 'deliverable' ||
+    lower === 'deliverables' ||
+    lower === 'reading' ||
+    lower === 'readings' ||
+    lower === 'textbook' ||
+    lower === 'textbooks' ||
+    lower === 'article' ||
+    lower === 'articles' ||
+    lower === 'video' ||
+    lower === 'podcast' ||
+    lower === 'tutorial' ||
+    lower === 'other' ||
+    lower === 'in_class' ||
+    lower === 'in-class' ||
+    lower === 'in class' ||
+    lower === 'weight' ||
+    lower === 'points' ||
+    lower === 'points possible' ||
+    lower === 'total points' ||
+    lower === 'total points possible' ||
+    lower === 'due date' ||
+    lower === 'date' ||
+    lower === 'sub-type' ||
+    lower === 'subtype' ||
+    lower === 'category' ||
+    lower === 'title' ||
+    lower === 'week' ||
+    lower === 'module' ||
+    lower === 'unit' ||
+    lower === 'session' ||
+    lower === 'n/a' ||
+    lower === 'none' ||
+    lower === 'handout' ||
+    lower === 'lecture' ||
+    lower === 'slides' ||
+    lower === 'deck' ||
+    lower === 'paper' ||
+    lower === 'essay' ||
+    lower === 'presentation' ||
+    lower === 'grading scale' ||
+    lower === 'grade scale' ||
+    lower === 'letter grade' ||
+    lower === 'letter grades' ||
+    lower === 'gpa' ||
+    lower === 'pass' ||
+    lower === 'fail' ||
+    lower === 'pass/fail' ||
+    lower === 'satisfactory' ||
+    lower === 'unsatisfactory' ||
+    lower === 'honors' ||
+    lower === 'credit' ||
+    lower === 'no credit' ||
+    lower === 'credit / no credit' ||
+    lower === 'grade a' ||
+    lower === 'grade b' ||
+    lower === 'grade c' ||
+    lower === 'grade d' ||
+    lower === 'grade f' ||
+    lower === 'late penalty' ||
+    lower === 'late submission penalty' ||
+    lower === 'penalty' ||
+    lower === 'description weight' ||
+    lower === 'description / weight' ||
+    lower === 'description & weight' ||
+    lower === 'description and weight' ||
+    lower === 'description' ||
+    lower === 'descriptions' ||
+    lower === 'assessment item' ||
+    lower === 'assessment items' ||
+    lower === 'assessment title' ||
+    lower === 'assessment titles' ||
+    lower === 'assessment structure' ||
+    lower === 'grade breakdown' ||
+    lower === 'target format' ||
+    lower === 'due module' ||
+    lower === 'deliverable format' ||
+    lower.startsWith('description weight') ||
+    lower.startsWith('assessment item') ||
+    lower.startsWith('assessment title') ||
+    lower.startsWith('assessment structure') ||
+    lower.startsWith('assignment description weight') ||
+    (lower.includes('assignment description') && lower.includes('weight')) ||
+    (lower.includes('description') && lower.includes('weight') && lower.includes('deliverable')) ||
+    /^(?:assignment\s+|course\s+|assessment\s+|task\s+)?description(?:\s*(?:&|\/|and|-|–|—)?\s*weight)?$/i.test(lower) ||
+    /^(?:weight|percentage)(?:\s*(?:&|\/|and|-|–|—)?\s*description)?$/i.test(lower) ||
+    /^(?:assessment|evaluation|deliverable)\s+(?:title|name|item)\s+(?:weight|percentage)?/i.test(lower) ||
+    /^(?:assessment|evaluation|grading|grade)\s+(?:structure|summary|breakdown|matrix|overview|schedule|rubric)/i.test(lower) ||
+    /^(?:description|details|overview|format|target\s+due|target\s+format|deliverable\s+format)$/i.test(lower) ||
+    /^description\s+weight\b/i.test(lower) ||
+    /^(?:modules?|mod|weeks?|wk|unit|session)\s*\d+$/i.test(lower) ||
+    lower.includes('total 100%') ||
+    lower.includes('overview of required') ||
+    lower.includes('course assignment details') ||
+    lower.includes('course policies') ||
+    lower.includes('late assignments') ||
+    lower.includes('grading criteria') ||
+    lower.includes('grade points') ||
+    lower.includes('points possible') ||
+    lower.includes('of final grade') ||
+    lower.includes('3% of students') ||
+    lower.includes('if submitted') ||
+    lower.includes('points deducted') ||
+    lower.includes('deducted if') ||
+    lower.includes('hours after') ||
+    lower.includes('days after') ||
+    lower.includes('coursepal parser') ||
+    lower.includes('mapping guide') ||
+    lower.includes('maps with weight') ||
+    lower.includes('maps to assignment') ||
+    lower.includes('when parsing this syllabus') ||
+    lower.includes('total course assessment') ||
+    lower.includes('decimal grade scale') ||
+    lower.includes('detailed assignment requirements') ||
+    lower.includes('end of term cumulative') ||
+    /^total\b/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // Reject pure reading titles that contain reading keywords but lack any assignment/deliverable keyword
+  const hasReadingKeyword = /\b(?:chapter|ch\.|textbook|readings?|required reading)\b/i.test(lower);
+  const hasDeliverableKeyword = /\b(?:paper|report|exam|examination|quiz|midterm|final|project|homework|problem\s+set|lab|presentation|deliverable|brief|essay|critique|discussion\s+board|peer\s+review|case\s+study|assignment)\b/i.test(lower);
+  if (hasReadingKeyword && !hasDeliverableKeyword) {
+    return true;
+  }
+
+  // Imperative instructional prompts and sentence fragments (e.g. "examine and discuss the following aspects of the study:")
+  if (
+    /^(?:examine\s+and\s+discuss|discuss\s+the\s+following|examine\s+the\s+following|consider\s+the\s+following|analyze\s+the\s+following|review\s+the\s+following|describe\s+the\s+following|identify\s+the\s+following|explore\s+the\s+following|working\s+in\s+groups|students\s+will|students\s+are|in\s+small\s+groups|based\s+on\s+a\s+set\s+of|apply\s+theoretical\s+models|develop\s+and\s+implement|critically\s+examine|as\s+a\s+group)\b/i.test(lower) ||
+    /(?:the following|aspects of the study|questions below|case study by)[:.]?$/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // Learning outcome & course objective headers (e.g. 2.3 Application: ...)
+  if (/^(?:\d+\.\d+|PO\s*\d+|PLO\s*\d+|LO\s*\d+)\b/i.test(t)) {
+    return true;
+  }
+
+  // Isolated phrases that are clinical objectives/outcomes, in-class discussions, or calendar notes rather than assignment deliverables
+  if (
+    lower === 'treatment plan' ||
+    lower === 'treatment plans' ||
+    lower === 'treatment planning' ||
+    lower === 'counselling theory' ||
+    lower === 'rubric' ||
+    lower === 'grading rubric' ||
+    lower === 'overview' ||
+    lower === 'grading criteria' ||
+    lower === 'course assignment details' ||
+    lower === 'in-class activity' ||
+    lower === 'in class activity' ||
+    lower === 'in-class conceptualization' ||
+    lower === 'in class conceptualization' ||
+    lower === 'case conceptualization activity' ||
+    lower === 'family map paper' ||
+    lower === 'class discussion' ||
+    lower === 'group discussion' ||
+    lower === 'discussion prompt' ||
+    lower === 'weekly check-in' ||
+    lower === 'check-in' ||
+    lower === 'reading assignment' ||
+    lower === 'reading due' ||
+    lower === 'readings due' ||
+    lower === 'textbook reading' ||
+    lower === 'chapter reading' ||
+    lower === 'tuition' ||
+    lower === 'tuition due' ||
+    lower === 'registration' ||
+    lower === 'university holiday' ||
+    lower === 'reading week' ||
+    lower === 'spring break' ||
+    lower === 'fall break' ||
+    lower === 'no class' ||
+    lower === 'reading day' ||
+    lower === 'holiday' ||
+    lower === 'prepare for class' ||
+    lower.startsWith('--- page') ||
+    lower.startsWith('page ')
+  ) {
+    return true;
+  }
+
+  // Purely dates or points
+  if (/^\d{1,2}\/\d{1,2}(?:\/\d{2,4})?$/.test(t)) return true;
+  if (/^\d{1,4}\s*(?:pts|points|pt|%)\b/i.test(t)) return true;
+
+  // Instructional sentences starting with action verbs
+  const instructionalStarts = [
+    'examine and discuss',
+    'students will complete',
+    'students are required',
+    'please submit',
+    'submit your',
+    'refer to the',
+    'based on the',
+    'using the template',
+    'in accordance with',
+    'the goal of this',
+    'this assignment requires'
+  ];
+  if (instructionalStarts.some(verb => lower.startsWith(verb))) return true;
+
+  return false;
+}
+
+/**
+ * Extracts the primary numerical chapter key for natural ascending numeric sorting of readings.
+ */
+export function getReadingChapterSortKey(r: { title?: string | null; chapterText?: string | null }): number {
+  const chNums = parseChapterNumbers(`${r.chapterText || ''} ${r.title || ''}`);
+  if (chNums.length > 0) {
+    return chNums[0];
+  }
+  return 999999;
+}
+
+/**
+ * Splits assignment instructions and descriptions into clean, readable paragraphs.
+ * Breaks walls of text at section headers, bullet lists, double-newlines, or every few sentences
+ * so it is effortless to read on mobile without giant unbroken blocks of text.
+ */
+export function splitInstructionsIntoParagraphs(raw?: string | null): string[] {
+  if (!raw || !raw.trim()) return [];
+
+  // Clean out carriage returns, pipe delimiters, and normalize
+  let text = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\|{2,}/g, '\n\n')
+    .trim();
+
+  // 1. Separate explicit section headers into distinct paragraphs
+  const sectionKeywords = [
+    'Part\\s+\\d+', 'Section\\s+\\d+', 'Step\\s+\\d+', 'Phase\\s+\\d+',
+    'Overview', 'Background', 'Description', 'Directions', 'Instructions',
+    'Requirements', 'Guidelines', 'Format', 'Formatting', 'Submission',
+    'Evaluation', 'Evaluation\\s+Criteria', 'Grading\\s+Criteria',
+    'Framing\\s+Questions?', 'Prompt', 'Objectives', 'Purpose', 'Notes?',
+    'Target\\s+Format', 'Target\\s+Due', 'Deliverable(?:\\s+Format)?', 'Assessment\\s+Structure'
+  ].join('|');
+
+  // Break before explicit section headers
+  text = text.replace(
+    new RegExp(`(?:^|[.!?:]|\\n)\\s*(${sectionKeywords})\\s*[:\\-–—]`, 'gi'),
+    (match, header) => `\n\n${header.trim()}: `
+  );
+
+  // 2. Separate bullet lists or numbered items into distinct paragraphs
+  text = text.replace(/([.!?:]|[a-zA-Z0-9])\s+(?=[•\-*▪●]\s+)/g, '$1\n\n');
+  text = text.replace(/([.!?:]|[a-zA-Z0-9])\s+(?=\d+[\.)]\s+[A-Z])/g, '$1\n\n');
+
+  // 3. Split by existing double/multiple newlines
+  const rawBlocks = text.split(/\n\s*\n+/).map(b => b.trim()).filter(b => b.length > 0);
+  const result: string[] = [];
+
+  for (const block of rawBlocks) {
+    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    let subBlock = '';
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!subBlock) {
+        subBlock = line;
+      } else {
+        const prevEnds = /[.!?:]$/.test(subBlock);
+        const isBulletOrHeader =
+          /^[•\-*▪●]|\b\d+[\.)]\s+|^(?:part\s+\d|section\s+\d|step\s+\d|phase\s+\d|overview|directions|instructions|requirements|format|submission|framing|evaluation|objectives|target|deliverable)\b/i.test(line);
+        if (prevEnds || isBulletOrHeader) {
+          result.push(subBlock);
+          subBlock = line;
+        } else if (subBlock.length > 70 && line.length > 20) {
+          result.push(subBlock);
+          subBlock = line;
+        } else {
+          subBlock += ' ' + line;
+        }
+      }
+    }
+    if (subBlock) result.push(subBlock);
+  }
+
+  // 4. Break paragraphs into clear, digestible sentences/paragraphs
+  const finalParas: string[] = [];
+  for (const p of result) {
+    let cleanP = p.replace(/^[\s|~_§·]+|[\s|~_§·]+$/g, '').trim();
+    if (!cleanP) continue;
+
+    // Normalize bullet characters
+    if (/^[-*▪●]\s+/.test(cleanP)) {
+      cleanP = '• ' + cleanP.replace(/^[-*▪●]\s+/, '');
+    }
+
+    // If paragraph starts with an explicit section header followed by content, split header into its own item
+    const headerInlineMatch = cleanP.match(
+      /^((?:part\s+\d+|section\s+\d+|step\s+\d+|phase\s+\d+|overview|background|description|directions|instructions|requirements|guidelines|format|formatting|submission|evaluation|evaluation\s+criteria|grading\s+criteria|framing\s+questions?|prompt|objectives|purpose|notes?|target\s+format|target\s+due|deliverable(?:\s+format)?)[:\-–—])\s+(.+)$/i
+    );
+    if (headerInlineMatch) {
+      finalParas.push(headerInlineMatch[1].trim());
+      cleanP = headerInlineMatch[2].trim();
+    }
+
+    // Preserve headers and bullet points without breaking them into sentence chunks
+    const isHeaderOnly = /^(?:part\s+\d+|section\s+\d+|step\s+\d+|phase\s+\d+|overview|background|description|directions|instructions|requirements|guidelines|format|formatting|submission|evaluation|evaluation\s+criteria|grading\s+criteria|framing\s+questions?|prompt|objectives|purpose|notes?|target\s+format|target\s+due|deliverable(?:\s+format)?)[:\-–—]?$/i.test(cleanP);
+    const isBulletItem = /^[•\-*▪●]|\b\d+[\.)]\s+/.test(cleanP);
+
+    if (isHeaderOnly || isBulletItem || cleanP.length < 120) {
+      finalParas.push(cleanP);
+      continue;
+    }
+
+    const sentences = cleanP.match(/[^.!?]+(?:[.!?]+(?:\s+|$)|$)/g);
+    if (sentences && sentences.length > 1) {
+      for (const s of sentences) {
+        const tr = s.trim();
+        if (tr) {
+          finalParas.push(tr);
+        }
+      }
+    } else {
+      finalParas.push(cleanP);
+    }
+  }
+
+  return finalParas.filter(p => p.length > 0);
+}

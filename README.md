@@ -28,28 +28,22 @@ This repository is organized as a cohesive full-stack workspace containing the c
 │   ├── types/                   # TypeScript Domain Models & Interfaces
 │   └── utils/                   # Mathematics, Sound Catalog & Time Calculus
 │
-├── 🖥️ backend/                  # Academic Intelligence Service (Node.js, Express & Zod)
-│   ├── src/services/            # Multi-Model Gemini Parser & 64-D Neural Vector Engine
-│   ├── src/db/                  # PostgreSQL Pool with Resilient In-Memory Fallback
-│   ├── src/tests/               # 20-Test Academic Engine Integration Suite
-│   └── src/server.ts            # Express REST API & Encrypted Course Sharing Endpoints
-│
 ├── 🍏 ios/                      # Native iOS Project (Xcode Workspace & CocoaPods)
 │   ├── CoursePal.xcworkspace    # Main Xcode Workspace
 │   ├── CoursePal/               # Native iOS Target, Info.plist & LaunchScreen
 │   └── Podfile                  # CocoaPods Dependencies (Audio, Haptics, SVG, Hermes)
 │
-├── 🧪 __tests__/                # 152 Automated Client & Physics Unit Tests
+├── 🧪 __tests__/                # Automated Client & Physics Unit Tests
 │   ├── audioHapticsLifecycle.test.ts  # Background audio, haptic throttling & timer sync
-│   ├── syllabusParser.test.ts         # 26-Test local syllabus parsing protocol
+│   ├── syllabusParser.test.ts         # Local syllabus parsing protocol
 │   ├── vectorCanvasGestures.test.ts   # Dynamic Island safe areas & sub-pixel SVG math
 │   ├── uiComponents.test.ts           # Atomic component instantiation & prop verification
 │   └── mathPhysics.test.ts            # Ballistic trajectory & 64-D random projection
 │
 ├── 📜 scripts/                  # Developer Automation & Diagnostic Tools
-│   ├── test-gemini.ts           # Live Google Gemini 3.6 Flash connectivity test
-│   ├── create-test-syllabi.py   # Synthetic test syllabi generator
-│   └── populate-dummy-data.js   # Local test database seeder
+│   ├── deploy_device.sh         # Direct physical iPhone deploy & test automation
+│   ├── archive_and_export.sh    # Production archive & IPA generation
+│   └── upload_app_store.sh      # App Store Connect upload engine
 │
 ├── 📖 docs/                     # Documentation & GitHub Pages Legal Center
 │   ├── index.html               # Live Web Landing & Support Portal

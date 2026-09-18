@@ -125,3 +125,65 @@ export function formatDueDate(date: Date | null, weekRange?: string | null, refe
 
   return `Due ${dayOfWeek}, ${monthName} ${day}`;
 }
+
+/**
+ * Returns Sunday (start of week at 00:00:00) for a given date.
+ */
+export function getStartOfWeek(date: Date): Date {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = d.getDay(); // 0 = Sun
+  d.setDate(d.getDate() - day);
+  return d;
+}
+
+/**
+ * Calculates current academic course week (e.g. 1..16) relative to term start date
+ * or course weeks, strictly avoiding raw calendar week of the year numbers (like week 38).
+ */
+export function calculateAcademicWeek(
+  referenceDate: Date,
+  activeCourse?: { weeks?: Array<{ weekNumber: number; startDate?: Date | string | null }> } | null,
+  termStartDate?: Date | string | null,
+  availableWeeks?: number[]
+): number {
+  const today = referenceDate;
+  // 1. Check if today falls into any week with explicit startDate in active course
+  if (activeCourse?.weeks && activeCourse.weeks.length > 0) {
+    for (const w of activeCourse.weeks) {
+      if (w.startDate) {
+        const start = new Date(w.startDate);
+        if (!isNaN(start.getTime())) {
+          const startTime = getStartOfWeek(start).getTime();
+          const endTime = startTime + 7 * 86400000;
+          if (today.getTime() >= startTime && today.getTime() < endTime) {
+            return w.weekNumber;
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Relative to termStartDate if available, otherwise getBaseTermStartDate
+  const parsedTermStart = termStartDate ? new Date(termStartDate) : null;
+  const validTermStart = parsedTermStart && !isNaN(parsedTermStart.getTime()) ? parsedTermStart : null;
+  const baseStart = validTermStart ? getStartOfWeek(validTermStart) : getStartOfWeek(getBaseTermStartDate(today));
+  const diffMs = today.getTime() - baseStart.getTime();
+  const diffWeeks = Math.floor(diffMs / (7 * 86400000));
+  const calculatedWeek = Math.max(1, diffWeeks + 1);
+
+  if (availableWeeks && availableWeeks.length > 0) {
+    const minW = availableWeeks[0];
+    const maxW = availableWeeks[availableWeeks.length - 1];
+    if (calculatedWeek >= minW && calculatedWeek <= maxW) {
+      return calculatedWeek;
+    }
+    if (calculatedWeek > maxW) {
+      return maxW;
+    }
+    if (calculatedWeek < minW) {
+      return minW;
+    }
+  }
+
+  return calculatedWeek;
+}

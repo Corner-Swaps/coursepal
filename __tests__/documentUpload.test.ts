@@ -82,7 +82,7 @@ Required: Watch Premature Ejaculation: A Real Story of Struggle, Support and Suc
   it('correctly parses real CPC 523 PDF text with assignments, dates, points, and video URLs', () => {
     const { execSync } = require('child_process');
     const path = require('path');
-    const pdfPath = path.resolve(__dirname, '../src/assets/syllabi/Syllabus_5_CPC523.pdf');
+    const pdfPath = path.resolve(__dirname, '../src/assets/syllabi/CPC523_Syllabus.pdf');
     const pyScript = `import pypdf; r=pypdf.PdfReader('${pdfPath}'); print('\\n'.join(p.extract_text() or '' for p in r.pages))`;
     const fullText = execSync(`python3 -c "${pyScript}"`).toString();
 

@@ -90,7 +90,9 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
           </TouchableOpacity>
 
           <View style={styles.navTitleContainer}>
-            <Text style={styles.navTitle} numberOfLines={1}>Details</Text>
+            <Text style={styles.navTitle} numberOfLines={1}>
+              {category === 'reading' ? 'Add Reading' : 'Add Assignment'}
+            </Text>
           </View>
 
           <TouchableOpacity
@@ -112,45 +114,47 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
         </View>
 
         <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollInner}>
-          {/* Section 1: Item Type Segmented Control */}
+          {/* Section 1: Item Type Segmented Control & Title */}
           <View style={styles.sectionCard}>
-            <View style={styles.segmentedControl}>
-              <TouchableOpacity
-                style={[
-                  styles.segmentButton,
-                  category === 'assignment' && styles.segmentButtonActive
-                ]}
-                onPress={() => setCategory('assignment')}
-                activeOpacity={0.8}
-              >
-                <Text
+            {!initialCourseId && (
+              <View style={styles.segmentedControl}>
+                <TouchableOpacity
                   style={[
-                    styles.segmentText,
-                    category === 'assignment' && styles.segmentTextActive
+                    styles.segmentButton,
+                    category === 'assignment' && styles.segmentButtonActive
                   ]}
+                  onPress={() => setCategory('assignment')}
+                  activeOpacity={0.8}
                 >
-                  Assignment
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      category === 'assignment' && styles.segmentTextActive
+                    ]}
+                  >
+                    Assignment
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.segmentButton,
-                  category === 'reading' && styles.segmentButtonActive
-                ]}
-                onPress={() => setCategory('reading')}
-                activeOpacity={0.8}
-              >
-                <Text
+                <TouchableOpacity
                   style={[
-                    styles.segmentText,
-                    category === 'reading' && styles.segmentTextActive
+                    styles.segmentButton,
+                    category === 'reading' && styles.segmentButtonActive
                   ]}
+                  onPress={() => setCategory('reading')}
+                  activeOpacity={0.8}
                 >
-                  Reading
-                </Text>
-              </TouchableOpacity>
-            </View>
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      category === 'reading' && styles.segmentTextActive
+                    ]}
+                  >
+                    Reading
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <TextInput
               style={styles.textInput}
@@ -165,33 +169,35 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
             />
 
             {/* Course Selector */}
-            <View style={styles.selectorRow}>
-              <Text style={styles.selectorLabel}>Course</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.coursePills}>
-                {courses.map(c => {
-                  const isSelected = c.id === selectedCourseId;
-                  return (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[
-                        styles.coursePill,
-                        isSelected && { backgroundColor: c.hexColor, borderColor: c.hexColor }
-                      ]}
-                      onPress={() => setSelectedCourseId(c.id)}
-                    >
-                      <Text
+            {!initialCourseId && (
+              <View style={styles.selectorRow}>
+                <Text style={styles.selectorLabel}>Course</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.coursePills}>
+                  {courses.map(c => {
+                    const isSelected = c.id === selectedCourseId;
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
                         style={[
-                          styles.coursePillText,
-                          isSelected && { color: '#FFFFFF', fontWeight: '700' }
+                          styles.coursePill,
+                          isSelected && { backgroundColor: c.hexColor, borderColor: c.hexColor }
                         ]}
+                        onPress={() => setSelectedCourseId(c.id)}
                       >
-                        {c.courseCode || c.courseName}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
+                        <Text
+                          style={[
+                            styles.coursePillText,
+                            isSelected && { color: '#FFFFFF', fontWeight: '700' }
+                          ]}
+                        >
+                          {c.courseCode || c.courseName}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
           </View>
 
           {/* Section 2: Schedule (Week Selector) */}

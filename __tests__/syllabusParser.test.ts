@@ -413,4 +413,157 @@ Gehart chapters 5 & 7
       expect(week2Readings.some(r => r.title.toLowerCase().includes('gehart'))).toBe(true);
     });
   });
+
+  describe('Universal Section Headings & Points Extraction', () => {
+    it('accurately parses section headers with points without overview table', () => {
+      const sectionPointsSyllabus = `
+CS 101: Introduction to Computer Science
+Professor Alan Turing
+Fall 2026
+
+Course Assignments
+
+Assignment 1: Algorithms Problem Set (100 Points)
+Due: October 15
+Students will implement search and sorting algorithms in Python.
+Make sure to include complexity analysis.
+
+Assignment 2: Database Design Project (150 Points)
+Due: November 12
+Students will design a relational schema and write SQL queries.
+
+Assignment 3: Midterm Examination - 200 Points
+Due: November 20
+A 90-minute closed-book examination.
+
+Assignment 4: Final Capstone Presentation: 50 Points
+Due: December 10
+Present your final project to the class.
+`;
+      const result = parser.parseText(sectionPointsSyllabus);
+      expect(result.assignments?.length).toBe(4);
+
+      const a1 = result.assignments?.find(a => a.title.toLowerCase().includes('algorithms'));
+      expect(a1).toBeDefined();
+      expect(a1?.title).toBe('Algorithms Problem Set');
+      expect(a1?.pointsPossible).toBe('100 Points');
+      expect(a1?.fullInstructions).toContain('Students will implement');
+
+      const a2 = result.assignments?.find(a => a.title.toLowerCase().includes('database'));
+      expect(a2).toBeDefined();
+      expect(a2?.title).toBe('Database Design Project');
+      expect(a2?.pointsPossible).toBe('150 Points');
+
+      const a3 = result.assignments?.find(a => a.title.toLowerCase().includes('midterm'));
+      expect(a3).toBeDefined();
+      expect(a3?.title).toBe('Midterm Examination');
+      expect(a3?.pointsPossible).toBe('200 Points');
+
+      const a4 = result.assignments?.find(a => a.title.toLowerCase().includes('capstone'));
+      expect(a4).toBeDefined();
+      expect(a4?.title).toBe('Final Capstone Presentation');
+      expect(a4?.pointsPossible).toBe('50 Points');
+    });
+
+    it('accurately extracts both points and percentage from overview table without polluting titles', () => {
+      const overviewWithBoth = `
+ECON 201: Macroeconomics
+Grade Breakdown:
+Midterm Examination: 100 Points (25%)
+Research Paper: 25% (150 Points)
+Problem Sets: 100 Points (20%)
+Final Project: 30% (200 Points)
+Total: 100%
+
+Course Schedule:
+Week 1 Sep 10: Introduction
+Week 2 Sep 17: Fiscal Policy
+`;
+      const result = parser.parseText(overviewWithBoth);
+      expect(result.assignments?.length).toBe(4);
+
+      const midterm = result.assignments?.find(a => a.title.toLowerCase().includes('midterm'));
+      expect(midterm?.title).toBe('Midterm Examination');
+      expect(midterm?.pointsPossible).toBe('100 Points');
+      expect(midterm?.weightPercentage).toBe('25%');
+
+      const paper = result.assignments?.find(a => a.title.toLowerCase().includes('research paper'));
+      expect(paper?.title).toBe('Research Paper');
+      expect(paper?.pointsPossible).toBe('150 Points');
+      expect(paper?.weightPercentage).toBe('25%');
+
+      // Verify no residual points or percent tokens in titles
+      for (const a of result.assignments || []) {
+        expect(a.title).not.toContain('Points');
+        expect(a.title).not.toContain('%');
+        expect(a.title).not.toContain('(');
+        expect(a.title).not.toContain(')');
+      }
+    });
+
+    it('extracts points from separate "Points: 100" line inside assignment section', () => {
+      const separatePointsLine = `
+ENG 210: Creative Writing
+Course Assignments
+
+Short Story Portfolio
+Due: October 25
+Points: 100
+Write three original short stories exploring character development.
+
+Literary Analysis Essay
+Due: November 15
+Points Possible: 150
+Analyze narrative technique in modern fiction.
+`;
+      const result = parser.parseText(separatePointsLine);
+      expect(result.assignments?.length).toBe(2);
+
+      const story = result.assignments?.find(a => a.title.toLowerCase().includes('short story'));
+      expect(story?.pointsPossible).toBe('100 Points');
+
+      const essay = result.assignments?.find(a => a.title.toLowerCase().includes('literary analysis'));
+      expect(essay?.pointsPossible).toBe('150 Points');
+    });
+
+    it('produces exactly 0 assignments for seminar courses without deliverables', () => {
+      const seminarOnly = `
+PHIL 900: Doctoral Seminar in Epistemology
+Fall 2026
+Seminar Schedule
+
+Week 1 Sep 8
+Topic: Foundationalism
+Readings:
+Sellars (1956) Empiricism and the Philosophy of Mind
+Chisholm (1966) Theory of Knowledge
+
+Week 2 Sep 15
+Topic: Coherentism
+Readings:
+BonJour (1985) The Structure of Empirical Knowledge
+Davidson (1983) A Coherence Theory of Truth and Knowledge
+`;
+      const result = parser.parseText(seminarOnly);
+      expect(result.assignments?.length || 0).toBe(0);
+      expect(result.weeks?.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('ensures no ||| delimiters exist in any field across courses', () => {
+      const rawText = `
+MATH 50: Linear Algebra
+Assignments:
+Problem Set 1 (50 Points) - Due Sep 15
+Matrices and Gaussian elimination.
+
+Problem Set 2 (50 Points) - Due Sep 22
+Vector spaces and subspaces.
+`;
+      const result = parser.parseText(rawText);
+      const json = JSON.stringify(result);
+      expect(json).not.toContain('|||');
+      expect(json).not.toContain('||');
+    });
+  });
 });
+

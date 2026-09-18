@@ -16,7 +16,7 @@ export interface DiagnosticProvenance {
 export class APIService {
   private static instance: APIService;
   private customApiKey: string | null = null;
-  private serverProxyUrl: string = 'http://localhost:3088/api/syllabi/parse';
+  private serverProxyUrl: string | null = null;
   private lastDiagnostic: DiagnosticProvenance | null = null;
 
   private constructor() {}
@@ -38,12 +38,26 @@ export class APIService {
   /**
    * Configures backend proxy URL
    */
-  public setServerProxyUrl(url: string): void {
-    this.serverProxyUrl = url;
+  public static get bundledProxyUrl(): string | null {
+    return (
+      (typeof process !== 'undefined' && process.env && (process.env.EXPO_PUBLIC_AI_PROXY_URL || process.env.AI_PROXY_URL)) ||
+      null
+    );
+  }
+
+  public get activeProxyUrl(): string | null {
+    return this.serverProxyUrl || APIService.bundledProxyUrl;
+  }
+
+  public static get bundledAPIKey(): string | null {
+    return (
+      (typeof process !== 'undefined' && process.env && (process.env.EXPO_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY)) ||
+      null
+    );
   }
 
   public get activeAPIKey(): string | null {
-    return this.customApiKey;
+    return this.customApiKey || APIService.bundledAPIKey;
   }
 
   public getLastDiagnostic(): DiagnosticProvenance | null {
@@ -51,7 +65,7 @@ export class APIService {
   }
 
   /**
-   * Calls AI generateContent endpoint via server-side proxy or authenticated key
+   * Calls AI generateContent endpoint via Cloudflare proxy or direct Gemini API
    * with bounded retries and timeout guards.
    */
   public async generateContentWithGemini(
@@ -61,32 +75,39 @@ export class APIService {
     base64Images?: string[],
     fileName?: string
   ): Promise<string> {
-    const apiKey = this.activeAPIKey;
-
-    // If no direct API key is set, attempt server-side proxy endpoint
-    if (!apiKey) {
-      return this.callServerSideProxy(prompt, context, base64Pdf, base64Images, fileName);
+    const proxyUrl = this.activeProxyUrl;
+    if (proxyUrl) {
+      try {
+        return await this.callServerSideProxy(prompt, context, base64Pdf, base64Images, fileName);
+      } catch (proxyErr) {
+        console.warn('Cloudflare proxy request failed, falling back to direct Gemini API:', proxyErr);
+      }
     }
 
-    // Direct Gemini API call with bounded retries & sanitized errors
+    const apiKey = this.activeAPIKey;
+    if (!apiKey) {
+      this.lastDiagnostic = {
+        parserSource: 'LOCAL_DEVICE_FALLBACK',
+        status: 'FALLBACK',
+        providerModel: null
+      };
+      throw new Error('No AI provider API key or server proxy configured; falling back to local extraction');
+    }
     const modelsToTry = [
-      'gemini-2.5-flash',
-      'gemini-1.5-flash'
+      'gemini-3.5-flash-lite',
+      'gemini-3.6-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-3-flash-preview'
     ];
 
-    const contents: any[] = [];
-    if (context) {
-      contents.push({
-        role: 'user',
-        parts: [{ text: `Context:\n${context}` }]
-      });
-      contents.push({
-        role: 'model',
-        parts: [{ text: 'Understood. I have reviewed the course context.' }]
+    const userParts: any[] = [];
+
+    // Include text context if available
+    if (context && context.trim().length > 0) {
+      userParts.push({
+        text: `SYLLABUS DOCUMENT TEXT CONTENT:\n${context.slice(0, 150000)}`
       });
     }
-
-    const userParts: any[] = [];
 
     // Binary PDF or image input
     if (base64Pdf) {
@@ -95,15 +116,20 @@ export class APIService {
       const isPdf = base64Pdf.startsWith('JVBER');
       if (isPng || isJpg || isPdf) {
         const mime = isPng ? 'image/png' : (isJpg ? 'image/jpeg' : 'application/pdf');
-        userParts.push({
-          inlineData: {
-            mimeType: mime,
-            data: base64Pdf
-          }
-        });
+        // Include PDF data if under 4MB
+        if (base64Pdf.length < 5000000) {
+          userParts.push({
+            inlineData: {
+              mimeType: mime,
+              data: base64Pdf
+            }
+          });
+        }
       }
     } else if (base64Images && base64Images.length > 0) {
-      for (const b64Img of base64Images) {
+      // Send up to 10 rendered page images
+      const imagesToSend = base64Images.slice(0, 10);
+      for (const b64Img of imagesToSend) {
         if (!b64Img || b64Img.length < 20) continue;
         const isPng = b64Img.startsWith('iVBOR');
         const mime = isPng ? 'image/png' : 'image/jpeg';
@@ -118,10 +144,12 @@ export class APIService {
 
     userParts.push({ text: prompt });
 
-    contents.push({
-      role: 'user',
-      parts: userParts
-    });
+    const contents = [
+      {
+        role: 'user',
+        parts: userParts
+      }
+    ];
 
     const isJsonPrompt = prompt.toLowerCase().includes('json');
     const body: any = {
@@ -138,7 +166,7 @@ export class APIService {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // Bounded 15s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // Bounded 30s timeout
 
         const response = await fetch(endpoint, {
           method: 'POST',
@@ -178,7 +206,7 @@ export class APIService {
   }
 
   /**
-   * Calls secure server-side proxy trying reachable candidates (custom URL, LAN IP, localhost)
+   * Calls secure server-side proxy if a proxy URL has been explicitly configured
    */
   private async callServerSideProxy(
     prompt: string,
@@ -187,67 +215,59 @@ export class APIService {
     base64Images?: string[],
     fileName?: string
   ): Promise<string> {
-    const candidateUrls = Array.from(
-      new Set([
-        this.serverProxyUrl,
-        'http://192.168.10.36:3088/api/syllabi/parse',
-        'http://localhost:3088/api/syllabi/parse'
-      ])
-    );
-
-    let lastError = '';
-    for (const url of candidateUrls) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            prompt,
-            rawText: context,
-            base64Pdf,
-            base64Images,
-            fileName
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const data = await response.json();
-          this.lastDiagnostic = {
-            diagnosticImportId: data.diagnosticImportId,
-            documentHash: data.documentHash,
-            receivedByteCount: data.receivedByteCount,
-            parserSource: data.parserSource || 'BACKEND_FALLBACK',
-            providerModel: data.providerModel || null,
-            status: 'SUCCESS'
-          };
-          this.serverProxyUrl = url;
-          return typeof data === 'string' ? data : JSON.stringify(data);
-        }
-
-        const errText = await response.text();
-        lastError = `Server (${response.status}): ${this.sanitizeError(errText)}`;
-        if (response.status === 400) {
-          break;
-        }
-      } catch (err: any) {
-        lastError = this.sanitizeError(err.message || 'Network request failed');
-      }
+    const proxyUrl = this.activeProxyUrl;
+    if (!proxyUrl) {
+      this.lastDiagnostic = {
+        parserSource: 'LOCAL_DEVICE_FALLBACK',
+        status: 'FALLBACK',
+        providerModel: null
+      };
+      throw new Error('AI parsing unavailable: No Gemini API key or backend proxy configured.');
     }
 
-    this.lastDiagnostic = {
-      parserSource: 'LOCAL_DEVICE_FALLBACK',
-      status: 'FALLBACK',
-      providerModel: null
-    };
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    throw new Error(`Server-side AI parsing unavailable: ${lastError}`);
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt,
+          rawText: context,
+          base64Pdf,
+          base64Images,
+          fileName
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        this.lastDiagnostic = {
+          diagnosticImportId: data.diagnosticImportId,
+          documentHash: data.documentHash,
+          receivedByteCount: data.receivedByteCount,
+          parserSource: data.parserSource || 'BACKEND_FALLBACK',
+          providerModel: data.providerModel || null,
+          status: 'SUCCESS'
+        };
+        return typeof data === 'string' ? data : JSON.stringify(data);
+      }
+
+      const errText = await response.text();
+      throw new Error(`Server (${response.status}): ${this.sanitizeError(errText)}`);
+    } catch (err: any) {
+      this.lastDiagnostic = {
+        parserSource: 'LOCAL_DEVICE_FALLBACK',
+        status: 'FALLBACK',
+        providerModel: null
+      };
+      throw new Error(`Server-side AI parsing unavailable: ${this.sanitizeError(err.message || 'Network request failed')}`);
+    }
   }
 
   /**

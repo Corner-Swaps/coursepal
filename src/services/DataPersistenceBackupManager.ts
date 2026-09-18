@@ -154,7 +154,7 @@ export class DataPersistenceBackupManager {
       }
 
       const payload: BackupPayload = {
-        version: 3,
+        version: 5,
         timestamp: Date.now(),
         courses: data.courses,
         readings: data.readings,
@@ -224,7 +224,7 @@ export class DataPersistenceBackupManager {
       }
 
       const parsed: BackupPayload = JSON.parse(content);
-      if (!parsed || parsed.version < 3) {
+      if (!parsed || parsed.version < 5) {
         return null;
       }
       // Revive ISO date strings to Date objects
@@ -245,6 +245,9 @@ export class DataPersistenceBackupManager {
       if (Array.isArray(parsed.readings)) {
         parsed.readings = parsed.readings.map(r => ({
           ...r,
+          title: r.title ? r.title.replace(/\|{2,}/g, ' - ').trim() : r.title,
+          summaryText: r.summaryText ? r.summaryText.replace(/\|{2,}/g, '\n\n').trim() : r.summaryText,
+          relevantTopics: r.relevantTopics ? r.relevantTopics.replace(/\|{2,}/g, ', ').trim() : r.relevantTopics,
           dueDate: reviveDate(r.dueDate)
         }));
       }
@@ -252,6 +255,10 @@ export class DataPersistenceBackupManager {
       if (Array.isArray(parsed.assignments)) {
         parsed.assignments = parsed.assignments.map(a => ({
           ...a,
+          title: a.title ? a.title.replace(/\|{2,}/g, ' - ').trim() : a.title,
+          fullInstructions: a.fullInstructions ? a.fullInstructions.replace(/\|{2,}/g, '\n\n').trim() : a.fullInstructions,
+          noteText: a.noteText ? a.noteText.replace(/\|{2,}/g, '\n• ').trim() : a.noteText,
+          relevantTopics: a.relevantTopics ? a.relevantTopics.replace(/\|{2,}/g, ', ').trim() : a.relevantTopics,
           dueDate: reviveDate(a.dueDate)
         }));
       }

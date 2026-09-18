@@ -88,15 +88,7 @@ export const InviteScreen: React.FC = () => {
       keyboardShouldPersistTaps="handled"
       testID="invite-screen-scroll"
     >
-      {/* MARK: - Page Header */}
-      <View style={styles.headerRow}>
-        <View style={styles.headerLeftCol}>
-          <Text style={styles.pageTitle}>Invite</Text>
-          <Text style={styles.pageSubtitle}>
-            Share your courses or join someone else's
-          </Text>
-        </View>
-      </View>
+
 
       {/* Toast Notice */}
       {noticeMessage && (
@@ -512,6 +504,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 6,
     marginHorizontal: 18,
+    marginTop: 18,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,

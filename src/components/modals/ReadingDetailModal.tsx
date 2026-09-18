@@ -34,7 +34,8 @@ import {
   extractReadingWeekNumber,
   discoverReadingTopics,
   parseSafeDate,
-  resolveReadingMediaType
+  resolveReadingMediaType,
+  getSanitizedCoursePill
 } from '../../utils/readingDisplayHelper';
 import { InlineCalendarPicker } from '../InlineCalendarPicker';
 
@@ -65,6 +66,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   );
 
   const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
+  const pillTitle = getSanitizedCoursePill(reading.courseCode, matchedCourse);
 
   // Validate course code to exclude generic labels
   const isInvalidCourseCode = (code?: string | null) =>
@@ -89,6 +91,31 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   // State
   const [titleText, setTitleText] = useState<string>(() => deriveInitialTitle(reading));
 
+  // Helper to resolve fallback suggested date
+  const resolveSuggestedDate = (r: Reading | null): Date | null => {
+    if (!r) return null;
+    if (r.dueDate) {
+      const parsed = parseSafeDate(r.dueDate);
+      if (parsed && !isNaN(parsed.getTime())) return parsed;
+    }
+    if (r.dateRangeStr) {
+      const parsed = parseSafeDate(r.dateRangeStr);
+      if (parsed && !isNaN(parsed.getTime())) return parsed;
+    }
+    if (matchedCourse?.weeks && (r.weekNumber || 0) > 0) {
+      const w = matchedCourse.weeks.find(wk => wk.weekNumber === r.weekNumber);
+      if (w?.startDate) {
+        const parsed = parseSafeDate(w.startDate);
+        if (parsed && !isNaN(parsed.getTime())) return parsed;
+      }
+      if (w?.dateRangeStr) {
+        const parsed = parseSafeDate(w.dateRangeStr);
+        if (parsed && !isNaN(parsed.getTime())) return parsed;
+      }
+    }
+    return null;
+  };
+
   // Schedule Week (always visible stepper; 0 = No Week / Unassigned)
   const [weekNumber, setWeekNumber] = useState<number>(() => {
     const isWeekOn = isReadingWeekEnabled(reading);
@@ -97,17 +124,42 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
     return extracted != null ? extracted : 1;
   });
 
+  // Schedule Module (always visible stepper; 0 = No Module / Unassigned)
+  const [moduleNumber, setModuleNumber] = useState<number>(() => {
+    if (reading?.moduleNumber != null && reading.moduleNumber > 0) return reading.moduleNumber;
+    if (reading?.moduleMention) {
+      const m = reading.moduleMention.match(/\d+/);
+      if (m) return parseInt(m[0], 10);
+    }
+    return 0;
+  });
+
   const [chapterInput, setChapterInput] = useState<string>(() => reading?.chapterText || '');
+  const [pagesInput, setPagesInput] = useState<string>(() => reading?.pagesText || '');
   const [authorInput, setAuthorInput] = useState<string>(() => reading?.authorName || '');
   const [topicInputs, setTopicInputs] = useState<string[]>(() =>
     reading ? discoverReadingTopics(reading, courses) : []
   );
   const [suggestedDate, setSuggestedDate] = useState<Date | null>(() =>
-    reading?.dueDate ? parseSafeDate(reading.dueDate) : null
+    resolveSuggestedDate(reading)
   );
   const [mediaType, setMediaType] = useState<MediaType>(() => resolveReadingMediaType(reading));
   const [videoUrlInput, setVideoUrlInput] = useState<string>('');
   const [noteInputs, setNoteInputs] = useState<string[]>([]);
+
+  // Detected Resource / Video URL
+  const detectedUrl = useMemo(() => {
+    if (videoUrlInput && videoUrlInput.trim().length > 0) return videoUrlInput.trim();
+    if (reading.videoUrl && reading.videoUrl.trim().length > 0) return reading.videoUrl.trim();
+    const fromTitle = (reading.title || '').match(/https?:\/\/[^\s)]+/);
+    if (fromTitle) return fromTitle[0];
+    return null;
+  }, [videoUrlInput, reading.videoUrl, reading.title]);
+
+  const isYouTube = useMemo(() => {
+    if (!detectedUrl) return false;
+    return /youtube\.com|youtu\.be/i.test(detectedUrl);
+  }, [detectedUrl]);
 
   // Derive chapter text for pill (e.g. "Chapter 4" or "Ch. 3")
   const derivedChapter = useMemo(() => {
@@ -135,14 +187,20 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
       const parsedWeekNum = extractReadingWeekNumber(reading);
       setWeekNumber(isWeekOn && parsedWeekNum != null ? parsedWeekNum : 0);
 
+      const resolvedMod = reading.moduleNumber != null && reading.moduleNumber > 0
+        ? reading.moduleNumber
+        : (reading.moduleMention ? parseInt(reading.moduleMention.replace(/\D+/g, ''), 10) || 0 : 0);
+      setModuleNumber(resolvedMod);
+
       const chDisplay = reading.chapterText || '';
       setChapterInput(chDisplay);
+      setPagesInput(reading.pagesText || '');
       setAuthorInput(reading.authorName || '');
 
       const realTopics = discoverReadingTopics(reading, courses);
       setTopicInputs(realTopics);
 
-      setSuggestedDate(reading.dueDate ? parseSafeDate(reading.dueDate) : null);
+      setSuggestedDate(resolveSuggestedDate(reading));
 
       setMediaType(resolveReadingMediaType(reading));
       setVideoUrlInput(reading.videoUrl || '');
@@ -165,6 +223,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   const saveAllChanges = (overrides: Partial<Reading> = {}) => {
     if (!reading) return;
     const cleanedChapter = cleanChapterFromRaw(chapterInput.trim()) || chapterInput.trim() || undefined;
+    const cleanPages = pagesInput.trim() || undefined;
     const cleanTopics = topicInputs
       .filter(t => t.trim().length > 0)
       .filter(t => weekNumber > 0 || !/^week\s*\d+$/i.test(t.trim()))
@@ -175,14 +234,18 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
       ...reading,
       title: titleText.trim() || reading.title,
       chapterText: cleanedChapter,
+      pagesText: cleanPages,
       authorName: authorInput.trim() || undefined,
       relevantTopics: cleanTopics || undefined,
       dueDate: suggestedDate,
+      dateRangeStr: reading.dateRangeStr,
       mediaType: mediaType,
       mediaTypeRaw: mediaType,
       videoUrl: videoUrlInput.trim() || undefined,
       weekId: weekNumber > 0 ? `w-${weekNumber}` : undefined,
       weekNumber: weekNumber > 0 ? weekNumber : 0,
+      moduleNumber: moduleNumber > 0 ? moduleNumber : null,
+      moduleMention: moduleNumber > 0 ? `Module ${moduleNumber}` : null,
       summaryText: cleanNotes,
       ...overrides
     };
@@ -201,27 +264,43 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   const handleWeekStep = (delta: number) => {
     const next = Math.max(0, Math.min(52, weekNumber + delta));
     setWeekNumber(next);
+    let nextDate = suggestedDate;
+    if (next > 0 && !suggestedDate && matchedCourse?.weeks) {
+      const w = matchedCourse.weeks.find(wk => wk.weekNumber === next);
+      if (w?.startDate) {
+        nextDate = parseSafeDate(w.startDate);
+        setSuggestedDate(nextDate);
+      } else if (w?.dateRangeStr) {
+        nextDate = parseSafeDate(w.dateRangeStr);
+        setSuggestedDate(nextDate);
+      }
+    }
     saveAllChanges({
       weekId: next > 0 ? `w-${next}` : undefined,
-      weekNumber: next
+      weekNumber: next,
+      ...(nextDate ? { dueDate: nextDate } : {})
     });
   };
 
-  // Topics Handlers
-  const handleAddTopic = () => {
-    setTopicInputs(prev => [...prev, '']);
-  };
-
-  const handleRemoveTopic = (idx: number) => {
-    const updated = topicInputs.filter((_, i) => i !== idx);
-    setTopicInputs(updated);
-    saveAllChanges({ relevantTopics: updated.join(', ') });
-  };
-
-  const handleUpdateTopic = (idx: number, text: string) => {
-    const updated = topicInputs.map((t, i) => (i === idx ? text : t));
-    setTopicInputs(updated);
-    saveAllChanges({ relevantTopics: updated.join(', ') });
+  const handleModuleStep = (delta: number) => {
+    const next = Math.max(0, Math.min(52, moduleNumber + delta));
+    setModuleNumber(next);
+    let nextDate = suggestedDate;
+    if (next > 0 && !suggestedDate && matchedCourse?.weeks) {
+      const w = matchedCourse.weeks.find(wk => wk.weekNumber === next);
+      if (w?.startDate) {
+        nextDate = parseSafeDate(w.startDate);
+        setSuggestedDate(nextDate);
+      } else if (w?.dateRangeStr) {
+        nextDate = parseSafeDate(w.dateRangeStr);
+        setSuggestedDate(nextDate);
+      }
+    }
+    saveAllChanges({
+      moduleNumber: next > 0 ? next : null,
+      moduleMention: next > 0 ? `Module ${next}` : null,
+      ...(nextDate ? { dueDate: nextDate } : {})
+    });
   };
 
   // Notes Handlers
@@ -290,6 +369,37 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
           >
             {/* MARK: - Header Banner */}
             <View style={styles.headerBannerCard}>
+              {/* Optional Media Badge */}
+              {(reading.videoUrl || (mediaType && mediaType !== 'textbook')) && (
+                <View style={styles.pillRow}>
+                  {reading.videoUrl ? (
+                    <TouchableOpacity
+                      style={styles.videoBadge}
+                      onPress={() => {
+                        const url = reading.videoUrl!.startsWith('http') ? reading.videoUrl! : `https://${reading.videoUrl}`;
+                        Linking.openURL(url).catch(() => {});
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.videoBadgeText}>
+                        {/youtube\.com|youtu\.be/i.test(reading.videoUrl) ? 'YouTube' : 'Video'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : mediaType && mediaType !== 'textbook' ? (
+                    <View style={styles.videoBadge}>
+                      <Text style={styles.videoBadgeText}>
+                        {mediaType === 'video'
+                          ? 'Video'
+                          : mediaType === 'podcast'
+                          ? 'Podcast'
+                          : mediaType === 'article'
+                          ? 'Article'
+                          : 'Paper'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              )}
 
               {/* Title Input */}
               <View style={styles.titleSection}>
@@ -338,22 +448,74 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               </View>
             </View>
 
-            {/* MARK: - Section 2: Chapter & Pages */}
-            <Text style={styles.sectionHeaderTitle}>Chapter & Pages</Text>
+            {/* MARK: - Section 2: Schedule Module */}
+            <Text style={styles.sectionHeaderTitle}>Schedule Module</Text>
             <View style={styles.sectionCard}>
-              <TextInput
-                style={styles.singleFieldInput}
-                value={chapterInput}
-                onChangeText={t => {
-                  setChapterInput(t);
-                  saveAllChanges({ chapterText: t.trim() || undefined });
-                }}
-                placeholder="e.g. Chapter 4, pp. 120-155"
-                placeholderTextColor="#94A3B8"
-              />
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Module</Text>
+                <View style={styles.stepperContainer}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => handleModuleStep(-1)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepperBtnText}>−</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.stepperValueBox}>
+                    <Text style={styles.stepperValueText}>
+                      {moduleNumber === 0 ? 'No Module' : `Module ${moduleNumber}`}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => handleModuleStep(1)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepperBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
 
-            {/* MARK: - Section 3: Author */}
+            {/* MARK: - Section 3: Chapter & Pages */}
+            <Text style={styles.sectionHeaderTitle}>Chapter & Pages</Text>
+            <View style={styles.sectionCard}>
+              <View style={styles.splitRow}>
+                <View style={styles.splitCol}>
+                  <Text style={styles.fieldMiniLabel}>CHAPTER</Text>
+                  <TextInput
+                    style={styles.singleFieldInput}
+                    value={chapterInput}
+                    onChangeText={t => {
+                      setChapterInput(t);
+                      saveAllChanges({ chapterText: t.trim() || undefined });
+                    }}
+                    placeholder="e.g. Chapter 4"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+
+                <View style={styles.splitVerticalDivider} />
+
+                <View style={styles.splitCol}>
+                  <Text style={styles.fieldMiniLabel}>PAGES</Text>
+                  <TextInput
+                    style={styles.singleFieldInput}
+                    value={pagesInput}
+                    onChangeText={t => {
+                      setPagesInput(t);
+                      saveAllChanges({ pagesText: t.trim() || undefined });
+                    }}
+                    placeholder="e.g. pp. 120–155"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* MARK: - Section 4: Author */}
             <Text style={styles.sectionHeaderTitle}>Author</Text>
             <View style={styles.sectionCard}>
               <TextInput
@@ -414,58 +576,18 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               />
             </View>
 
-            {/* MARK: - Section 4: Topics */}
-            <Text style={styles.sectionHeaderTitle}>Topics</Text>
-            <View style={styles.sectionCard}>
-              {topicInputs.length === 0 ? (
-                <View style={styles.emptyTopicsBox}>
-                  <Text style={styles.emptyTopicsText}>No topic specified</Text>
-                </View>
-              ) : (
-                topicInputs.map((topic, idx) => (
-                  <View key={`topic-${idx}`} style={styles.topicRow}>
-                    <View style={styles.topicIndexBadge}>
-                      <Text style={styles.noteIndexBadgeText}>{idx + 1}</Text>
-                    </View>
-                    <TextInput
-                      style={styles.topicInput}
-                      value={topic}
-                      onChangeText={t => handleUpdateTopic(idx, t)}
-                      placeholder="Topic description..."
-                      placeholderTextColor="#94A3B8"
-                      multiline={true}
-                    />
-                    <TouchableOpacity
-                      onPress={() => handleRemoveTopic(idx)}
-                      style={styles.deleteIconBtn}
-                      activeOpacity={0.7}
-                    >
-                      <XMarkCircleFillIcon size={18} color="#94A3B8" />
-                    </TouchableOpacity>
-                  </View>
-                ))
-              )}
-
-              <TouchableOpacity
-                onPress={handleAddTopic}
-                style={styles.addNotePillBtn}
-                activeOpacity={0.7}
-              >
-                <PlusCircleFillIcon size={15} color="#2470F5" />
-                <Text style={styles.addNotePillBtnText}>Add Topic</Text>
-              </TouchableOpacity>
-            </View>
-
             {/* MARK: - Section 4: Media Type */}
             <Text style={styles.sectionHeaderTitle}>Media Type</Text>
             <View style={styles.mediaTypePillsRow}>
-              {(['textbook', 'article', 'video', 'podcast'] as MediaType[]).map(t => {
+              {(['textbook', 'paper', 'article', 'video', 'podcast'] as MediaType[]).map(t => {
                 const isSelected = mediaType === t;
                 const label =
                   t === 'textbook'
                     ? 'Textbook'
+                    : t === 'paper'
+                    ? 'Paper'
                     : t === 'article'
-                    ? 'Article / Paper'
+                    ? 'Article'
                     : t === 'video'
                     ? 'Video'
                     : 'Podcast';
@@ -494,36 +616,43 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               })}
             </View>
 
-            {/* MARK: - Section 5: Resource Link */}
-            <Text style={styles.sectionHeaderTitle}>Resource Link</Text>
+            {/* MARK: - Section 5: Resource / YouTube Link */}
+            <Text style={styles.sectionHeaderTitle}>
+              {isYouTube ? 'YouTube Video' : 'Resource Link'}
+            </Text>
             <View style={styles.sectionCard}>
-              <TextInput
-                style={styles.singleFieldInput}
-                value={videoUrlInput}
-                onChangeText={t => {
-                  setVideoUrlInput(t);
-                  saveAllChanges({ videoUrl: t.trim() || undefined });
-                }}
-                placeholder="Paste reference link or video URL..."
-                placeholderTextColor="#94A3B8"
-                autoCapitalize="none"
-                keyboardType="url"
-              />
-
-              {videoUrlInput.trim().length > 0 && (
+              {detectedUrl ? (
                 <TouchableOpacity
-                  style={styles.openLinkPill}
+                  style={[styles.resourceLinkCard, isYouTube && styles.youtubeLinkCard]}
                   onPress={() => {
-                    const url = videoUrlInput.startsWith('http') ? videoUrlInput : `https://${videoUrlInput}`;
+                    const url = detectedUrl.startsWith('http') ? detectedUrl : `https://${detectedUrl}`;
                     Linking.openURL(url).catch(() => {});
                   }}
                   activeOpacity={0.7}
                 >
-                  <ArrowUpRightIcon size={13} color="#2470F5" />
-                  <Text style={styles.openLinkPillText} numberOfLines={1}>
-                    Open {videoUrlInput}
-                  </Text>
+                  <View style={styles.resourceLinkLeft}>
+                    {isYouTube && (
+                      <View style={[styles.resourceTypeBadge, styles.youtubeTypeBadge]}>
+                        <Text style={[styles.resourceTypeBadgeText, styles.youtubeTypeBadgeText]}>
+                          YouTube
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.resourceCardUrlText} numberOfLines={1}>
+                      {detectedUrl}
+                    </Text>
+                  </View>
+                  <View style={[styles.openLinkActionPill, isYouTube && styles.youtubeActionPill]}>
+                    <Text style={[styles.openLinkActionText, isYouTube && styles.youtubeActionText]}>
+                      {isYouTube ? 'Watch Video' : 'Open'}
+                    </Text>
+                    <ArrowUpRightIcon size={12} color={isYouTube ? '#FFFFFF' : '#2470F5'} />
+                  </View>
                 </TouchableOpacity>
+              ) : (
+                <View style={styles.emptyResourceContainer}>
+                  <Text style={styles.emptyResourceText}>No video or resource link attached</Text>
+                </View>
               )}
             </View>
 
@@ -646,6 +775,89 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10
   },
+  pillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10
+  },
+  coursePill: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  coursePillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  dateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#475569',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center'
+  },
+  dateBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  videoBadge: {
+    backgroundColor: '#475569',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  videoBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  moduleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#475569',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center'
+  },
+  moduleBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  headerTopicPill: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    maxWidth: '100%'
+  },
+  headerTopicPillText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#334155'
+  },
   courseCodePill: {
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -665,7 +877,7 @@ const styles = StyleSheet.create({
     gap: 4
   },
   mediaBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#2470F5'
   },
@@ -753,7 +965,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   stepperValueText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
     color: '#141F38'
   },
@@ -772,30 +984,30 @@ const styles = StyleSheet.create({
   selectedDateBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: '#EFF6FF',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10
+    paddingVertical: 7,
+    borderRadius: 8
   },
   selectedDateBannerText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#2470F5',
     includeFontPadding: false
   },
   clearDateBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center'
   },
   clearDateBtnText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#D94033'
+    fontWeight: '700',
+    color: '#DC2626'
   },
   emptyTopicsBox: {
     paddingVertical: 10,
@@ -809,6 +1021,26 @@ const styles = StyleSheet.create({
     color: '#8E9BAE',
     fontStyle: 'italic'
   },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12
+  },
+  splitCol: {
+    flex: 1
+  },
+  splitVerticalDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: '#E2E8F0'
+  },
+  fieldMiniLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    marginBottom: 4
+  },
   singleFieldInput: {
     fontSize: 14.5,
     color: '#141F38',
@@ -816,14 +1048,16 @@ const styles = StyleSheet.create({
   },
   topicRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
-    padding: 7,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 8
+    marginBottom: 8,
+    minHeight: 46
   },
   topicIndexBadge: {
     width: 22,
@@ -831,7 +1065,8 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: '#E2E8F0',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    marginTop: 2
   },
   itemIndexNumber: {
     fontSize: 12,
@@ -843,10 +1078,12 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     lineHeight: 19,
     color: '#141F38',
-    padding: 0
+    padding: 0,
+    minHeight: 28
   },
   deleteIconBtn: {
-    padding: 2
+    padding: 2,
+    marginTop: 2
   },
   addItemBtn: {
     flexDirection: 'row',
@@ -862,19 +1099,19 @@ const styles = StyleSheet.create({
   },
   mediaTypePillsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    flexWrap: 'nowrap',
+    gap: 6,
     marginBottom: 12
   },
   mediaTypePill: {
     flex: 1,
-    minWidth: 70,
+    minWidth: 0,
     backgroundColor: '#FFFFFF',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0'
   },
@@ -883,8 +1120,8 @@ const styles = StyleSheet.create({
     borderColor: '#2470F5'
   },
   mediaTypePillText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     color: '#596B85'
   },
   mediaTypePillTextActive: {
@@ -900,8 +1137,8 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   openLinkPillText: {
-    fontSize: 12.5,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#2470F5'
   },
   noteItemCard: {
@@ -957,14 +1194,96 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#BFDBFE',
     borderRadius: 18,
-    paddingVertical: 9,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     marginTop: 6,
     marginBottom: 2
   },
   addNotePillBtnText: {
-    fontSize: 13.5,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#2470F5'
+  },
+  resourceLinkCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8
+  },
+  youtubeLinkCard: {
+    backgroundColor: '#FFF1F2',
+    borderColor: '#FECDD3'
+  },
+  resourceLinkLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  resourceTypeBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE'
+  },
+  youtubeTypeBadge: {
+    backgroundColor: '#FFE4E6',
+    borderColor: '#FDA4AF'
+  },
+  resourceTypeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2470F5'
+  },
+  youtubeTypeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#E11D48'
+  },
+  resourceCardUrlText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#334155'
+  },
+  openLinkActionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8
+  },
+  youtubeActionPill: {
+    backgroundColor: '#E11D48'
+  },
+  openLinkActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2470F5'
+  },
+  youtubeActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  emptyResourceContainer: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptyResourceText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontStyle: 'italic'
   }
 });

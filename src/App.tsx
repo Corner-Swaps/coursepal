@@ -208,7 +208,7 @@ function MainAppView() {
 
         {/* MARK: - Bottom Fuzzed Gradient Scroll Mask (fades scrolling cards into light canvas behind menu pill) */}
         <FuzzedScrollBottomFade
-          height={insets.bottom + 105}
+          height={insets.bottom + 125}
           color={CoursePalTheme.bgCanvas}
         />
 
