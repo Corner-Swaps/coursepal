@@ -226,6 +226,13 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
                           You have absolute control over your academic data. You may export backup archives, clear individual courses, or purge all local records instantly from within the application settings.
                         </Text>
                       </View>
+
+                      <View style={styles.policySectionCard}>
+                        <Text style={styles.policySectionHeading}>5. Age Requirement & Canadian PIPEDA Compliance</Text>
+                        <Text style={styles.policyBodyText}>
+                          CoursePal is designed for high school and university students. You must be at least 13 years of age to use this app. If you are under the age of majority in your province or state (e.g., 19 in British Columbia, 18 in Ontario/Alberta), you confirm you have parental or legal guardian consent. We operate in full compliance with Canada&apos;s PIPEDA, provincial privacy laws, and U.S. COPPA standards.
+                        </Text>
+                      </View>
                     </View>
                   )}
 
@@ -261,6 +268,13 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
                         <Text style={styles.policySectionHeading}>4. &quot;As-Is&quot; Software Warranty & Liability</Text>
                         <Text style={styles.policyBodyText}>
                           CoursePal is provided &quot;AS IS&quot; without express or implied warranties. CoursePal and its developers assume zero legal or academic liability for missed deadlines, late submissions, or parsing discrepancies.
+                        </Text>
+                      </View>
+
+                      <View style={styles.policySectionCard}>
+                        <Text style={styles.policySectionHeading}>5. Canadian Law, Educational Fair Dealing & DMCA</Text>
+                        <Text style={styles.policyBodyText}>
+                          These Terms are governed by the laws of the Province of British Columbia and the federal laws of Canada. Uploading and organizing course schedules constitutes Fair Dealing for Education under Section 29 of the Copyright Act of Canada (R.S.C., 1985, c. C-42) and U.S. Fair Use (17 U.S.C. § 107). For copyright notices or legal inquiries: legal@coursepal.app.
                         </Text>
                       </View>
                     </View>
