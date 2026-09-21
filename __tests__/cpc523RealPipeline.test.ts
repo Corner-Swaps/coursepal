@@ -9,13 +9,16 @@ describe('CPC 523 Real Syllabus End-to-End Pipeline Verification', () => {
   beforeAll(() => {
     // Read cached extraction or run pypdf extraction on the real PDF
     const cachedPath = '/tmp/cpc523_extracted.txt';
+    const pdfPath = '/Users/slava/Downloads/Syllabus - CPC 523 MP[38].pdf';
     if (fs.existsSync(cachedPath)) {
       syllabusText = fs.readFileSync(cachedPath, 'utf8');
-    } else {
+    } else if (fs.existsSync(pdfPath)) {
       const { execSync } = require('child_process');
-      const pdfPath = '/Users/slava/Downloads/Syllabus - CPC 523 MP[38].pdf';
       const pyScript = `import pypdf; r=pypdf.PdfReader('${pdfPath}'); print('\\n'.join(p.extract_text() or '' for p in r.pages))`;
       syllabusText = execSync(`python3 -c "${pyScript}"`).toString();
+    } else {
+      const cityuSyllabi = require('../src/utils/cityu_syllabi_texts.json');
+      syllabusText = cityuSyllabi.cpc523;
     }
   });
 

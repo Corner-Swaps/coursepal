@@ -112,7 +112,7 @@ export class LocalSyllabusParser {
     let assignments = this.extractAssignmentsWithPointsHeuristic(reconstitutedLines, termYear, courseCode);
 
     // Pass 3: Weekly Schedule & Readings Parsing (Pass B)
-    const { weeks, scheduleAssignments } = this.extractWeeklyScheduleAndReadings(
+    const { weeks, scheduleAssignments, moduleReadings } = this.extractWeeklyScheduleAndReadings(
       reconstitutedLines,
       rawText,
       termYear,
@@ -121,13 +121,22 @@ export class LocalSyllabusParser {
     );
 
     // Merge schedule assignments deduplicated & enrich due dates / weights
+    const totalAssignedWeight = assignments.reduce((sum, a) => {
+      const m = (a.weightPercentage || '').match(/(\d+)/);
+      return sum + (m ? parseInt(m[1], 10) : 0);
+    }, 0);
+
     for (const sa of scheduleAssignments) {
       const idx = assignments.findIndex(a => {
+        const numA = (a.title.match(/\d+$/) || [])[0];
+        const numSa = (sa.title.match(/\d+$/) || [])[0];
+        if (numA && numSa && numA !== numSa) return false;
+
         if (this.fuzzyMatch(a.title, sa.title)) return true;
         const wordsA = a.title.toLowerCase().split(/\s+/).filter(w => w.length >= 4);
         const wordsSa = sa.title.toLowerCase().split(/\s+/).filter(w => w.length >= 4);
         const overlap = wordsA.filter(w => wordsSa.includes(w));
-        return overlap.length >= 2 || (wordsA.length === 1 && overlap.length === 1);
+        return overlap.length >= 2 || (wordsA.length === 1 && overlap.length === 1 && wordsA[0] === wordsSa[0]);
       });
       if (idx >= 0) {
         const existing = assignments[idx];
@@ -150,7 +159,7 @@ export class LocalSyllabusParser {
           mediaUrl: mergedMedia,
           noteText: existing.noteText ?? sa.noteText
         };
-      } else if (assignments.length === 0) {
+      } else if (assignments.length === 0 || (totalAssignedWeight < 90 && (sa.weightPercentage || sa.pointsPossible))) {
         assignments.push(sa);
       }
     }
@@ -242,7 +251,8 @@ export class LocalSyllabusParser {
       assignments,
       items: synthesizedItems,
       textbooks: textbookCatalog,
-      externalScheduleNotice
+      externalScheduleNotice,
+      moduleReadings: moduleReadings.length > 0 ? moduleReadings : undefined
     };
   }
 
@@ -920,7 +930,7 @@ export class LocalSyllabusParser {
           if (curTitle.length > existing.title.length && curTitle.toLowerCase().includes(existing.title.toLowerCase())) {
             existing.title = curTitle;
           }
-        } else if (curWt || curPts) {
+        } else if (curWt || curPts || curDue || (curDesc && curDesc.length > 20) || /\b(?:assignment|paper|exam|quiz|project|presentation|case study|midterm|final|report|critique|brief|reflection|proposal|review|synthesis|genogram|plan|log)\b/i.test(curTitle)) {
           canonicalResults.push({
             id: `assign-${Math.random().toString(36).substring(2, 10)}`,
             title: curTitle,
@@ -1105,7 +1115,7 @@ export class LocalSyllabusParser {
               id: `assign-${Math.random().toString(36).substring(2, 10)}`,
               title: cleanTitle,
               weightPercentage: pctMatch ? (pctMatch[1].endsWith('%') ? pctMatch[1] : `${pctMatch[1]}%`) : undefined,
-              pointsPossible: ptsMatch ? `${ptsMatch[1]} Points` : (pctMatch ? `${parseInt(pctMatch[1], 10)} Points` : undefined),
+              pointsPossible: ptsMatch ? `${ptsMatch[1]} Points` : undefined,
               weekNumber: rowWeek,
               fullInstructions: deliverableFormat,
               noteText: rowModuleMention
@@ -1358,7 +1368,7 @@ export class LocalSyllabusParser {
           const weightMatch = l.match(/(\d{1,3})%/);
           const ptsMatch = l.match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i) || l.match(/\b(?:points(?:\s+possible)?|pts|worth)\s*[:\-–—]?\s*(\d{1,4})\b/i);
           const headingWeight = weightMatch ? `${weightMatch[1]}%` : undefined;
-          const headingPoints = ptsMatch ? `${ptsMatch[1]} Points` : (weightMatch ? `${parseInt(weightMatch[1], 10)} Points` : undefined);
+          const headingPoints = ptsMatch ? `${ptsMatch[1]} Points` : undefined;
           const assignNum = (m[2] && /^\d+$/.test(m[2])) ? parseInt(m[2], 10) : ((m[1] && /^\d+$/.test(m[1])) ? parseInt(m[1], 10) : undefined);
           if (!hTitle.toLowerCase().includes('overview') && !hTitle.toLowerCase().includes('scale')) {
             detailHeadings.push({
@@ -2293,9 +2303,10 @@ export class LocalSyllabusParser {
     termYear: number | undefined,
     courseName: string,
     courseCode: string
-  ): { weeks: WeekDTO[]; scheduleAssignments: AssignmentDTO[] } {
+  ): { weeks: WeekDTO[]; scheduleAssignments: AssignmentDTO[]; moduleReadings: ReadingDTO[] } {
     const weeks: WeekDTO[] = [];
     const scheduleAssignments: AssignmentDTO[] = [];
+    const moduleReadings: ReadingDTO[] = [];
 
     let currentWeekNum = 1;
     let currentReadings: ReadingDTO[] = [];
@@ -2417,7 +2428,7 @@ export class LocalSyllabusParser {
       }
 
       if (weeks.length > 0) {
-        return { weeks, scheduleAssignments };
+        return { weeks, scheduleAssignments, moduleReadings };
       }
     }
 
@@ -3097,10 +3108,36 @@ export class LocalSyllabusParser {
             !low.includes('no classes');
         });
 
+        // 1. Build distinct canonical Module Readings from Table 1
+        for (const [modNum, mod] of canonicalModules.entries()) {
+          const { chapter, pages } = this.extractChapterAndPages(mod.reading);
+          const { author } = this.extractAuthorAndResource(mod.reading);
+          const cleanReadingTitle = mod.reading || (chapter ? `Gehart (${chapter})` : 'Gehart');
+
+          moduleReadings.push({
+            id: `reading-canonical-mod-${mod.modNum}`,
+            title: cleanReadingTitle,
+            authorName: author || 'Diane R. Gehart',
+            chapterText: chapter,
+            pagesText: pages,
+            dueDate: null,        // Curriculum modules are overarching themes and have NO calendar dates
+            dateRangeStr: null,   // Dates belong on Weekly Schedule, not modules
+            mediaType: 'textbook',
+            relevantTopics: mod.theme,
+            moduleNumber: mod.modNum,
+            moduleMention: `Module ${mod.modNum}`,
+            isCompleted: false,
+            summaryText: '',
+            keyTakeawaysText: ''
+          });
+        }
+
         if (activeWeeks.length >= canonicalModules.size) {
           activeWeeks.forEach((w, idx) => {
             const mod = canonicalModules.get(idx + 1);
             if (mod) {
+              w.moduleNumber = mod.modNum;
+              w.moduleMention = `Module ${mod.modNum}`;
               const { chapter, pages } = this.extractChapterAndPages(mod.reading);
               const { author } = this.extractAuthorAndResource(mod.reading);
 
@@ -3147,7 +3184,7 @@ export class LocalSyllabusParser {
       }
     }
 
-    return { weeks, scheduleAssignments };
+    return { weeks, scheduleAssignments, moduleReadings };
   }
 
   // MARK: - Semantic Classification
@@ -4031,19 +4068,27 @@ export class LocalSyllabusParser {
         }
       }
       const lower = a.title.toLowerCase();
-      if (!a.dueDate) {
-        if (lower.includes('presentation') || lower.includes('facilitation')) {
-          const presWeek = weeks.find(
-            w =>
-              (w.theme?.toLowerCase().includes('presentation') ||
-                (w.readings ?? []).some(r => r.title.toLowerCase().includes('presentation'))) &&
-              !!w.startDate
-          );
-          if (presWeek && presWeek.startDate) {
-            a.dueDate = presWeek.startDate;
-            if (!a.noteText) a.noteText = `Presentations in Week ${presWeek.weekNumber}`;
+      if (lower.includes('presentation') || lower.includes('facilitation')) {
+        const presWeeks = weeks.filter(
+          w =>
+            (w.theme?.toLowerCase().includes('presentation') ||
+              (w.readings ?? []).some(r => r.title.toLowerCase().includes('presentation')))
+        );
+        if (presWeeks.length > 0) {
+          const firstDated = presWeeks.find(w => !!w.startDate);
+          if (firstDated && firstDated.startDate && !a.dueDate) {
+            a.dueDate = firstDated.startDate;
           }
-        } else if (
+          a.scheduledWeeks = presWeeks.map(w => w.weekNumber);
+          if (!a.weekNumber || a.weekNumber <= 0) {
+            a.weekNumber = presWeeks[0].weekNumber;
+          }
+          if (!a.noteText || a.noteText.startsWith('Presentations')) {
+            a.noteText = `Presentations: Weeks ${presWeeks.map(w => w.weekNumber).join(', ')}`;
+          }
+        }
+      } else if (!a.dueDate) {
+        if (
           lower.includes('collaboration') ||
           lower.includes('participation') ||
           lower.includes('engagement') ||

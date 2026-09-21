@@ -227,87 +227,105 @@ Working in groups, students will complete a case conceptualization based on a se
     const weeks = result.weeks || [];
     expect(weeks.length).toBe(12);
 
-    // Week 1 reading: Gehart chapters 1-3, suggested date: Jul 2 – Jul 3, Module 1
+    // Week 1 reading: Gehart chapters 1-3, suggested date: Jul 2 – Jul 3
     const w1Reading = weeks[0]?.readings?.[0];
     expect(w1Reading).toBeDefined();
     expect(w1Reading?.title).toMatch(/1[-–]3/);
     expect(w1Reading?.dateRangeStr).toBe('Jul 2 – Jul 3');
-    expect(w1Reading?.moduleMention).toBe('Module 1');
+    expect(weeks[0]?.moduleNumber).toBe(1);
 
-    // Week 2 reading: Gehart chapter 5, suggested date: Jul 9 – Jul 10, Module 2
-    const w2Reading = weeks[1]?.readings?.[0];
+    // Week 2 reading: Gehart Chapter 5 & Articles from Table 2, suggested date: Jul 9 – Jul 10
+    const w2Reading = weeks[1]?.readings?.find(r => /chapter 5/i.test(r.chapterText || r.title));
     expect(w2Reading).toBeDefined();
-    expect(w2Reading?.title).toContain('5');
     expect(w2Reading?.dateRangeStr).toBe('Jul 9 – Jul 10');
-    expect(w2Reading?.moduleMention).toBe('Module 2');
+    expect(weeks[1]?.moduleNumber).toBe(2);
 
-    // Week 3 reading: Gehart chapters 5 & 7, suggested date: Jul 16 – Jul 17, Module 3
+    // Week 3 reading: Gehart Chapters 5 & 7 from Table 2, suggested date: Jul 16 – Jul 17
     const w3Reading = weeks[2]?.readings?.[0];
     expect(w3Reading).toBeDefined();
     expect(w3Reading?.title).toMatch(/5\s*&\s*7/);
     expect(w3Reading?.dateRangeStr).toBe('Jul 16 – Jul 17');
-    expect(w3Reading?.moduleMention).toBe('Module 3');
+    expect(weeks[2]?.moduleNumber).toBe(3);
 
-    // Week 4 reading: Gehart (Chapter 7), suggested date: Jul 23 – Jul 24, Module 4
+    // Week 4 reading: Gehart Chapter 7 from Table 2, suggested date: Jul 23 – Jul 24
     const w4Reading = weeks[3]?.readings?.[0];
     expect(w4Reading).toBeDefined();
-    expect(w4Reading?.title).toContain('7');
+    expect(w4Reading?.title).toMatch(/chapter 7/i);
     expect(w4Reading?.dateRangeStr).toBe('Jul 23 – Jul 24');
-    expect(w4Reading?.moduleMention).toBe('Module 4');
+    expect(weeks[3]?.moduleNumber).toBe(4);
 
-    // Week 5 reading: Gehart chapters 4-10, suggested date: Jul 30 – Jul 31, Module 5
+    // Week 5 reading: Gehart Chapters 4–10 from Table 2, suggested date: Jul 30 – Jul 31
     const w5Reading = weeks[4]?.readings?.[0];
     expect(w5Reading).toBeDefined();
     expect(w5Reading?.title).toMatch(/4[-–]10/);
     expect(w5Reading?.dateRangeStr).toBe('Jul 30 – Jul 31');
-    expect(w5Reading?.moduleMention).toBe('Module 5');
+    expect(weeks[4]?.moduleNumber).toBe(5);
 
     // Week 6: Reading Week (0 readings)
     const w6 = weeks[5];
     expect(w6?.theme?.toLowerCase()).toContain('reading week');
     expect(w6?.readings?.length).toBe(0);
 
-    // Week 7 reading: Gehart chapters 4-10, suggested date: Aug 13 – Aug 14, Module 6
+    // Week 7 reading: Gehart Chapters 4–10 from Table 2, suggested date: Aug 13 – Aug 14
     const w7Reading = weeks[6]?.readings?.[0];
     expect(w7Reading).toBeDefined();
     expect(w7Reading?.title).toMatch(/4[-–]10/);
     expect(w7Reading?.dateRangeStr).toBe('Aug 13 – Aug 14');
-    expect(w7Reading?.moduleMention).toBe('Module 6');
+    expect(weeks[6]?.moduleNumber).toBe(6);
 
-    // Week 8 reading: Gehart chapters 4-10, suggested date: Aug 20 – Aug 21, Module 7
+    // Week 8 reading: Gehart Chapters 4–10 from Table 2, suggested date: Aug 20 – Aug 21
     const w8Reading = weeks[7]?.readings?.[0];
     expect(w8Reading).toBeDefined();
     expect(w8Reading?.title).toMatch(/4[-–]10/);
     expect(w8Reading?.dateRangeStr).toBe('Aug 20 – Aug 21');
-    expect(w8Reading?.moduleMention).toBe('Module 7');
+    expect(weeks[7]?.moduleNumber).toBe(7);
 
-    // Week 9 reading: Gehart Chapter 11, suggested date: Aug 27 – Aug 28, Module 8
+    // Week 9 reading: Gehart Chapter 11 from Table 2, suggested date: Aug 27 – Aug 28
     const w9Reading = weeks[8]?.readings?.[0];
     expect(w9Reading).toBeDefined();
-    expect(w9Reading?.title).toContain('11');
+    expect(w9Reading?.title).toMatch(/chapter 11/i);
     expect(w9Reading?.dateRangeStr).toBe('Aug 27 – Aug 28');
-    expect(w9Reading?.moduleMention).toBe('Module 8');
+    expect(weeks[8]?.moduleNumber).toBe(8);
 
-    // Week 10 reading: Gehart chapter 11, suggested date: Sep 3 – Sep 4, Module 9
-    const w10Reading = weeks[9]?.readings?.[0];
+    // Week 10 reading: Gehart Chapter 11 from Table 2, suggested date: Sep 3 – Sep 4
+    const w10Reading = weeks[9]?.readings?.find(r => /chapter 11/i.test(r.title));
     expect(w10Reading).toBeDefined();
-    expect(w10Reading?.title).toContain('11');
     expect(w10Reading?.dateRangeStr).toBe('Sep 3 – Sep 4');
-    expect(w10Reading?.moduleMention).toBe('Module 9');
+    expect(weeks[9]?.moduleNumber).toBe(9);
 
-    // Week 11 reading: Gehart chapters 8, suggested date: Sep 10 – Sep 11, Module 10
+    // Week 11 reading: Gehart Chapter 8 from Table 2, suggested date: Sep 10 – Sep 11
     const w11Reading = weeks[10]?.readings?.[0];
     expect(w11Reading).toBeDefined();
-    expect(w11Reading?.title).toContain('8');
+    expect(w11Reading?.title).toMatch(/chapters?\s*8/i);
     expect(w11Reading?.dateRangeStr).toBe('Sep 10 – Sep 11');
-    expect(w11Reading?.moduleMention).toBe('Module 10');
+    expect(weeks[10]?.moduleNumber).toBe(10);
 
     // Week 12: Flex Week (0 readings)
     const w12 = weeks[11];
     expect(w12?.theme?.toLowerCase()).toContain('flex week');
     expect(w12?.readings?.length).toBe(0);
 
-    // Dates advance chronologically matching the chapters
+    // Verify distinct Table 1 Canonical Modules
+    const modReadings = result.moduleReadings || [];
+    expect(modReadings.length).toBe(10);
+
+    const m1 = modReadings.find(m => m.moduleNumber === 1);
+    expect(m1?.title).toMatch(/1[-–]3/);
+    expect(m1?.relevantTopics).toContain('Systems Theory');
+
+    const m2 = modReadings.find(m => m.moduleNumber === 2);
+    expect(m2?.title).toContain('Chapter 2');
+    expect(m2?.relevantTopics).toContain('Family of Origin');
+
+    const m3 = modReadings.find(m => m.moduleNumber === 3);
+    expect(m3?.title).toMatch(/11[-–]15/);
+    expect(m3?.relevantTopics).toContain('Diverse Populations');
+
+    const m5 = modReadings.find(m => m.moduleNumber === 5);
+    expect(m5?.title).toContain('Chapter 5');
+    expect(m5?.relevantTopics).toContain('Structural');
+
+    // Dates advance chronologically matching the weeks
     const dates = weeks.map(w => w.dateRangeStr).filter(Boolean);
     expect(dates).toContain('Jul 2 – Jul 3');
     expect(dates).toContain('Jul 9 – Jul 10');
@@ -413,7 +431,140 @@ Module 10\tSocial Constructionist Family Therapy Future Research and Critiques\t
     const caseConc = result.assignments?.find(a => /Case Conceptualization/i.test(a.title));
     expect(caseConc?.rubricCriteria?.length).toBe(5);
   });
+
+  it('preserves all 10 modules without merging Module 4 and Module 8, and protects pure module readings in healItemWeeks', () => {
+    const { healItemWeeks, deduplicateReadingsList } = require('../src/utils/readingDisplayHelper');
+
+    const canonicalModules = [
+      { modNum: 1, chapter: 'Chapters 1–3', title: 'Chapters 1–3 · Systems Theory and the History of Family Therapy', theme: 'Systems Theory' },
+      { modNum: 2, chapter: 'Chapter 2', title: 'Chapter 2 · Family of Origin/ Genograms', theme: 'Family of Origin' },
+      { modNum: 3, chapter: 'Chapters 11–15', title: 'Chapters 11–15 · Diverse Populations', theme: 'Diverse Populations' },
+      { modNum: 4, chapter: 'Chapter 7', title: 'Chapter 7 · Bowen Family Systems', theme: 'Bowen Family Systems' },
+      { modNum: 5, chapter: 'Chapter 5', title: 'Chapter 5 · Structural Family Therapy', theme: 'Structural Family Therapy' },
+      { modNum: 6, chapter: 'Chapter 4', title: 'Chapter 4 · Strategic Family Therapy', theme: 'Strategic Family Therapy' },
+      { modNum: 7, chapter: 'Chapter 6', title: 'Chapter 6 · Experiential Family Therapy', theme: 'Experiential Family Therapy' },
+      { modNum: 8, chapter: 'Chapter 7', title: 'Chapter 7 · Psychoanalytic Family Therapy', theme: 'Psychoanalytic Family Therapy' },
+      { modNum: 9, chapter: 'Chapter 8', title: 'Chapter 8 · Cognitive Behavioural Family Therapy', theme: 'Cognitive Behavioural' },
+      { modNum: 10, chapter: 'Chapter 10', title: 'Chapter 10 · Social Constructionist Family Therapy', theme: 'Social Constructionist' }
+    ];
+
+    const rawReadings: any[] = [];
+    canonicalModules.forEach(cm => {
+      rawReadings.push({
+        id: `r-mod-${cm.modNum}`,
+        title: cm.title,
+        authorName: 'Diane R. Gehart',
+        resourceTitle: null,
+        chapterText: cm.chapter,
+        courseCode: 'CPC 512',
+        courseId: 'c-cpc512',
+        relevantTopics: cm.theme,
+        weekId: 'none',
+        weekNumber: null,
+        moduleNumber: cm.modNum,
+        moduleMention: `Module ${cm.modNum}`
+      });
+    });
+
+    // 1. healItemWeeks MUST NOT assign week numbers to module readings
+    const { readings: healed } = healItemWeeks(
+      [{ id: 'c-cpc512', courseCode: 'CPC 512', termWeeks: 12 }],
+      rawReadings,
+      []
+    );
+
+    healed.forEach((r: any) => {
+      expect(r.weekNumber).toBeNull();
+      expect(r.weekId).toBe('none');
+      expect(r.moduleNumber).toBeGreaterThan(0);
+    });
+
+    // 2. deduplicateReadingsList MUST NOT merge Module 4 and Module 8
+    const deduped = deduplicateReadingsList(healed, [{ id: 'c-cpc512', courseCode: 'CPC 512' }]);
+    expect(deduped.length).toBe(10);
+
+    const mod4 = deduped.find((r: any) => r.moduleNumber === 4);
+    const mod8 = deduped.find((r: any) => r.moduleNumber === 8);
+    expect(mod4).toBeDefined();
+    expect(mod8).toBeDefined();
+    expect(mod4?.title).toContain('Bowen');
+    expect(mod8?.title).toContain('Psychoanalytic');
+  });
+
+  it('verifies group presentations are scheduled across Weeks 5, 7, and 8 with 6 rubric criteria', () => {
+    const combinedSyllabus = `
+CityUniversity of Seattle
+CPC 512: Family Systems Approaches to Counselling
+
+Course Schedule
+Week 1 July 2/3\tIntroduction to Family Systems\tGehart chapters 1-3
+Week 5 July 30/31\tEvidenced-Based Practice and Empirically Supported Models (group presentations)\tGehart chapters 4-10\nDue: Family Mapping Papers
+Week 6 August 6/7\tREADING WEEK\tNo classes
+Week 7 August 13/14\tEvidence Based Practice and Empirically Supported Models (group presentations)\tGehart chapters 4-10
+Week 8 August 20/21\tEvidence Based Practice and Empirically Supported Models (group presentations)\tGehart Chapters 4-10
+Week 10 September 3/4\tCase Conceptualization\tGehart chapter 11
+
+Course Assignments and Grading
+| Overview of Required Assignments | % of Final Grade |
+| Genogram/Family Mapping Paper | 30% |
+| Peer Review Group Report | 10% |
+| Assessment and Intervention Presentation/Project | 20% |
+| Collaboration | 20% |
+| Case Conceptualization | 20% |
+| Total | 100% |
+
+Assessment and Intervention Presentation/Project
+Working in small groups, students will present a practical intervention from one theoretical perspective used for assessment and treatment in family therapy. The presentation will introduce central themes and concepts related to the theory chosen. Each group will also present a video or in-class role-play demonstrating the application of the theory in the form of a simulated family therapy intervention. Students will facilitate a class discussion to critically examine the therapeutic perspectives explored.
+
+Grading Criteria Grade Points
+Organization and Coherence 10 Points
+Diversity & Collaboration 20 Points
+Analysis and use of Course Concepts 20 Points
+Professional Ethics 20 Points
+Cultural Competence 20 Points
+Oral Presentation 10 Points
+Total 100 Points
+`;
+
+    const parsed = LocalSyllabusParser.shared.parseText(combinedSyllabus);
+    const presentation = parsed.assignments?.find(a => /presentation/i.test(a.title));
+
+    expect(presentation).toBeDefined();
+    expect(presentation?.title).toBe('Assessment and Intervention Presentation/Project');
+    expect(presentation?.weightPercentage).toBe('20%');
+    expect(presentation?.pointsPossible).toBe('100 Points');
+    expect(presentation?.rubricCriteria?.length).toBe(6);
+
+    // Verify scheduledWeeks contains 5, 7, and 8
+    expect(presentation?.scheduledWeeks).toEqual([5, 7, 8]);
+    expect(presentation?.noteText).toContain('Weeks 5, 7, 8');
+
+    // Verify weekly assignment filtering across Weeks 5, 7, and 8
+    const assignments = parsed.assignments || [];
+    const getWeekAssignments = (wNum: number) => assignments.filter(a => {
+      if (a.weekNumber === wNum) return true;
+      if (Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.includes(wNum)) return true;
+      const note = a.noteText || '';
+      if (/presentation/i.test(a.title) || /presentation/i.test(note)) {
+        const m = note.match(/Weeks?\s*([\d,\s&–-]+)/i);
+        if (m) {
+          const weeks = m[1].match(/\d+/g)?.map(n => parseInt(n, 10)) || [];
+          if (weeks.includes(wNum)) return true;
+        }
+      }
+      return false;
+    });
+
+    const w5 = getWeekAssignments(5);
+    const w7 = getWeekAssignments(7);
+    const w8 = getWeekAssignments(8);
+
+    expect(w5.some(a => /presentation/i.test(a.title))).toBe(true);
+    expect(w7.some(a => /presentation/i.test(a.title))).toBe(true);
+    expect(w8.some(a => /presentation/i.test(a.title))).toBe(true);
+  });
 });
+
 
 
 

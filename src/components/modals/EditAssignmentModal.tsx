@@ -156,13 +156,16 @@ export const EditAssignmentModal: React.FC<EditAssignmentModalProps> = ({
   };
 
   const handleSave = () => {
-    const totalPts = rubricItems.reduce((acc, curr) => acc + (curr.points || 0), 0);
+    let finalPoints = assignment.pointsPossible;
+    if (finalPoints && /^\s*100\s*(?:pts?|points)?\s*$/i.test(finalPoints) && gradeWeightPercent > 0) {
+      finalPoints = null;
+    }
     const updated: Assignment = {
       ...assignment,
       weekNumber: weekNumber > 0 ? weekNumber : 1,
       dueDate: hasDueDate ? dueDate : null,
       weightPercentage: `${gradeWeightPercent}%`,
-      pointsPossible: totalPts > 0 ? `${totalPts} Points` : assignment.pointsPossible,
+      pointsPossible: finalPoints || null,
       rubricCriteria: rubricItems.filter(r => r.criterionName.trim().length > 0),
       relevantTopics: topicInputs.filter(t => t.trim().length > 0).join(', ') || undefined,
       mediaUrl: videoUrlInput.trim() || undefined,

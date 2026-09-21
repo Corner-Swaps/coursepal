@@ -51,6 +51,8 @@ export interface RawAssignmentCandidate {
   description?: string | null;
   weekNumber?: number | null;
   week_number?: number | null;
+  scheduledWeeks?: number[];
+  scheduled_weeks?: number[];
   subType?: string | null;
   subTypeRaw?: string | null;
   category?: string | null;
@@ -89,6 +91,9 @@ export interface RawReadingCandidate {
   link?: string | null;
   weekNumber?: number | null;
   week_number?: number | null;
+  moduleNumber?: number | null;
+  module_number?: number | null;
+  moduleMention?: string | null;
   dueDate?: string | null;
   due_date?: string | null;
   dateRangeStr?: string | null;
@@ -96,6 +101,8 @@ export interface RawReadingCandidate {
   keyTakeawaysText?: string | null;
   estimatedTimeText?: string | null;
   relevantTopics?: string | null;
+  isRequired?: boolean | null;
+  requirementType?: 'required' | 'optional' | null;
 }
 
 export interface NormalizedSyllabusPayload {
@@ -114,6 +121,8 @@ export interface NormalizedSyllabusPayload {
     weekNumber: number;
     theme?: string;
     date?: string;
+    startDate?: string;
+    dateRangeStr?: string;
   }[];
   externalScheduleNotice?: string | null;
   formatAccepted: string;
@@ -202,6 +211,159 @@ export class SyllabusImportManager {
   }
 
   /**
+   * Splits lumped reading candidates that contain multiple citations separated by semicolons
+   * or requirement sections (Required: ... Optional: ...)
+   * e.g. "Required: Wada & Fellner, 2025; Maddux & Winstead, (2019): Ch 1&2, 4-6; DSM 5-TR: Section 1, Section 3 - Culture and Psychiatric Diagnosis pg. 859. Optional: World Health Organization (2010) ICD. http://www.who.int/classifications/icd/en."
+   * e.g. "Lezak et al. (Ch. 1–3); Luria (Ch. 2)" or "Groth-Marnat (Ch. 4 & 5); Lichtenberger (Ch. 2)"
+   */
+  public static splitMultiCitationCandidate(candidate: RawReadingCandidate): RawReadingCandidate[] {
+    const rawTitle = (candidate.title || candidate.readingTitle || candidate.resourceTitle || candidate.name || '').trim();
+    const rawAuthor = (candidate.authorName || candidate.author || candidate.authors || '').trim();
+
+    const hasSemicolon = rawTitle.includes(';') || rawAuthor.includes(';');
+    const hasRequirementMarkers = /\b(?:Required|Optional|Recommended|Supplemental|Mandatory)\s*[:\-–—]/i.test(rawTitle);
+
+    if (!hasSemicolon && !hasRequirementMarkers) {
+      return [candidate];
+    }
+
+    if (rawAuthor.includes(';') && !rawTitle.includes(';') && !hasRequirementMarkers) {
+      const authParts = rawAuthor.split(';').map(a => a.trim()).filter(a => a.length >= 2);
+      if (authParts.length > 1) {
+        return authParts.map((auth, idx) => ({
+          ...candidate,
+          authorName: auth,
+          title: idx === 0 ? (candidate.title || auth) : auth,
+          chapterText: idx === 0 ? candidate.chapterText : undefined
+        }));
+      }
+    }
+
+    interface SectionChunk {
+      text: string;
+      isRequired: boolean;
+      requirementType: 'required' | 'optional';
+    }
+
+    const defaultIsReq = candidate.isRequired !== undefined
+      ? (candidate.isRequired !== false && candidate.requirementType !== 'optional')
+      : (candidate.requirementType === 'optional' ? false : true);
+    const defaultReqType: 'required' | 'optional' = (candidate.requirementType === 'optional' || defaultIsReq === false) ? 'optional' : 'required';
+
+    const sectionChunks: SectionChunk[] = [];
+    const sectionRegex = /(?:^|[\n.;·•—–])\s*(Required|Optional|Recommended|Supplemental|Mandatory)\s*[:\-–—]\s*/gi;
+    const matches: { index: number; length: number; keyword: string }[] = [];
+
+    let match: RegExpExecArray | null;
+    while ((match = sectionRegex.exec(rawTitle)) !== null) {
+      matches.push({
+        index: match.index,
+        length: match[0].length,
+        keyword: match[1].toLowerCase()
+      });
+    }
+
+    if (matches.length > 0) {
+      if (matches[0].index > 0) {
+        const leadText = rawTitle.slice(0, matches[0].index).trim();
+        if (leadText.length > 0) {
+          sectionChunks.push({
+            text: leadText,
+            isRequired: defaultIsReq,
+            requirementType: defaultReqType
+          });
+        }
+      }
+
+      for (let i = 0; i < matches.length; i++) {
+        const currentMatch = matches[i];
+        const nextMatch = matches[i + 1];
+        const startIndex = currentMatch.index + currentMatch.length;
+        const endIndex = nextMatch ? nextMatch.index : rawTitle.length;
+        const chunkText = rawTitle.slice(startIndex, endIndex).trim();
+
+        const isOpt = currentMatch.keyword === 'optional' ||
+                      currentMatch.keyword === 'recommended' ||
+                      currentMatch.keyword === 'supplemental';
+
+        if (chunkText.length > 0) {
+          sectionChunks.push({
+            text: chunkText,
+            isRequired: !isOpt,
+            requirementType: isOpt ? 'optional' : 'required'
+          });
+        }
+      }
+    } else {
+      sectionChunks.push({
+        text: rawTitle,
+        isRequired: defaultIsReq,
+        requirementType: defaultReqType
+      });
+    }
+
+    const results: RawReadingCandidate[] = [];
+
+    for (const chunk of sectionChunks) {
+      const rawSegments = chunk.text.includes(';')
+        ? chunk.text.split(';').map(s => s.trim()).filter(s => s.length >= 3)
+        : [chunk.text];
+
+      for (let sIdx = 0; sIdx < rawSegments.length; sIdx++) {
+        let seg = rawSegments[sIdx];
+
+        let videoUrl: string | undefined = candidate.videoUrl || undefined;
+        const urlMatch = seg.match(/https?:\/\/[^\s)\]]+/i);
+        if (urlMatch) {
+          videoUrl = urlMatch[0].replace(/[.,;:)]+$/, '');
+          seg = seg.replace(/https?:\/\/[^\s)\]]+/gi, '').trim();
+        }
+
+        seg = seg.replace(/^(?:required|optional|recommended|supplemental|read|watch|listen|view)\s*[:\-–—]\s*/i, '').trim();
+        seg = seg.replace(/^[•\-*▪●: \t\n ]+|[•\-*▪●: \t\n ]+$/g, '').trim();
+        seg = seg.replace(/[:;·•\-–—.]+\s*$/, '').trim();
+
+        if (seg.length < 2) continue;
+
+        const authMatch = seg.match(/^([A-Z][a-zA-Z0-9\s.&–-]+?)(?:,\s*\(?\s*\d{4}\)?|\s*\(\s*\d{4}\)|\s*\(\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|pp?\.?|\d)|:\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|section|sec\.?|\d)|:\s+[A-Z])/i) ||
+                          seg.match(/^([A-Z][a-zA-Z\s.&–-]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|pp?\.?|\d)/i);
+        let extractedAuthor = authMatch ? authMatch[1].trim() : undefined;
+        if (!extractedAuthor && sIdx === 0 && rawAuthor && !rawAuthor.includes(';')) {
+          extractedAuthor = rawAuthor;
+        }
+
+        const chMatch = seg.match(/\((?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*([\d\s&,\-–—]+)\)/i) ||
+                        seg.match(/\b(?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*([\d\s&,\-–—]+)/i) ||
+                        seg.match(/\b(?:sections?|sec\.?)\s*([\d\s&,\-–—]+)/i);
+        const extractedChapter = chMatch ? `Chapter ${chMatch[1].trim()}` : (sIdx === 0 ? candidate.chapterText : undefined);
+
+        const pgMatch = seg.match(/\b(?:pp?\.?|pages?|pg\.?)\s*([\d\s\-–—]+)/i);
+        const extractedPages = pgMatch ? `pg. ${pgMatch[1].trim()}` : (sIdx === 0 ? candidate.pagesText : undefined);
+
+        let mediaType = candidate.mediaType;
+        if (videoUrl) {
+          mediaType = /youtube\.com|youtu\.be|vimeo/i.test(videoUrl) ? 'video' : 'article';
+        }
+
+        results.push({
+          ...candidate,
+          title: seg,
+          authorName: extractedAuthor,
+          chapterText: extractedChapter || undefined,
+          pagesText: extractedPages || undefined,
+          videoUrl: videoUrl,
+          mediaType: mediaType || candidate.mediaType,
+          resourceTitle: seg,
+          isRequired: chunk.isRequired,
+          requirementType: chunk.requirementType
+        });
+      }
+    }
+
+    return results.length > 0 ? results : [candidate];
+  }
+
+  /**
    * 1. Normalize and validate raw AI response or parser DTO before deciding whether extraction succeeded.
    * Supports: items, readings, assignments, deliverables, and nested weeks.
    * An items-only response is NOT discarded.
@@ -278,7 +440,7 @@ export class SyllabusImportManager {
     const textbooks: TextbookResource[] = [];
     const candidateAssignments: RawAssignmentCandidate[] = [];
     const candidateReadings: RawReadingCandidate[] = [];
-    const weeksSummary: { weekNumber: number; theme?: string; date?: string }[] = [];
+    const weeksSummary: { weekNumber: number; theme?: string; date?: string; startDate?: string; dateRangeStr?: string }[] = [];
     const weekDateMap = new Map<number, string>();
 
     let formatAccepted = 'standard';
@@ -320,7 +482,9 @@ export class SyllabusImportManager {
           weeksSummary.push({
             weekNumber: wkNum,
             theme: typeof w.theme === 'string' ? w.theme : undefined,
-            date: typeof rawDate === 'string' ? rawDate : undefined
+            date: typeof rawDate === 'string' ? rawDate : undefined,
+            startDate: typeof (w as any).startDate === 'string' ? (w as any).startDate : (typeof rawDate === 'string' ? rawDate : undefined),
+            dateRangeStr: typeof (w as any).dateRangeStr === 'string' ? (w as any).dateRangeStr : undefined
           });
 
           if (rawDate && typeof rawDate === 'string') {
@@ -335,13 +499,15 @@ export class SyllabusImportManager {
         if (Array.isArray(w.readings)) {
           for (const wr of w.readings) {
             if (wr && typeof wr === 'object') {
-              candidateReadings.push({
-                ...wr,
-                dueDate: wr.dueDate || wr.due_date || (w as any).startDate || (wkNum ? weekDateMap.get(wkNum) : null),
-                dateRangeStr: wr.dateRangeStr || (w as any).dateRangeStr || null,
-                weekNumber: wr.weekNumber || wr.week_number || wkNum,
-                relevantTopics: wr.relevantTopics || w.theme
-              });
+              for (const splitWr of SyllabusImportManager.splitMultiCitationCandidate(wr)) {
+                candidateReadings.push({
+                  ...splitWr,
+                  dueDate: splitWr.dueDate || splitWr.due_date || (w as any).startDate || (wkNum ? weekDateMap.get(wkNum) : null),
+                  dateRangeStr: splitWr.dateRangeStr || (w as any).dateRangeStr || null,
+                  weekNumber: splitWr.weekNumber || splitWr.week_number || wkNum,
+                  relevantTopics: splitWr.relevantTopics || w.theme
+                });
+              }
             }
           }
         }
@@ -378,7 +544,53 @@ export class SyllabusImportManager {
     // Top-level readings
     if (Array.isArray(dto.readings)) {
       for (const r of dto.readings) {
-        if (r && typeof r === 'object') candidateReadings.push(r);
+        if (r && typeof r === 'object') {
+          for (const splitR of SyllabusImportManager.splitMultiCitationCandidate(r)) {
+            candidateReadings.push(splitR);
+          }
+        }
+      }
+    }
+
+    // Top-level module readings (e.g. from Table 1 curriculum modules)
+    if (Array.isArray((dto as any).moduleReadings)) {
+      const rawModuleReadings: any[] = (dto as any).moduleReadings;
+      // Check if moduleReadings is simply a 1:1 duplicate of weekly schedule
+      const isDuplicateOfWeeks = rawModuleReadings.length > 0 && candidateReadings.length > 0 &&
+        rawModuleReadings.every((mr: any) => {
+          const modNum = mr.moduleNumber || mr.module_number;
+          if (!modNum) return false;
+          return candidateReadings.some(cr => cr.weekNumber === modNum);
+        });
+
+      if (!isDuplicateOfWeeks) {
+        for (const mr of rawModuleReadings) {
+          if (mr && typeof mr === 'object') {
+            for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
+              candidateReadings.push({
+                ...splitMr,
+                weekNumber: undefined,
+                moduleNumber: splitMr.moduleNumber || (splitMr as any).module_number,
+                moduleMention: splitMr.moduleMention || (splitMr.moduleNumber ? `Module ${splitMr.moduleNumber}` : null),
+                summaryText: '',
+                keyTakeawaysText: ''
+              });
+            }
+          }
+        }
+      } else {
+        // Attach moduleNumber to the existing weekly candidateReadings
+        for (const mr of rawModuleReadings) {
+          const modNum = mr.moduleNumber || mr.module_number;
+          if (modNum) {
+            for (const cr of candidateReadings) {
+              if (cr.weekNumber === modNum && !cr.moduleNumber) {
+                cr.moduleNumber = modNum;
+                cr.moduleMention = `Module ${modNum}`;
+              }
+            }
+          }
+        }
       }
     }
 
@@ -434,7 +646,7 @@ export class SyllabusImportManager {
             return crNorm === normTitle && (!normCh || !crCh || crCh === normCh);
           });
           if (!alreadyExists) {
-            candidateReadings.push({
+            const rawCand: RawReadingCandidate = {
               title: item.title,
               authorName: item.authorName,
               resourceTitle: item.resourceTitle,
@@ -447,8 +659,13 @@ export class SyllabusImportManager {
               summaryText: item.summaryText || item.description,
               keyTakeawaysText: item.keyTakeaways,
               estimatedTimeText: item.estimatedTime,
-              relevantTopics: item.relevantTopics
-            });
+              relevantTopics: item.relevantTopics,
+              isRequired: item.isRequired,
+              requirementType: item.requirementType
+            };
+            for (const splitCand of SyllabusImportManager.splitMultiCitationCandidate(rawCand)) {
+              candidateReadings.push(splitCand);
+            }
           }
         }
       }
@@ -508,6 +725,11 @@ export class SyllabusImportManager {
         const rawTitleL = (la.title || '').trim();
         const normL = rawTitleL.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (normA === normL) return true;
+
+        const numA = (normA.match(/\d+$/) || [])[0];
+        const numL = (normL.match(/\d+$/) || [])[0];
+        if (numA && numL && numA !== numL) return false;
+
         if (normA.length >= 6 && normL.length >= 6 && (normA.includes(normL) || normL.includes(normA))) return true;
 
         const wordsL: string[] = rawTitleL.toLowerCase().split(/[\s,.\-_/]+/).filter((w: string) => w.length >= 4);
@@ -530,12 +752,9 @@ export class SyllabusImportManager {
           aiA.rubric = match.rubricCriteria;
         }
 
-        // Backfill points possible if missing
+        // Backfill points possible if missing (never synthesize points from rubric criteria)
         if (!aiA.pointsPossible && match.pointsPossible) {
           aiA.pointsPossible = match.pointsPossible;
-        } else if (!aiA.pointsPossible && aiA.rubricCriteria && aiA.rubricCriteria.length > 0) {
-          const sum = aiA.rubricCriteria.reduce((s, c) => s + (Number(c.points) || 0), 0);
-          if (sum > 0) aiA.pointsPossible = `${sum} Points`;
         }
 
         // Backfill full instructions if AI was sparse
@@ -568,6 +787,11 @@ export class SyllabusImportManager {
         const rawTitleA = (aiA.title || (aiA as any).name || '').trim();
         const normA = rawTitleA.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (normA === normL) return true;
+
+        const numA = (normA.match(/\d+$/) || [])[0];
+        const numL2 = (normL.match(/\d+$/) || [])[0];
+        if (numA && numL2 && numA !== numL2) return false;
+
         if (normA.length >= 6 && normL.length >= 6 && (normA.includes(normL) || normL.includes(normA))) return true;
 
         const wordsA: string[] = rawTitleA.toLowerCase().split(/[\s,.\-_/]+/).filter((w: string) => w.length >= 4);
@@ -575,7 +799,7 @@ export class SyllabusImportManager {
         return overlap.length >= 2 || (wordsA.length === 1 && wordsL.length === 1 && overlap.length === 1);
       });
 
-      if (!existsInAi && (la.weightPercentage || (la.rubricCriteria && la.rubricCriteria.length > 0))) {
+      if (!existsInAi && !isInvalidAssignmentTitle(la.title)) {
         cleanCandidateAssignments.push({
           title: la.title,
           dueDate: la.dueDate,
@@ -593,35 +817,41 @@ export class SyllabusImportManager {
     let cleanCandidateReadings = [...normalized.candidateReadings];
     let cleanWeeks = [...normalized.weeks];
 
-    // Reconcile weekly readings if localDto has canonical module curriculum readings (e.g. Table 1 Modules reconciliation)
-    const hasCanonicalWeeklyReadings = localDto.weeks && localDto.weeks.some(w =>
-      (w.readings || []).some(r => r.id?.includes('canonical'))
-    );
-    if (hasCanonicalWeeklyReadings && localDto.weeks) {
-      const canonicalCandidates: RawReadingCandidate[] = [];
-      localDto.weeks.forEach(w => {
-        (w.readings || []).forEach(r => {
-          canonicalCandidates.push({
-            title: r.title,
-            authorName: r.authorName || 'Gehart',
-            resourceTitle: r.resourceTitle || 'Mastering Competency in Family Therapy',
-            chapterText: r.chapterText,
-            pagesText: r.pagesText,
-            mediaType: r.mediaType || 'textbook',
-            weekNumber: w.weekNumber,
-            dueDate: r.dueDate || w.startDate || undefined,
-            relevantTopics: r.relevantTopics || w.theme,
-            summaryText: r.summaryText
+    // Reconcile weekly schedule if localDto has extracted weeks
+    if (localDto.weeks && localDto.weeks.length > 0) {
+      cleanWeeks = localDto.weeks.map(w => ({
+        weekNumber: w.weekNumber,
+        theme: w.theme || `Week ${w.weekNumber}`,
+        date: w.startDate || undefined,
+        startDate: w.startDate || undefined,
+        dateRangeStr: w.dateRangeStr || undefined
+      }));
+    }
+
+    // Append module readings from localDto if present (Table 1 modules)
+    if (Array.isArray(localDto.moduleReadings) && localDto.moduleReadings.length > 0) {
+      for (const mr of localDto.moduleReadings) {
+        const alreadyHasMod = cleanCandidateReadings.some(cr =>
+          cr.moduleNumber === mr.moduleNumber &&
+          (cr.title === mr.title || (cr.chapterText && cr.chapterText === mr.chapterText))
+        );
+        if (!alreadyHasMod) {
+          cleanCandidateReadings.push({
+            title: mr.title,
+            authorName: mr.authorName || 'Diane R. Gehart',
+            resourceTitle: mr.resourceTitle || undefined,
+            chapterText: mr.chapterText,
+            pagesText: mr.pagesText,
+            mediaType: mr.mediaType || 'textbook',
+            moduleNumber: mr.moduleNumber,
+            moduleMention: mr.moduleMention,
+            dueDate: mr.dueDate || undefined,
+            dateRangeStr: mr.dateRangeStr || undefined,
+            relevantTopics: mr.relevantTopics,
+            summaryText: '',
+            keyTakeawaysText: ''
           });
-        });
-      });
-      if (canonicalCandidates.length > 0) {
-        cleanCandidateReadings = canonicalCandidates;
-        cleanWeeks = localDto.weeks.map(w => ({
-          weekNumber: w.weekNumber,
-          theme: w.theme || `Week ${w.weekNumber}`,
-          date: w.startDate || undefined
-        }));
+        }
       }
     }
 
@@ -655,7 +885,7 @@ export class SyllabusImportManager {
         !rawTitle ||
         rawTitle.toLowerCase().includes('required reading & core materials') ||
         isGenericPlaceholderReadingTitle(rawTitle) ||
-        isDeliverableNotReading(rawTitle)
+        isDeliverableNotReading(rawTitle, { moduleNumber: r.moduleNumber, chapterText: r.chapterText })
       ) {
         continue;
       }
@@ -676,6 +906,9 @@ export class SyllabusImportManager {
       const wk = (typeof r.weekNumber === 'number' && r.weekNumber > 0)
         ? r.weekNumber
         : (typeof r.week_number === 'number' && r.week_number > 0 ? r.week_number : 0);
+      const mod = (typeof r.moduleNumber === 'number' && r.moduleNumber > 0)
+        ? r.moduleNumber
+        : (typeof (r as any).module_number === 'number' && (r as any).module_number > 0 ? (r as any).module_number : 0);
       const cleanCh = cleanChapterFromRaw(ch || rawTitle);
 
       // Infer media type
@@ -698,7 +931,7 @@ export class SyllabusImportManager {
         if (r.resourceTitle && !r.resourceTitle.startsWith('http')) {
           rawTitle = r.resourceTitle;
         } else {
-          rawTitle = wk > 0 ? `Week ${wk} Reading` : 'Course Reading';
+          rawTitle = wk > 0 ? `Week ${wk} Reading` : (mod > 0 ? `Module ${mod} Reading` : 'Course Reading');
         }
       }
 
@@ -736,7 +969,7 @@ export class SyllabusImportManager {
       const parsedReadingDue = parseSafeDate(r.dueDate || r.due_date, termYear || undefined);
 
       // Distinct composite reading identity:
-      // Must include: Week + Book/Resource identity + Chapter/Pages + substantive title
+      // Must include: Week/Module + Book/Resource identity + Chapter/Pages + substantive title
       const normBook = (resolvedResource || candidateAuthor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const normCh = cleanCh ? cleanCh.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
       const normPages = (r.pagesText || r.pages || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -748,9 +981,21 @@ export class SyllabusImportManager {
       // 2. Same week AND same book AND same chapter/pages
       // 3. Same week AND identical normalized title AND (same book or both without book)
       const existing = cleanReadingsList.find(existingR => {
-        if (wk > 0 && (existingR.weekNumber || 0) !== wk) {
+        const existingWk = existingR.weekNumber || 0;
+        const existingMod = existingR.moduleNumber || 0;
+
+        if (wk > 0 && existingWk > 0 && wk !== existingWk) {
           return false; // Different scheduled weeks -> never merge!
         }
+        if (mod > 0 && existingMod > 0 && mod !== existingMod) {
+          return false; // Different modules -> never merge!
+        }
+        // One is weekly schedule reading and other is module reading -> never merge!
+        if ((wk > 0 && !mod && !existingWk && existingMod > 0) ||
+            (!wk && mod > 0 && existingWk > 0 && !existingMod)) {
+          return false;
+        }
+
         // Identical non-empty media URL
         if (extractedVideoUrl && existingR.videoUrl && extractedVideoUrl === existingR.videoUrl) {
           return true;
@@ -779,6 +1024,11 @@ export class SyllabusImportManager {
         return false;
       });
 
+      const isReq = r.isRequired !== undefined
+        ? (r.isRequired !== false && r.requirementType !== 'optional')
+        : (r.requirementType === 'optional' ? false : true);
+      const reqType: 'required' | 'optional' = (r.requirementType === 'optional' || isReq === false) ? 'optional' : 'required';
+
       if (existing) {
         // Merge demonstrable duplicate and enrich
         if (!existing.authorName && candidateAuthor) existing.authorName = candidateAuthor;
@@ -790,6 +1040,10 @@ export class SyllabusImportManager {
         if (!existing.chapterText && (cleanCh || ch)) existing.chapterText = cleanCh || ch;
         if (!existing.pagesText && (r.pagesText || r.pages)) existing.pagesText = r.pagesText || r.pages;
         if (!existing.dueDate && parsedReadingDue) existing.dueDate = parsedReadingDue;
+        if (existing.isRequired === undefined && r.isRequired !== undefined) {
+          existing.isRequired = isReq;
+          existing.requirementType = reqType;
+        }
         continue;
       }
 
@@ -802,8 +1056,10 @@ export class SyllabusImportManager {
         mediaType: detectedMediaType,
         isCompleted: false,
         isDeleted: false,
-        summaryText: r.summaryText || '',
-        keyTakeawaysText: r.keyTakeawaysText || `• Study ${rawTitle}`,
+        isRequired: isReq,
+        requirementType: reqType,
+        summaryText: '',
+        keyTakeawaysText: '',
         estimatedTimeText: r.estimatedTimeText || (detectedMediaType === 'video' ? '~20 min watch' : '~45 min read'),
         dueDate: parsedReadingDue || parseSafeDate(r.dateRangeStr, termYear || undefined),
         dateRangeStr: (r.dateRangeStr && isRealDateOrRangeString(r.dateRangeStr))
@@ -813,10 +1069,12 @@ export class SyllabusImportManager {
               : (wk > 0 ? `Week ${wk}` : null)),
         chapterText: cleanCh || ch || null,
         pagesText: r.pagesText || r.pages || null,
-        relevantTopics: r.relevantTopics || (wk > 0 ? `Week ${wk}` : null),
+        relevantTopics: r.relevantTopics || (r as any).theme || (mod > 0 ? (r.moduleMention || `Module ${mod}`) : null),
         isFavorite: false,
         weekId: wk > 0 ? `w-${wk}` : 'none',
-        weekNumber: wk > 0 ? wk : null
+        weekNumber: wk > 0 ? wk : null,
+        moduleNumber: mod > 0 ? mod : null,
+        moduleMention: mod > 0 ? (r.moduleMention || `Module ${mod}`) : null
       });
     }
 
@@ -926,7 +1184,7 @@ export class SyllabusImportManager {
         }
       }
 
-      // Clean points: calculate from rubric criteria if available; do NOT fabricate points from weight percentage
+      // Clean points: do NOT fabricate points from rubric criteria sum or weight percentage
       let cleanPoints: string | null = null;
       const rawPoints = a.pointsPossible || a.points || a.points_possible || a.totalPoints;
       if (rawPoints && typeof rawPoints === 'string' && rawPoints.trim() && rawPoints.trim().toLowerCase() !== 'n/a') {
@@ -934,9 +1192,6 @@ export class SyllabusImportManager {
         cleanPoints = /pts|points/i.test(ptsTrim) ? ptsTrim : `${ptsTrim} Points`;
       } else if (typeof rawPoints === 'number' && rawPoints > 0) {
         cleanPoints = `${rawPoints} Points`;
-      } else if (sanitizedCriteria.length > 0) {
-        const sumPts = sanitizedCriteria.reduce((sum, c) => sum + (Number(c.points) || 0), 0);
-        if (sumPts > 0) cleanPoints = `${sumPts} Points`;
       } else {
         const ptM = (rawTitle + ' ' + (a.fullInstructions || '')).match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
         if (ptM) {
@@ -944,8 +1199,11 @@ export class SyllabusImportManager {
         }
       }
 
-      // Strictly enforce: unless something has a percentage, weight, or calendar due date, don't put that into assignments right now
-      if (!cleanWeight && !cleanPoints && !parsedDue) {
+      // Keep assignments that have weight, points, due date, a scheduled week, deliverable keywords, or explicit assignment typing
+      const hasDeliverableKeyword = /\b(?:paper|report|exam|examination|quiz|midterm|final|project|homework|problem\s+set|lab|presentation|deliverable|brief|essay|critique|discussion\s+board|peer\s+review|case\s+study|assignment|assessment|test|reflection|proposal|review|synthesis|conceptualization|mapping|genogram|treatment\s+plan|practicum|journal|portfolio|log|simulation|role\s*play|contribution|participation|attendance|evaluation|exercise|milestone|draft)\b/i.test(rawTitle);
+      const isExplicitDeliverable = Boolean((a as any).isDeliverable || a.category === 'assignment' || a.category === 'deliverable' || (a.rubricCriteria && a.rubricCriteria.length > 0) || (a.fullInstructions && a.fullInstructions.length > 25));
+
+      if (!cleanWeight && !cleanPoints && !parsedDue && !(resolvedWeek && resolvedWeek > 0) && !hasDeliverableKeyword && !isExplicitDeliverable) {
         continue;
       }
 
@@ -957,6 +1215,14 @@ export class SyllabusImportManager {
       const existing = cleanAssignmentsList.find(existingA => {
         const existingNorm = existingA.title.toLowerCase().replace(/[^a-z0-9]/g, '');
         const isExactTitle = existingNorm === normTitle;
+
+        // If titles have different trailing numbers (e.g. "Assignment 1" vs "Assignment 10", "Quiz 2" vs "Quiz 20"), they are NOT the same!
+        const numA = (existingNorm.match(/\d+$/) || [])[0];
+        const numB = (normTitle.match(/\d+$/) || [])[0];
+        if (numA && numB && numA !== numB) {
+          return false;
+        }
+
         const isFuzzyTitle =
           (existingNorm.includes(normTitle) || normTitle.includes(existingNorm)) &&
           existingNorm.length >= 6 &&
@@ -1021,9 +1287,12 @@ export class SyllabusImportManager {
         if ((!existing.rubricCriteria || existing.rubricCriteria.length === 0) && sanitizedCriteria.length > 0) {
           existing.rubricCriteria = sanitizedCriteria;
         }
-        if (!existing.pointsPossible && existing.rubricCriteria && existing.rubricCriteria.length > 0) {
-          const sum = existing.rubricCriteria.reduce((s, c) => s + (Number(c.points) || 0), 0);
-          if (sum > 0) existing.pointsPossible = `${sum} Points`;
+        const candidateWeeks: number[] = Array.isArray(a.scheduledWeeks)
+          ? a.scheduledWeeks
+          : (Array.isArray((a as any).scheduled_weeks) ? (a as any).scheduled_weeks : []);
+        if (candidateWeeks.length > 0) {
+          const merged = Array.from(new Set([...(existing.scheduledWeeks || []), ...candidateWeeks])).sort((x, y) => x - y);
+          existing.scheduledWeeks = merged;
         }
         continue;
       }
@@ -1037,6 +1306,11 @@ export class SyllabusImportManager {
         courseCode: a.courseCode || a.course_code || undefined,
         title: rawTitle,
         weekNumber: resolvedWeek || 0,
+        scheduledWeeks: (Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.length > 0)
+          ? a.scheduledWeeks
+          : (Array.isArray((a as any).scheduled_weeks) && (a as any).scheduled_weeks.length > 0)
+          ? (a as any).scheduled_weeks
+          : undefined,
         dueDate: parsedDue,
         fullInstructions: initialInstructions,
         pointsPossible: cleanPoints,

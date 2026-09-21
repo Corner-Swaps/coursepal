@@ -24,6 +24,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { CoursePalTheme } from '../../constants/theme';
 import { useCoursePal } from '../../context/CoursePalContext';
 import { BundledSyllabiCatalog, BundledSyllabusItem } from '../../utils/syllabusCatalog';
+import { cleanUploadStatusMessage } from '../../utils/readingDisplayHelper';
 import {
   DocFillIcon,
   DocBadgePlusIcon,
@@ -45,7 +46,7 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
   targetCourseId,
   onUploadSuccess
 }) => {
-  const { importSyllabusDocument, isUploading } = useCoursePal();
+  const { importSyllabusDocument, isUploading, uploadStatusText, cancelUpload } = useCoursePal();
   const [showCatalog, setShowCatalog] = useState<boolean>(false);
   const [showPasteSection, setShowPasteSection] = useState<boolean>(false);
   const [pastedText, setPastedText] = useState<string>('');
@@ -56,6 +57,9 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
   // MARK: - Native iOS Document Picker
   const handlePickDocument = async () => {
     try {
+      if (isUploading) {
+        await cancelUpload();
+      }
       setIsPickingFile(true);
       const result = await DocumentPicker.getDocumentAsync({
         type: [
@@ -81,14 +85,18 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
 
       onClose();
 
-      await importSyllabusDocument({
+      const importResult = await importSyllabusDocument({
         fileName: asset.name,
         fileUri: asset.uri,
         fileSize: fileSizeStr,
         targetCourseId
       });
 
-      onUploadSuccess?.(asset.name);
+      if (importResult && !importResult.success) {
+        Alert.alert('Import Notice', importResult.message || 'Could not parse syllabus content.');
+      } else {
+        onUploadSuccess?.(asset.name);
+      }
     } catch (err: any) {
       setIsPickingFile(false);
       Alert.alert('File Selection Failed', err.message || 'Unable to open file picker.');
@@ -97,6 +105,9 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
 
   // MARK: - Instant Catalog Syllabus Import
   const handleImportCatalogItem = async (item: BundledSyllabusItem) => {
+    if (isUploading) {
+      await cancelUpload();
+    }
     onClose();
     await importSyllabusDocument({
       fileName: item.fileName,
@@ -117,6 +128,10 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
         'Please paste more of your course syllabus text (at least course title, schedule, or reading list).'
       );
       return;
+    }
+
+    if (isUploading) {
+      await cancelUpload();
     }
 
     onClose();
@@ -174,11 +189,36 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
             </Text>
           </View>
 
+          {/* Active upload banner with cancel button */}
+          {isUploading && (
+            <View style={styles.activeUploadNoticeCard}>
+              <View style={styles.activeUploadNoticeRow}>
+                <ActivityIndicator size="small" color="#2563EB" style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.activeUploadNoticeTitle} numberOfLines={1}>
+                    Processing Document
+                  </Text>
+                  <Text style={styles.activeUploadNoticeSub} numberOfLines={1}>
+                    {cleanUploadStatusMessage(uploadStatusText)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.cancelUploadButton}
+                  onPress={cancelUpload}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.cancelUploadButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           {/* Option 1: Native Files / iCloud Drive */}
           <TouchableOpacity
             style={styles.primaryActionCard}
             onPress={handlePickDocument}
-            disabled={isPickingFile || isUploading}
+            disabled={isPickingFile}
             activeOpacity={0.8}
             testID="upload-modal-browse-files"
           >
@@ -305,7 +345,7 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
                     pastedText.trim().length < 30 && styles.parseButtonDisabled
                   ]}
                   onPress={handleImportPastedText}
-                  disabled={pastedText.trim().length < 30 || isUploading}
+                  disabled={pastedText.trim().length < 30}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.parseButtonText}>Parse & Import Schedule</Text>
@@ -586,5 +626,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF'
+  },
+  activeUploadNoticeCard: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE'
+  },
+  activeUploadNoticeRow: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  activeUploadNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E3A8A'
+  },
+  activeUploadNoticeSub: {
+    fontSize: 11,
+    color: '#3B82F6',
+    marginTop: 2
+  },
+  cancelUploadButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#DBEAFE',
+    borderRadius: 8
+  },
+  cancelUploadButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1D4ED8'
   }
 });

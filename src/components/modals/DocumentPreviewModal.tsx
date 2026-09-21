@@ -61,11 +61,13 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   const [effectiveFileUri, setEffectiveFileUri] = useState<string | null>(null);
 
   useEffect(() => {
+    // ALWAYS reset state when document or visibility changes so previous document failures don't bleed into new document!
+    setPages([]);
+    setIsLoadingPages(false);
+    setHasFailedImages(false);
+    setEffectiveFileUri(null);
+
     if (!visible || !document) {
-      setPages([]);
-      setIsLoadingPages(false);
-      setHasFailedImages(false);
-      setEffectiveFileUri(null);
       return;
     }
 
@@ -74,19 +76,54 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       setEffectiveFileUri(activeRawUri);
     }
 
-    // If pre-existing page images exist, map to current container
-    if (document.pageImages && document.pageImages.length > 0) {
-      const resolvedImages = document.pageImages
-        .map(resolveLocalPath)
-        .filter((u): u is string => Boolean(u));
-      if (resolvedImages.length > 0) {
-        setPages(resolvedImages);
-        setIsLoadingPages(false);
-        if (activeRawUri) return;
-      }
-    }
-
     const loadPagesAndFile = async () => {
+      // 1. Validate / restore raw file path
+      if (activeRawUri) {
+        try {
+          const info = await FileSystem.getInfoAsync(activeRawUri);
+          if (!info.exists) {
+            // Check fallback in permanent documentDirectory syllabi folder
+            const filename = activeRawUri.split('/').pop();
+            let foundFallback = false;
+            if (filename && FileSystem.documentDirectory) {
+              const fallback = `${FileSystem.documentDirectory}syllabi/${filename}`;
+              const fbInfo = await FileSystem.getInfoAsync(fallback);
+              if (fbInfo.exists) {
+                activeRawUri = fallback;
+                setEffectiveFileUri(fallback);
+                document.rawFileDataUri = fallback;
+                foundFallback = true;
+              }
+            }
+            if (!foundFallback) {
+              activeRawUri = null;
+              setEffectiveFileUri(null);
+            }
+          }
+        } catch {
+          activeRawUri = null;
+          setEffectiveFileUri(null);
+        }
+      }
+
+      // 2. Check if pre-existing page images exist on disk (iOS NSCachesDirectory can purge them)
+      if (document.pageImages && document.pageImages.length > 0) {
+        const resolvedImages = document.pageImages
+          .map(resolveLocalPath)
+          .filter((u): u is string => Boolean(u));
+        if (resolvedImages.length > 0) {
+          try {
+            const firstInfo = await FileSystem.getInfoAsync(resolvedImages[0]);
+            if (firstInfo.exists) {
+              setPages(resolvedImages);
+              setIsLoadingPages(false);
+              return;
+            }
+          } catch {}
+        }
+      }
+
+      // 3. Fallback to bundled PDF file if still no file
       if (!activeRawUri) {
         setIsLoadingPages(true);
         const ensured = await ensureBundledPdfFile(document.id || document.courseCode || document.title);
@@ -97,6 +134,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         }
       }
 
+      // 4. Render PDF pages dynamically
       if (activeRawUri) {
         setIsLoadingPages(true);
         try {
@@ -124,32 +162,57 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   const resolvedRawUri = resolveLocalPath(document.rawFileDataUri);
 
   const matchedCourse = courses.find(c =>
-    (c.courseCode && document.courseCode && c.courseCode.toUpperCase() === document.courseCode.toUpperCase()) ||
-    c.id === (document as any).courseId
+    (document.courseId && c.id === document.courseId) ||
+    (c.id === (document as any).courseId) ||
+    (c.courseCode && document.courseCode && c.courseCode.toUpperCase() === document.courseCode.toUpperCase())
   );
-  const matchedReadings = matchedCourse
-    ? readings.filter(r => r.courseCode === matchedCourse.courseCode)
-    : [];
-  const matchedAssignments = matchedCourse
-    ? assignments.filter(a => a.courseCode === matchedCourse.courseCode)
-    : [];
+  const matchedReadings = readings.filter(r => {
+    if (!r || r.isDeleted) return false;
+    if ((r as any).sourceDocumentId && (r as any).sourceDocumentId === document.id) return true;
+    if (r.sourceDocumentName && (
+      r.sourceDocumentName.toLowerCase() === document.title.toLowerCase() ||
+      document.title.toLowerCase().includes(r.sourceDocumentName.toLowerCase()) ||
+      r.sourceDocumentName.toLowerCase().includes(document.title.toLowerCase())
+    )) return true;
+    if (document.courseId && r.courseId === document.courseId) return true;
+    if (matchedCourse && r.courseId === matchedCourse.id) return true;
+    return false;
+  });
+  const matchedAssignments = assignments.filter(a => {
+    if (!a || a.isDeleted) return false;
+    if ((a as any).sourceDocumentId && (a as any).sourceDocumentId === document.id) return true;
+    if (a.sourceDocumentName && (
+      a.sourceDocumentName.toLowerCase() === document.title.toLowerCase() ||
+      document.title.toLowerCase().includes(a.sourceDocumentName.toLowerCase()) ||
+      a.sourceDocumentName.toLowerCase().includes(document.title.toLowerCase())
+    )) return true;
+    if (document.courseId && a.courseId === document.courseId) return true;
+    if (matchedCourse && a.courseId === matchedCourse.id) return true;
+    return false;
+  });
 
   const handleImageError = () => {
-    setHasFailedImages(true);
     // If an image fails to load and raw file is present, trigger a fresh render
-    if (resolvedRawUri && !isLoadingPages) {
+    const targetUri = effectiveFileUri || resolvedRawUri;
+    if (targetUri && !isLoadingPages) {
       setIsLoadingPages(true);
-      renderPDFPages(resolvedRawUri, 30)
+      renderPDFPages(targetUri, 30)
         .then(res => {
           if (res.imageUris && res.imageUris.length > 0) {
             setPages(res.imageUris);
             setHasFailedImages(false);
+          } else {
+            setHasFailedImages(true);
           }
         })
-        .catch(() => {})
+        .catch(() => {
+          setHasFailedImages(true);
+        })
         .finally(() => {
           setIsLoadingPages(false);
         });
+    } else {
+      setHasFailedImages(true);
     }
   };
 

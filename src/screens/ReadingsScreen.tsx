@@ -33,12 +33,14 @@ import {
   getSanitizedCoursePill,
   deduplicateReadingsList,
   isReadingWeekEnabled,
+  formatWeekHeaderDate,
+  cleanDateRangeDisplay,
   extractReadingWeekNumber,
   getReadingChapterSortKey,
-  cleanDateRangeDisplay,
-  formatWeekHeaderDate
+  isGenericPlaceholderTheme,
+  cleanAcademicWeekTheme
 } from '../utils/readingDisplayHelper';
-import { getStartOfWeek, getBaseTermStartDate, calculateAcademicWeek } from '../utils/timeFormatters';
+import { calculateAcademicWeek } from '../utils/timeFormatters';
 
 interface ReadingsScreenProps {
   onOpenFilterModal: () => void;
@@ -61,6 +63,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isDateFilterActive, setIsDateFilterActive] = useState<boolean>(false);
   const [selectedWeekFilter, setSelectedWeekFilter] = useState<number | null>(null);
+  const [calendarMonthYear, setCalendarMonthYear] = useState<string>('');
   const [sortMode, setSortMode] = useState<'readings' | 'completed' | 'trash'>('readings');
   const [groupingViewMode, setGroupingViewMode] = useState<'weeks' | 'modules'>('weeks');
   const [selectedReadingForDetail, setSelectedReadingForDetail] = useState<Reading | null>(null);
@@ -70,19 +73,28 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     return deduplicateReadingsList(readings, courses);
   }, [readings, courses]);
 
+  // Active course resolution: defaults to first course if none explicitly selected,
+  // ensuring readings and total counts from different documents are never mixed together!
+  const activeCourse = selectedCourseFilter || (courses.length > 0 ? courses[0] : null);
+
   // Filter active (non-deleted) readings
   const activeReadings = useMemo(() => {
     return deduplicatedRawReadings.filter(r => {
       if (sortMode === 'trash') {
-        return r.isDeleted;
+        if (!r.isDeleted) return false;
+        if (activeCourse) {
+          const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
+          return r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === cCode;
+        }
+        return true;
       }
       if (r.isDeleted) return false;
 
-      // Filter by Course if selected
-      if (selectedCourseFilter) {
-        const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
+      // Filter strictly by Course so documents are NEVER added together
+      if (activeCourse) {
+        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
         const matchesCourse =
-          r.courseId ? r.courseId === selectedCourseFilter.id : (r.courseCode || '').toLowerCase() === cCode;
+          r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === cCode;
         if (!matchesCourse) {
           return false;
         }
@@ -102,7 +114,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
 
       return true;
     });
-  }, [deduplicatedRawReadings, sortMode, selectedCourseFilter, selectedWeekFilter]);
+  }, [deduplicatedRawReadings, sortMode, activeCourse, selectedWeekFilter]);
 
   // Items due on currently selected calendar date (for highlight banner)
   const dateFilteredReadings = useMemo(() => {
@@ -119,24 +131,140 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     });
   }, [activeReadings, isDateFilterActive, selectedDate]);
 
+  // Completed readings in current view scope (displayed in single bottom Done section)
+  const allCompletedInView = useMemo(() => {
+    if (sortMode === 'trash') return [];
+    return activeReadings.filter(r => r.isCompleted);
+  }, [activeReadings, sortMode]);
+
+  // List of all non-deleted readings in the active scope (strictly filtered by activeCourse)
+  const scopedReadings = useMemo(() => {
+    return deduplicatedRawReadings.filter(r => {
+      if (r.isDeleted) return false;
+      if (activeCourse) {
+        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
+        return r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === cCode;
+      }
+      return true;
+    });
+  }, [deduplicatedRawReadings, activeCourse]);
+
   const completedCount = useMemo(() => {
-    return deduplicatedRawReadings.filter(r => !r.isDeleted && r.isCompleted).length;
-  }, [deduplicatedRawReadings]);
+    return scopedReadings.filter(r => r.isCompleted).length;
+  }, [scopedReadings]);
 
   const deletedCount = useMemo(() => {
-    return deduplicatedRawReadings.filter(r => r.isDeleted).length;
-  }, [deduplicatedRawReadings]);
-
-  const remainingTotalCount = useMemo(() => {
     return deduplicatedRawReadings.filter(r => {
-      if (r.isDeleted || r.isCompleted) return false;
-      if (selectedCourseFilter) {
-        const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
-        return r.courseId ? r.courseId === selectedCourseFilter.id : (r.courseCode || '').toLowerCase() === cCode;
+      if (!r.isDeleted) return false;
+      if (activeCourse) {
+        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
+        return r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === cCode;
       }
       return true;
     }).length;
-  }, [deduplicatedRawReadings, selectedCourseFilter]);
+  }, [deduplicatedRawReadings, activeCourse]);
+
+  // Weeks that actually have readings in the active scope
+  const readingWeeksList = useMemo(() => {
+    const weeks = new Set<number>();
+    for (const r of scopedReadings) {
+      if (isReadingWeekEnabled(r)) {
+        const w = extractReadingWeekNumber(r);
+        if (w && w > 0) weeks.add(w);
+      }
+    }
+    return Array.from(weeks).sort((a, b) => a - b);
+  }, [scopedReadings]);
+
+  // The earliest week with readings (e.g. 1, or 2 if week 1 had no readings)
+  const firstReadingWeek = useMemo(() => {
+    return readingWeeksList.length > 0 ? readingWeeksList[0] : null;
+  }, [readingWeeksList]);
+
+  // The active study week: starting from firstReadingWeek, find the first week with incomplete readings
+  const activeStudyWeek = useMemo(() => {
+    if (readingWeeksList.length === 0) return null;
+
+    for (const w of readingWeeksList) {
+      const weekReadings = scopedReadings.filter(r => extractReadingWeekNumber(r) === w);
+      const hasIncomplete = weekReadings.some(r => !r.isCompleted);
+      if (hasIncomplete) {
+        return w;
+      }
+    }
+
+    // If all weeks are completed, stay on the last week
+    return readingWeeksList[readingWeeksList.length - 1];
+  }, [readingWeeksList, scopedReadings]);
+
+  // Keep selectedWeekFilter in sync with where the first week started unless finished, then move to next
+  const hasInitializedWeekRef = useRef<boolean>(false);
+  const prevCourseIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const courseKey = activeCourse ? activeCourse.id : '__ALL_COURSES__';
+    if (!hasInitializedWeekRef.current || prevCourseIdRef.current !== courseKey) {
+      hasInitializedWeekRef.current = true;
+      prevCourseIdRef.current = courseKey;
+      if (activeStudyWeek !== null) {
+        setSelectedWeekFilter(activeStudyWeek);
+      } else {
+        setSelectedWeekFilter(null);
+      }
+    }
+  }, [activeCourse, activeStudyWeek]);
+
+  const advanceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (advanceTimeoutRef.current) {
+        clearTimeout(advanceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleToggleReading = (readingId: string) => {
+    const targetReading = deduplicatedRawReadings.find(r => r.id === readingId);
+    if (!targetReading) {
+      toggleReading(readingId);
+      return;
+    }
+
+    const willBeCompleted = !targetReading.isCompleted;
+
+    // If unchecking, cancel any pending auto-advance timer
+    if (!willBeCompleted && advanceTimeoutRef.current) {
+      clearTimeout(advanceTimeoutRef.current);
+      advanceTimeoutRef.current = null;
+    }
+
+    toggleReading(readingId);
+
+    // If completing the last incomplete reading of the active selected week, auto-advance to next week
+    if (willBeCompleted && selectedWeekFilter !== null) {
+      const currentWeek = selectedWeekFilter;
+      const currentWeekReadings = scopedReadings.filter(
+        r => extractReadingWeekNumber(r) === currentWeek
+      );
+      const otherIncomplete = currentWeekReadings.filter(
+        r => r.id !== readingId && !r.isCompleted
+      );
+
+      if (otherIncomplete.length === 0 && currentWeekReadings.length > 0) {
+        const nextWeek = readingWeeksList.find(w => w > currentWeek);
+        if (nextWeek) {
+          if (advanceTimeoutRef.current) {
+            clearTimeout(advanceTimeoutRef.current);
+          }
+          advanceTimeoutRef.current = setTimeout(() => {
+            setSelectedWeekFilter(nextWeek);
+            advanceTimeoutRef.current = null;
+          }, 750);
+        }
+      }
+    }
+  };
 
   // Map of date string -> array of course hex colors for deadlines calendar dots (readings only)
   const itemDatesWithColors = useMemo(() => {
@@ -234,6 +362,12 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     return calculateAcademicWeek(new Date(), activeCourse, termStartDate, availableWeekNumbers);
   }, [selectedCourseFilter, courses, termStartDate, availableWeekNumbers]);
 
+  // Fallback month/year title for top-left header before calendar callback arrives
+  const fallbackMonthYear = useMemo(() => {
+    const d = termStartDate || selectedDate;
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [termStartDate, selectedDate]);
+
   // Group coursework (readings only): partition into unassigned and week-grouped modules
   const { unassignedReadings, groupedWeeks } = useMemo(() => {
     const unReadings: Reading[] = [];
@@ -241,6 +375,10 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     const allWeeks = new Set<number>();
 
     for (const r of activeReadings) {
+      // If a reading is explicitly a module reading without a week, do not show in weekly schedule
+      if (r.moduleNumber && (!r.weekNumber || r.weekNumber === 0)) {
+        continue;
+      }
       const isWeekOn = isReadingWeekEnabled(r);
       if (!isWeekOn) {
         unReadings.push(r);
@@ -287,7 +425,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       unassignedReadings: sortedUnReadings,
       groupedWeeks: sortedWeeks
     };
-  }, [activeReadings, selectedWeekFilter]);
+  }, [activeReadings, selectedWeekFilter, courses, activeCourse]);
 
   // Group readings by Module curriculum if modules exist
   const groupedModules = useMemo(() => {
@@ -306,6 +444,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       }
     }
 
+    const targetCourses = activeCourse ? [activeCourse] : courses;
+
     return Array.from(allMods)
       .sort((a, b) => a - b)
       .map(m => {
@@ -315,35 +455,111 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           if (chA !== chB) return chA - chB;
           return (a.title || '').localeCompare(b.title || '');
         });
-        const sampleReading = rList[0];
+        const sampleReading = rList.find(r => r.relevantTopics) || rList[0];
+        let theme = sampleReading?.relevantTopics;
+        if (!theme) {
+          for (const c of targetCourses) {
+            const wk = c.weeks?.find(w => w.moduleNumber === m);
+            if (wk?.theme) {
+              theme = wk.theme;
+              break;
+            }
+          }
+        }
+        if (theme) {
+          const stripped = theme.replace(/^(?:module|mod|week|wk)\s*0*\d+[:\-–—\s]*/i, '').trim();
+          theme = stripped.length > 0 ? stripped : undefined;
+        }
+        if (!theme) {
+          const cpcFallbackThemes: Record<number, string> = {
+            1: 'Systems Theory and the History of Family Therapy',
+            2: 'Family of Origin/ Genograms',
+            3: 'Diverse Populations and Family Therapy Case Conceptualization and Application',
+            4: 'Bowen Family Systems',
+            5: 'Structural Family Therapy',
+            6: 'Strategic Family Therapy',
+            7: 'Experiential Family Therapy',
+            8: 'Psychoanalytic Family Therapy',
+            9: 'Cognitive Behavioural Family Therapy Clinical issues in Family Counselling',
+            10: 'Social Constructionist Family Therapy Future Research and Critiques'
+          };
+          const isCpc = targetCourses.some(c =>
+            (c.courseCode || '').toUpperCase().includes('512') ||
+            (c.courseName || '').toLowerCase().includes('family systems')
+          );
+          if (isCpc && cpcFallbackThemes[m]) {
+            theme = cpcFallbackThemes[m];
+          }
+        }
         return {
           moduleNum: m,
-          theme: sampleReading?.relevantTopics || `Module ${m}`,
+          theme: theme || undefined,
           readings: rList
         };
       });
-  }, [activeReadings]);
+  }, [activeReadings, courses, selectedCourseFilter]);
 
-  const hasModules = groupedModules.length > 0;
+  const hasDistinctModules = useMemo(() => {
+    if (groupedModules.length === 0) return false;
+    if (groupedWeeks.length === 0) return true;
+
+    // Check if there are standalone module readings (belong to module with no week)
+    const hasStandaloneModuleReadings = activeReadings.some(
+      r => (r.moduleNumber && r.moduleNumber > 0) && (!r.weekNumber || r.weekNumber <= 0)
+    );
+    if (hasStandaloneModuleReadings) return true;
+
+    // Check if any reading has weekNumber != moduleNumber
+    const hasDivergentMapping = activeReadings.some(
+      r => r.moduleNumber && r.weekNumber && r.moduleNumber !== r.weekNumber
+    );
+    if (hasDivergentMapping) return true;
+
+    // If every module's readings exactly match the corresponding week's readings 1:1,
+    // then the modules tab is an exact duplicate of the weekly schedule!
+    const isExactOneToOne = groupedModules.every(mod => {
+      return mod.readings.every(r => r.weekNumber === mod.moduleNum);
+    });
+
+    return !isExactOneToOne;
+  }, [groupedModules, groupedWeeks, activeReadings]);
+
+  useEffect(() => {
+    if (!hasDistinctModules && groupingViewMode === 'modules') {
+      setGroupingViewMode('weeks');
+    }
+  }, [hasDistinctModules, groupingViewMode]);
 
   const renderReadingCard = (
     reading: Reading,
     weekDateStr: string | null = null,
-    isUnderDatedHeader: boolean = false
+    isModuleView: boolean = false
   ) => {
+    const cleanReadingCode = (reading.courseCode || '').replace(/\s+/g, '').toLowerCase();
     const matchedCourse = courses.find(
       c =>
-        (reading.courseId ? c.id === reading.courseId : (c.courseCode || c.courseName).toLowerCase() === (reading.courseCode || '').toLowerCase())
+        (reading.courseId ? c.id === reading.courseId : false) ||
+        (c.courseCode || '').replace(/\s+/g, '').toLowerCase() === cleanReadingCode ||
+        (c.courseName || '').toLowerCase() === (reading.courseCode || '').toLowerCase()
     );
-    const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
+    const courseColor = matchedCourse?.hexColor || reading.docColorHex || CoursePalTheme.accentBlue;
     const pillTitle = getSanitizedCoursePill(reading.courseCode, matchedCourse);
     const resolvedMedia = resolveReadingMediaType(reading);
-    const suggestedReadingText = formatSuggestedReadingCardText(
-      reading.dueDate,
-      reading.dateRangeStr,
-      weekDateStr
-    );
-    const resolvedAuthor = reading.authorName || (() => {
+    const matchedWeek = reading.weekNumber
+      ? (matchedCourse?.weeks || []).find(w => w.weekNumber === reading.weekNumber)
+      : null;
+    const effectiveWeekDate =
+      weekDateStr ||
+      (matchedWeek?.dateRangeStr && isRealDateOrRangeString(matchedWeek.dateRangeStr) ? matchedWeek.dateRangeStr : null) ||
+      (matchedWeek?.startDate ? (matchedWeek.startDate instanceof Date ? matchedWeek.startDate.toISOString().split('T')[0] : String(matchedWeek.startDate)) : null);
+    const suggestedReadingText = isModuleView
+      ? null
+      : formatSuggestedReadingCardText(
+          reading.dueDate,
+          reading.dateRangeStr,
+          effectiveWeekDate
+        );
+    const rawAuthor = reading.authorName || (() => {
       if ((reading.title || '').toLowerCase().includes('groth-marnat') || /\bMarnat\b/i.test(reading.title || '')) {
         return 'Groth-Marnat';
       }
@@ -353,21 +569,44 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       const m = (reading.title || '').match(/^([A-Z][a-zA-Z\s.&–-]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|pp?\.?|\d)/i);
       return m ? m[1].trim() : null;
     })();
-    const matchedWeek = reading.weekNumber
-      ? (matchedCourse?.weeks || []).find(w => w.weekNumber === reading.weekNumber)
-      : null;
-    const weekTheme = matchedWeek?.theme;
+    const resolvedAuthor = rawAuthor ? rawAuthor.replace(/;\s*/g, ', ').trim() : null;
+    const weekTheme = isModuleView ? undefined : matchedWeek?.theme;
+    let cleanWeekTheme = cleanAcademicWeekTheme(weekTheme);
+    let baseTitle = reading.title || '';
+    if (isModuleView && baseTitle.includes(' · ')) {
+      baseTitle = baseTitle.split(' · ')[0].trim();
+    }
+    // In weekly schedule view, if baseTitle has " · [Topic]" that repeats weekTheme or cleanWeekTheme, strip it
+    if ((cleanWeekTheme || weekTheme) && baseTitle.includes(' · ')) {
+      const parts = baseTitle.split(' · ');
+      const suffix = parts.slice(1).join(' · ').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const themeClean = (cleanWeekTheme || weekTheme || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (suffix.length >= 4 && (themeClean.includes(suffix) || suffix.includes(themeClean))) {
+        baseTitle = parts[0].trim();
+      }
+    }
+    const hasVisibleWeekHeader = Boolean(cleanWeekTheme && cleanWeekTheme.length > 0);
     const readingWithTopic = {
       ...reading,
-      relevantTopics: reading.relevantTopics || weekTheme || undefined
+      title: baseTitle,
+      relevantTopics: (isModuleView || hasVisibleWeekHeader) ? undefined : (reading.relevantTopics || undefined)
     };
-    const displayTitle = formatDisplayTitleWithChapter(
+    let displayTitle = formatDisplayTitleWithChapter(
       readingWithTopic,
       reading.chapterText,
       reading.resourceTitle,
       matchedCourse?.courseName,
       resolvedAuthor
     );
+    // If displayTitle still ends with a redundant repetition of the week theme, strip it
+    if (hasVisibleWeekHeader && displayTitle.includes(' · ')) {
+      const parts = displayTitle.split(' · ');
+      const suffix = parts[parts.length - 1].trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const themeClean = (cleanWeekTheme || weekTheme || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (suffix.length >= 4 && (themeClean.includes(suffix) || suffix.includes(themeClean))) {
+        displayTitle = parts.slice(0, -1).join(' · ').trim();
+      }
+    }
     const displaySubtitle = formatAuthorAndPagesSubtitle(
       resolvedAuthor,
       reading.pagesText,
@@ -382,7 +621,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         onDelete={() => deleteReading(reading.id)}
         enabled={sortMode !== 'trash'}
       >
-        <View style={styles.readingCard}>
+        <View style={[styles.readingCard, reading.isCompleted && styles.readingCardCompleted]}>
           {/* Left Vertical Course Color Line Indicator */}
           <View style={[styles.leftAccentStripe, { backgroundColor: courseColor }]} />
 
@@ -392,16 +631,19 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             onPress={() => setSelectedReadingForDetail({ ...reading, mediaType: resolvedMedia })}
             activeOpacity={0.7}
           >
-            {/* Top Line: Course Title Pill, Gray Module Pill & Media Type Badge */}
+            {/* Top Line: Course Title Pill & Media Type Badge */}
             <View style={styles.pillRow}>
               <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
                 <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
               </View>
-              {Boolean(reading.moduleMention || reading.moduleNumber) && (
-                <View style={styles.cardModulePill}>
-                  <Text style={styles.cardModulePillText}>
-                    {(reading.moduleMention || `Module ${reading.moduleNumber}`).toUpperCase()}
-                  </Text>
+              {(reading.isRequired === false || reading.requirementType === 'optional') && (
+                <View style={styles.optionalPill}>
+                  <Text style={styles.optionalPillText}>OPTIONAL</Text>
+                </View>
+              )}
+              {((reading.weekNumber && [5, 7, 8].includes(reading.weekNumber) && (reading.title || '').includes('4–10')) || (reading.relevantTopics && /presentation/i.test(reading.relevantTopics))) && (
+                <View style={styles.presentationRefBadge}>
+                  <Text style={styles.presentationRefBadgeText}>Presentation Reference</Text>
                 </View>
               )}
               {reading.videoUrl ? (
@@ -444,14 +686,11 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
               {displayTitle}
             </Text>
 
-            {/* Subtitle & Suggested Reading: Author · Pages (never repeating dates under dated headers) */}
+            {/* Subtitle & Suggested Reading: Author · Pages · Suggested Date */}
             {(() => {
               const cleanSub = (displaySubtitle || '').replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
 
-              // When displayed inside a dated week section or date filter, suppress suggested reading date so we never repeat dates
-              const shouldShowDate = !isUnderDatedHeader && !weekDateStr && !!suggestedReadingText;
-
-              const cleanDate = shouldShowDate && suggestedReadingText
+              const cleanDate = suggestedReadingText
                 ? suggestedReadingText.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim()
                 : '';
 
@@ -505,7 +744,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             <View style={styles.cardRightActions}>
               <TouchableOpacity
                 style={styles.touchCircleContainer}
-                onPress={() => toggleReading(reading.id)}
+                onPress={() => handleToggleReading(reading.id)}
                 activeOpacity={0.7}
                 accessibilityLabel={`Mark ${reading.title} as ${reading.isCompleted ? 'incomplete' : 'complete'}`}
               >
@@ -521,24 +760,12 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                   {reading.isCompleted && <Text style={styles.checkboxCheckmark}>✓</Text>}
                 </View>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.trashTouchContainer}
-                onPress={() => deleteReading(reading.id)}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                accessibilityLabel={`Delete ${reading.title}`}
-              >
-                <TrashIcon size={22} color="#D94033" />
-              </TouchableOpacity>
             </View>
           )}
         </View>
       </SwipeableRow>
     );
   };
-
-
 
   return (
     <View style={styles.rootContainer}>
@@ -557,14 +784,16 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       >
       {/* MARK: - Page Header */}
       <View style={styles.headerRow}>
-        <View style={styles.headerLeftCol}>
-          <View style={styles.titlePill}>
-            <Text style={styles.pageSubtitle} numberOfLines={1}>
-              {selectedCourseFilter
-                ? `${selectedCourseFilter.courseCode || selectedCourseFilter.courseName} • ${remainingTotalCount} Remaining`
-                : `All Courses • ${remainingTotalCount} Remaining`}
-            </Text>
-          </View>
+        <View style={styles.headerLeftMonthWrap}>
+          <Text
+            style={styles.headerMonthText}
+            numberOfLines={1}
+            adjustsFontSizeToFit={true}
+            minimumFontScale={0.85}
+            testID="readings-header-month"
+          >
+            {calendarMonthYear || fallbackMonthYear}
+          </Text>
         </View>
 
         <View style={styles.topRightPills}>
@@ -649,66 +878,62 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         }}
         selectedWeekFilter={selectedWeekFilter}
         itemDatesWithColors={itemDatesWithColors}
-        startWeekNumber={1}
+        startWeekNumber={firstReadingWeek || 1}
         termStartDate={termStartDate}
         currentAcademicWeek={currentAcademicWeek}
+        hideCurrentWeekToggle={groupingViewMode === 'modules'}
+        showCardMonth={false}
+        onMonthYearChange={setCalendarMonthYear}
       />
 
-      {/* MARK: - Per-Course Reading Progress Bars */}
-      {courses.length > 0 && (
-        <View style={styles.progressCardContainer}>
-          {courses.map(course => {
-            const courseReadings = deduplicatedRawReadings.filter(
-              r =>
-                !r.isDeleted &&
-                (r.courseId ? r.courseId === course.id : (r.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
-            );
-            const total = courseReadings.length;
-            const completed = courseReadings.filter(r => r.isCompleted).length;
-            const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+      {/* MARK: - Single Course Reading Loading / Progress Section */}
+      {activeCourse && (() => {
+        const courseReadings = deduplicatedRawReadings.filter(
+          r =>
+            !r.isDeleted &&
+            (r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === (activeCourse.courseCode || activeCourse.courseName).toLowerCase())
+        );
+        const total = courseReadings.length;
+        const completed = courseReadings.filter(r => r.isCompleted).length;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-            const isSelected = selectedCourseFilter?.id === course.id;
+        return (
+          <View style={styles.progressCardContainer}>
+            <View style={styles.courseProgressRow}>
+              <View style={styles.courseProgressHeader}>
+                <View style={styles.courseColorDotContainer}>
+                  <PulsingColorDot color={activeCourse.hexColor} isPulsing={false} size={8} />
+                </View>
+                <Text style={styles.courseCodeText} numberOfLines={1}>
+                  {activeCourse.courseCode || activeCourse.courseName}
+                </Text>
+              </View>
 
-            return (
-              <TouchableOpacity
-                key={course.id}
-                style={styles.courseProgressRow}
-                onPress={() => setSelectedCourseFilter(isSelected ? null : course)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.courseProgressHeader}>
-                  <View style={styles.courseColorDotContainer}>
-                    <PulsingColorDot color={course.hexColor} isPulsing={isSelected} size={8} />
-                  </View>
-                  <Text style={styles.courseCodeText} numberOfLines={1}>
-                    {course.courseCode || course.courseName}
-                  </Text>
+              <View style={styles.progressCapsuleTrackRow}>
+                <View style={styles.capsuleTrack}>
+                  <View
+                    style={[
+                      styles.capsuleFill,
+                      {
+                        backgroundColor: activeCourse.hexColor,
+                        width: `${pct === 0 ? 0 : Math.max(4, pct)}%`
+                      }
+                    ]}
+                  />
                 </View>
 
-                <View style={styles.progressCapsuleTrackRow}>
-                  <View style={styles.capsuleTrack}>
-                    <View
-                      style={[
-                        styles.capsuleFill,
-                        {
-                          backgroundColor: course.hexColor,
-                          width: `${pct === 0 ? 0 : Math.max(4, pct)}%`
-                        }
-                      ]}
-                    />
-                  </View>
-
-                  <View style={[styles.percentageBadge, { backgroundColor: course.hexColor }]}>
+                {total > 0 && (
+                  <View style={[styles.percentageBadge, { backgroundColor: activeCourse.hexColor }]}>
                     <Text style={styles.percentageBadgeText}>
-                      {total === 0 ? '0 readings' : `${completed} of ${total} (${pct}%)`}
+                      {`${completed} of ${total} (${pct}%)`}
                     </Text>
                   </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+                )}
+              </View>
+            </View>
+          </View>
+        );
+      })()}
 
       {/* Trash Mode Banner */}
       {sortMode === 'trash' && (
@@ -763,7 +988,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             </TouchableOpacity>
           </View>
           <View style={styles.dateFilterCardsList}>
-            {dateFilteredReadings.map(r => renderReadingCard(r, null, true))}
+            {dateFilteredReadings.map(r => renderReadingCard(r, null))}
           </View>
         </View>
       )}
@@ -774,11 +999,15 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           <Text style={styles.emptyTitle}>
             {selectedWeekFilter !== null
               ? `No Readings in Week ${selectedWeekFilter}`
+              : selectedCourseFilter
+              ? `No Readings in ${selectedCourseFilter.courseCode || selectedCourseFilter.courseName}`
               : 'No Readings Found'}
           </Text>
           <Text style={styles.emptySubtitle}>
             {selectedWeekFilter !== null
               ? `There are no readings assigned to Week ${selectedWeekFilter}.`
+              : selectedCourseFilter
+              ? 'No readings were found in this syllabus document.'
               : 'Upload a syllabus to automatically populate your reading schedule.'}
           </Text>
           {selectedWeekFilter !== null && (
@@ -793,7 +1022,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       ) : (
         <View style={styles.readingsListContainer}>
           {/* Segmented Switcher between Weeks and Modules (when course has modules) */}
-          {hasModules && (
+          {hasDistinctModules && (
             <View style={styles.viewModeSegmentContainer}>
               <TouchableOpacity
                 style={[
@@ -809,7 +1038,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                     groupingViewMode === 'weeks' && styles.viewModeSegmentTextActive
                   ]}
                 >
-                  Weekly Schedule ({groupedWeeks.length})
+                  Weeks ({groupedWeeks.length})
                 </Text>
               </TouchableOpacity>
 
@@ -840,29 +1069,41 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           )}
 
           {/* Non-week readings (when week toggle is turned off) */}
-          {unassignedReadings.length > 0 && (
-            <View style={styles.unassignedGroupSection}>
-              {unassignedReadings.map(r => {
-                let fallbackDate: string | null = null;
-                const wk = r.weekNumber || (r.weekId && /\d+/.test(r.weekId) ? parseInt(r.weekId.match(/\d+/)![0], 10) : null);
-                if (wk) {
-                  const matchedCourse = courses.find(
-                    c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
-                  );
-                  const w = matchedCourse?.weeks?.find(wItem => wItem.weekNumber === wk);
-                  if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
-                    fallbackDate = w.dateRangeStr;
-                  } else if (w?.startDate) {
-                    fallbackDate = w.startDate instanceof Date ? w.startDate.toISOString().split('T')[0] : String(w.startDate);
-                  }
+          {unassignedReadings.length > 0 && (() => {
+            const incompleteUnassigned = unassignedReadings.filter(r => !r.isCompleted);
+            if (incompleteUnassigned.length === 0) return null;
+
+            const renderUnassignedCard = (r: Reading) => {
+              let fallbackDate: string | null = null;
+              const wk = r.weekNumber || (r.weekId && /\d+/.test(r.weekId) ? parseInt(r.weekId.match(/\d+/)![0], 10) : null);
+              if (wk) {
+                const matchedCourse = courses.find(
+                  c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
+                );
+                const w = matchedCourse?.weeks?.find(wItem => wItem.weekNumber === wk);
+                if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
+                  fallbackDate = w.dateRangeStr;
+                } else if (w?.startDate) {
+                  fallbackDate = w.startDate instanceof Date ? w.startDate.toISOString().split('T')[0] : String(w.startDate);
                 }
-                return renderReadingCard(r, fallbackDate, false);
-              })}
-            </View>
-          )}
+              }
+              return renderReadingCard(r, fallbackDate);
+            };
+
+            return (
+              <View style={styles.unassignedGroupSection}>
+                {incompleteUnassigned.map(renderUnassignedCard)}
+              </View>
+            );
+          })()}
 
           {/* Week-grouped readings (when in Weekly Schedule view) */}
           {groupingViewMode === 'weeks' && groupedWeeks.map(({ weekNum, readings: weekReadingsList }) => {
+            const incompleteReadings = weekReadingsList.filter(r => !r.isCompleted);
+            if (incompleteReadings.length === 0 && selectedWeekFilter === null) {
+              return null;
+            }
+
             const firstWithRealDate = weekReadingsList.find(
               r => r.dueDate || (r.dateRangeStr && isRealDateOrRangeString(r.dateRangeStr))
             );
@@ -875,20 +1116,36 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                     : String(firstWithRealDate.dueDate))
                 : null;
 
-            if (!weekDateStr) {
-              const targetCourse = selectedCourseFilter || courses.find(
-                c => {
-                  const sample = weekReadingsList[0];
-                  if (!sample) return false;
+            const targetCourse = selectedCourseFilter || courses.find(
+              c => {
+                const sample = weekReadingsList[0];
+                if (sample) {
                   return sample.courseId ? c.id === sample.courseId : (c.courseCode || c.courseName).toLowerCase() === (sample.courseCode || '').toLowerCase();
                 }
-              );
-              if (targetCourse) {
-                const w = targetCourse.weeks?.find(wk => wk.weekNumber === weekNum);
-                if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
-                  weekDateStr = w.dateRangeStr;
-                } else if (w?.startDate) {
-                  weekDateStr = w.startDate instanceof Date ? w.startDate.toISOString().split('T')[0] : String(w.startDate);
+                return c.weeks?.some(wk => wk.weekNumber === weekNum);
+              }
+            ) || courses[0];
+
+            if (targetCourse) {
+              const w = targetCourse.weeks?.find(wk => wk.weekNumber === weekNum);
+              if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
+                weekDateStr = w.dateRangeStr;
+              } else if (!weekDateStr && w?.startDate) {
+                weekDateStr = w.startDate instanceof Date ? w.startDate.toISOString().split('T')[0] : String(w.startDate);
+              }
+            }
+
+            const rawWeekTheme = targetCourse?.weeks?.find(wk => wk.weekNumber === weekNum)?.theme ||
+              weekReadingsList.find(r => r.relevantTopics && !r.relevantTopics.toLowerCase().startsWith('week '))?.relevantTopics;
+            let cleanWeekTheme = cleanAcademicWeekTheme(rawWeekTheme);
+            if (!cleanWeekTheme) {
+              for (const r of weekReadingsList) {
+                if (r.relevantTopics) {
+                  const candidate = cleanAcademicWeekTheme(r.relevantTopics);
+                  if (candidate) {
+                    cleanWeekTheme = candidate;
+                    break;
+                  }
                 }
               }
             }
@@ -900,36 +1157,13 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                   <View style={styles.weekPill}>
                     <Text style={styles.weekPillText}>Week {weekNum}</Text>
                   </View>
+
                   {weekNum === currentAcademicWeek && (
                     <View style={styles.currentWeekHeaderBadge}>
                       <Text style={styles.currentWeekHeaderBadgeText}>Current Week</Text>
                     </View>
                   )}
-                  {weekDateStr && (() => {
-                    const parsed = parseSafeDate(weekDateStr);
-                    if (parsed && !isNaN(parsed.getTime())) {
-                      const fullMonth = parsed.toLocaleDateString('en-US', { month: 'long' });
-                      const day = parsed.getDate();
-                      const year = parsed.getFullYear();
-                      return (
-                        <Text style={styles.weekDateHeaderText}>
-                          {fullMonth} {day}, {year}
-                        </Text>
-                      );
-                    }
-                    if (isRealDateOrRangeString(weekDateStr)) {
-                      return (
-                        <Text style={styles.weekDateHeaderText}>
-                          {cleanDateRangeDisplay(weekDateStr)}
-                        </Text>
-                      );
-                    }
-                    return (
-                      <Text style={styles.weekDateHeaderText}>
-                        {formatWeekHeaderDate(weekDateStr)}
-                      </Text>
-                    );
-                  })()}
+
                   {selectedWeekFilter !== null && (
                     <TouchableOpacity
                       style={styles.showAllPillBtn}
@@ -941,14 +1175,89 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                   )}
                 </View>
 
-                {/* Readings for this Week */}
-                {weekReadingsList.map(r => renderReadingCard(r, weekDateStr, !!weekDateStr))}
+                {/* Week Topic / Focus Theme */}
+                {cleanWeekTheme ? (
+                  <View style={styles.weekThemeHeaderRow}>
+                    <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
+                      {cleanWeekTheme}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Readings for this Week (Incomplete Only) */}
+                {(() => {
+                  if (weekReadingsList.length === 0) {
+                    return (
+                      <View style={styles.emptyWeekContainer}>
+                        <Text style={styles.emptyWeekThemeText}>
+                          {cleanWeekTheme || 'No required readings assigned'}
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  if (incompleteReadings.length === 0) {
+                    return null;
+                  }
+
+                  const requiredIncomplete = incompleteReadings.filter(
+                    r => r.isRequired !== false && r.requirementType !== 'optional'
+                  );
+                  const optionalIncomplete = incompleteReadings.filter(
+                    r => r.isRequired === false || r.requirementType === 'optional'
+                  );
+
+                  return (
+                    <View style={styles.weekReadingsContentWrapper}>
+                      {optionalIncomplete.length > 0 ? (
+                        <View style={styles.requirementSectionsWrapper}>
+                          {requiredIncomplete.length > 0 && (
+                            <View style={styles.requirementSectionBlock}>
+                              <View style={styles.requirementSectionSubheader}>
+                                <Text style={styles.requirementSectionSubheaderText}>REQUIRED READINGS</Text>
+                                <View style={styles.requirementCountPill}>
+                                  <Text style={styles.requirementCountPillText}>{requiredIncomplete.length}</Text>
+                                </View>
+                              </View>
+                              {requiredIncomplete.map(r => renderReadingCard(r, weekDateStr))}
+                            </View>
+                          )}
+
+                          {optionalIncomplete.length > 0 && (
+                            <View style={[styles.requirementSectionBlock, requiredIncomplete.length > 0 && styles.requirementSectionBlockSpaced]}>
+                              <View style={styles.requirementSectionSubheader}>
+                                <Text style={[styles.requirementSectionSubheaderText, styles.requirementSectionSubheaderTextOptional]}>
+                                  OPTIONAL READINGS
+                                </Text>
+                                <View style={[styles.requirementCountPill, styles.requirementCountPillOptional]}>
+                                  <Text style={[styles.requirementCountPillText, styles.requirementCountPillTextOptional]}>
+                                    {optionalIncomplete.length}
+                                  </Text>
+                                </View>
+                              </View>
+                              {optionalIncomplete.map(r => renderReadingCard(r, weekDateStr))}
+                            </View>
+                          )}
+                        </View>
+                      ) : (
+                        incompleteReadings.map(r => renderReadingCard(r, weekDateStr))
+                      )}
+                    </View>
+                  );
+                })()}
               </View>
             );
           })}
 
           {/* Module-grouped readings (when in Course Modules view) */}
-          {groupingViewMode === 'modules' && groupedModules.map(({ moduleNum, theme, readings: moduleReadingsList }) => {
+          {groupingViewMode === 'modules' && groupedModules.map(({ moduleNum, theme: modTheme, readings: moduleReadingsList }) => {
+            const incompleteMod = moduleReadingsList.filter(r => !r.isCompleted);
+            if (incompleteMod.length === 0 && selectedWeekFilter === null) {
+              return null;
+            }
+
+            let cleanModTheme = cleanAcademicWeekTheme(modTheme);
+
             return (
               <View key={`module-${moduleNum}`} style={styles.weekGroupSection}>
                 {/* Module Header Row */}
@@ -956,18 +1265,101 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                   <View style={styles.weekPill}>
                     <Text style={styles.weekPillText}>Module {moduleNum}</Text>
                   </View>
-                  {theme && (
-                    <Text style={styles.weekDateHeaderText} numberOfLines={1}>
-                      {theme}
-                    </Text>
-                  )}
                 </View>
 
+                {/* Module Topic / Focus Theme */}
+                {cleanModTheme ? (
+                  <View style={styles.weekThemeHeaderRow}>
+                    <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
+                      {cleanModTheme}
+                    </Text>
+                  </View>
+                ) : null}
+
                 {/* Readings for this Module */}
-                {moduleReadingsList.map(r => renderReadingCard(r, null, false))}
+                {(() => {
+                  if (incompleteMod.length === 0) {
+                    return null;
+                  }
+
+                  const requiredIncomplete = incompleteMod.filter(
+                    r => r.isRequired !== false && r.requirementType !== 'optional'
+                  );
+                  const optionalIncomplete = incompleteMod.filter(
+                    r => r.isRequired === false || r.requirementType === 'optional'
+                  );
+
+                  return (
+                    <View style={styles.weekReadingsContentWrapper}>
+                      {optionalIncomplete.length > 0 ? (
+                        <View style={styles.requirementSectionsWrapper}>
+                          {requiredIncomplete.length > 0 && (
+                            <View style={styles.requirementSectionBlock}>
+                              <View style={styles.requirementSectionSubheader}>
+                                <Text style={styles.requirementSectionSubheaderText}>REQUIRED READINGS</Text>
+                                <View style={styles.requirementCountPill}>
+                                  <Text style={styles.requirementCountPillText}>{requiredIncomplete.length}</Text>
+                                </View>
+                              </View>
+                              {requiredIncomplete.map(r => renderReadingCard(r, null, true))}
+                            </View>
+                          )}
+
+                          {optionalIncomplete.length > 0 && (
+                            <View style={[styles.requirementSectionBlock, requiredIncomplete.length > 0 && styles.requirementSectionBlockSpaced]}>
+                              <View style={styles.requirementSectionSubheader}>
+                                <Text style={[styles.requirementSectionSubheaderText, styles.requirementSectionSubheaderTextOptional]}>
+                                  OPTIONAL READINGS
+                                </Text>
+                                <View style={[styles.requirementCountPill, styles.requirementCountPillOptional]}>
+                                  <Text style={[styles.requirementCountPillText, styles.requirementCountPillTextOptional]}>
+                                    {optionalIncomplete.length}
+                                  </Text>
+                                </View>
+                              </View>
+                              {optionalIncomplete.map(r => renderReadingCard(r, null, true))}
+                            </View>
+                          )}
+                        </View>
+                      ) : (
+                        incompleteMod.map(r => renderReadingCard(r, null, true))
+                      )}
+                    </View>
+                  );
+                })()}
               </View>
             );
           })}
+
+          {/* MARK: - Consolidated Done Section at Bottom */}
+          {allCompletedInView.length > 0 && (
+            <View style={styles.bottomDoneContainer}>
+              <View style={styles.doneSectionDivider}>
+                <View style={styles.donePill}>
+                  <CheckmarkCircleFillIcon size={12} color="#64748B" />
+                  <Text style={styles.donePillText}>Done</Text>
+                </View>
+              </View>
+              <View style={styles.doneCardsList}>
+                {allCompletedInView.map(r => {
+                  let fallbackDate: string | null = null;
+                  const wk = r.weekNumber || (r.weekId && /\d+/.test(r.weekId) ? parseInt(r.weekId.match(/\d+/)![0], 10) : null);
+                  if (wk) {
+                    const matchedCourse = courses.find(
+                      c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
+                    );
+                    const w = matchedCourse?.weeks?.find(wItem => wItem.weekNumber === wk);
+                    if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
+                      fallbackDate = w.dateRangeStr;
+                    } else if (w?.startDate) {
+                      fallbackDate = w.startDate instanceof Date ? w.startDate.toISOString().split('T')[0] : String(w.startDate);
+                    }
+                  }
+                  return renderReadingCard(r, fallbackDate, groupingViewMode === 'modules');
+                })}
+              </View>
+            </View>
+          )}
         </View>
       )}
     </ScrollView>
@@ -977,12 +1369,13 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       visible={selectedReadingForDetail != null}
       reading={selectedReadingForDetail}
       courses={courses}
+      viewMode={groupingViewMode}
       onClose={() => setSelectedReadingForDetail(null)}
       onSave={updated => {
         updateReading(updated);
         setSelectedReadingForDetail(updated);
       }}
-      onToggleComplete={id => toggleReading(id)}
+      onToggleComplete={id => handleToggleReading(id)}
       onDeleteReading={id => deleteReading(id)}
     />
   </View>
@@ -1001,7 +1394,7 @@ const styles = StyleSheet.create({
     width: '100%'
   },
   scrollContent: {
-    paddingBottom: 140
+    paddingBottom: 190
   },
   headerRow: {
     flexDirection: 'row',
@@ -1011,33 +1404,17 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 12
   },
-  headerLeftCol: {
-    flex: 1
+  headerLeftMonthWrap: {
+    flex: 1,
+    paddingLeft: 16,
+    marginRight: 12,
+    justifyContent: 'center'
   },
-  pageTitle: {
-    fontSize: 21.5,
-    fontWeight: '700',
+  headerMonthText: {
+    fontSize: 22,
+    fontWeight: '800',
     color: '#141F38',
     letterSpacing: -0.4
-  },
-  titlePill: {
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    minHeight: 34,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  pageSubtitle: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#596B85'
   },
   topRightPills: {
     flexDirection: 'row',
@@ -1095,8 +1472,9 @@ const styles = StyleSheet.create({
   },
   progressCardContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 14,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginHorizontal: 18,
     marginTop: 14,
     shadowColor: '#000000',
@@ -1104,10 +1482,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 2,
-    gap: 12
+    gap: 10
   },
   courseProgressRow: {
-    gap: 6
+    gap: 8
+  },
+  courseProgressRowActive: {
+    backgroundColor: '#F1F5F9'
   },
   courseProgressHeader: {
     flexDirection: 'row',
@@ -1154,12 +1535,12 @@ const styles = StyleSheet.create({
     borderRadius: 3
   },
   percentageBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 8
   },
   percentageBadgeText: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#FFFFFF'
   },
@@ -1265,6 +1646,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#64748B'
   },
+  weekDatePill: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8
+  },
+  weekDatePillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569'
+  },
+  weekThemeHeaderRow: {
+    paddingHorizontal: 2,
+    marginTop: 4,
+    marginBottom: 6
+  },
+  weekThemeHeaderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+    lineHeight: 18
+  },
   currentWeekHeaderBadge: {
     backgroundColor: '#475569',
     borderRadius: 6,
@@ -1348,6 +1751,72 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF'
   },
+  optionalPill: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  optionalPillText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.3
+  },
+  requirementSectionsWrapper: {
+    width: '100%'
+  },
+  requirementSectionBlock: {
+    width: '100%'
+  },
+  requirementSectionBlockSpaced: {
+    marginTop: 14
+  },
+  requirementSectionSubheader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+    marginBottom: 6
+  },
+  requirementSectionSubheaderText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#1E293B',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase'
+  },
+  requirementSectionSubheaderTextOptional: {
+    color: '#64748B'
+  },
+  requirementCountPill: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 20,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  requirementCountPillOptional: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  requirementCountPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155'
+  },
+  requirementCountPillTextOptional: {
+    color: '#64748B'
+  },
   viewModeSegmentContainer: {
     flexDirection: 'row',
     backgroundColor: '#E2E8F0',
@@ -1379,6 +1848,21 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     fontWeight: '700'
   },
+  presentationRefBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  presentationRefBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#4F46E5',
+    letterSpacing: 0.2
+  },
   mediaTypeBadge: {
     backgroundColor: '#475569',
     paddingHorizontal: 9,
@@ -1406,6 +1890,49 @@ const styles = StyleSheet.create({
   videoMediaTypeBadgeText: {
     color: '#FFFFFF',
     fontWeight: '700'
+  },
+  assignmentTypeBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  assignmentTypeBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D97706',
+    letterSpacing: 0.4
+  },
+  assignmentWeightBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  assignmentWeightBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#4F46E5'
+  },
+  assignmentPtsBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  assignmentPtsBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#64748B'
   },
   readingTitle: {
     fontSize: 14.5,
@@ -1438,23 +1965,23 @@ const styles = StyleSheet.create({
     gap: 8
   },
   touchCircleContainer: {
-    width: 32,
-    height: 36,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center'
   },
   checkboxCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
     borderColor: '#BFCCD9',
     alignItems: 'center',
     justifyContent: 'center'
   },
   checkboxCheckmark: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 14,
     fontWeight: '700'
   },
   trashTouchContainer: {
@@ -1679,5 +2206,64 @@ const styles = StyleSheet.create({
     color: '#718096',
     letterSpacing: 0.8,
     textTransform: 'uppercase'
+  },
+  emptyWeekContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptyWeekThemeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#718096',
+    textAlign: 'center'
+  },
+  weekReadingsContentWrapper: {
+    width: '100%',
+    gap: 10
+  },
+  completedReadingsGroup: {
+    width: '100%',
+    gap: 10
+  },
+  doneSectionDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10
+  },
+  donePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E2E8F0',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    gap: 5
+  },
+  donePillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    letterSpacing: 0.3
+  },
+  bottomDoneContainer: {
+    width: '100%',
+    marginTop: 10,
+    marginBottom: 20
+  },
+  doneCardsList: {
+    width: '100%',
+    gap: 10
+  },
+  readingCardCompleted: {
+    opacity: 0.85
   }
 });

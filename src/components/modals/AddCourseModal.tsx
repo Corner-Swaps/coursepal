@@ -106,24 +106,6 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       const codeMatch = currentName.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
       const derivedCode = codeMatch ? codeMatch[1].toUpperCase().replace(/\s+/g, ' ') : '';
       
-      const newCourse = addCourse({
-        courseName: currentName || asset.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
-        courseCode: derivedCode || undefined,
-        courseDescription: courseDescription.trim(),
-        hexColor: selectedColorHex
-      });
-
-      importSyllabusDocument({
-        fileName: asset.name,
-        fileUri: asset.uri,
-        fileSize: fileSizeStr,
-        targetCourseId: newCourse.id,
-        preferredHexColor: selectedColorHex,
-        preserveCourseTitle: currentName || undefined,
-        preserveCourseSubtitle: courseDescription.trim(),
-        preserveCourseCode: derivedCode || undefined
-      });
-
       setCourseName('');
       setCourseDescription('');
       setAttachedFileName(null);
@@ -132,6 +114,16 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       setSelectedVaultDocIds([]);
       onCourseCreated?.();
       onClose();
+
+      importSyllabusDocument({
+        fileName: asset.name,
+        fileUri: asset.uri,
+        fileSize: fileSizeStr,
+        preferredHexColor: selectedColorHex,
+        preserveCourseTitle: currentName || undefined,
+        preserveCourseSubtitle: courseDescription.trim() || undefined,
+        preserveCourseCode: derivedCode || undefined
+      });
     } catch (err) {
       console.warn('Document picker cancelled or failed:', err);
     }
@@ -162,23 +154,22 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       ? ''
       : (trimmedName.length <= 8 && /^[A-Za-z0-9\s-]+$/.test(trimmedName) ? trimmedName.toUpperCase() : '');
 
-    const newCourse = addCourse({
-      courseName: trimmedName,
-      courseCode: derivedCode || undefined,
-      courseDescription: courseDescription.trim(),
-      hexColor: selectedColorHex
-    });
-
     if (attachedFileName) {
       importSyllabusDocument({
         fileName: attachedFileName,
         fileUri: attachedFileUri,
         fileSize: attachedFileSize,
-        targetCourseId: newCourse.id,
         preferredHexColor: selectedColorHex,
         preserveCourseTitle: isGenericCourseName ? undefined : trimmedName,
-        preserveCourseSubtitle: courseDescription.trim(),
+        preserveCourseSubtitle: courseDescription.trim() || undefined,
         preserveCourseCode: derivedCode || undefined
+      });
+    } else {
+      addCourse({
+        courseName: trimmedName,
+        courseCode: derivedCode || undefined,
+        courseDescription: courseDescription.trim(),
+        hexColor: selectedColorHex
       });
     }
 

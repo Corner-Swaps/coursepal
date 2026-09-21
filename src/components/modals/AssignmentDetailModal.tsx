@@ -28,10 +28,8 @@ import {
   PlusCircleFillIcon,
   PlusIcon,
   TrashIcon,
-  DocRichtextFillIcon,
   ArrowUpRightIcon,
-  CalendarIcon,
-  PencilSquareIcon
+  CalendarIcon
 } from '../SvgIcons';
 import {
   parseSafeDate,
@@ -93,27 +91,28 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   // Helper to resolve fallback points if missing
   const resolveAssignmentPoints = (assign: Assignment): string => {
     if (assign.pointsPossible && assign.pointsPossible.trim()) {
-      return assign.pointsPossible.trim();
-    }
-    if (assign.rubricCriteria && assign.rubricCriteria.length > 0) {
-      const sum = assign.rubricCriteria.reduce((s, r) => s + (Number(r.points) || 0), 0);
-      if (sum > 0) return `${sum} Points`;
-    }
-    if (assign.rubricJSON) {
-      try {
-        const parsed = JSON.parse(assign.rubricJSON);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const sum = parsed.reduce((s: number, r: any) => s + (Number(r.points) || 0), 0);
-          if (sum > 0) return `${sum} Points`;
+      const ptsTrim = assign.pointsPossible.trim();
+      // Guard against default 100 points if weightPercentage is present
+      if (/^\s*100\s*(?:pts?|points)?\s*$/i.test(ptsTrim) && assign.weightPercentage) {
+        return '';
+      }
+      // Guard against points fabricated from weightPercentage (e.g. 20% -> 20 Points)
+      if (assign.weightPercentage) {
+        const wtNum = assign.weightPercentage.replace(/[^0-9]/g, '');
+        const ptNum = ptsTrim.replace(/[^0-9]/g, '');
+        if (wtNum && ptNum && wtNum === ptNum) {
+          const combined = `${assign.title} ${assign.fullInstructions || ''} ${assign.noteText || ''}`.toLowerCase();
+          const hasRealPointsMention = /\b\d{1,4}\s*(?:points|pts|pt)\b/i.test(combined);
+          const hasRubricPoints = (assign.rubricCriteria || []).some(r => r.points && r.points > 0);
+          if (!hasRealPointsMention && !hasRubricPoints) {
+            return '';
+          }
         }
-      } catch {}
+      }
+      return ptsTrim;
     }
     const match = (assign.title + ' ' + (assign.fullInstructions || '')).match(/(\d{1,4})\s*(?:points|pts)\b/i);
     if (match) return `${match[1]} Points`;
-    if (assign.weightPercentage) {
-      const num = parseInt(assign.weightPercentage.replace(/[^0-9]/g, ''), 10);
-      if (!isNaN(num) && num > 0) return `${num} Points`;
-    }
     return '';
   };
 
@@ -190,6 +189,47 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   // Notes state
   const [noteTextState, setNoteTextState] = useState<string>(assignment.noteText || '');
 
+  const isPresentation = useMemo(() => {
+    const t = (titleText || assignment.title || '').toLowerCase();
+    const n = (noteTextState || assignment.noteText || '').toLowerCase();
+    const inst = (instructionsText || assignment.fullInstructions || '').toLowerCase();
+    const sub = (assignment.subTypeRaw || '').toLowerCase();
+    return t.includes('presentation') || n.includes('presentation') || sub.includes('presentation') || inst.includes('presentation');
+  }, [titleText, assignment.title, noteTextState, assignment.noteText, instructionsText, assignment.fullInstructions, assignment.subTypeRaw]);
+
+  const isGroupPresentation = useMemo(() => {
+    const t = (titleText || assignment.title || '').toLowerCase();
+    const n = (noteTextState || assignment.noteText || '').toLowerCase();
+    const inst = (instructionsText || assignment.fullInstructions || '').toLowerCase();
+    return isPresentation && (t.includes('group') || n.includes('group') || inst.includes('small group') || inst.includes('groups'));
+  }, [isPresentation, titleText, assignment.title, noteTextState, assignment.noteText, instructionsText, assignment.fullInstructions]);
+
+  const scheduledWeeksList = useMemo(() => {
+    if (Array.isArray(assignment.scheduledWeeks) && assignment.scheduledWeeks.length > 0) {
+      return assignment.scheduledWeeks;
+    }
+    const note = assignment.noteText || '';
+    const m = note.match(/Weeks?\s*([\d,\s&–-]+)/i);
+    if (m) {
+      const numbers = m[1].match(/\d+/g)?.map(n => parseInt(n, 10)) || [];
+      if (numbers.length > 0) return numbers;
+    }
+    return assignment.weekNumber > 0 ? [assignment.weekNumber] : [];
+  }, [assignment.scheduledWeeks, assignment.noteText, assignment.weekNumber]);
+
+  const isModule = useMemo(() => {
+    if (!assignment) return false;
+    const a = assignment as any;
+    if (a.moduleNumber && a.moduleNumber > 0) return true;
+    if (assignment.moduleMention && /\bmod(?:ule)?\b/i.test(assignment.moduleMention)) return true;
+    if (assignment.noteText && /\bmod(?:ule)?\s*0*\d+\b/i.test(assignment.noteText)) return true;
+    const full = (assignment.fullInstructions || '').toLowerCase();
+    if (full.includes('module') && !full.includes('week')) return true;
+    return false;
+  }, [assignment]);
+
+  const scheduleLabel = isModule ? 'Module' : 'Week';
+
   // Total rubric points memo
   const totalRubricPoints = useMemo(() => {
     return rubricItems.reduce((sum, item) => sum + (Number(item.points) || 0), 0);
@@ -200,6 +240,62 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
     const raw = assignment?.fullInstructions || instructionsText || '';
     return splitInstructionsIntoParagraphs(raw);
   }, [assignment?.fullInstructions, instructionsText]);
+
+  // Extracted deliverable format (e.g. "6 to 8 pages Paper (APA Format)", "Weekly Case Contributions & Diagnostic Briefs")
+  const deliverableFormat = useMemo(() => {
+    const note = (assignment?.noteText || noteTextState || '').trim();
+    if (note && !note.startsWith('Presentations:') && !note.startsWith('Group Presentations:')) {
+      const parts = note.split('·').map(p => p.trim());
+      if (parts.length > 1 && parts[1].length > 2) {
+        return parts[1];
+      }
+      if (parts.length > 0 && parts[0].length > 2 && !/^(?:module|mod|week|wk)\s*\d+/i.test(parts[0])) {
+        return parts[0];
+      }
+    }
+    const t = (titleText || assignment?.title || '').toLowerCase();
+    const inst = (instructionsText || assignment?.fullInstructions || '').toLowerCase();
+    const combined = `${t} ${inst} ${note.toLowerCase()}`;
+
+    // Page count paper e.g. "6 to 8 pages", "10–12 pages"
+    const pageMatch = combined.match(/(\d{1,2}\s*(?:to|–|-)\s*\d{1,2}\s*pages?|\d{1,2}\+?\s*pages?)/i);
+    if (pageMatch && (combined.includes('paper') || combined.includes('report') || combined.includes('essay'))) {
+      const isApa = combined.includes('apa');
+      return `${pageMatch[1].replace(/\s+/g, ' ')} Paper${isApa ? ' (APA Format)' : ''}`;
+    }
+
+    if (t.includes('presentation') || t.includes('role-play') || t.includes('role play') || note.toLowerCase().includes('presentation')) {
+      const isGrp = isGroupPresentation || combined.includes('group');
+      if (combined.includes('role-play') || combined.includes('role play') || combined.includes('video') || combined.includes('simulat')) {
+        return `${isGrp ? 'Group ' : ''}In-Class Role-Play & Simulation`;
+      }
+      return `${isGrp ? 'Group ' : ''}In-Class Presentation`;
+    }
+
+    if (t.includes('peer review')) {
+      return combined.includes('group') ? 'Peer Review Group Report' : 'Peer Review Report';
+    }
+
+    if (t.includes('case conceptualization')) {
+      return combined.includes('in-class') || combined.includes('in class')
+        ? 'In-Class Case Conceptualization'
+        : 'Case Conceptualization Report';
+    }
+
+    if (t.includes('collaboration') || t.includes('participation') || t.includes('attendance')) {
+      return 'Continuous In-Person Engagement & Discussion';
+    }
+
+    if (combined.includes('exam') || combined.includes('midterm') || combined.includes('final exam')) {
+      return 'In-Class Examination';
+    }
+
+    if (combined.includes('quiz')) {
+      return 'Online Quiz';
+    }
+
+    return null;
+  }, [assignment?.noteText, noteTextState, titleText, assignment?.title, instructionsText, assignment?.fullInstructions, isGroupPresentation]);
 
   // Section / Criteria addition state
   const [isAddingSection, setIsAddingSection] = useState<boolean>(false);
@@ -242,6 +338,10 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
       let hasUpdates = false;
       if (!assignment.pointsPossible && resolvedPts) {
         updatesToSync.pointsPossible = resolvedPts;
+        hasUpdates = true;
+      }
+      if (assignment.pointsPossible && !resolvedPts) {
+        updatesToSync.pointsPossible = null;
         hasUpdates = true;
       }
       if (!assignment.weightPercentage && resolvedWt !== null) {
@@ -484,9 +584,9 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
     if (isWeekEnabled && weekNumber > 0) {
       if (dateFormatted) {
-        return `Week ${weekNumber} · ${dateFormatted}`;
+        return `${scheduleLabel} ${weekNumber} · ${dateFormatted}`;
       }
-      return `Week ${weekNumber}`;
+      return `${scheduleLabel} ${weekNumber}`;
     }
 
     if (dateFormatted) {
@@ -501,6 +601,12 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         {/* Navigation Bar */}
         <View style={styles.navBar}>
+          <View style={styles.navPlaceholder} />
+
+          <View style={styles.navTitleContainer}>
+            <Text style={styles.navTitle} numberOfLines={1}>Assignment Details</Text>
+          </View>
+
           <TouchableOpacity
             onPress={handleDone}
             style={styles.doneNavButton}
@@ -509,12 +615,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
           >
             <Text style={styles.doneNavText}>Done</Text>
           </TouchableOpacity>
-
-          <View style={styles.navTitleContainer}>
-            <Text style={styles.navTitle} numberOfLines={1}>Assignment Details</Text>
-          </View>
-
-          <View style={styles.navPlaceholder} />
         </View>
 
         <KeyboardAvoidingView
@@ -532,34 +632,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
           >
             {/* MARK: - Header Banner */}
             <View style={styles.headerBannerCard}>
-              {/* Optional Presentation / Video Badges only */}
-              {((assignment.noteText && assignment.noteText.startsWith('Presentations:')) || detectedUrl) && (
-                <View style={styles.pillRow}>
-                  {/* Optional Presentation Badge */}
-                  {assignment.noteText && assignment.noteText.startsWith('Presentations:') && (
-                    <View style={styles.presentationBadge}>
-                      <Text style={styles.presentationBadgeText}>{assignment.noteText}</Text>
-                    </View>
-                  )}
-
-                  {/* Optional YouTube / Video Badge */}
-                  {detectedUrl && (
-                    <TouchableOpacity
-                      style={styles.videoBadge}
-                      onPress={() => {
-                        const url = detectedUrl.startsWith('http') ? detectedUrl : `https://${detectedUrl}`;
-                        Linking.openURL(url).catch(() => {});
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.videoBadgeText}>
-                        {isYouTube ? 'YouTube' : 'Video'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
               {/* Title Input */}
               <View style={styles.titleSection}>
                 <TextInput
@@ -579,9 +651,9 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
             {/* MARK: - Section 1: Systemized Schedule & Due Date */}
             <Text style={styles.sectionHeaderTitle}>Schedule & Due Date</Text>
             <View style={styles.sectionCard}>
-              {/* Week Row with Toggle */}
+              {/* Week / Module Row with Toggle */}
               <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Schedule Week</Text>
+                <Text style={styles.rowLabel}>Schedule {scheduleLabel}</Text>
                 <Switch
                   value={isWeekEnabled}
                   onValueChange={handleToggleWeek}
@@ -595,7 +667,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                 <>
                   <View style={styles.rowDivider} />
                   <View style={styles.formRow}>
-                    <Text style={styles.rowSubLabel}>Select Week Number</Text>
+                    <Text style={styles.rowSubLabel}>Select {scheduleLabel} Number</Text>
                     <View style={styles.stepperContainer}>
                       <TouchableOpacity
                         style={styles.stepperBtn}
@@ -606,7 +678,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                       </TouchableOpacity>
 
                       <View style={styles.stepperValueBox}>
-                        <Text style={styles.stepperValueText}>Week {weekNumber}</Text>
+                        <Text style={styles.stepperValueText}>{scheduleLabel} {weekNumber}</Text>
                       </View>
 
                       <TouchableOpacity
@@ -646,10 +718,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
             </View>
 
             {/* MARK: - Section 2: Instructions & Description */}
-            <View style={styles.sectionHeaderRow}>
-              <DocRichtextFillIcon size={16} color="#2470F5" />
-              <Text style={styles.sectionHeaderTitleInline}>Instructions & Description</Text>
-            </View>
+            <Text style={styles.sectionHeaderTitle}>Instructions & Description</Text>
             <View style={styles.sectionCard}>
               {instructionParagraphs.length > 0 ? (
                 instructionParagraphs.map((para, idx) => {
@@ -696,26 +765,21 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
               <View style={styles.rowDivider} />
 
-              {/* Total Points Input Row */}
+              {/* Total Points Row */}
               <View style={styles.formRow}>
                 <Text style={styles.rowLabel}>Assignment Points</Text>
-                <TextInput
-                  style={styles.totalPointsInput}
-                  value={pointsPossibleText || (totalRubricPoints > 0 ? `${totalRubricPoints} Points` : (gradeWeightPercent ? `${gradeWeightPercent} Points` : ''))}
-                  onChangeText={t => {
-                    setPointsPossibleText(t);
-                    saveAllChanges({ pointsPossible: t });
-                  }}
-                  placeholder={totalRubricPoints > 0 ? `${totalRubricPoints} Points` : (gradeWeightPercent ? `${gradeWeightPercent} Points` : 'e.g. 100 Points')}
-                  placeholderTextColor="#94A3B8"
-                />
+                <View style={styles.weightBadge}>
+                  <Text style={styles.weightBadgeText}>
+                    {pointsPossibleText ? `${pointsPossibleText} pts` : (totalRubricPoints > 0 ? `${totalRubricPoints} pts` : '—')}
+                  </Text>
+                </View>
               </View>
 
               {rubricItems.length > 0 ? (
                 <>
                   <View style={styles.rowDivider} />
 
-                  {/* Rubric Items List - Clean presentation with criterion % and pts */}
+                  {/* Rubric Items List - Clean presentation with criterion % and pts in pills */}
                   <View style={styles.rubricListContainer}>
                     {rubricItems.map((item, idx) => {
                       const cleanName = cleanRubricCriterionName(item.criterionName);
@@ -736,26 +800,19 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                           <Text style={styles.rubricNameInput} numberOfLines={3}>
                             {displayTitle}
                           </Text>
-                          {resolvedPct !== null && (
-                            <View style={styles.rubricPctBadge}>
-                              <Text style={styles.rubricPctBadgeText}>{resolvedPct}%</Text>
+                          <View style={styles.rubricPillsGroup}>
+                            {resolvedPct !== null && (
+                              <View style={styles.rubricPctBadge}>
+                                <Text style={styles.rubricPctBadgeText}>{resolvedPct}%</Text>
+                              </View>
+                            )}
+                            <View style={styles.rubricPointsPill}>
+                              <Text style={styles.rubricNumInput}>
+                                {item.points != null ? `${item.points}` : '0'}
+                              </Text>
+                              <Text style={styles.rubricUnitLabel}>pts</Text>
                             </View>
-                          )}
-                          <View style={styles.rubricPointsPill}>
-                            <Text style={styles.rubricNumInput}>
-                              {item.points != null ? `${item.points}` : '0'}
-                            </Text>
-                            <Text style={styles.rubricUnitLabel}>pts</Text>
                           </View>
-                          <TouchableOpacity
-                            style={styles.deleteRubricBtn}
-                            onPress={() => handleDeleteRubricCriterion(idx)}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            accessibilityLabel={`Delete criterion ${displayTitle}`}
-                          >
-                            <TrashIcon size={16} color="#EF4444" />
-                          </TouchableOpacity>
                         </View>
                       );
                     })}
@@ -768,74 +825,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                     <Text style={styles.emptyRubricText}>No rubric criteria specified</Text>
                   </View>
                 </>
-              )}
-
-              {/* Add Section / Criterion Inline Form or Trigger Button */}
-              {isAddingSection ? (
-                <View style={styles.addSectionCard}>
-                  <Text style={styles.addSectionCardHeader}>Add New Section / Criteria</Text>
-                  <TextInput
-                    style={styles.newSectionTitleInput}
-                    value={newSectionTitle}
-                    onChangeText={setNewSectionTitle}
-                    placeholder="Section / Criterion Title (e.g. Case Analysis)"
-                    placeholderTextColor="#94A3B8"
-                  />
-                  <View style={styles.newSectionInputsRow}>
-                    <View style={styles.newSectionInputWrapper}>
-                      <Text style={styles.newSectionFieldLabel}>Points Amount</Text>
-                      <TextInput
-                        style={styles.newSectionPointsInput}
-                        value={newSectionPoints}
-                        onChangeText={setNewSectionPoints}
-                        placeholder="e.g. 25"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="numeric"
-                      />
-                    </View>
-                    <View style={styles.newSectionInputWrapper}>
-                      <Text style={styles.newSectionFieldLabel}>Grade % (optional)</Text>
-                      <TextInput
-                        style={styles.newSectionPointsInput}
-                        value={newSectionPercentage}
-                        onChangeText={setNewSectionPercentage}
-                        placeholder="e.g. 20"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.addSectionActionsRow}>
-                    <TouchableOpacity
-                      style={styles.cancelAddSectionBtn}
-                      onPress={() => {
-                        setIsAddingSection(false);
-                        setNewSectionTitle('');
-                        setNewSectionPoints('');
-                        setNewSectionPercentage('');
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.cancelAddSectionBtnText}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.confirmAddSectionBtn}
-                      onPress={handleSaveNewSection}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.confirmAddSectionBtnText}>Add Section</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.addSectionPillButton}
-                  onPress={() => setIsAddingSection(true)}
-                  activeOpacity={0.7}
-                >
-                  <PlusIcon size={14} color="#2470F5" />
-                  <Text style={styles.addSectionPillButtonText}>Add Section / Criteria</Text>
-                </TouchableOpacity>
               )}
             </View>
 
@@ -880,10 +869,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
             </View>
 
             {/* MARK: - Section 5: Assignment Notes */}
-            <View style={styles.sectionHeaderRow}>
-              <PencilSquareIcon size={16} color="#2470F5" />
-              <Text style={styles.sectionHeaderTitleInline}>Assignment Notes</Text>
-            </View>
+            <Text style={styles.sectionHeaderTitle}>Assignment Notes</Text>
             <View style={styles.sectionCard}>
               <TextInput
                 style={styles.notesInput}
@@ -931,7 +917,7 @@ const styles = StyleSheet.create({
     minWidth: 60,
     height: 40,
     justifyContent: 'center',
-    alignItems: 'flex-start'
+    alignItems: 'flex-end'
   },
   doneNavText: {
     fontSize: 17,
@@ -1022,7 +1008,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF'
   },
   presentationBadge: {
-    backgroundColor: '#475569',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 6,
@@ -1033,6 +1019,102 @@ const styles = StyleSheet.create({
   presentationBadgeText: {
     fontSize: 11.5,
     fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  presentationSchedulePill: {
+    backgroundColor: '#F5F3FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  presentationSchedulePillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#7C3AED'
+  },
+  presentationCard: {
+    backgroundColor: '#F5F3FF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    padding: 14,
+    marginBottom: 16
+  },
+  presentationCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  presentationCardIconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EDE9FE',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  presentationCardIconText: {
+    fontSize: 18
+  },
+  presentationCardHeaderTextCol: {
+    flex: 1
+  },
+  presentationCardHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#5B21B6',
+    letterSpacing: -0.2
+  },
+  presentationCardHeaderSubtitle: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#7C3AED',
+    marginTop: 1
+  },
+  presentationWeeksRow: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#EDE9FE',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  presentationWeeksLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6D28D9'
+  },
+  presentationWeeksPills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  presWeekPill: {
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#DDD6FE'
+  },
+  presWeekPillActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED'
+  },
+  presWeekPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED'
+  },
+  presWeekPillTextActive: {
     color: '#FFFFFF'
   },
   videoBadge: {
@@ -1087,6 +1169,48 @@ const styles = StyleSheet.create({
     color: '#141F38',
     lineHeight: 22,
     padding: 0
+  },
+  deliverableFormatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0'
+  },
+  deliverableFormatHeaderBadge: {
+    backgroundColor: 'rgba(36, 112, 245, 0.10)',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(36, 112, 245, 0.20)',
+    maxWidth: 220
+  },
+  deliverableFormatHeaderBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue,
+    letterSpacing: 0.3
+  },
+  deliverableFormatBadge: {
+    backgroundColor: 'rgba(36, 112, 245, 0.10)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6
+  },
+  deliverableFormatBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue,
+    letterSpacing: 0.4
+  },
+  deliverableFormatValue: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155'
   },
   sectionHeaderTitle: {
     fontSize: 13,
@@ -1256,12 +1380,19 @@ const styles = StyleSheet.create({
   rubricRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
-    padding: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0'
+  },
+  rubricPillsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
   },
   itemIndexNumber: {
     fontSize: 12,
@@ -1532,17 +1663,70 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   emptyRubricText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#94A3B8',
-    fontStyle: 'italic'
+    fontWeight: '400',
+    fontStyle: 'normal'
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
     marginTop: 20,
     marginBottom: 8,
     paddingHorizontal: 2
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1
+  },
+  instructionsFormatPill: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    maxWidth: '52%'
+  },
+  instructionsFormatPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4F46E5',
+    letterSpacing: 0.2
+  },
+  instructionsFormatCallout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8
+  },
+  formatBadgeBubble: {
+    backgroundColor: '#475569',
+    paddingHorizontal: 6.5,
+    paddingVertical: 2.5,
+    borderRadius: 5
+  },
+  formatBadgeBubbleText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5
+  },
+  instructionsFormatCalloutText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+    flex: 1
   },
   sectionHeaderTitleInline: {
     fontSize: 13.5,
@@ -1670,8 +1854,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   emptyResourceText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#94A3B8',
-    fontStyle: 'italic'
+    fontWeight: '400',
+    fontStyle: 'normal'
   }
 });

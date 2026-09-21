@@ -20,10 +20,22 @@ export interface BackupPayload {
   diagnosticRecord?: DiagnosticImportRecord | null;
 }
 
+export interface PendingUploadJob {
+  fileName: string;
+  fileUri?: string;
+  persistentFileUri?: string;
+  fileSize?: string;
+  targetCourseId?: string;
+  preferredHexColor?: string;
+  rawText?: string;
+  timestamp: number;
+}
+
 export class DataPersistenceBackupManager {
   private static instance: DataPersistenceBackupManager;
   private backupFileName = 'CoursePal_AutoBackup.json';
   private termsFileName = 'CoursePal_TermsAccepted.json';
+  private pendingJobFileName = 'CoursePal_PendingUploadJob.json';
   private termsAcceptedCached: boolean | null = null;
   private cachedDiagnosticRecord: DiagnosticImportRecord | null = null;
   private backupTimer: NodeJS.Timeout | null = null;
@@ -53,6 +65,50 @@ export class DataPersistenceBackupManager {
   private get termsFilePath(): string {
     const dir = FileSystem.documentDirectory || '';
     return `${dir}${this.termsFileName}`;
+  }
+
+  private get pendingJobFilePath(): string {
+    const dir = FileSystem.documentDirectory || '';
+    return `${dir}${this.pendingJobFileName}`;
+  }
+
+  public async savePendingUploadJob(job: PendingUploadJob): Promise<boolean> {
+    try {
+      if (!FileSystem.documentDirectory) return false;
+      await FileSystem.writeAsStringAsync(
+        this.pendingJobFilePath,
+        JSON.stringify(job),
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public async loadPendingUploadJob(): Promise<PendingUploadJob | null> {
+    try {
+      if (!FileSystem.documentDirectory) return null;
+      const info = await FileSystem.getInfoAsync(this.pendingJobFilePath);
+      if (!info.exists) return null;
+      const content = await FileSystem.readAsStringAsync(this.pendingJobFilePath, {
+        encoding: FileSystem.EncodingType.UTF8
+      });
+      if (!content || content.trim().length === 0) return null;
+      return JSON.parse(content) as PendingUploadJob;
+    } catch {
+      return null;
+    }
+  }
+
+  public async clearPendingUploadJob(): Promise<void> {
+    try {
+      if (!FileSystem.documentDirectory) return;
+      const info = await FileSystem.getInfoAsync(this.pendingJobFilePath);
+      if (info.exists) {
+        await FileSystem.deleteAsync(this.pendingJobFilePath, { idempotent: true });
+      }
+    } catch {}
   }
 
   /**

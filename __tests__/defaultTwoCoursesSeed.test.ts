@@ -25,10 +25,10 @@ describe('Default Fresh 2-Course Seed Calibration', () => {
       'Seminar Engagement & Clinical Reflexivity'
     ]);
     expect(psycAssignments.map(a => a.pointsPossible)).toEqual([
-      '35 Points',
-      '30 Points',
-      '15 Points',
-      '20 Points'
+      null,
+      null,
+      null,
+      null
     ]);
     expect(psycAssignments.map(a => a.weightPercentage)).toEqual([
       '35%',

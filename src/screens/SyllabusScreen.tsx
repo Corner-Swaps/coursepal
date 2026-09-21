@@ -44,7 +44,8 @@ import {
   formatAuthorAndPagesSubtitle,
   parseSafeDate,
   getReadingChapterSortKey,
-  isInvalidAssignmentTitle
+  isInvalidAssignmentTitle,
+  cleanUploadStatusMessage
 } from '../utils/readingDisplayHelper';
 import { CalendarExportService } from '../services/CalendarExportService';
 import { ensureBundledPdfFile } from '../utils/bundledPdfService';
@@ -60,8 +61,8 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
 }) => {
   const {
     courses,
-    vaultDocs,
     assignments,
+    vaultDocs,
     readings,
     deleteCourse,
     deleteVaultDoc,
@@ -72,6 +73,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
     updateReading,
     isUploading,
     uploadStatusText,
+    uploadProgress,
     startUploadSimulation
   } = useCoursePal();
 
@@ -252,25 +254,42 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* MARK: - Uploading Status Pill */}
-        {isUploading && (
-          <View style={styles.uploadStatusBanner}>
-            <View style={styles.uploadStatusTop}>
-              <ActivityIndicator size="small" color={CoursePalTheme.accentBlue} />
-              <Text style={styles.uploadStatusTitle} numberOfLines={1}>
-                {uploadStatusText || 'Reading your syllabus...'}
-              </Text>
-            </View>
-            <Text style={styles.uploadStatusEducational}>
-              This takes about a minute. Feel free to browse or close the app — we’ll finish up in the background.
-            </Text>
-          </View>
-        )}
-
         {/* MARK: - Main Content Area */}
         {selectedCategory === 'syllabi' ? (
           /* Courses List */
           <View style={styles.listContainer}>
+            {/* Blue Loading Bar Pill Above Top Course */}
+            {isUploading && (
+              <View style={styles.uploadStatusBanner}>
+                <View style={styles.uploadStatusTop}>
+                  <ActivityIndicator size="small" color={CoursePalTheme.accentBlue} />
+                  <Text style={styles.uploadStatusTitle} numberOfLines={1}>
+                    {cleanUploadStatusMessage(uploadStatusText)}
+                  </Text>
+                  <Text style={styles.uploadStatusPercent}>
+                    {Math.round(Math.min(100, Math.max(10, (uploadProgress || 0.15) * 100)))}%
+                  </Text>
+                </View>
+
+                {/* Horizontal Blue Loading Bar Track & Fill */}
+                <View style={styles.uploadProgressBarTrack}>
+                  <View
+                    style={[
+                      styles.uploadProgressBarFill,
+                      {
+                        width: `${Math.round(Math.min(100, Math.max(8, (uploadProgress || 0.15) * 100)))}%`
+                      }
+                    ]}
+                  />
+                </View>
+
+                {/* Whole Message */}
+                <Text style={styles.uploadStatusEducational}>
+                  Deep analysis takes 1–2 minutes to extract all readings and assignments accurately. You can freely browse other sections or exit the app — processing will continue in the background.
+                </Text>
+              </View>
+            )}
+
             {activeCourses.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>No Courses Found</Text>
@@ -291,9 +310,8 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                   .filter(
                     a =>
                       !a.isDeleted &&
-                      (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === courseCodeKey) &&
-                      !isInvalidAssignmentTitle(a.title) &&
-                      (Boolean(a.weightPercentage) || /(?:\d{1,2}(?:\.\d+)?)\s*%/i.test(a.title + ' ' + (a.fullInstructions || '')) || Boolean(a.pointsPossible))
+                      (a.courseId === course.id || (Boolean(courseCodeKey) && (a.courseCode || '').toLowerCase() === courseCodeKey)) &&
+                      !isInvalidAssignmentTitle(a.title)
                   )
                   .sort((a, b) => {
                     const d1 = a.dueDate ? new Date(a.dueDate).getTime() : 0;
@@ -621,6 +639,29 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
               </View>
             ) : (
               vaultDocs.map(doc => {
+                const docReadings = readings.filter(r =>
+                  !r.isDeleted && (
+                    (r as any).sourceDocumentId === doc.id ||
+                    (r.sourceDocumentName && (
+                      r.sourceDocumentName.toLowerCase() === doc.title.toLowerCase() ||
+                      doc.title.toLowerCase().includes(r.sourceDocumentName.toLowerCase()) ||
+                      r.sourceDocumentName.toLowerCase().includes(doc.title.toLowerCase())
+                    )) ||
+                    (doc.courseId && r.courseId === doc.courseId)
+                  )
+                );
+                const docAssignments = assignments.filter(a =>
+                  !a.isDeleted && (
+                    (a as any).sourceDocumentId === doc.id ||
+                    (a.sourceDocumentName && (
+                      a.sourceDocumentName.toLowerCase() === doc.title.toLowerCase() ||
+                      doc.title.toLowerCase().includes(a.sourceDocumentName.toLowerCase()) ||
+                      a.sourceDocumentName.toLowerCase().includes(doc.title.toLowerCase())
+                    )) ||
+                    (doc.courseId && a.courseId === doc.courseId)
+                  )
+                );
+
                 return (
                   <View key={doc.id} style={styles.docCard}>
                     <TouchableOpacity
@@ -638,6 +679,9 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                         </Text>
                         <Text style={styles.docSubtitle} numberOfLines={1}>
                           {doc.courseCode || 'Course Syllabus'}
+                        </Text>
+                        <Text style={styles.docStatsSubtitle} numberOfLines={1}>
+                          {docReadings.length} Readings • {docAssignments.length} Assignments
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -883,8 +927,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(36, 112, 245, 0.20)',
     padding: 14,
-    marginHorizontal: 18,
-    marginTop: 14,
     gap: 8
   },
   uploadStatusTop: {
@@ -894,15 +936,32 @@ const styles = StyleSheet.create({
   },
   uploadStatusTitle: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '700',
     color: CoursePalTheme.accentBlue
   },
+  uploadStatusPercent: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue
+  },
+  uploadProgressBarTrack: {
+    width: '100%',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(36, 112, 245, 0.16)',
+    overflow: 'hidden'
+  },
+  uploadProgressBarFill: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: CoursePalTheme.accentBlue
+  },
   uploadStatusEducational: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '400',
     color: '#596B85',
-    lineHeight: 16
+    lineHeight: 17
   },
   listContainer: {
     marginHorizontal: 18,
@@ -1258,6 +1317,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: '#596B85',
+    marginTop: 2
+  },
+  docStatsSubtitle: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#2563EB',
     marginTop: 2
   },
   eyePreviewButton: {

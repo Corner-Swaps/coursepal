@@ -23,7 +23,6 @@ import { Assignment } from '../types/models';
 import { AssignmentDetailModal, EditAssignmentModal } from '../components/modals';
 import { PulsingColorDot } from '../components/PulsingColorDot';
 import {
-  formatWeekHeaderDate,
   formatAssignmentDueDate,
   parseSafeDate,
   getSanitizedCoursePill,
@@ -51,24 +50,47 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
 
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isDateFilterActive, setIsDateFilterActive] = useState<boolean>(false);
+  const [calendarMonthYear, setCalendarMonthYear] = useState<string>('');
   const [sortMode, setSortMode] = useState<'assignments' | 'completed' | 'trash'>('assignments');
   const [selectedAssignmentForDetail, setSelectedAssignmentForDetail] = useState<Assignment | null>(null);
   const [assignmentForEdit, setAssignmentForEdit] = useState<Assignment | null>(null);
 
-  // Filter active assignments (all coursework for selected course or all courses)
+  // Active course resolution: defaults to first course if none explicitly selected,
+  // ensuring deliverables and total counts from different documents are never mixed together!
+  const activeCourse = selectedCourseFilter || (courses.length > 0 ? courses[0] : null);
+
+  const fallbackMonthYear = useMemo(() => {
+    if (activeCourse?.weeks && activeCourse.weeks.length > 0) {
+      for (const w of activeCourse.weeks) {
+        if (w.startDate) {
+          const d = parseSafeDate(w.startDate);
+          if (d) return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        }
+      }
+    }
+    const d = selectedDate;
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [activeCourse, selectedDate]);
+
+  // Filter active assignments (all coursework strictly filtered by activeCourse)
   const activeAssignments = useMemo(() => {
     return assignments.filter(a => {
       if (sortMode === 'trash') {
-        return a.isDeleted;
+        if (!a.isDeleted) return false;
+        if (activeCourse) {
+          const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
+          return a.courseId === activeCourse.id || (Boolean(cCode) && (a.courseCode || '').toLowerCase() === cCode);
+        }
+        return true;
       }
       if (a.isDeleted) return false;
       if (isInvalidAssignmentTitle(a.title)) return false;
 
-      // Filter by Course
-      if (selectedCourseFilter) {
-        const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
+      // Filter strictly by Course
+      if (activeCourse) {
+        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
         const matchesCourse =
-          a.courseId ? a.courseId === selectedCourseFilter.id : (a.courseCode || '').toLowerCase() === cCode;
+          a.courseId === activeCourse.id || (Boolean(cCode) && (a.courseCode || '').toLowerCase() === cCode);
         if (!matchesCourse) {
           return false;
         }
@@ -81,7 +103,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
 
       return true;
     });
-  }, [assignments, sortMode, selectedCourseFilter]);
+  }, [assignments, sortMode, activeCourse]);
 
   // Assignments matching selected calendar date (for highlight section)
   const dateFilteredAssignments = useMemo(() => {
@@ -99,23 +121,20 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
   }, [activeAssignments, isDateFilterActive, selectedDate]);
 
   const completedCount = useMemo(() => {
-    return assignments.filter(a => !a.isDeleted && a.isCompleted).length;
-  }, [assignments]);
+    return activeAssignments.filter(a => a.isCompleted).length;
+  }, [activeAssignments]);
 
   const deletedCount = useMemo(() => {
-    return assignments.filter(a => a.isDeleted).length;
-  }, [assignments]);
-
-  const remainingTotalCount = useMemo(() => {
     return assignments.filter(a => {
-      if (a.isDeleted || a.isCompleted) return false;
-      if (selectedCourseFilter) {
-        const cCode = (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase();
-        return a.courseId ? a.courseId === selectedCourseFilter.id : (a.courseCode || '').toLowerCase() === cCode;
+      if (!a.isDeleted) return false;
+      if (activeCourse) {
+        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
+        return a.courseId === activeCourse.id || (Boolean(cCode) && (a.courseCode || '').toLowerCase() === cCode);
       }
       return true;
     }).length;
-  }, [assignments, selectedCourseFilter]);
+  }, [assignments, activeCourse]);
+
 
   // Map of date string -> array of course hex colors for deadlines calendar dots
   const itemDatesWithColors = useMemo(() => {
@@ -129,10 +148,14 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       const day = String(d.getDate()).padStart(2, '0');
       const key = `${y}-${m}-${day}`;
 
+      const cleanCode = (a.courseCode || '').replace(/\s+/g, '').toLowerCase();
       const matchedCourse = courses.find(
-        c => (a.courseId ? c.id === a.courseId : (c.courseCode || c.courseName).toLowerCase() === (a.courseCode || '').toLowerCase())
+        c =>
+          (a.courseId ? c.id === a.courseId : false) ||
+          (c.courseCode || '').replace(/\s+/g, '').toLowerCase() === cleanCode ||
+          (c.courseName || '').toLowerCase() === (a.courseCode || '').toLowerCase()
       );
-      const color = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
+      const color = matchedCourse?.hexColor || a.docColorHex || CoursePalTheme.accentBlue;
 
       const existing = map.get(key) || [];
       if (!existing.includes(color)) {
@@ -185,11 +208,10 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     }
 
     return earliest || null;
-  }, [selectedCourseFilter, courses, assignments]);
+  }, [activeCourse, courses, assignments]);
 
   const availableWeekNumbers = useMemo(() => {
     const set = new Set<number>();
-    const activeCourse = selectedCourseFilter || courses[0];
     if (activeCourse && activeCourse.weeks) {
       for (const w of activeCourse.weeks) {
         set.add(w.weekNumber);
@@ -199,13 +221,12 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       if (a.weekNumber && a.weekNumber > 0) set.add(a.weekNumber);
     }
     return Array.from(set).sort((a, b) => a - b);
-  }, [selectedCourseFilter, courses, assignments]);
+  }, [activeCourse, courses, assignments]);
 
   // Determine the current academic week that the student is in today
   const currentAcademicWeek = useMemo(() => {
-    const activeCourse = selectedCourseFilter || courses[0];
     return calculateAcademicWeek(new Date(), activeCourse, termStartDate, availableWeekNumbers);
-  }, [selectedCourseFilter, courses, termStartDate, availableWeekNumbers]);
+  }, [activeCourse, termStartDate, availableWeekNumbers]);
 
   // Group assignments: partition into unassigned (week toggle off) and week-grouped (week toggle on)
   const { unassignedAssignments, groupedAssignments } = useMemo(() => {
@@ -213,12 +234,20 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     const map = new Map<number, Assignment[]>();
     for (const a of activeAssignments) {
       const isWeekOn = typeof a.weekNumber === 'number' && a.weekNumber > 0;
-      if (!isWeekOn) {
+      const primaryWeek = isWeekOn
+        ? a.weekNumber!
+        : (Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.length > 0 && typeof a.scheduledWeeks[0] === 'number' && a.scheduledWeeks[0] > 0
+            ? a.scheduledWeeks[0]
+            : null);
+
+      if (primaryWeek === null) {
         unassigned.push(a);
       } else {
-        const list = map.get(a.weekNumber) || [];
-        list.push(a);
-        map.set(a.weekNumber, list);
+        const list = map.get(primaryWeek) || [];
+        if (!list.some(existing => existing.id === a.id)) {
+          list.push(a);
+        }
+        map.set(primaryWeek, list);
       }
     }
     return {
@@ -228,17 +257,40 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
   }, [activeAssignments]);
 
   // Grade weight metrics
-  const renderAssignmentCard = (assignment: Assignment) => {
+  const renderAssignmentCard = (assignment: Assignment, weekContext?: number) => {
+    const cleanCode = (assignment.courseCode || '').replace(/\s+/g, '').toLowerCase();
     const matchedCourse = courses.find(
       c =>
-        (assignment.courseId ? c.id === assignment.courseId : (c.courseCode || c.courseName).toLowerCase() === (assignment.courseCode || '').toLowerCase())
+        (assignment.courseId ? c.id === assignment.courseId : false) ||
+        (c.courseCode || '').replace(/\s+/g, '').toLowerCase() === cleanCode ||
+        (c.courseName || '').toLowerCase() === (assignment.courseCode || '').toLowerCase()
     );
-    const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
+    const courseColor = matchedCourse?.hexColor || assignment.docColorHex || CoursePalTheme.accentBlue;
     const pillTitle = getSanitizedCoursePill(assignment.courseCode, matchedCourse);
+
+    const isPresentation =
+      (assignment.noteText && assignment.noteText.toLowerCase().includes('presentation')) ||
+      (assignment.title || '').toLowerCase().includes('presentation') ||
+      assignment.subTypeRaw === 'presentation' ||
+      (assignment as any).subType === 'presentation';
+
+    const isGroupPresentation =
+      isPresentation &&
+      (/group/i.test(assignment.title || '') ||
+        /group/i.test(assignment.noteText || '') ||
+        /small group/i.test(assignment.fullInstructions || ''));
+
+    const isContinuous =
+      !isPresentation &&
+      (/continuous/i.test(assignment.title || '') ||
+        /continuous/i.test(assignment.noteText || '') ||
+        /participation/i.test(assignment.title || '') ||
+        /attendance/i.test(assignment.title || '') ||
+        /engagement/i.test(assignment.title || ''));
 
     return (
       <SwipeableRow
-        key={assignment.id}
+        key={`${assignment.id}${weekContext !== undefined ? `-wk${weekContext}` : ''}`}
         onDelete={() => deleteAssignment(assignment.id)}
         enabled={sortMode !== 'trash'}
       >
@@ -252,16 +304,22 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             onPress={() => setSelectedAssignmentForDetail(assignment)}
             activeOpacity={0.7}
           >
-            {/* Top Line: Course Title Pill with white letters, Presentation Badge, Grade Weight Badge & Video Badge */}
+            {/* Top Line: Course Title Pill, Presentation Badge, Continuous Badge, Grade Weight & Video Badge */}
             <View style={styles.pillRow}>
               <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
                 <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
               </View>
-              {assignment.noteText && assignment.noteText.startsWith('Presentations:') && (
+
+              {/* Concise Presentation Badge */}
+              {isPresentation && (
                 <View style={styles.presentationBadge}>
-                  <Text style={styles.presentationBadgeText}>{assignment.noteText}</Text>
+                  <Text style={styles.presentationBadgeText}>
+                    {isGroupPresentation ? 'Group Presentation' : 'Presentation'}
+                  </Text>
                 </View>
               )}
+
+              {/* Grade Weight Badge */}
               {(() => {
                 let weight = assignment.weightPercentage;
                 if (!weight) {
@@ -277,45 +335,15 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 }
                 return null;
               })()}
-              {(() => {
-                let formatTag: string | null = null;
-                const note = assignment.noteText || '';
-                const title = assignment.title || '';
-                const parts = note && !note.startsWith('Presentations:') ? note.split('·').map(p => p.trim()) : [];
 
-                if (parts.length > 0 && /continuous/i.test(parts[0])) {
-                  formatTag = 'Continuous';
-                } else if (parts.length > 1 && parts[1].length > 2) {
-                  let deliverable = parts[1];
-                  if (deliverable.length > 35) {
-                    const firstClause = deliverable.split(/[,;&]/)[0].trim();
-                    deliverable = firstClause.length >= 8 && firstClause.length <= 35 ? firstClause : `${deliverable.slice(0, 32).trim()}...`;
-                  }
-                  formatTag = deliverable;
-                } else if (/continuous/i.test(title) || /seminar engagement/i.test(title) || /^(?:continuous|ongoing)\b/i.test(note.trim()) || /continuous\s+(?:assessment|evaluation|participation|engagement|grading)\b/i.test(note)) {
-                  formatTag = 'Continuous';
-                } else {
-                  const combined = `${title} ${note}`.toLowerCase();
-                  if (combined.includes('live deployment') || combined.includes('canary deployment') || combined.includes('capstone')) {
-                    formatTag = 'Live Production Deployment';
-                  } else if (combined.includes('apa') || combined.includes('formal report') || combined.includes('written report') || combined.includes('case formulation')) {
-                    formatTag = 'Written Report';
-                  } else if (combined.includes('live simulation') || combined.includes('role-play') || combined.includes('clinical demonstration')) {
-                    formatTag = 'Live Simulation';
-                  } else if (combined.includes('ctrs') || combined.includes('peer supervision') || combined.includes('rubric evaluation') || combined.includes('consultation')) {
-                    formatTag = 'CTRS Evaluation';
-                  }
-                }
+              {/* Continuous Assessment Badge */}
+              {isContinuous && (
+                <View style={styles.continuousBadge}>
+                  <Text style={styles.continuousBadgeText}>Continuous</Text>
+                </View>
+              )}
 
-                if (formatTag) {
-                  return (
-                    <View style={styles.deliverableBadge}>
-                      <Text style={styles.deliverableBadgeText}>{formatTag}</Text>
-                    </View>
-                  );
-                }
-                return null;
-              })()}
+              {/* Video Deliverable Badge */}
               {assignment.mediaUrl && (
                 <View style={styles.videoBadge}>
                   <Text style={styles.videoBadgeText}>
@@ -336,20 +364,35 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               {assignment.title}
             </Text>
 
-            {/* Date Display & Points Badges (No week or percentage) */}
+            {/* Date Display & Points Badges (Clean, no giant deliverable pills) */}
             <View style={styles.assignmentDateRow}>
               {(() => {
+                const targetWk = weekContext !== undefined && weekContext > 0 ? weekContext : assignment.weekNumber;
                 let resolvedDate: Date | string | null | undefined = assignment.dueDate;
-                if (!resolvedDate && assignment.weekNumber > 0) {
+                if ((!resolvedDate || (weekContext !== undefined && weekContext !== assignment.weekNumber)) && targetWk && targetWk > 0) {
                   const c = courses.find(
                     crs => (assignment.courseId ? crs.id === assignment.courseId : (crs.courseCode || crs.courseName).toLowerCase() === (assignment.courseCode || '').toLowerCase())
                   );
-                  const w = c?.weeks?.find(wk => wk.weekNumber === assignment.weekNumber);
+                  const w = c?.weeks?.find(wk => wk.weekNumber === targetWk);
                   if (w?.startDate) resolvedDate = w.startDate;
                   else if (w?.dateRangeStr) resolvedDate = w.dateRangeStr;
                 }
                 const formattedDate = resolvedDate ? formatAssignmentDueDate(resolvedDate) : null;
-                const dateDisplay = formattedDate || 'No due date';
+
+                const isMultiWeek = Array.isArray(assignment.scheduledWeeks) && assignment.scheduledWeeks.length > 1;
+                const weekRangeStr = isMultiWeek
+                  ? `Weeks ${Math.min(...assignment.scheduledWeeks!)}–${Math.max(...assignment.scheduledWeeks!)}`
+                  : null;
+
+                let dateDisplay: string;
+                if (weekRangeStr) {
+                  dateDisplay = formattedDate ? `${weekRangeStr} • ${formattedDate}` : `${weekRangeStr} • Presentation Window`;
+                } else if (formattedDate) {
+                  dateDisplay = formattedDate;
+                } else {
+                  dateDisplay = 'No due date';
+                }
+
                 return (
                   <Text style={styles.assignmentDateText}>
                     {dateDisplay}
@@ -357,20 +400,13 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 );
               })()}
               {(() => {
-                let points = assignment.pointsPossible;
-                if (!points && assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
-                  const sum = assignment.rubricCriteria.reduce((s, r) => s + (Number(r.points) || 0), 0);
-                  if (sum > 0) points = `${sum} pts`;
-                }
-                if (!points) {
-                  const m = (assignment.title + ' ' + (assignment.fullInstructions || '')).match(/(\d{1,4})\s*(?:points|pts)\b/i);
-                  if (m) points = `${m[1]} pts`;
-                }
-                if (!points && assignment.weightPercentage) {
-                  const num = parseInt(assignment.weightPercentage.replace(/[^0-9]/g, ''), 10);
-                  if (!isNaN(num) && num > 0) points = `${num} pts`;
-                }
-                if (points) {
+                const points = assignment.pointsPossible;
+                if (
+                  points &&
+                  !/^\s*100\s*(?:pts?|points)?\s*$/i.test(points) &&
+                  !points.includes('%') &&
+                  !assignment.weightPercentage
+                ) {
                   return <Text style={styles.weightText}>• {points}</Text>;
                 }
                 return null;
@@ -431,16 +467,6 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                   {assignment.isCompleted && <Text style={styles.checkboxCheckmark}>✓</Text>}
                 </View>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.trashTouchContainer}
-                onPress={() => deleteAssignment(assignment.id)}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                accessibilityLabel={`Delete ${assignment.title}`}
-              >
-                <TrashIcon size={22} color="#D94033" />
-              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -465,14 +491,16 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       >
       {/* MARK: - Page Header */}
       <View style={styles.headerRow}>
-        <View style={styles.headerLeftCol}>
-          <View style={styles.titlePill}>
-            <Text style={styles.pageSubtitle} numberOfLines={1}>
-              {selectedCourseFilter
-                ? `${selectedCourseFilter.courseCode || selectedCourseFilter.courseName} • ${remainingTotalCount} Remaining`
-                : `All Courses • ${remainingTotalCount} Remaining`}
-            </Text>
-          </View>
+        <View style={styles.headerLeftMonthWrap}>
+          <Text
+            style={styles.headerMonthText}
+            numberOfLines={1}
+            adjustsFontSizeToFit={true}
+            minimumFontScale={0.85}
+            testID="assignments-header-month"
+          >
+            {calendarMonthYear || fallbackMonthYear}
+          </Text>
         </View>
 
         <View style={styles.topRightPills}>
@@ -532,65 +560,58 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         onToggleDateFilter={() => setIsDateFilterActive(!isDateFilterActive)}
         itemDatesWithColors={itemDatesWithColors}
         currentAcademicWeek={currentAcademicWeek}
+        showCardMonth={false}
+        onMonthYearChange={setCalendarMonthYear}
       />
 
-      {/* MARK: - Per-Course Assignment Progress Bars */}
-      {courses.length > 0 && (
-        <View style={styles.progressCardContainer}>
-          {courses.map(course => {
-            const courseAssigns = assignments.filter(
-              a =>
-                !a.isDeleted &&
-                (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
-            );
-            const total = courseAssigns.length;
-            const completed = courseAssigns.filter(a => a.isCompleted).length;
-            const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+      {/* MARK: - Single Course Assignment Loading / Progress Section */}
+      {activeCourse && (() => {
+        const courseAssigns = assignments.filter(
+          a =>
+            !a.isDeleted &&
+            (a.courseId ? a.courseId === activeCourse.id : (a.courseCode || '').toLowerCase() === (activeCourse.courseCode || activeCourse.courseName).toLowerCase())
+        );
+        const total = courseAssigns.length;
+        const completed = courseAssigns.filter(a => a.isCompleted).length;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-            const isSelected = selectedCourseFilter?.id === course.id;
+        return (
+          <View style={styles.progressCardContainer}>
+            <View style={styles.courseProgressRow}>
+              <View style={styles.courseProgressHeader}>
+                <View style={styles.courseColorDotContainer}>
+                  <PulsingColorDot color={activeCourse.hexColor} isPulsing={false} size={8} />
+                </View>
+                <Text style={styles.courseCodeText} numberOfLines={1}>
+                  {activeCourse.courseCode || activeCourse.courseName}
+                </Text>
+              </View>
 
-            return (
-              <TouchableOpacity
-                key={course.id}
-                style={styles.courseProgressRow}
-                onPress={() => setSelectedCourseFilter(isSelected ? null : course)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.courseProgressHeader}>
-                  <View style={styles.courseColorDotContainer}>
-                    <PulsingColorDot color={course.hexColor} isPulsing={isSelected} size={8} />
-                  </View>
-                  <Text style={styles.courseCodeText} numberOfLines={1}>
-                    {course.courseCode || course.courseName}
-                  </Text>
+              <View style={styles.progressCapsuleTrackRow}>
+                <View style={styles.capsuleTrack}>
+                  <View
+                    style={[
+                      styles.capsuleFill,
+                      {
+                        backgroundColor: activeCourse.hexColor,
+                        width: `${pct === 0 ? 0 : Math.max(4, pct)}%`
+                      }
+                    ]}
+                  />
                 </View>
 
-                <View style={styles.progressCapsuleTrackRow}>
-                  <View style={styles.capsuleTrack}>
-                    <View
-                      style={[
-                        styles.capsuleFill,
-                        {
-                          backgroundColor: course.hexColor,
-                          width: `${pct === 0 ? 0 : Math.max(4, pct)}%`
-                        }
-                      ]}
-                    />
+                {total > 0 && (
+                  <View style={[styles.percentageBadge, { backgroundColor: activeCourse.hexColor }]}>
+                    <Text style={styles.percentageBadgeText}>
+                      {`${completed} of ${total} (${pct}%)`}
+                    </Text>
                   </View>
-
-                  {total > 0 && (
-                    <View style={[styles.percentageBadge, { backgroundColor: course.hexColor }]}>
-                      <Text style={styles.percentageBadgeText}>
-                        {`${completed} of ${total} (${pct}%)`}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+                )}
+              </View>
+            </View>
+          </View>
+        );
+      })()}
 
       {/* Trash Mode Banner */}
       {sortMode === 'trash' && (
@@ -665,10 +686,17 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               <Text style={styles.allSectionTitle}>All Course Deliverables</Text>
             </View>
           )}
-          {/* Non-week assignments (when week toggle is turned off) */}
+          {/* Non-week assignments (when week toggle is turned off or course-wide deliverables) */}
           {unassignedAssignments.length > 0 && (
             <View style={styles.unassignedGroupSection}>
-              {unassignedAssignments.map(renderAssignmentCard)}
+              {groupedAssignments.length > 0 && (
+                <View style={styles.weekHeaderRow}>
+                  <View style={styles.weekPill}>
+                    <Text style={styles.weekPillText}>Course-Wide Assessments</Text>
+                  </View>
+                </View>
+              )}
+              {unassignedAssignments.map(a => renderAssignmentCard(a))}
             </View>
           )}
 
@@ -680,18 +708,15 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 <View style={styles.weekPill}>
                   <Text style={styles.weekPillText}>Week {weekNum}</Text>
                 </View>
-                {weekList[0]?.dueDate && (
-                  <View style={styles.calendarDateRow}>
-                    <CalendarIcon size={11} color="#718096" />
-                    <Text style={styles.dateRangeText}>
-                      {formatWeekHeaderDate(new Date(weekList[0].dueDate))}
-                    </Text>
+                {weekNum === currentAcademicWeek && (
+                  <View style={styles.currentWeekHeaderBadge}>
+                    <Text style={styles.currentWeekHeaderBadgeText}>Current Week</Text>
                   </View>
                 )}
               </View>
 
               {/* Assignment Cards */}
-              {weekList.map(renderAssignmentCard)}
+              {weekList.map(a => renderAssignmentCard(a, weekNum))}
             </View>
           ))}
         </View>
@@ -744,7 +769,7 @@ const styles = StyleSheet.create({
     width: '100%'
   },
   scrollContent: {
-    paddingBottom: 140
+    paddingBottom: 190
   },
   headerRow: {
     flexDirection: 'row',
@@ -754,33 +779,17 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 12
   },
-  headerLeftCol: {
-    flex: 1
+  headerLeftMonthWrap: {
+    flex: 1,
+    paddingLeft: 16,
+    marginRight: 12,
+    justifyContent: 'center'
   },
-  pageTitle: {
-    fontSize: 21.5,
-    fontWeight: '700',
+  headerMonthText: {
+    fontSize: 22,
+    fontWeight: '800',
     color: '#141F38',
     letterSpacing: -0.4
-  },
-  titlePill: {
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    minHeight: 34,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  pageSubtitle: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#596B85'
   },
   topRightPills: {
     flexDirection: 'row',
@@ -838,8 +847,9 @@ const styles = StyleSheet.create({
   },
   progressCardContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 14,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginHorizontal: 18,
     marginTop: 14,
     shadowColor: '#000000',
@@ -847,10 +857,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 2,
-    gap: 12
+    gap: 10
   },
   courseProgressRow: {
-    gap: 6
+    gap: 8
+  },
+  courseProgressRowActive: {
+    backgroundColor: '#F1F5F9'
   },
   courseProgressHeader: {
     flexDirection: 'row',
@@ -897,12 +910,12 @@ const styles = StyleSheet.create({
     borderRadius: 3
   },
   percentageBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 8
   },
   percentageBadgeText: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#FFFFFF'
   },
@@ -1082,19 +1095,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF'
   },
-  deliverableBadge: {
+  continuousBadge: {
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     minHeight: 24,
     justifyContent: 'center',
     alignItems: 'center'
   },
-  deliverableBadgeText: {
-    fontSize: 11,
+  continuousBadgeText: {
+    fontSize: 11.5,
     fontWeight: '600',
     color: '#475569'
   },
@@ -1111,6 +1122,17 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
     color: '#FFFFFF'
+  },
+  currentWeekHeaderBadge: {
+    backgroundColor: 'rgba(36, 112, 245, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  currentWeekHeaderBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue
   },
   assignmentTitle: {
     fontSize: 14.5,
@@ -1145,23 +1167,23 @@ const styles = StyleSheet.create({
     gap: 8
   },
   touchCircleContainer: {
-    width: 32,
-    height: 36,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center'
   },
   checkboxCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
     borderColor: '#BFCCD9',
     alignItems: 'center',
     justifyContent: 'center'
   },
   checkboxCheckmark: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 14,
     fontWeight: '700'
   },
   trashTouchContainer: {

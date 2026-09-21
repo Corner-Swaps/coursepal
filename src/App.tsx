@@ -6,6 +6,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
   StyleSheet,
   AppState,
   AppStateStatus,
@@ -36,6 +39,7 @@ import {
   WelcomeTermsModal
 } from './components/modals';
 import { storeReviewService } from './services/StoreReviewService';
+import { cleanUploadStatusMessage } from './utils/readingDisplayHelper';
 
 export default function App() {
   return (
@@ -55,6 +59,8 @@ function MainAppView() {
     dismissConfetti,
     isUploading,
     uploadStatusText,
+    uploadProgress,
+    checkAndResumeInterruptedUpload,
     hasAcceptedTerms,
     hasLoadedTerms,
     acceptTerms
@@ -97,21 +103,33 @@ function MainAppView() {
 
     checkReviewEligibility();
 
+    // Resume any pending upload job if the app was suspended or killed during extraction
+    checkAndResumeInterruptedUpload().catch(err => {
+      console.warn('Initial checkAndResumeInterruptedUpload error:', err);
+    });
+
     let lastBackgroundTime = 0;
     const subscription = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
       if (nextState === 'background') {
         lastBackgroundTime = Date.now();
-      } else if (nextState === 'active' && lastBackgroundTime > 0) {
-        const timeInBackground = Date.now() - lastBackgroundTime;
-        // If app was in background for at least 3 minutes, treat as a distinct app use session
-        if (timeInBackground >= 3 * 60 * 1000) {
-          await storeReviewService.recordAppLaunch();
-          if (hasAcceptedTerms) {
-            const shouldPrompt = await storeReviewService.shouldShowReviewPrompt();
-            if (shouldPrompt) {
-              timer = setTimeout(async () => {
-                await storeReviewService.requestReview();
-              }, 2200);
+      } else if (nextState === 'active') {
+        // Automatically rescue interrupted background uploads upon returning
+        checkAndResumeInterruptedUpload().catch(err => {
+          console.warn('checkAndResumeInterruptedUpload error on active:', err);
+        });
+
+        if (lastBackgroundTime > 0) {
+          const timeInBackground = Date.now() - lastBackgroundTime;
+          // If app was in background for at least 3 minutes, treat as a distinct app use session
+          if (timeInBackground >= 3 * 60 * 1000) {
+            await storeReviewService.recordAppLaunch();
+            if (hasAcceptedTerms) {
+              const shouldPrompt = await storeReviewService.shouldShowReviewPrompt();
+              if (shouldPrompt) {
+                timer = setTimeout(async () => {
+                  await storeReviewService.requestReview();
+                }, 2200);
+              }
             }
           }
         }
@@ -144,7 +162,7 @@ function MainAppView() {
       subscription.remove();
       linkingSub.remove();
     };
-  }, [hasAcceptedTerms, setSelectedTab]);
+  }, [hasAcceptedTerms, setSelectedTab, checkAndResumeInterruptedUpload]);
 
 
   const handleOpenAddTask = (courseId?: string, category: 'assignment' | 'reading' = 'assignment') => {
@@ -205,6 +223,40 @@ function MainAppView() {
             <InviteScreen />
           </View>
         </View>
+
+        {/* Floating Global Loading Bar with Message (Blue, above the program - only shown when browsing other tabs) */}
+        {isUploading && selectedTab !== 'syllabus' && (
+          <View
+            style={[styles.globalUploadPillContainer, { top: insets.top + 8 }]}
+            pointerEvents="box-none"
+          >
+            <View style={styles.globalUploadPill}>
+              <View style={styles.globalUploadContentRow}>
+                <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.globalUploadTitle} numberOfLines={1}>
+                    {cleanUploadStatusMessage(uploadStatusText)}
+                  </Text>
+                </View>
+                <Text style={styles.globalUploadPercentText}>
+                  {Math.round(Math.min(100, Math.max(10, (uploadProgress || 0.15) * 100)))}%
+                </Text>
+              </View>
+
+              {/* Real Blue Loading Bar Track & Fill */}
+              <View style={styles.globalUploadBarTrack}>
+                <View
+                  style={[
+                    styles.globalUploadBarFill,
+                    {
+                      width: `${Math.round(Math.min(100, Math.max(8, (uploadProgress || 0.15) * 100)))}%`
+                    }
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* MARK: - Bottom Fuzzed Gradient Scroll Mask (fades scrolling cards into light canvas behind menu pill) */}
         <FuzzedScrollBottomFade
@@ -317,5 +369,57 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 50
+  },
+  globalUploadPillContainer: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 9999,
+    alignItems: 'center'
+  },
+  globalUploadPill: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: '#2563EB', // CoursePal signature vibrant royal blue
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    gap: 8
+  },
+  globalUploadContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  globalUploadTitle: {
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.2
+  },
+  globalUploadPercentText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.95)',
+    marginLeft: 8
+  },
+  globalUploadBarTrack: {
+    width: '100%',
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.30)',
+    overflow: 'hidden'
+  },
+  globalUploadBarFill: {
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#FFFFFF'
   }
 });

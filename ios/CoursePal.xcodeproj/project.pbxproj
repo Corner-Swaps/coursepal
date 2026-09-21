@@ -537,6 +537,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.4.1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.coursepal.app.widget;
 				PRODUCT_NAME = CoursePalWidget;
 				SDKROOT = iphoneos;
@@ -693,6 +694,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.4.1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.coursepal.app.widget;
 				PRODUCT_NAME = CoursePalWidget;
 				SDKROOT = iphoneos;

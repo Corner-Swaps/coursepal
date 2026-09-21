@@ -29,10 +29,13 @@ import {
   splitInstructionsIntoParagraphs,
   cleanRubricCriterionName,
   deduplicateReadingTitle,
-  isInvalidAssignmentTitle
+  isInvalidAssignmentTitle,
+  isGenericPlaceholderTheme,
+  cleanAcademicWeekTheme
 } from '../src/utils/readingDisplayHelper';
 import { sanitizeAssignment, sanitizeReading } from '../src/context/CoursePalContext';
 import { Reading, Course } from '../src/types/models';
+import { SyllabusImportManager } from '../src/services/SyllabusImportManager';
 
 describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
   describe('cleanChapterFromRaw', () => {
@@ -1322,6 +1325,36 @@ describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
       );
       expect(sub).toBe('');
     });
+
+    it('verifies NEUR 740 assignments contain deliverable formats and no fabricated points', () => {
+      const { LocalSyllabusParser } = require('../src/services/LocalSyllabusParser');
+      const { execSync } = require('child_process');
+      const fs = require('fs');
+      const pdfPath = '/Users/slava/Downloads/NEUR_740_Neuropsych_Assessment_Syllabus.pdf';
+      if (fs.existsSync(pdfPath)) {
+        const swiftCmd = `swift -e '
+import PDFKit
+import Foundation
+let url = URL(fileURLWithPath: "${pdfPath}")
+if let doc = PDFDocument(url: url), let str = doc.string {
+    print(str)
+}
+'`;
+        const text = execSync(swiftCmd).toString();
+        const parsed = LocalSyllabusParser.shared.parseText(text);
+
+        const caseConference = parsed.assignments?.find((a: any) => /case conference/i.test(a.title));
+        expect(caseConference).toBeDefined();
+        expect(caseConference?.noteText).toContain('Weekly Case Contributions & Diagnostic Briefs');
+        expect(caseConference?.weightPercentage).toBe('20%');
+        expect((caseConference as any)?.pointsPossible).toBeUndefined();
+
+        // Verify all 4 assignments have NO fabricated points
+        for (const a of parsed.assignments || []) {
+          expect((a as any).pointsPossible).toBeUndefined();
+        }
+      }
+    });
   });
 
   describe('Academic Citation Title Formatting & Publication Year Preservation', () => {
@@ -1489,6 +1522,286 @@ describe('ReadingDisplayHelper Chapter Deduplication & Normalization', () => {
         expect(title).not.toContain('Mastering Competency');
         expect(subtitle).not.toContain('Mastering Competency');
       }
+    });
+  });
+
+  describe('Multi-Citation Splitting & Bare Chapter Display Healing', () => {
+    it('splits semicolon-separated reading citations into distinct candidates', () => {
+      const candidate1 = {
+        title: 'Lezak et al. (Ch. 1–3); Luria (Ch. 2)',
+        weekNumber: 1
+      };
+      const split1 = SyllabusImportManager.splitMultiCitationCandidate(candidate1);
+      expect(split1).toHaveLength(2);
+      expect(split1[0].title).toBe('Lezak et al. (Ch. 1–3)');
+      expect(split1[0].authorName).toBe('Lezak et al.');
+      expect(split1[0].chapterText).toBe('Chapter 1–3');
+      expect(split1[1].title).toBe('Luria (Ch. 2)');
+      expect(split1[1].authorName).toBe('Luria');
+      expect(split1[1].chapterText).toBe('Chapter 2');
+
+      const candidate2 = {
+        title: 'Groth-Marnat (Ch. 4 & 5); Lichtenberger (Ch. 2)',
+        weekNumber: 2
+      };
+      const split2 = SyllabusImportManager.splitMultiCitationCandidate(candidate2);
+      expect(split2).toHaveLength(2);
+      expect(split2[0].title).toBe('Groth-Marnat (Ch. 4 & 5)');
+      expect(split2[0].authorName).toBe('Groth-Marnat');
+      expect(split2[0].chapterText).toBe('Chapter 4 & 5');
+      expect(split2[1].title).toBe('Lichtenberger (Ch. 2)');
+      expect(split2[1].authorName).toBe('Lichtenberger');
+      expect(split2[1].chapterText).toBe('Chapter 2');
+    });
+
+    it('formats author citation titles cleanly into Author (Ch. X)', () => {
+      const item = {
+        title: 'Lezak et al. (Ch. 1–3)',
+        authorName: 'Lezak et al.',
+        chapterText: 'Chapters 1–3'
+      };
+      const title = formatDisplayTitleWithChapter(item, item.chapterText, null, 'NEUR 740', item.authorName);
+      expect(title).toBe('Lezak et al. (Ch. 1–3)');
+    });
+
+    it('cleans Groth-Marnat (Ch. 4 & 5) without stutter suffix like "· Marnat"', () => {
+      const item = {
+        title: 'Groth-Marnat (Ch. 4 & 5)',
+        authorName: 'Groth-Marnat',
+        chapterText: 'Chapters 4 & 5'
+      };
+      const title = formatDisplayTitleWithChapter(item, item.chapterText, null, 'NEUR 740', item.authorName);
+      expect(title).toBe('Groth-Marnat (Ch. 4 & 5)');
+      expect(title).not.toContain('· Marnat');
+    });
+
+    it('cleans multi-author with semicolon and eliminates author echo stutter', () => {
+      const item = {
+        title: 'Groth-Marnat; Lichtenberger (Ch. 4 & 5)',
+        authorName: 'Groth-Marnat; Lichtenberger',
+        chapterText: 'Chapters 4 & 5'
+      };
+      const title = formatDisplayTitleWithChapter(item, item.chapterText, null, 'NEUR 740', item.authorName);
+      expect(title).toBe('Groth-Marnat, Lichtenberger (Ch. 4 & 5)');
+      expect(title).not.toContain('· Marnat');
+
+      const subtitle = formatAuthorAndPagesSubtitle(item.authorName, null, null, title, 'NEUR 740');
+      expect(subtitle).not.toContain(';');
+    });
+
+    it('cleans semicolons in author subtitles (e.g. Lezak et al.; Luria -> Lezak et al., Luria)', () => {
+      const sub1 = formatAuthorAndPagesSubtitle('Lezak et al.; Luria', null, null, 'Chapters 1–3', 'NEUR 740');
+      expect(sub1).toBe('Lezak et al., Luria');
+
+      const sub2 = formatAuthorAndPagesSubtitle('Lezak et al.; Squire', null, null, 'Chapters 11 & 12', 'NEUR 740');
+      expect(sub2).toBe('Lezak et al., Squire');
+    });
+
+    it('deduplicates reading title when later segment is substring of earlier segment', () => {
+      const result = deduplicateReadingTitle('Groth-Marnat, Lichtenberger (Ch. 4 & 5) · Marnat');
+      expect(result).toBe('Groth-Marnat, Lichtenberger (Ch. 4 & 5)');
+    });
+  });
+
+  describe('Semicolon Citation Splitting & Required vs Optional Readings', () => {
+    it('correctly splits 4 readings with Required and Optional sections and semicolon boundaries', () => {
+      const inputStr = 'Required: Wada & Fellner, 2025; Maddux & Winstead, (2019): Ch 1&2, 4-6; DSM 5-TR: Section 1, Section 3 - Culture and Psychiatric Diagnosis pg. 859. Optional: World Health Organization (2010) ICD. http://www.who.int/classifications/icd/en.';
+
+      const candidates = SyllabusImportManager.splitMultiCitationCandidate({
+        title: inputStr,
+        weekNumber: 1
+      });
+
+      expect(candidates).toHaveLength(4);
+
+      // Reading 1: Wada & Fellner
+      expect(candidates[0].isRequired).toBe(true);
+      expect(candidates[0].requirementType).toBe('required');
+      expect(candidates[0].authorName).toBe('Wada & Fellner');
+      expect(candidates[0].title).toContain('Wada & Fellner');
+      expect(candidates[0].title).not.toMatch(/^required:/i);
+
+      // Reading 2: Maddux & Winstead
+      expect(candidates[1].isRequired).toBe(true);
+      expect(candidates[1].requirementType).toBe('required');
+      expect(candidates[1].authorName).toBe('Maddux & Winstead');
+      expect(candidates[1].chapterText).toBeDefined();
+
+      // Reading 3: DSM 5-TR
+      expect(candidates[2].isRequired).toBe(true);
+      expect(candidates[2].requirementType).toBe('required');
+      expect(candidates[2].authorName).toBe('DSM 5-TR');
+      expect(candidates[2].pagesText).toContain('859');
+
+      // Reading 4: World Health Organization
+      expect(candidates[3].isRequired).toBe(false);
+      expect(candidates[3].requirementType).toBe('optional');
+      expect(candidates[3].authorName).toBe('World Health Organization');
+      expect(candidates[3].videoUrl).toBe('http://www.who.int/classifications/icd/en');
+      expect(candidates[3].title).not.toContain('http');
+      expect(candidates[3].title).not.toMatch(/^optional:/i);
+    });
+
+    it('deduplicateReadings preserves isRequired and requirementType', () => {
+      const readings = SyllabusImportManager.shared.deduplicateReadings([
+        {
+          title: 'Wada & Fellner, 2025',
+          authorName: 'Wada & Fellner',
+          isRequired: true,
+          requirementType: 'required',
+          weekNumber: 1
+        },
+        {
+          title: 'World Health Organization (2010) ICD',
+          authorName: 'World Health Organization',
+          isRequired: false,
+          requirementType: 'optional',
+          weekNumber: 1
+        }
+      ]);
+
+      expect(readings).toHaveLength(2);
+      expect(readings[0].isRequired).toBe(true);
+      expect(readings[0].requirementType).toBe('required');
+      expect(readings[1].isRequired).toBe(false);
+      expect(readings[1].requirementType).toBe('optional');
+    });
+
+    it('sanitizeReading cleans and normalizes isRequired and requirementType', () => {
+      const cleanReq = sanitizeReading({
+        id: 'r-1',
+        title: 'Required: Wada & Fellner, 2025',
+        mediaTypeRaw: 'textbook',
+        mediaType: 'textbook',
+        isCompleted: false,
+        isDeleted: false,
+        summaryText: '',
+        keyTakeawaysText: '',
+        estimatedTimeText: '',
+        isFavorite: false,
+        isRequired: true,
+        requirementType: 'required'
+      });
+
+      expect(cleanReq.isRequired).toBe(true);
+      expect(cleanReq.requirementType).toBe('required');
+      expect(cleanReq.title).not.toMatch(/^required:/i);
+
+      const cleanOpt = sanitizeReading({
+        id: 'r-2',
+        title: 'Optional: WHO ICD',
+        mediaTypeRaw: 'article',
+        mediaType: 'article',
+        isCompleted: false,
+        isDeleted: false,
+        summaryText: '',
+        keyTakeawaysText: '',
+        estimatedTimeText: '',
+        isFavorite: false,
+        isRequired: false,
+        requirementType: 'optional'
+      });
+
+      expect(cleanOpt.isRequired).toBe(false);
+      expect(cleanOpt.requirementType).toBe('optional');
+      expect(cleanOpt.title).not.toMatch(/^optional:/i);
+    });
+  });
+
+  describe('isGenericPlaceholderTheme & Schedule Pill Suppression', () => {
+    it('accurately identifies generic schedule and syllabus column headers', () => {
+      expect(isGenericPlaceholderTheme('Schedule')).toBe(true);
+      expect(isGenericPlaceholderTheme('schedule')).toBe(true);
+      expect(isGenericPlaceholderTheme('Weekly Schedule')).toBe(true);
+      expect(isGenericPlaceholderTheme('Week 1 Schedule')).toBe(true);
+      expect(isGenericPlaceholderTheme('Week 2 Schedule')).toBe(true);
+      expect(isGenericPlaceholderTheme('Wk 3: Schedule')).toBe(true);
+      expect(isGenericPlaceholderTheme('Course Schedule')).toBe(true);
+      expect(isGenericPlaceholderTheme('Tentative Schedule')).toBe(true);
+      expect(isGenericPlaceholderTheme('Readings')).toBe(true);
+      expect(isGenericPlaceholderTheme('Course Readings')).toBe(true);
+      expect(isGenericPlaceholderTheme('Topics')).toBe(true);
+      expect(isGenericPlaceholderTheme('Overview')).toBe(true);
+      expect(isGenericPlaceholderTheme('Week 1')).toBe(true);
+      expect(isGenericPlaceholderTheme('Required')).toBe(true);
+      expect(isGenericPlaceholderTheme('Optional')).toBe(true);
+      expect(isGenericPlaceholderTheme(null)).toBe(true);
+      expect(isGenericPlaceholderTheme(undefined)).toBe(true);
+      expect(isGenericPlaceholderTheme('')).toBe(true);
+    });
+
+    it('preserves genuine academic and subject matter themes', () => {
+      expect(isGenericPlaceholderTheme('Creating a caring community, Introduction to Family Systems, Course overview')).toBe(false);
+      expect(isGenericPlaceholderTheme('Bowen Family Systems')).toBe(false);
+      expect(isGenericPlaceholderTheme('Introduction to Systems Thinking')).toBe(false);
+      expect(isGenericPlaceholderTheme('Structural Family Systems')).toBe(false);
+      expect(isGenericPlaceholderTheme('Cognitive Behavioural Family Therapy')).toBe(false);
+    });
+
+    it('does not append generic "Schedule" as substantive topic to reading title', () => {
+      const display = formatDisplayTitleWithChapter(
+        {
+          title: 'Wada & Fellner, 2025',
+          relevantTopics: 'Schedule'
+        } as any,
+        null,
+        null,
+        'CPC 524'
+      );
+      expect(display).not.toContain('Schedule');
+    });
+
+    it('sanitizes generic placeholder themes from reading relevantTopics', () => {
+      const reading = sanitizeReading({
+        id: 'r-schedule-test',
+        title: 'Maddux & Winstead (2019): Ch 1&2',
+        relevantTopics: 'Week 1 Schedule',
+        mediaTypeRaw: 'textbook',
+        mediaType: 'textbook',
+        isCompleted: false,
+        isDeleted: false,
+        summaryText: '',
+        keyTakeawaysText: '',
+        estimatedTimeText: '',
+        isFavorite: false
+      });
+      expect(reading.relevantTopics).toBeUndefined();
+    });
+  });
+
+  describe('cleanAcademicWeekTheme', () => {
+    it('cleans messy multi-column table crossover string with dates, citations, and numbers', () => {
+      const input = '4-6; DSM 5-TR The History and Section 1, Section 3 - 4/10/26 Modul Cultural Context Culture and e 2 of Clinical Diagnosis (...';
+      const cleaned = cleanAcademicWeekTheme(input);
+      expect(cleaned).toBe('Cultural Context and Clinical Diagnosis');
+    });
+
+    it('returns empty string when input is entirely citations and dates without genuine topic', () => {
+      expect(cleanAcademicWeekTheme('4-6; DSM 5-TR Section 1, Section 3 - 4/10/26')).toBe('');
+      expect(cleanAcademicWeekTheme('Required: Corey & Corey Ch. 1 & 2; Yalom Ch. 1')).toBe('');
+      expect(cleanAcademicWeekTheme('Maddux & Winstead (2019): Ch 1&2, 4-6')).toBe('');
+    });
+
+    it('preserves clean genuine academic topics', () => {
+      expect(cleanAcademicWeekTheme('Bowen Family Systems')).toBe('Bowen Family Systems');
+      expect(cleanAcademicWeekTheme('Mood Disorders')).toBe('Mood Disorders');
+      expect(cleanAcademicWeekTheme('Systems Theory & Family Dynamics')).toBe('Systems Theory & Family Dynamics');
+      expect(cleanAcademicWeekTheme('Structural Family Therapy')).toBe('Structural Family Therapy');
+    });
+
+    it('strips week and module prefixes while preserving topic', () => {
+      expect(cleanAcademicWeekTheme('Week 4: Mood Disorders')).toBe('Mood Disorders');
+      expect(cleanAcademicWeekTheme('Module 2: Genograms')).toBe('Genograms');
+      expect(cleanAcademicWeekTheme('Wk 3 - Systems Theory')).toBe('Systems Theory');
+    });
+
+    it('returns empty string for placeholder and schedule headers', () => {
+      expect(cleanAcademicWeekTheme('Week 4 Schedule')).toBe('');
+      expect(cleanAcademicWeekTheme('Course Schedule')).toBe('');
+      expect(cleanAcademicWeekTheme('Topics')).toBe('');
+      expect(cleanAcademicWeekTheme('Readings')).toBe('');
+      expect(cleanAcademicWeekTheme(null)).toBe('');
+      expect(cleanAcademicWeekTheme('')).toBe('');
     });
   });
 });

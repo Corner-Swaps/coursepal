@@ -264,11 +264,21 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
                 </Text>
               </View>
 
-              {/* Section 5: Support */}
+              {/* Section 5: Age Requirement & Canadian PIPEDA */}
               <View style={styles.legalCard}>
-                <Text style={styles.cardHeader}>5. PRIVACY INQUIRIES & SUPPORT</Text>
+                <Text style={styles.cardHeader}>5. AGE REQUIREMENT & CANADIAN PRIVACY</Text>
                 <Text style={styles.cardBody}>
-                  For privacy questions, data requests, or support inquiries, contact the team at support@coursepal.app.
+                  CoursePal is designed for post-secondary and secondary students. You must be at least 13 years of age to use the application. If you are under the provincial age of majority (e.g., 19 in British Columbia, 18 in Ontario/Alberta), you confirm you have obtained consent from your parent or legal guardian. We operate in full compliance with Canada&apos;s PIPEDA, provincial privacy laws, and U.S. COPPA guidelines.
+                </Text>
+              </View>
+
+              {/* Section 6: Support */}
+              <View style={styles.legalCard}>
+                <Text style={styles.cardHeader}>6. PRIVACY INQUIRIES & COMPLIANCE OFFICER</Text>
+                <Text style={styles.cardBody}>
+                  For privacy questions, access requests under PIPEDA, or data governance inquiries:{'\n'}
+                  Email: privacy@coursepal.app{'\n'}
+                  CoursePal Privacy Office (Vancouver, BC, Canada)
                 </Text>
               </View>
             </>

@@ -10,6 +10,8 @@ export interface AssignmentsMonthCalendarCardProps {
   onToggleDateFilter: () => void;
   itemDatesWithColors: Map<string, string[]>; // 'YYYY-MM-DD' -> array of hex colors
   currentAcademicWeek?: number;
+  showCardMonth?: boolean;
+  onMonthYearChange?: (monthYear: string) => void;
 }
 
 const WEEKDAY_NAMES = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -24,7 +26,9 @@ export const AssignmentsMonthCalendarCard: React.FC<AssignmentsMonthCalendarCard
   isDateFilterActive,
   onToggleDateFilter,
   itemDatesWithColors,
-  currentAcademicWeek
+  currentAcademicWeek,
+  showCardMonth = true,
+  onMonthYearChange
 }) => {
   const [viewDate, setViewDate] = useState<Date>(() => new Date(selectedDate.getTime()));
 
@@ -40,6 +44,13 @@ export const AssignmentsMonthCalendarCard: React.FC<AssignmentsMonthCalendarCard
 
   const viewYear = viewDate.getFullYear();
   const viewMonth = viewDate.getMonth();
+
+  // Notify parent of visible month/year
+  useEffect(() => {
+    if (onMonthYearChange) {
+      onMonthYearChange(`${MONTH_NAMES[viewMonth]} ${viewYear}`);
+    }
+  }, [viewMonth, viewYear, onMonthYearChange]);
 
   const handlePrevMonth = () => {
     setViewDate(new Date(viewYear, viewMonth - 1, 1));
@@ -93,30 +104,12 @@ export const AssignmentsMonthCalendarCard: React.FC<AssignmentsMonthCalendarCard
 
   const today = new Date();
 
-  const isCurrentWeekActive = useMemo(() => {
-    return Boolean(isDateFilterActive && isSameDay(selectedDate, today));
-  }, [isDateFilterActive, selectedDate, today]);
-
-  const handleToggleCurrentWeek = () => {
-    if (isCurrentWeekActive) {
-      onToggleDateFilter();
-    } else {
-      setViewDate(new Date(today.getFullYear(), today.getMonth(), 1));
-      if (isSameDay(selectedDate, today)) {
-        if (!isDateFilterActive) {
-          onToggleDateFilter();
-        }
-      } else {
-        onSelectDate(today);
-      }
-    }
-  };
-
   return (
     <View style={styles.outerWrapper}>
       <View style={styles.cardContainer} testID="assignments-month-calendar-card">
         {/* Header: Month Year & Navigation Controls */}
-        <View style={styles.headerRow}>
+      {/* Month Navigation Header - Flanked Layout */}
+      <View style={styles.headerRow}>
         <TouchableOpacity
           onPress={handlePrevMonth}
           style={styles.navButton}
@@ -124,13 +117,15 @@ export const AssignmentsMonthCalendarCard: React.FC<AssignmentsMonthCalendarCard
           testID="month-cal-prev"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <ChevronLeftIcon size={14} color="#596B85" />
+          <ChevronLeftIcon size={16} color="#596B85" />
         </TouchableOpacity>
 
         <View style={styles.titleCenterWrap}>
-          <Text style={styles.monthTitleText}>
-            {MONTH_NAMES[viewMonth]} {viewYear}
-          </Text>
+          {showCardMonth !== false && (
+            <Text style={styles.monthTitleText}>
+              {MONTH_NAMES[viewMonth]} {viewYear}
+            </Text>
+          )}
           {isDateFilterActive && (
             <TouchableOpacity
               style={styles.filterActiveBadge}
@@ -150,7 +145,7 @@ export const AssignmentsMonthCalendarCard: React.FC<AssignmentsMonthCalendarCard
           testID="month-cal-next"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <ChevronRightIcon size={14} color="#596B85" />
+          <ChevronRightIcon size={16} color="#596B85" />
         </TouchableOpacity>
       </View>
 
@@ -229,29 +224,6 @@ export const AssignmentsMonthCalendarCard: React.FC<AssignmentsMonthCalendarCard
         ))}
       </View>
     </View>
-
-    {/* Standalone Current Week Pill Card - Styled like the course percentage capsule */}
-    <View style={styles.currentWeekCardContainer}>
-      <TouchableOpacity
-        style={styles.currentWeekCardRow}
-        onPress={handleToggleCurrentWeek}
-        activeOpacity={0.7}
-        testID="assignments-cal-current-week-toggle"
-      >
-        <View style={styles.currentWeekLeftWrap}>
-          <View style={[styles.statusDot, isCurrentWeekActive && styles.statusDotActive]} />
-          <View style={[styles.currentWeekPill, isCurrentWeekActive && styles.currentWeekPillActive]}>
-            <Text style={[styles.currentWeekPillText, isCurrentWeekActive && styles.currentWeekPillTextActive]}>
-              Current week{currentAcademicWeek != null ? ` · Wk ${currentAcademicWeek}` : ''}
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.toggleTrack, isCurrentWeekActive && styles.toggleTrackActive]}>
-          <View style={[styles.toggleThumb, isCurrentWeekActive && styles.toggleThumbActive]} />
-        </View>
-      </TouchableOpacity>
-    </View>
   </View>
   );
 };
@@ -278,18 +250,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10
+    marginBottom: 10,
+    paddingHorizontal: 2
   },
   titleCenterWrap: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8
   },
   monthTitleText: {
     fontSize: 14.5,
     fontWeight: '700',
     color: '#141F38',
-    letterSpacing: -0.2
+    letterSpacing: -0.2,
+    textAlign: 'center'
   },
   filterActiveBadge: {
     flexDirection: 'row',
@@ -306,7 +282,12 @@ const styles = StyleSheet.create({
     color: CoursePalTheme.accentBlue
   },
   navButton: {
-    padding: 6
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   weekdaysRow: {
     flexDirection: 'row',
@@ -381,74 +362,5 @@ const styles = StyleSheet.create({
     width: 4.5,
     height: 4.5
   },
-  currentWeekCardContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 18,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2
-  },
-  currentWeekCardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  currentWeekLeftWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#BAC4D4'
-  },
-  statusDotActive: {
-    backgroundColor: CoursePalTheme.accentBlue
-  },
-  currentWeekPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 3.5,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9'
-  },
-  currentWeekPillActive: {
-    backgroundColor: 'rgba(36, 112, 245, 0.10)'
-  },
-  currentWeekPillText: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#475569',
-    letterSpacing: -0.1
-  },
-  currentWeekPillTextActive: {
-    color: CoursePalTheme.accentBlue
-  },
-  toggleTrack: {
-    width: 32,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#D1D9E4',
-    padding: 2,
-    justifyContent: 'center'
-  },
-  toggleTrackActive: {
-    backgroundColor: CoursePalTheme.accentBlue
-  },
-  toggleThumb: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#FFFFFF',
-    alignSelf: 'flex-start'
-  },
-  toggleThumbActive: {
-    alignSelf: 'flex-end'
-  },
+
 });

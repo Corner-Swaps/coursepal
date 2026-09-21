@@ -32,15 +32,23 @@ npx react-native bundle \
   --assets-dest ios/CoursePal
 
 echo "📱 3. Verifying device availability ($DEVICE_ID)..."
-for i in {1..60}; do
+DEVICE_AWAKE=false
+for i in {1..20}; do
   STATE_LINE=$(xcrun devicectl list devices | grep "$DEVICE_ID" || true)
   if echo "$STATE_LINE" | grep -qE "\bavailable\b|\bconnected\b"; then
     echo "📱 iPhone ($DEVICE_ID) is awake and connected."
+    DEVICE_AWAKE=true
     break
   fi
-  echo "⏳ Waiting for iPhone ($DEVICE_ID) to unlock / connect... (attempt $i/60)"
+  echo "⏳ Waiting for iPhone ($DEVICE_ID) to unlock / connect... (attempt $i/20)"
   sleep 2
 done
+
+if [ "$DEVICE_AWAKE" = false ]; then
+  echo "⚠️ iPhone ($DEVICE_ID) is locked / sleeping."
+  echo "👉 Please tap or unlock your iPhone screen, then run: npm run deploy:device"
+  exit 1
+fi
 
 if [ "$1" == "--native" ] || [ ! -d "$APP_PATH" ]; then
   echo "🔨 4. Compiling native iOS app in Release mode..."

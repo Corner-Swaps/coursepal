@@ -107,7 +107,7 @@ TIMELINE & NOTIFICATION ENGINE
     expect(dueDates).toEqual(['2026-10-08', '2026-10-22', '2026-11-05', '2026-09-10']);
 
     const points = res.assignments?.map(a => a.pointsPossible);
-    expect(points).toEqual(['35 Points', '30 Points', '15 Points', '20 Points']);
+    expect(points).toEqual([undefined, undefined, undefined, undefined]);
 
     res.assignments?.forEach(a => {
       expect(a.noteText).not.toContain('Ch. 2 & 5');

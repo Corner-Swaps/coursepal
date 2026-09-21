@@ -29,6 +29,8 @@ export function sanitizeDanglingPunctuation(str: string): string {
   s = s.replace(/\s*\(\s*(?:[a-z0-9\s.,]*\b(?:ed|edition)\.?)\s*\)/gi, ' ').trim();
   // Strip empty parentheses e.g. "( )" or "()"
   s = s.replace(/\s*\(\s*\)/g, ' ').trim();
+  // Strip parenthesized number fragments left behind e.g. "( 3)", "(3)", "( 15 )", "(1-3)"
+  s = s.replace(/\s*\(\s*[\d\s:.\-–—andto]+\s*\)\s*[-–—]?/gi, ' ').trim();
   // If there is an unclosed '(' or unstarted ')'
   const openCount = (s.match(/\(/g) || []).length;
   const closeCount = (s.match(/\)/g) || []).length;
@@ -172,11 +174,15 @@ export function cleanChapterFromRaw(rawCh?: string | null): string | null {
 export function stripChapterMentions(text: string): string {
   if (!text) return '';
   const healed = repairChapterArtifacts(text);
-  // Matches "Chapter 1 · Ch. 1", "Chapters 12 & 13", "Ch. 12", "Ch 1 & 2", etc.
-  const chapterPattern = /\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\s*(?:\d+[\s,&–\-]*(?:\b(?:and|to)\b\s*)?)*[:\-–·•.]*\s*/gi;
-  let stripped = healed.replace(chapterPattern, ' ');
+  // Matches parenthesized chapter patterns: "(Chapters 1-3)", "(Ch. 1-3)", "(Chapters 1: 3)", "(Chapter 2)"
+  let stripped = healed.replace(/\s*\(\s*(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\s*[\d\s,&:.\-–—andto]+\s*\)/gi, ' ');
+  // Matches "Chapter 1 · Ch. 1", "Chapters 12 & 13", "Ch. 12", "Ch 1 & 2", "Chapters 1: 3", etc.
+  const chapterPattern = /\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?)\s*(?:[\d\s,&:.\-–—]*(?:\b(?:and|to)\b\s*)?)*[:\-–·•.]*\s*/gi;
+  stripped = stripped.replace(chapterPattern, ' ');
   // Clean empty parentheses left behind when parenthesized chapter is stripped e.g. (Chapters 4 & 5) -> ( )
   stripped = stripped.replace(/\s*\(\s*\)/g, ' ');
+  // Clean parenthesized remaining numbers e.g. ( 3) or ( 15)
+  stripped = stripped.replace(/\s*\(\s*[\d\s:.\-–—andto]+\s*\)\s*[-–—]?/gi, ' ');
   // Clean dangling separators and whitespace
   stripped = stripped.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '');
   stripped = stripped.replace(/\s+/g, ' ').trim();
@@ -250,18 +256,111 @@ export function isGenericPlaceholderReadingTitle(rawTitle: string | null | undef
   return false;
 }
 
+export function isGenericPlaceholderTheme(theme?: string | null): boolean {
+  if (!theme) return true;
+  let t = theme.trim().toLowerCase();
+  // Strip leading week or module prefixes e.g. "Week 1 Schedule" -> "Schedule", "Wk 2: Topics" -> "Topics"
+  t = t.replace(/^(?:week|wk|module|mod)\s*0*\d+[:\-–—\s]*/i, '').trim();
+  t = t.replace(/[:\-–—\s.]+/g, ' ').trim();
+  if (t.length === 0) return true;
+  return /^(?:schedule|weekly schedule|course schedule|class schedule|tentative schedule|schedule of classes|reading schedule|reading list|topics?|contents?|readings?|course readings?|assignments?|deliverables?|syllabus|calendar|dates?|overview|general|required|optional|none|tbd|n\/a)$/i.test(t);
+}
+
+/**
+ * Thoroughly sanitizes and cleans a week or module theme/topic string.
+ * Strips out:
+ * - Table column bleed / leading chapter numbers & page numbers (e.g. "4-6;", "1-3;")
+ * - Book and reading citations (e.g. "DSM 5-TR", "Maddux & Winstead", "Corey", "Yalom", "Section 1, Section 3")
+ * - Dates and date ranges (e.g. "- 4/10/26", "Sep 17", "09/10/2026")
+ * - Table/module column artifacts (e.g. "Modul", "e 2 of", "Module 2 of")
+ * - Stuttering / duplicated words (e.g. "Cultural Context Culture and")
+ * - Generic placeholders (e.g. "Schedule", "Week 4", "Readings", "TBD")
+ * Returns a clean, readable academic topic, or an empty string '' if no genuine topic exists.
+ */
+export function cleanAcademicWeekTheme(rawTheme?: string | null): string {
+  if (!rawTheme || typeof rawTheme !== 'string') return '';
+  let t = rawTheme.replace(/\s+/g, ' ').trim();
+  if (t.length === 0) return '';
+
+  // 1. Strip leading week/module/session/unit indicator
+  t = t.replace(/^(?:week|wk|module|mod|unit|session|lecture)\b\s*\d*[:\-–—\s]*/i, '').trim();
+
+  // 2. Strip leading numbers, chapter ranges, or page markers with punctuation (e.g. "4-6;", "1-3, 5:", "Ch. 4-6;")
+  t = t.replace(/^[\d\s\-–—,&]+[;:.]\s*/, '').trim();
+  t = t.replace(/^(?:chs?\.?|chapters?|pp?\.?|pages?|sec(?:tions?)?\.?)\s*[\d\s\-–—,&]+[;:.]?\s*/i, '').trim();
+
+  // 3. Strip reading citations, book mentions, and standard literature references
+  // DSM references & section citations e.g. "DSM 5-TR The History and Section 1, Section 3"
+  t = t.replace(/\bDSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?\b[:\s]*(?:The\s+History\s+and\s+)?(?:Section\s*\d+[\s,–-]*(?:Section\s*\d+)?[\s,;–-]*)*/gi, ' ');
+  // Specific book authors and citations
+  t = t.replace(/\b(?:Maddux\s*&\s*Winstead|Wada\s*&\s*Fellner|Corey\s*&\s*Corey|Corey|Yalom|Creswell|Gehart|Nichols|Beck|Neimeyer|Hochstetler|Bishop)\b.*?(?:;|\b(?=[A-Z][a-z]+)|\s*-\s*|\s*$)/gi, ' ');
+  // Association / manual citations
+  t = t.replace(/\b(?:American\s+Psychiatric\s+Association|World\s+Health\s+Organization|APA|WHO|ICD(?:-\d+)?)\b/gi, ' ');
+  // Chapter and page markers anywhere in string
+  t = t.replace(/\b(?:chapters?|chps?\.?|chs?\.?|ch\b\.?|sections?|sec\.?)\s*\d+[\d\s,&–\-]*/gi, ' ');
+  t = t.replace(/\b(?:pp?\.?|pages?)\s*\d+[\d\s–\-]*/gi, ' ');
+  t = t.replace(/\bpg\.?\s*\d+/gi, ' ');
+  // Requirement labels
+  t = t.replace(/\b(?:required|optional|assigned|suggested)\s*(?:readings?|materials?|texts?)?[:\s]*/gi, ' ');
+  t = t.replace(/\b(?:required|optional)[:\s]+/gi, ' ');
+
+  // 4. Strip dates and date ranges (e.g. "- 4/10/26", "4/10/2026", "Sep 17")
+  t = t.replace(/[-–—]?\s*\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b\s*[-–—]?/g, ' ');
+  t = t.replace(/[-–—]?\s*\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–—]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,?\s*\d{4})?\b\s*[-–—]?/gi, ' ');
+
+  // 5. Strip table column wrap artifacts / broken module fragments
+  t = t.replace(/\bModul(?:e)?\b\s*\d*/gi, ' ');
+  t = t.replace(/\be\s*\d+\s+of\b/gi, ' ');
+  t = t.replace(/\b(?:course|weekly|class|tentative)\s+schedule\b/gi, ' ');
+  t = t.replace(/\b(?:timeline|calendar)\b/gi, ' ');
+  t = t.replace(/\b(?:course\s+session\/?date|related\s+readings?)\b/gi, ' ');
+
+  // 6. Clean up stutter / duplicated words (e.g. "Cultural Context Culture and" -> "Cultural Context and")
+  t = t.replace(/\bCultural\s+Context\s+Culture\s+and\b/gi, 'Cultural Context and');
+  t = t.replace(/\b([A-Za-z]{4,})(?:al|e)?\s+Context\s+\1(?:al|e)?\s+and\b/gi, '$1al Context and');
+  t = t.replace(/\b([A-Za-z]{3,})\s+\1\b/gi, '$1');
+
+  // 7. Strip trailing unclosed parenthesis or ellipsis (e.g. " (...", "...")
+  t = t.replace(/\s*\([^\)]*$/, '');
+  t = t.replace(/\s*\.{2,}$/, '');
+
+  // 8. Collapse spaces & trim punctuation
+  t = t.replace(/\s+/g, ' ');
+  t = t.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
+
+  // 9. Validate genuine academic topic
+  if (t.length < 3) return '';
+  if (isGenericPlaceholderTheme(t)) return '';
+  if (/^[\d\s\-–—,;.:()]+$/.test(t)) return '';
+  if (/^(?:week|module|unit|session)\s*\d*$/i.test(t)) return '';
+
+  return t;
+}
+
 /**
  * Determines if a title represents a student assignment, project, paper, presentation,
  * exam, or deliverable rather than genuine reading material.
  * Readings must strictly contain actual reading material (textbooks, chapters, articles, PDFs, media).
  */
-export function isDeliverableNotReading(rawTitle: string | null | undefined): boolean {
+export function isDeliverableNotReading(
+  rawTitle: string | null | undefined,
+  context?: { moduleNumber?: number | null; chapterText?: string | null }
+): boolean {
   if (!rawTitle) return false;
+  // Module curriculum topics (Modules 1–10) are NEVER student deliverables!
+  if (context?.moduleNumber && context.moduleNumber > 0) return false;
+  if (context?.chapterText && /\d+/.test(context.chapterText)) return false;
+
   const t = rawTitle
     .toLowerCase()
     .replace(/^[•\-*▪●(): \t\n ]+|[•\-*▪●(): \t\n ]+$/g, '')
     .trim();
   if (t.length === 0) return false;
+
+  // Pure course topic protections
+  if (/^family\s+of\s+origin(?:\s*\/\s*genograms?)?$/i.test(t)) return false;
+  if (/^case\s+conceptualizations?$/i.test(t)) return false;
+  if (/^introduction\s+to\s+mapping\s+tools$/i.test(t)) return false;
 
   // Explicit reading citations with chapter or page markers
   const hasChapterOrPage =
@@ -279,15 +378,14 @@ export function isDeliverableNotReading(rawTitle: string | null | undefined): bo
 
   // Common student deliverables that should never be in reading lists
   const deliverableRegexes = [
-    /\bcase\s+conceptualizations?\b/i,
-    /\bconceptualizations?\b/i,
-    /\bfamily\s+map(?:ping)?(?:\s+papers?)?\b/i,
-    /\bgenograms?(?:\/family\s+mapping)?\b/i,
+    /\b(?:in[\s-]class\s+)?case\s+conceptualizations?\s+(?:assignment|paper|exam|activity|worth)/i,
+    /\bfamily\s+map(?:ping)?\s+papers?\b/i,
+    /\bgenograms?(?:\s*(?:and|\/)\s*family\s+mapping)?\s+papers?\b/i,
     /\bmapping\s+papers?\b/i,
     /\bin[\s-]class\s+(?:case|assignment|activity|presentation|exam|quiz|conceptualization)/i,
     /\bin[\s-]class\b/i,
     /\bgroup\s+presentations?\b/i,
-    /\bpresentations?\b/i,
+    /\bpeer\s+reviews?\s+group\s+report\b/i,
     /\bpeer\s+reviews?\b/i,
     /\breflection\s+papers?\b/i,
     /\bresearch\s+papers?\b/i,
@@ -376,8 +474,11 @@ export function deduplicateReadingTitle(title: string): string {
       const segNorm = seg.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (!segNorm) continue;
 
-      // If segment is identical to an already included segment, skip it (e.g. "Chapter 4 · Chapter 4")
-      if (uniqueSegs.some(u => u.toLowerCase().replace(/[^a-z0-9]/g, '') === segNorm)) {
+      // If segment is identical to or contained in an already included segment, skip it (e.g. "Chapter 4 · Chapter 4" or "Groth-Marnat (Ch. 4) · Marnat")
+      if (uniqueSegs.some(u => {
+        const uNorm = u.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return uNorm === segNorm || (segNorm.length >= 4 && uNorm.includes(segNorm));
+      })) {
         continue;
       }
 
@@ -453,7 +554,7 @@ export function formatDisplayTitleWithChapter(
 
   rawTitle = rawTitle.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat');
   if (resTitle) resTitle = resTitle.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat');
-  if (authorName) authorName = authorName.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat');
+  if (authorName) authorName = authorName.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat').replace(/;\s*/g, ', ').trim();
 
   // If authorName is not explicitly provided, detect author citation prefix or name
   if (!authorName) {
@@ -478,6 +579,7 @@ export function formatDisplayTitleWithChapter(
   }
 
   rawTitle = cleanMultilineTitle(rawTitle);
+  rawTitle = rawTitle.replace(/^(?:required|optional|recommended|supplemental)\s*[:\-–—]\s*/i, '').trim();
   // Strip leading number range artifact like "1: 3 · ", "4: 10 - ", "1-3 · " etc.
   rawTitle = rawTitle.replace(/^\d+[\s:.\-–—]+\d+\s*[:·•\-–—]\s*/, '').trim();
   // Strip textbook/book title prefix before chapter keywords or colons, even if the book title contains colons/dashes:
@@ -562,7 +664,11 @@ export function formatDisplayTitleWithChapter(
 
   // If author is inside substantive title and canonicalChapter is present, strip it
   if (canonicalChapter && authorName && authorName.trim()) {
-    const authParts = authorName.trim().split(/[\s,&-]+/).filter(w => w.length >= 2);
+    const authParts = authorName
+      .trim()
+      .split(/[\s,;&;:()\-–—]+/)
+      .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
+      .filter(w => w.length >= 2);
     for (const ap of authParts) {
       const reg = new RegExp(`\\b${ap}\\b`, 'gi');
       substantiveTitle = substantiveTitle.replace(reg, '').trim();
@@ -602,7 +708,11 @@ export function formatDisplayTitleWithChapter(
       }
     }
     if (authorName && authorName.trim()) {
-      const authParts = authorName.trim().split(/[\s,&]+/).filter(w => w.length >= 2);
+      const authParts = authorName
+        .trim()
+        .split(/[\s,;&;:()\-–—]+/)
+        .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
+        .filter(w => w.length >= 2);
       for (const ap of authParts) {
         clean = clean.replace(new RegExp(`\\b${ap}\\b`, 'gi'), '').trim();
       }
@@ -658,6 +768,7 @@ export function formatDisplayTitleWithChapter(
       if (
         cleanTopic.length >= 3 &&
         !/^(?:week|module|unit|reading\s*week|no\s*class)\b/i.test(cleanTopic) &&
+        !isGenericPlaceholderTheme(cleanTopic) &&
         (!substantiveTitle || isBookOrCourseName || substantiveTitle.toLowerCase() === 'reading')
       ) {
         substantiveTitle = cleanTopic;
@@ -695,10 +806,29 @@ export function formatDisplayTitleWithChapter(
     !rawTitle.toLowerCase().includes('overview gehart')
   ) {
     const shortCh = canonicalChapter.replace(/^Chapters?\s*/i, 'Ch. ');
-    if (substantiveTitle && !isBookOrCourseName && substantiveTitle.toLowerCase() !== canonicalChapter.toLowerCase()) {
-      resultTitle = `${authorName.trim()} (${shortCh}) · ${substantiveTitle}`;
+    // Clean any author stutter or duplicate fragments from substantiveTitle
+    let cleanSub = substantiveTitle;
+    const cleanAuthor = authorName.replace(/;\s*/g, ', ').trim();
+    if (cleanSub) {
+      const authParts = authorName
+        .trim()
+        .split(/[\s,;&;:()\-–—]+/)
+        .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
+        .filter(w => w.length >= 2);
+      for (const ap of authParts) {
+        cleanSub = cleanSub.replace(new RegExp(`\\b${ap}\\b`, 'gi'), '').trim();
+      }
+      cleanSub = cleanSub.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
+      const normAuth = cleanAuthor.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normSub = cleanSub.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!normSub || normSub.length <= 2 || normAuth.includes(normSub) || normSub.includes(normAuth)) {
+        cleanSub = '';
+      }
+    }
+    if (cleanSub && !isBookOrCourseName && cleanSub.toLowerCase() !== canonicalChapter.toLowerCase()) {
+      resultTitle = `${cleanAuthor} (${shortCh}) · ${cleanSub}`;
     } else {
-      resultTitle = `${authorName.trim()} (${shortCh})`;
+      resultTitle = `${cleanAuthor} (${shortCh})`;
     }
   } else if (canonicalChapter && substantiveTitle && !isBookOrCourseName && substantiveTitle.toLowerCase() !== canonicalChapter.toLowerCase()) {
     resultTitle = `${canonicalChapter} · ${substantiveTitle}`;
@@ -732,6 +862,16 @@ export function formatDisplayTitleWithChapter(
 
   // Strip trailing dangling fragments: e.g. " · 9", " · 8", " · et al. ( 5", " · et al.", " · ("
   resultTitle = resultTitle.replace(/\s*·\s*(?:et\s+al\.?[\s(]*\d*|\d+|\(\s*\d*|\b[a-z]{1,2}\b)\s*$/i, '').trim();
+  if (authorName) {
+    const authPieces = authorName
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(p => p.length >= 3);
+    for (const p of authPieces) {
+      const pRegex = new RegExp(`\\s*·\\s*${p}\\s*$`, 'i');
+      resultTitle = resultTitle.replace(pRegex, '').trim();
+    }
+  }
   resultTitle = sanitizeDanglingPunctuation(resultTitle);
   resultTitle = deduplicateReadingTitle(resultTitle);
 
@@ -771,7 +911,7 @@ export function formatAuthorAndPagesSubtitle(
     author = authorOrReading;
   }
 
-  if (author) author = author.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat').trim();
+  if (author) author = author.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat').replace(/;\s*/g, ', ').trim();
   if (resource) resource = resource.replace(/\bGroth\s*:\s*Marnat\b/gi, 'Groth-Marnat').trim();
 
   const parts: string[] = [];
@@ -789,7 +929,11 @@ export function formatAuthorAndPagesSubtitle(
 
     // Strip author name if contained inside cleanRes (e.g. "overview Gehart 3" -> "overview 3")
     if (author && author.trim()) {
-      const authParts = author.trim().split(/[\s,&-]+/).filter(w => w.length >= 2);
+      const authParts = author
+        .trim()
+        .split(/[\s,;&;:()\-–—]+/)
+        .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
+        .filter(w => w.length >= 2);
       for (const ap of authParts) {
         const reg = new RegExp(`\\b${ap}\\b`, 'gi');
         cleanRes = cleanRes.replace(reg, '').trim();
@@ -850,7 +994,7 @@ export function formatAuthorAndPagesSubtitle(
   // 2. Clean Author (strip any chapter mentions and publication years in subtitle)
   if (author && author.trim()) {
     let cleanAuth = sanitizeDanglingPunctuation(stripChapterMentions(author.trim()));
-    cleanAuth = cleanAuth.replace(/\s*\(\s*\d{4}\s*\)/g, '').trim();
+    cleanAuth = cleanAuth.replace(/\s*\(\s*\d{4}\s*\)/g, '').replace(/;\s*/g, ', ').trim();
     // Discard pure digits / colons
     if (/^[\d\s:.\-–—]+$/.test(cleanAuth)) {
       cleanAuth = '';
@@ -909,11 +1053,21 @@ export function formatAuthorAndPagesSubtitle(
 export function parseSafeDate(rawDate?: Date | string | number | null, fallbackYear: number = 2026): Date | null {
   if (!rawDate) return null;
   if (rawDate instanceof Date) {
-    return isNaN(rawDate.getTime()) ? null : rawDate;
+    if (isNaN(rawDate.getTime())) return null;
+    // If the Date has UTC midnight (e.g. from ISO string without time), in negative timezones like PDT (UTC-7)
+    // it rolls back to 5:00 PM on the previous day. Pin to local noon on its calendar date.
+    if (rawDate.getUTCHours() === 0 && rawDate.getUTCMinutes() === 0 && rawDate.getUTCSeconds() === 0) {
+      return new Date(rawDate.getUTCFullYear(), rawDate.getUTCMonth(), rawDate.getUTCDate(), 12, 0, 0);
+    }
+    return rawDate;
   }
   if (typeof rawDate === 'number') {
     const d = new Date(rawDate);
-    return isNaN(d.getTime()) ? null : d;
+    if (isNaN(d.getTime())) return null;
+    if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0) {
+      return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0);
+    }
+    return d;
   }
 
   const str = String(rawDate).trim();
@@ -936,8 +1090,12 @@ export function parseSafeDate(rawDate?: Date | string | number | null, fallbackY
   }
 
   // 1. Direct ISO format check (e.g. "2026-05-15")
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    const direct = new Date(str);
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const yr = parseInt(isoMatch[1], 10);
+    const mo = parseInt(isoMatch[2], 10) - 1;
+    const dy = parseInt(isoMatch[3], 10);
+    const direct = new Date(yr, mo, dy, 12, 0, 0);
     if (!isNaN(direct.getTime())) return direct;
   }
 
@@ -1458,7 +1616,7 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
 
   for (const rawR of readings) {
     if (isGenericPlaceholderReadingTitle(rawR.title)) continue;
-    if (isDeliverableNotReading(rawR.title)) continue;
+    if (isDeliverableNotReading(rawR.title, { moduleNumber: (rawR as any).moduleNumber, chapterText: (rawR as any).chapterText })) continue;
     let r = { ...rawR };
 
     // Pre-clean leading number-range artifact like "1: 3 · " or "4: 10 · "
@@ -1467,7 +1625,16 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
       r.chapterText = r.chapterText.replace(/^\d+[\s:.\-–—]+\d+\s*[:·•\-–—]\s*/, '').trim();
     }
 
-    const weekNum = extractReadingWeekNumber(r) ?? 0;
+    const isPureModule = Boolean(
+      (r as any).moduleNumber &&
+      ((r as any).weekNumber === null || (r as any).weekNumber === undefined || (r as any).weekId === 'none' || (r as any).weekNumber === 0)
+    );
+    const weekNum = isPureModule ? 0 : (extractReadingWeekNumber(r) ?? 0);
+    const modNum = (typeof (r as any).moduleNumber === 'number' && (r as any).moduleNumber > 0)
+      ? (r as any).moduleNumber
+      : (typeof (r as any).module_number === 'number' && (r as any).module_number > 0 ? (r as any).module_number : 0);
+    const scheduleKey = modNum > 0 && (!weekNum || weekNum === 0) ? `m${modNum}` : (weekNum > 0 ? `w${weekNum}` : `w0`);
+
     const matchedCourse = courses?.find(
       c => (c.courseCode || c.courseName || '').toLowerCase() === (r.courseCode || '').toLowerCase()
     );
@@ -1487,7 +1654,7 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
       }
     }
 
-    const bookWeekKey = `${courseKey}_w${weekNum}_bk_${bookKey}`;
+    const bookWeekKey = `${courseKey}_${scheduleKey}_bk_${bookKey}`;
     const seenChapters = seenChaptersPerBookWeek.get(bookWeekKey) || new Set<number>();
 
     // Parse chapter numbers for repeated chapter detection
@@ -1508,8 +1675,18 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
         if (isGeneric) {
           // Pure redundant duplicate! Merge completion/flags into the earlier reading
           const existingIdx = result.findIndex(ex => {
-            const exWeek = extractReadingWeekNumber(ex) ?? 0;
-            if (exWeek !== weekNum) return false;
+            const exIsPureMod = Boolean(
+              (ex as any).moduleNumber &&
+              ((ex as any).weekNumber === null || (ex as any).weekNumber === undefined || (ex as any).weekId === 'none' || (ex as any).weekNumber === 0)
+            );
+            const exWeek = exIsPureMod ? 0 : (extractReadingWeekNumber(ex) ?? 0);
+            const exMod = (typeof (ex as any).moduleNumber === 'number' && (ex as any).moduleNumber > 0)
+              ? (ex as any).moduleNumber
+              : 0;
+            const exScheduleKey = exMod > 0 && (!exWeek || exWeek === 0) ? `m${exMod}` : (exWeek > 0 ? `w${exWeek}` : `w0`);
+            if (exScheduleKey !== scheduleKey) return false;
+            if (modNum > 0 && exMod > 0 && modNum !== exMod) return false;
+            if ((modNum > 0 && !weekNum && exWeek > 0) || (exMod > 0 && !exWeek && weekNum > 0)) return false;
             const exChs = parseChapterNumbers(ex.chapterText || ex.title);
             return chapters.some(c => exChs.includes(c));
           });
@@ -1559,13 +1736,14 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
     const normTitle = displayTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
     const dateStr = r.dueDate ? (typeof r.dueDate === 'string' ? r.dueDate : (r.dueDate instanceof Date ? r.dueDate.toISOString() : String(r.dueDate))) : '';
 
-    // Primary intra-week key (same course, same week, same book, and same chapter OR same title)
+    // Primary intra-week/module key (same course, same week/module, same book, and same chapter OR same title)
     const intraWeekKey = canonicalCh
-      ? `intra_${courseKey}_w${weekNum}_bk_${bookKey}_ch_${canonicalCh.toLowerCase().replace(/[^a-z0-9]/g, '')}`
-      : `intra_${courseKey}_w${weekNum}_bk_${bookKey}_t_${normTitle}`;
+      ? `intra_${courseKey}_${scheduleKey}_bk_${bookKey}_ch_${canonicalCh.toLowerCase().replace(/[^a-z0-9]/g, '')}`
+      : `intra_${courseKey}_${scheduleKey}_bk_${bookKey}_t_${normTitle}`;
 
-    // Inter-week clone key: same course, same book, same chapter, and identical non-empty due date
-    const interWeekCloneKey = (canonicalCh && dateStr)
+    // Inter-week clone key: same course, same book, same chapter, and identical non-empty due date (only if both are week-based, not module-based)
+    const isModuleOnlyItem = !weekNum && modNum > 0;
+    const interWeekCloneKey = (!isModuleOnlyItem && canonicalCh && dateStr)
       ? `inter_${courseKey}_bk_${bookKey}_ch_${canonicalCh.toLowerCase().replace(/[^a-z0-9]/g, '')}_d_${dateStr}`
       : null;
 
@@ -1573,8 +1751,18 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
 
     if (existingIndex === undefined && canonicalCh) {
       const candIdx = result.findIndex(existingR => {
-        const exWeek = extractReadingWeekNumber(existingR) ?? 0;
-        if (exWeek !== weekNum) return false;
+        const exIsPureMod = Boolean(
+          (existingR as any).moduleNumber &&
+          ((existingR as any).weekNumber === null || (existingR as any).weekNumber === undefined || (existingR as any).weekId === 'none' || (existingR as any).weekNumber === 0)
+        );
+        const exWeek = exIsPureMod ? 0 : (extractReadingWeekNumber(existingR) ?? 0);
+        const exMod = (typeof (existingR as any).moduleNumber === 'number' && (existingR as any).moduleNumber > 0)
+          ? (existingR as any).moduleNumber
+          : 0;
+        const exScheduleKey = exMod > 0 && (!exWeek || exWeek === 0) ? `m${exMod}` : (exWeek > 0 ? `w${exWeek}` : `w0`);
+        if (exScheduleKey !== scheduleKey) return false;
+        if (modNum > 0 && exMod > 0 && modNum !== exMod) return false;
+        if ((modNum > 0 && !weekNum && exWeek > 0) || (exMod > 0 && !exWeek && weekNum > 0)) return false;
         const exCh = cleanChapterFromRaw(existingR.chapterText || existingR.title);
         if (!exCh || exCh.toLowerCase().replace(/[^a-z0-9]/g, '') !== canonicalCh.toLowerCase().replace(/[^a-z0-9]/g, '')) {
           return false;
@@ -1610,6 +1798,12 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
       const mergedMediaType = (r.mediaType && r.mediaType !== 'textbook') ? r.mediaType : existing.mediaType;
       const mergedMediaTypeRaw = (r.mediaTypeRaw && r.mediaTypeRaw !== 'textbook') ? r.mediaTypeRaw : (existing.mediaTypeRaw || r.mediaTypeRaw);
 
+      const exIsPureMod = Boolean(
+        existing.moduleNumber &&
+        (existing.weekNumber === null || existing.weekNumber === undefined || existing.weekId === 'none' || existing.weekNumber === 0)
+      );
+      const isPureModMerge = isPureModule || exIsPureMod;
+
       const merged: T = {
         ...existing,
         title: isNewRicher ? r.title : existing.title,
@@ -1617,6 +1811,13 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
         resourceTitle: existing.resourceTitle || r.resourceTitle,
         chapterText: canonicalCh || existing.chapterText || r.chapterText,
         pagesText: existing.pagesText || r.pagesText,
+        moduleNumber: existing.moduleNumber ?? (r as any).moduleNumber ?? null,
+        moduleMention: existing.moduleMention || (r as any).moduleMention || null,
+        weekNumber: isPureModMerge ? null : (existing.weekNumber ?? (r as any).weekNumber ?? null),
+        weekId: isPureModMerge ? 'none' : (existing.weekId || (r as any).weekId || null),
+        dueDate: existing.dueDate || r.dueDate || null,
+        dateRangeStr: existing.dateRangeStr || r.dateRangeStr || null,
+        relevantTopics: existing.relevantTopics || r.relevantTopics || null,
         mediaType: mergedMediaType,
         mediaTypeRaw: mergedMediaTypeRaw,
         videoUrl: existing.videoUrl || r.videoUrl,
@@ -1682,7 +1883,15 @@ export function deriveWeekForReading(
   course?: Course,
   earliestDate?: Date | null,
   allReadingsInCourse?: Reading[]
-): number {
+): number | null {
+  // Pure curriculum module reading: preserve module status and NEVER force a week!
+  if (
+    (reading.moduleNumber && reading.moduleNumber > 0) &&
+    (!reading.weekNumber || reading.weekNumber <= 0 || reading.weekId === 'none')
+  ) {
+    return null;
+  }
+
   // 1. Existing positive weekNumber
   if (typeof reading.weekNumber === 'number' && reading.weekNumber > 0) {
     return reading.weekNumber;
@@ -1765,26 +1974,53 @@ export function deriveWeekForAssignment(
   earliestDate?: Date | null,
   allAssignmentsInCourse?: Assignment[]
 ): number {
+  // 0. Continuous / semester-long items never belong to a single calendar week
+  const titleLower = (assignment.title || '').toLowerCase();
+  const notesLower = (assignment.noteText || '').toLowerCase();
+  const instrLower = (assignment.fullInstructions || '').toLowerCase();
+  const isContinuous =
+    titleLower.includes('collaboration') ||
+    titleLower.includes('participation') ||
+    titleLower.includes('attendance') ||
+    notesLower.includes('course of the semester') ||
+    notesLower.includes('throughout the course') ||
+    notesLower.includes('continuous') ||
+    instrLower.includes('over the course of the semester') ||
+    instrLower.includes('throughout the course');
+
+  if (isContinuous) {
+    return 0;
+  }
+
   // 1. Existing positive weekNumber
   if (typeof assignment.weekNumber === 'number' && assignment.weekNumber > 0) {
     return assignment.weekNumber;
   }
 
+  // Helper to check if a week is Reading Week / Break Week / No Classes
+  const isBreakWeek = (wNum: number): boolean => {
+    if (!course?.weeks) return false;
+    const wk = course.weeks.find(w => w.weekNumber === wNum);
+    if (!wk) return false;
+    const t = (wk.theme || '').toLowerCase();
+    return t.includes('reading week') || t.includes('no class') || t.includes('break') || t.includes('flex');
+  };
+
   // 2. Explicit module or week mention in assignment fields
   const fromModule = extractWeekFromText(assignment.moduleMention);
-  if (fromModule) return fromModule;
+  if (fromModule && !isBreakWeek(fromModule)) return fromModule;
 
   const fromTitle = extractWeekFromText(assignment.title);
-  if (fromTitle) return fromTitle;
+  if (fromTitle && !isBreakWeek(fromTitle)) return fromTitle;
 
   const fromTopics = extractWeekFromText(assignment.relevantTopics);
-  if (fromTopics) return fromTopics;
+  if (fromTopics && !isBreakWeek(fromTopics)) return fromTopics;
 
   const fromNotes = extractWeekFromText(assignment.noteText);
-  if (fromNotes) return fromNotes;
+  if (fromNotes && !isBreakWeek(fromNotes)) return fromNotes;
 
   const fromInstructions = extractWeekFromText(assignment.fullInstructions);
-  if (fromInstructions) return fromInstructions;
+  if (fromInstructions && !isBreakWeek(fromInstructions)) return fromInstructions;
 
   // 3. Due date relative to course schedule or term
   if (assignment.dueDate) {
@@ -1792,37 +2028,46 @@ export function deriveWeekForAssignment(
     if (d) {
       if (earliestDate && d.getTime() >= earliestDate.getTime()) {
         const diffWeeks = Math.floor((d.getTime() - earliestDate.getTime()) / (7 * 86400000));
-        return Math.max(1, Math.min(course?.termWeeks || 16, diffWeeks + 1));
+        const candidate = Math.max(1, Math.min(course?.termWeeks || 16, diffWeeks + 1));
+        if (!isBreakWeek(candidate)) return candidate;
       }
       const derived = weekNumberForDate(d);
-      if (derived >= 1 && derived <= (course?.termWeeks || 16)) {
+      if (derived >= 1 && derived <= (course?.termWeeks || 16) && !isBreakWeek(derived)) {
         return derived;
       }
     }
   }
 
   // 4. Milestone title keywords
-  const titleLower = (assignment.title || '').toLowerCase();
   const termLen = course?.termWeeks || 10;
   if (titleLower.includes('midterm')) {
-    return Math.max(1, Math.round(termLen / 2));
+    const candidate = Math.max(1, Math.round(termLen / 2));
+    return isBreakWeek(candidate) ? Math.max(1, candidate - 1) : candidate;
   }
   if (titleLower.includes('final') || titleLower.includes('capstone') || titleLower.includes('defense')) {
     return termLen;
   }
   if (titleLower.includes('presentation')) {
-    return Math.max(1, termLen - 1);
+    const candidate = Math.max(1, termLen - 1);
+    return isBreakWeek(candidate) ? Math.max(1, candidate - 1) : candidate;
   }
 
-  // 5. Sequential spacing across course term
+  // 5. Sequential spacing across course term (skipping break/reading weeks)
   if (allAssignmentsInCourse && allAssignmentsInCourse.length > 0) {
     const unassigned = allAssignmentsInCourse.filter(
-      a => !a.weekNumber || a.weekNumber <= 0
+      a => (!a.weekNumber || a.weekNumber <= 0) &&
+        !((a.title || '').toLowerCase().includes('collaboration') ||
+          (a.title || '').toLowerCase().includes('participation') ||
+          (a.title || '').toLowerCase().includes('attendance'))
     );
     const idx = unassigned.findIndex(a => a.id === assignment.id);
     if (idx >= 0) {
-      const step = termLen / (unassigned.length + 1);
-      return Math.max(1, Math.min(termLen, Math.round((idx + 1) * step)));
+      const activeWeeks = Array.from({ length: termLen }, (_, i) => i + 1).filter(w => !isBreakWeek(w));
+      if (activeWeeks.length > 0) {
+        const step = activeWeeks.length / (unassigned.length + 1);
+        const activeIdx = Math.max(0, Math.min(activeWeeks.length - 1, Math.floor((idx + 1) * step) - 1));
+        return activeWeeks[activeIdx];
+      }
     }
   }
 
@@ -1868,6 +2113,17 @@ export function healItemWeeks(
   }
 
   const healedReadings = readings.map(r => {
+    // Dedicated module reading: preserve module status and do not assign week
+    if (
+      (r.moduleNumber && r.moduleNumber > 0) &&
+      (!r.weekNumber || r.weekNumber <= 0 || r.weekId === 'none')
+    ) {
+      return {
+        ...r,
+        weekNumber: null,
+        weekId: 'none'
+      };
+    }
     const code = (r.courseCode || 'default').toLowerCase().trim();
     const course = courseByCode.get(code);
     const earliestDate = earliestDateByCourse.get(code);
@@ -1875,8 +2131,8 @@ export function healItemWeeks(
     const w = deriveWeekForReading(r, course, earliestDate, courseReadings);
     return {
       ...r,
-      weekNumber: w,
-      weekId: `w-${w}`
+      weekNumber: w ?? null,
+      weekId: w ? `w-${w}` : 'none'
     };
   });
 
@@ -2423,4 +2679,21 @@ export function splitInstructionsIntoParagraphs(raw?: string | null): string[] {
   }
 
   return finalParas.filter(p => p.length > 0);
+}
+
+/**
+ * Sanitizes upload status message to ensure it is simple, friendly, and NEVER contains 'AI'.
+ */
+export function cleanUploadStatusMessage(msg?: string | null): string {
+  if (!msg) return 'Processing syllabus, please wait...';
+  let cleaned = msg
+    .replace(/\bAI\b/g, '')
+    .replace(/\bGemini\b/gi, '')
+    .replace(/\bArtificial Intelligence\b/gi, '')
+    .replace(/\s+([.,;:!?])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!cleaned) return 'Processing syllabus, please wait...';
+  cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return cleaned;
 }

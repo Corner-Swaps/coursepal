@@ -191,5 +191,42 @@ describe('Atomic UI Components', () => {
       expect(element).toBeDefined();
       expect(element.props.currentAcademicWeek).toBe(11);
     });
+
+    it('anchors to startWeekNumber and termStartDate for course week 1 and 2 display', () => {
+      const element = React.createElement(DeadlinesCalendarCard, {
+        selectedDate: new Date(2026, 8, 19),
+        onSelectDate: jest.fn(),
+        isDateFilterActive: false,
+        onToggleDateFilter: jest.fn(),
+        itemDatesWithColors: new Map(),
+        startWeekNumber: 1,
+        termStartDate: new Date(2026, 3, 3), // April 3
+        selectedWeekFilter: 1
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.startWeekNumber).toBe(1);
+      expect(element.props.termStartDate).toEqual(new Date(2026, 3, 3));
+      expect(element.props.selectedWeekFilter).toBe(1);
+    });
+
+    it('supports showCardMonth={false} and onMonthYearChange callback for top-left header synchronization', () => {
+      const onMonthChangeMock = jest.fn();
+      const element = React.createElement(DeadlinesCalendarCard, {
+        selectedDate: new Date(2026, 3, 6),
+        onSelectDate: jest.fn(),
+        isDateFilterActive: false,
+        onToggleDateFilter: jest.fn(),
+        itemDatesWithColors: new Map(),
+        startWeekNumber: 1,
+        termStartDate: new Date(2026, 3, 6),
+        showCardMonth: false,
+        onMonthYearChange: onMonthChangeMock
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.showCardMonth).toBe(false);
+      expect(element.props.onMonthYearChange).toBe(onMonthChangeMock);
+    });
   });
 });

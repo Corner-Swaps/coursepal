@@ -40,7 +40,10 @@ export interface ReadingDTO {
   pagesText?: string | null;
   moduleMention?: string | null;
   moduleNumber?: number | null;
+  weekNumber?: number | null;
   isFavorite?: boolean;
+  isRequired?: boolean | null;
+  requirementType?: 'required' | 'optional' | null;
 }
 
 export interface WeekDTO {
@@ -49,6 +52,8 @@ export interface WeekDTO {
   startDate?: string | null;
   theme?: string | null;
   dateRangeStr?: string | null;
+  moduleNumber?: number | null;
+  moduleMention?: string | null;
   readings: ReadingDTO[];
 }
 
@@ -71,6 +76,7 @@ export interface AssignmentDTO {
   moduleMention?: string | null;
   points?: number | null;
   totalPoints?: number | null;
+  scheduledWeeks?: number[];
 }
 
 export interface ItemDTO {
@@ -84,6 +90,7 @@ export interface ItemDTO {
   pointsBreakdown?: string | null;
   percentage?: string | null;
   weekNumber?: number | null;
+  scheduledWeeks?: number[];
   dueDateIso?: string | null;
   mediaUrl?: string | null;
   relevantTopics?: string | null;
@@ -95,6 +102,8 @@ export interface ItemDTO {
   noteText?: string | null;
   rubricCriteria?: RubricCriterionDTO[] | null;
   rubric?: RubricCriterionDTO[] | null;
+  isRequired?: boolean | null;
+  requirementType?: 'required' | 'optional' | null;
 }
 
 export type ImportOutcome =
@@ -146,6 +155,8 @@ export interface CourseDTO {
   weeks?: WeekDTO[] | null;
   assignments?: AssignmentDTO[] | null;
   items?: ItemDTO[] | null;
+  readings?: ReadingDTO[] | null;
+  moduleReadings?: ReadingDTO[] | null;
   textbooks?: TextbookResource[] | null;
   dataExtractionStats?: ExtractionStatsDTO | null;
   isFavorite?: boolean | null;
@@ -181,6 +192,8 @@ export interface Week {
   startDate?: Date | null;
   theme?: string | null;
   dateRangeStr?: string | null;
+  moduleNumber?: number | null;
+  moduleMention?: string | null;
   courseId?: string;
   readings: Reading[];
 }
@@ -194,6 +207,8 @@ export interface Reading {
   mediaType: MediaType;
   isCompleted: boolean;
   isDeleted: boolean;
+  isRequired?: boolean;
+  requirementType?: 'required' | 'optional';
   summaryText: string;
   keyTakeawaysText: string;
   estimatedTimeText: string;
@@ -207,6 +222,7 @@ export interface Reading {
   semanticCategoryRaw?: string | null;
   relevantTopics?: string | null;
   sourceDocumentName?: string | null;
+  sourceDocumentId?: string | null;
   docColorHex?: string | null;
   isFavorite: boolean;
   courseId?: string;
@@ -235,10 +251,12 @@ export interface Assignment {
   mediaUrl?: string | null;
   relevantTopics?: string | null;
   sourceDocumentName?: string | null;
+  sourceDocumentId?: string | null;
   docColorHex?: string | null;
   isFavorite: boolean;
   courseId?: string;
   rubricCriteria: RubricCriterionDTO[];
+  scheduledWeeks?: number[];
 }
 
 export interface SyllabusDocument {

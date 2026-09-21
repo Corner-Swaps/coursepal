@@ -35,7 +35,7 @@ import {
   discoverReadingTopics,
   parseSafeDate,
   resolveReadingMediaType,
-  getSanitizedCoursePill
+  isGenericPlaceholderTheme
 } from '../../utils/readingDisplayHelper';
 import { InlineCalendarPicker } from '../InlineCalendarPicker';
 
@@ -47,6 +47,7 @@ export interface ReadingDetailModalProps {
   onSave?: (updated: Reading) => void;
   onToggleComplete?: (id: string) => void;
   onDeleteReading?: (id: string) => void;
+  viewMode?: 'weeks' | 'modules';
 }
 
 export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
@@ -54,7 +55,8 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   reading,
   courses,
   onClose,
-  onSave
+  onSave,
+  viewMode
 }) => {
   if (!reading) return null;
 
@@ -64,9 +66,6 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
   const matchedCourse = courses.find(
     c => (c.courseCode || c.courseName).toLowerCase() === (reading.courseCode || '').toLowerCase()
   );
-
-  const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
-  const pillTitle = getSanitizedCoursePill(reading.courseCode, matchedCourse);
 
   // Validate course code to exclude generic labels
   const isInvalidCourseCode = (code?: string | null) =>
@@ -144,8 +143,43 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
     resolveSuggestedDate(reading)
   );
   const [mediaType, setMediaType] = useState<MediaType>(() => resolveReadingMediaType(reading));
+  const [isRequired, setIsRequired] = useState<boolean>(() =>
+    reading ? (reading.isRequired !== false && reading.requirementType !== 'optional') : true
+  );
+  const [requirementType, setRequirementType] = useState<'required' | 'optional'>(() =>
+    reading && (reading.isRequired === false || reading.requirementType === 'optional') ? 'optional' : 'required'
+  );
   const [videoUrlInput, setVideoUrlInput] = useState<string>('');
-  const [noteInputs, setNoteInputs] = useState<string[]>([]);
+  const [noteInputs, setNoteInputs] = useState<string[]>(() => {
+    return (reading?.summaryText || '')
+      .split('\n')
+      .map(n => n.replace(/^[•\-\*▪●]\s*/, '').trim())
+      .filter(n => n.length > 0)
+      .filter(n => !/^Study\s+(?:Chapter|Module|Ch\.)/i.test(n) && !/^Assigned reading for/i.test(n));
+  });
+
+  const effectiveViewMode: 'weeks' | 'modules' = useMemo(() => {
+    if (viewMode) return viewMode;
+    if (reading?.moduleNumber && !reading?.weekNumber) return 'modules';
+    return 'weeks';
+  }, [viewMode, reading?.moduleNumber, reading?.weekNumber]);
+
+  const resolvedTopic = useMemo(() => {
+    if (reading?.relevantTopics && reading.relevantTopics.trim().length > 0 && !isGenericPlaceholderTheme(reading.relevantTopics)) {
+      return reading.relevantTopics.trim();
+    }
+    if (topicInputs && topicInputs.length > 0) {
+      const clean = topicInputs.filter(t => t.trim().length > 0 && !isGenericPlaceholderTheme(t));
+      if (clean.length > 0) return clean.join(', ');
+    }
+    const matchedWeek = reading?.weekNumber
+      ? matchedCourse?.weeks?.find(w => w.weekNumber === reading.weekNumber)
+      : null;
+    if (matchedWeek?.theme && !isGenericPlaceholderTheme(matchedWeek.theme)) {
+      return matchedWeek.theme;
+    }
+    return null;
+  }, [reading?.relevantTopics, topicInputs, reading?.weekNumber, matchedCourse]);
 
   // Detected Resource / Video URL
   const detectedUrl = useMemo(() => {
@@ -203,15 +237,19 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
       setSuggestedDate(resolveSuggestedDate(reading));
 
       setMediaType(resolveReadingMediaType(reading));
+      const isReq = reading.isRequired !== false && reading.requirementType !== 'optional';
+      setIsRequired(isReq);
+      setRequirementType(isReq ? 'required' : 'optional');
       setVideoUrlInput(reading.videoUrl || '');
 
       const notes = (reading.summaryText || '')
         .split('\n')
         .map(n => n.replace(/^[•\-\*▪●]\s*/, '').trim())
-        .filter(n => n.length > 0);
+        .filter(n => n.length > 0)
+        .filter(n => !/^Study\s+(?:Chapter|Module|Ch\.)/i.test(n) && !/^Assigned reading for/i.test(n));
       setNoteInputs(notes);
     }
-  }, [reading?.id, reading?.mediaType, reading?.mediaTypeRaw, visible, courses]);
+  }, [reading?.id, reading?.mediaType, reading?.mediaTypeRaw, reading?.isRequired, reading?.requirementType, visible, courses]);
 
   // Reset ref when modal is dismissed so reopening always re-syncs
   useEffect(() => {
@@ -247,6 +285,8 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
       moduleNumber: moduleNumber > 0 ? moduleNumber : null,
       moduleMention: moduleNumber > 0 ? `Module ${moduleNumber}` : null,
       summaryText: cleanNotes,
+      isRequired: isRequired,
+      requirementType: requirementType,
       ...overrides
     };
 
@@ -338,6 +378,12 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         {/* Navigation Bar */}
         <View style={styles.navBar}>
+          <View style={styles.navPlaceholder} />
+
+          <View style={styles.navTitleContainer}>
+            <Text style={styles.navTitle} numberOfLines={1}>Reading Details</Text>
+          </View>
+
           <TouchableOpacity
             onPress={handleDone}
             style={styles.doneNavButton}
@@ -346,12 +392,6 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
           >
             <Text style={styles.doneNavText}>Done</Text>
           </TouchableOpacity>
-
-          <View style={styles.navTitleContainer}>
-            <Text style={styles.navTitle} numberOfLines={1}>Reading Details</Text>
-          </View>
-
-          <View style={styles.navPlaceholder} />
         </View>
 
         <KeyboardAvoidingView
@@ -369,37 +409,51 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
           >
             {/* MARK: - Header Banner */}
             <View style={styles.headerBannerCard}>
-              {/* Optional Media Badge */}
-              {(reading.videoUrl || (mediaType && mediaType !== 'textbook')) && (
-                <View style={styles.pillRow}>
-                  {reading.videoUrl ? (
-                    <TouchableOpacity
-                      style={styles.videoBadge}
-                      onPress={() => {
-                        const url = reading.videoUrl!.startsWith('http') ? reading.videoUrl! : `https://${reading.videoUrl}`;
-                        Linking.openURL(url).catch(() => {});
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.videoBadgeText}>
-                        {/youtube\.com|youtu\.be/i.test(reading.videoUrl) ? 'YouTube' : 'Video'}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : mediaType && mediaType !== 'textbook' ? (
-                    <View style={styles.videoBadge}>
-                      <Text style={styles.videoBadgeText}>
-                        {mediaType === 'video'
-                          ? 'Video'
-                          : mediaType === 'podcast'
-                          ? 'Podcast'
-                          : mediaType === 'article'
-                          ? 'Article'
-                          : 'Paper'}
-                      </Text>
-                    </View>
-                  ) : null}
+              {/* Requirement & Media Badges */}
+              <View style={styles.pillRow}>
+                <View
+                  style={[
+                    styles.requirementHeaderBadge,
+                    isRequired ? styles.requirementHeaderBadgeRequired : styles.requirementHeaderBadgeOptional
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.requirementHeaderBadgeText,
+                      isRequired ? styles.requirementHeaderBadgeTextRequired : styles.requirementHeaderBadgeTextOptional
+                    ]}
+                  >
+                    {isRequired ? 'REQUIRED' : 'OPTIONAL'}
+                  </Text>
                 </View>
-              )}
+
+                {reading.videoUrl ? (
+                  <TouchableOpacity
+                    style={styles.videoBadge}
+                    onPress={() => {
+                      const url = reading.videoUrl!.startsWith('http') ? reading.videoUrl! : `https://${reading.videoUrl}`;
+                      Linking.openURL(url).catch(() => {});
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.videoBadgeText}>
+                      {/youtube\.com|youtu\.be/i.test(reading.videoUrl) ? 'YouTube' : 'Video'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : mediaType && mediaType !== 'textbook' ? (
+                  <View style={styles.videoBadge}>
+                    <Text style={styles.videoBadgeText}>
+                      {mediaType === 'video'
+                        ? 'Video'
+                        : mediaType === 'podcast'
+                        ? 'Podcast'
+                        : mediaType === 'article'
+                        ? 'Article'
+                        : 'Paper'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
 
               {/* Title Input */}
               <View style={styles.titleSection}>
@@ -417,67 +471,75 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               </View>
             </View>
 
-            {/* MARK: - Section 1: Schedule Week */}
-            <Text style={styles.sectionHeaderTitle}>Schedule Week</Text>
-            <View style={styles.sectionCard}>
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Week</Text>
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => handleWeekStep(-1)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepperBtnText}>−</Text>
-                  </TouchableOpacity>
+            {/* MARK: - Section 1: Schedule Week (Only in Weekly View) */}
+            {effectiveViewMode === 'weeks' && (
+              <>
+                <Text style={styles.sectionHeaderTitle}>Schedule Week</Text>
+                <View style={styles.sectionCard}>
+                  <View style={styles.formRow}>
+                    <Text style={styles.rowLabel}>Week</Text>
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleWeekStep(-1)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.stepperBtnText}>−</Text>
+                      </TouchableOpacity>
 
-                  <View style={styles.stepperValueBox}>
-                    <Text style={styles.stepperValueText}>
-                      {weekNumber === 0 ? 'No Week' : `Week ${weekNumber}`}
-                    </Text>
+                      <View style={styles.stepperValueBox}>
+                        <Text style={styles.stepperValueText}>
+                          {weekNumber === 0 ? 'No Week' : `Week ${weekNumber}`}
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleWeekStep(1)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.stepperBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => handleWeekStep(1)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepperBtnText}>+</Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            </View>
+              </>
+            )}
 
-            {/* MARK: - Section 2: Schedule Module */}
-            <Text style={styles.sectionHeaderTitle}>Schedule Module</Text>
-            <View style={styles.sectionCard}>
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Module</Text>
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => handleModuleStep(-1)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepperBtnText}>−</Text>
-                  </TouchableOpacity>
+            {/* MARK: - Section 2: Schedule Module (Only in Modules View) */}
+            {effectiveViewMode === 'modules' && (
+              <>
+                <Text style={styles.sectionHeaderTitle}>Schedule Module</Text>
+                <View style={styles.sectionCard}>
+                  <View style={styles.formRow}>
+                    <Text style={styles.rowLabel}>Module</Text>
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleModuleStep(-1)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.stepperBtnText}>−</Text>
+                      </TouchableOpacity>
 
-                  <View style={styles.stepperValueBox}>
-                    <Text style={styles.stepperValueText}>
-                      {moduleNumber === 0 ? 'No Module' : `Module ${moduleNumber}`}
-                    </Text>
+                      <View style={styles.stepperValueBox}>
+                        <Text style={styles.stepperValueText}>
+                          {moduleNumber === 0 ? 'No Module' : `Module ${moduleNumber}`}
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleModuleStep(1)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.stepperBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => handleModuleStep(1)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepperBtnText}>+</Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            </View>
+              </>
+            )}
 
             {/* MARK: - Section 3: Chapter & Pages */}
             <Text style={styles.sectionHeaderTitle}>Chapter & Pages</Text>
@@ -514,6 +576,16 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                 </View>
               </View>
             </View>
+
+            {/* MARK: - Topic Section */}
+            {resolvedTopic ? (
+              <>
+                <Text style={styles.sectionHeaderTitle}>Topic</Text>
+                <View style={styles.sectionCard}>
+                  <Text style={styles.topicDetailText}>{resolvedTopic}</Text>
+                </View>
+              </>
+            ) : null}
 
             {/* MARK: - Section 4: Author */}
             <Text style={styles.sectionHeaderTitle}>Author</Text>
@@ -574,6 +646,54 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                 }}
                 accentColor={CoursePalTheme.accentBlue}
               />
+            </View>
+
+            {/* MARK: - Section: Reading Requirement */}
+            <Text style={styles.sectionHeaderTitle}>Reading Requirement</Text>
+            <View style={styles.requirementPillsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.requirementPill,
+                  isRequired && styles.requirementPillActiveRequired
+                ]}
+                onPress={() => {
+                  setIsRequired(true);
+                  setRequirementType('required');
+                  saveAllChanges({ isRequired: true, requirementType: 'required' });
+                }}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.requirementPillText,
+                    isRequired && styles.requirementPillTextActive
+                  ]}
+                >
+                  Required
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.requirementPill,
+                  !isRequired && styles.requirementPillActiveOptional
+                ]}
+                onPress={() => {
+                  setIsRequired(false);
+                  setRequirementType('optional');
+                  saveAllChanges({ isRequired: false, requirementType: 'optional' });
+                }}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.requirementPillText,
+                    !isRequired && styles.requirementPillTextActive
+                  ]}
+                >
+                  Optional
+                </Text>
+              </TouchableOpacity>
             </View>
 
             {/* MARK: - Section 4: Media Type */}
@@ -729,7 +849,7 @@ const styles = StyleSheet.create({
     minWidth: 60,
     height: 40,
     justifyContent: 'center',
-    alignItems: 'flex-start'
+    alignItems: 'flex-end'
   },
   doneNavText: {
     fontSize: 17,
@@ -811,6 +931,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF'
   },
+  requirementHeaderBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  requirementHeaderBadgeRequired: {
+    backgroundColor: '#EFF6FF'
+  },
+  requirementHeaderBadgeOptional: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1'
+  },
+  requirementHeaderBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.4
+  },
+  requirementHeaderBadgeTextRequired: {
+    color: '#2470F5'
+  },
+  requirementHeaderBadgeTextOptional: {
+    color: '#64748B'
+  },
   videoBadge: {
     backgroundColor: '#475569',
     paddingHorizontal: 9,
@@ -857,6 +1004,31 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '600',
     color: '#334155'
+  },
+  topicDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  topicIconBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE'
+  },
+  topicIconBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#2563EB',
+    letterSpacing: 0.5
+  },
+  topicDetailText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1E293B',
+    lineHeight: 22
   },
   courseCodePill: {
     paddingHorizontal: 10,
@@ -1096,6 +1268,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#2470F5'
+  },
+  requirementPillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16
+  },
+  requirementPill: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  requirementPillActiveRequired: {
+    backgroundColor: '#2470F5',
+    borderColor: '#2470F5'
+  },
+  requirementPillActiveOptional: {
+    backgroundColor: '#475569',
+    borderColor: '#475569'
+  },
+  requirementPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#596B85'
+  },
+  requirementPillTextActive: {
+    color: '#FFFFFF'
   },
   mediaTypePillsRow: {
     flexDirection: 'row',

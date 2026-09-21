@@ -222,9 +222,12 @@ const styles = StyleSheet.create({
     color: '#121C33'
   },
   navArrowButton: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9'
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   weekdayRow: {
     flexDirection: 'row',
