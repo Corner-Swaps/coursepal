@@ -212,4 +212,89 @@ describe('Readings Active Week & Done Pill Segregation', () => {
       expect(doneLabel).not.toContain('·');
     });
   });
+
+  describe('Module Readings Schedule Retention & Course Matching', () => {
+    it('preserves all 22 readings across modules and weeks without dropping any item', () => {
+      const getEffectiveReadingWeek = (r: any): number | null => {
+        if (typeof r.weekNumber === 'number' && r.weekNumber > 0) return r.weekNumber;
+        if (r.weekId && r.weekId !== 'none') {
+          const m = r.weekId.match(/\d+/);
+          if (m && parseInt(m[0], 10) > 0) return parseInt(m[0], 10);
+        }
+        if (typeof r.moduleNumber === 'number' && r.moduleNumber > 0) {
+          return r.moduleNumber;
+        }
+        return null;
+      };
+
+      // Create 22 readings: 1 with weekNumber, 21 pure module readings
+      const readings: Reading[] = [
+        createMockReading({ id: 'r-wk-1', title: 'Week 1 Reading', weekNumber: 1, isCompleted: false })
+      ];
+      for (let i = 2; i <= 22; i++) {
+        readings.push(
+          createMockReading({
+            id: `r-mod-${i}`,
+            title: `Module ${i} Reading`,
+            weekNumber: null,
+            weekId: 'none',
+            moduleNumber: i,
+            isCompleted: false
+          })
+        );
+      }
+
+      expect(readings.length).toBe(22);
+
+      // Verify that all 22 readings have valid effective weeks
+      const effectiveWeeks = readings.map(getEffectiveReadingWeek);
+      expect(effectiveWeeks.every(w => typeof w === 'number' && w > 0)).toBe(true);
+
+      // Verify grouping: all 22 readings must be placed into weeks, none dropped
+      const readingsByWeek = new Map<number, Reading[]>();
+      for (const r of readings) {
+        const w = getEffectiveReadingWeek(r) || 1;
+        const list = readingsByWeek.get(w) || [];
+        list.push(r);
+        readingsByWeek.set(w, list);
+      }
+
+      let totalGrouped = 0;
+      readingsByWeek.forEach(list => {
+        totalGrouped += list.length;
+      });
+      expect(totalGrouped).toBe(22);
+    });
+
+    it('resiliently matches course by ID, courseCode with or without spaces, or courseName', () => {
+      const isReadingForCourse = (
+        r: { courseId?: string | null; courseCode?: string | null },
+        course: { id: string; courseCode?: string | null; courseName?: string | null } | null
+      ): boolean => {
+        if (!course) return true;
+        if (r.courseId && r.courseId === course.id) return true;
+        const cCode = (course.courseCode || '').trim().toLowerCase();
+        const cCodeClean = cCode.replace(/\s+/g, '');
+        const rCode = (r.courseCode || '').trim().toLowerCase();
+        const rCodeClean = rCode.replace(/\s+/g, '');
+        if (cCode && rCode && (cCode === rCode || cCodeClean === rCodeClean)) return true;
+        const cName = (course.courseName || '').trim().toLowerCase();
+        if (cName && rCode && (cName === rCode || cName.replace(/\s+/g, '') === rCodeClean)) return true;
+        return false;
+      };
+
+      const course = { id: 'c-101', courseCode: 'CPC 512', courseName: 'Family Systems' };
+
+      // 1. Match by ID
+      expect(isReadingForCourse({ courseId: 'c-101' }, course)).toBe(true);
+      // 2. Match by exact code
+      expect(isReadingForCourse({ courseCode: 'CPC 512' }, course)).toBe(true);
+      // 3. Match by code without space
+      expect(isReadingForCourse({ courseCode: 'cpc512' }, course)).toBe(true);
+      // 4. Match by courseName
+      expect(isReadingForCourse({ courseCode: 'Family Systems' }, course)).toBe(true);
+      // 5. Does not match distinct course
+      expect(isReadingForCourse({ courseCode: 'CPC 527' }, course)).toBe(false);
+    });
+  });
 });

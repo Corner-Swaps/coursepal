@@ -45,7 +45,8 @@ import {
   parseSafeDate,
   getReadingChapterSortKey,
   isInvalidAssignmentTitle,
-  cleanUploadStatusMessage
+  cleanUploadStatusMessage,
+  isItemForCourse
 } from '../utils/readingDisplayHelper';
 import { CalendarExportService } from '../services/CalendarExportService';
 import { ensureBundledPdfFile } from '../utils/bundledPdfService';
@@ -110,10 +111,10 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
 
   const confirmDeleteCourse = (course: Course) => {
     const readingCount = readings.filter(
-      r => !r.isDeleted && (r.courseId ? r.courseId === course.id : (r.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
+      r => !r.isDeleted && isItemForCourse(r, course)
     ).length;
     const assignmentCount = assignments.filter(
-      a => !a.isDeleted && (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === (course.courseCode || course.courseName).toLowerCase())
+      a => !a.isDeleted && isItemForCourse(a, course)
     ).length;
 
     Alert.alert(
@@ -267,7 +268,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                     {cleanUploadStatusMessage(uploadStatusText)}
                   </Text>
                   <Text style={styles.uploadStatusPercent}>
-                    {Math.round(Math.min(100, Math.max(10, (uploadProgress || 0.15) * 100)))}%
+                    {Math.round(Math.min(100, Math.max(1, (uploadProgress ?? 0.01) * 100)))}%
                   </Text>
                 </View>
 
@@ -277,7 +278,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                     style={[
                       styles.uploadProgressBarFill,
                       {
-                        width: `${Math.round(Math.min(100, Math.max(8, (uploadProgress || 0.15) * 100)))}%`
+                        width: `${Math.round(Math.min(100, Math.max(1, (uploadProgress ?? 0.01) * 100)))}%`
                       }
                     ]}
                   />
@@ -300,17 +301,16 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
             ) : (
               activeCourses.map(course => {
                 const isExpanded = expandedCourseIds.has(course.id);
-                const courseCodeKey = (course.courseCode || course.courseName).toLowerCase();
-
+                const cleanCourseCode = (course.courseCode || course.courseName || '').replace(/\s+/g, '').toLowerCase();
                 const courseReadings = readings.filter(
-                  r => !r.isDeleted && (r.courseId ? r.courseId === course.id : (r.courseCode || '').toLowerCase() === courseCodeKey)
+                  r => !r.isDeleted && isItemForCourse(r, course)
                 );
 
                 const courseAssignments = assignments
                   .filter(
                     a =>
                       !a.isDeleted &&
-                      (a.courseId === course.id || (Boolean(courseCodeKey) && (a.courseCode || '').toLowerCase() === courseCodeKey)) &&
+                      isItemForCourse(a, course) &&
                       !isInvalidAssignmentTitle(a.title)
                   )
                   .sort((a, b) => {

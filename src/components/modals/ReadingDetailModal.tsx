@@ -409,24 +409,8 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
           >
             {/* MARK: - Header Banner */}
             <View style={styles.headerBannerCard}>
-              {/* Requirement & Media Badges */}
+              {/* Media Badges */}
               <View style={styles.pillRow}>
-                <View
-                  style={[
-                    styles.requirementHeaderBadge,
-                    isRequired ? styles.requirementHeaderBadgeRequired : styles.requirementHeaderBadgeOptional
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.requirementHeaderBadgeText,
-                      isRequired ? styles.requirementHeaderBadgeTextRequired : styles.requirementHeaderBadgeTextOptional
-                    ]}
-                  >
-                    {isRequired ? 'REQUIRED' : 'OPTIONAL'}
-                  </Text>
-                </View>
-
                 {reading.videoUrl ? (
                   <TouchableOpacity
                     style={styles.videoBadge}
@@ -930,33 +914,6 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
     color: '#FFFFFF'
-  },
-  requirementHeaderBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 6,
-    minHeight: 24,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  requirementHeaderBadgeRequired: {
-    backgroundColor: '#EFF6FF'
-  },
-  requirementHeaderBadgeOptional: {
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1'
-  },
-  requirementHeaderBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    letterSpacing: 0.4
-  },
-  requirementHeaderBadgeTextRequired: {
-    color: '#2470F5'
-  },
-  requirementHeaderBadgeTextOptional: {
-    color: '#64748B'
   },
   videoBadge: {
     backgroundColor: '#475569',

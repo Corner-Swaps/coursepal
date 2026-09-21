@@ -26,7 +26,9 @@ import {
   formatAssignmentDueDate,
   parseSafeDate,
   getSanitizedCoursePill,
-  isInvalidAssignmentTitle
+  isInvalidAssignmentTitle,
+  isItemForCourse,
+  matchCourseForItem
 } from '../utils/readingDisplayHelper';
 import { calculateAcademicWeek } from '../utils/timeFormatters';
 
@@ -55,9 +57,9 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
   const [selectedAssignmentForDetail, setSelectedAssignmentForDetail] = useState<Assignment | null>(null);
   const [assignmentForEdit, setAssignmentForEdit] = useState<Assignment | null>(null);
 
-  // Active course resolution: defaults to first course if none explicitly selected,
-  // ensuring deliverables and total counts from different documents are never mixed together!
-  const activeCourse = selectedCourseFilter || (courses.length > 0 ? courses[0] : null);
+  // Active course resolution: matches selectedCourseFilter if explicitly selected,
+  // or null when viewing All Courses (allowing all coursework across active courses to load).
+  const activeCourse = selectedCourseFilter;
 
   const fallbackMonthYear = useMemo(() => {
     if (activeCourse?.weeks && activeCourse.weeks.length > 0) {
@@ -72,28 +74,22 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   }, [activeCourse, selectedDate]);
 
-  // Filter active assignments (all coursework strictly filtered by activeCourse)
+  // Filter active assignments (strictly filtered by activeCourse when specified)
   const activeAssignments = useMemo(() => {
     return assignments.filter(a => {
       if (sortMode === 'trash') {
         if (!a.isDeleted) return false;
-        if (activeCourse) {
-          const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
-          return a.courseId === activeCourse.id || (Boolean(cCode) && (a.courseCode || '').toLowerCase() === cCode);
+        if (activeCourse && !isItemForCourse(a, activeCourse)) {
+          return false;
         }
         return true;
       }
       if (a.isDeleted) return false;
       if (isInvalidAssignmentTitle(a.title)) return false;
 
-      // Filter strictly by Course
-      if (activeCourse) {
-        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
-        const matchesCourse =
-          a.courseId === activeCourse.id || (Boolean(cCode) && (a.courseCode || '').toLowerCase() === cCode);
-        if (!matchesCourse) {
-          return false;
-        }
+      // Filter strictly by Course when a specific course filter is active
+      if (activeCourse && !isItemForCourse(a, activeCourse)) {
+        return false;
       }
 
       // Filter by Completed mode
@@ -127,9 +123,8 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
   const deletedCount = useMemo(() => {
     return assignments.filter(a => {
       if (!a.isDeleted) return false;
-      if (activeCourse) {
-        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
-        return a.courseId === activeCourse.id || (Boolean(cCode) && (a.courseCode || '').toLowerCase() === cCode);
+      if (activeCourse && !isItemForCourse(a, activeCourse)) {
+        return false;
       }
       return true;
     }).length;
@@ -148,13 +143,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       const day = String(d.getDate()).padStart(2, '0');
       const key = `${y}-${m}-${day}`;
 
-      const cleanCode = (a.courseCode || '').replace(/\s+/g, '').toLowerCase();
-      const matchedCourse = courses.find(
-        c =>
-          (a.courseId ? c.id === a.courseId : false) ||
-          (c.courseCode || '').replace(/\s+/g, '').toLowerCase() === cleanCode ||
-          (c.courseName || '').toLowerCase() === (a.courseCode || '').toLowerCase()
-      );
+      const matchedCourse = matchCourseForItem(a, courses);
       const color = matchedCourse?.hexColor || a.docColorHex || CoursePalTheme.accentBlue;
 
       const existing = map.get(key) || [];
@@ -178,7 +167,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         }
       }
       const courseAssignments = assignments.filter(
-        a => !a.isDeleted && (a.courseId ? a.courseId === selectedCourseFilter.id : (a.courseCode || '').toLowerCase() === (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase())
+        a => !a.isDeleted && isItemForCourse(a, selectedCourseFilter)
       );
       for (const a of courseAssignments) {
         if (a.dueDate) {
@@ -258,13 +247,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
 
   // Grade weight metrics
   const renderAssignmentCard = (assignment: Assignment, weekContext?: number) => {
-    const cleanCode = (assignment.courseCode || '').replace(/\s+/g, '').toLowerCase();
-    const matchedCourse = courses.find(
-      c =>
-        (assignment.courseId ? c.id === assignment.courseId : false) ||
-        (c.courseCode || '').replace(/\s+/g, '').toLowerCase() === cleanCode ||
-        (c.courseName || '').toLowerCase() === (assignment.courseCode || '').toLowerCase()
-    );
+    const matchedCourse = matchCourseForItem(assignment, courses);
     const courseColor = matchedCourse?.hexColor || assignment.docColorHex || CoursePalTheme.accentBlue;
     const pillTitle = getSanitizedCoursePill(assignment.courseCode, matchedCourse);
 
@@ -370,9 +353,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 const targetWk = weekContext !== undefined && weekContext > 0 ? weekContext : assignment.weekNumber;
                 let resolvedDate: Date | string | null | undefined = assignment.dueDate;
                 if ((!resolvedDate || (weekContext !== undefined && weekContext !== assignment.weekNumber)) && targetWk && targetWk > 0) {
-                  const c = courses.find(
-                    crs => (assignment.courseId ? crs.id === assignment.courseId : (crs.courseCode || crs.courseName).toLowerCase() === (assignment.courseCode || '').toLowerCase())
-                  );
+                  const c = matchCourseForItem(assignment, courses);
                   const w = c?.weeks?.find(wk => wk.weekNumber === targetWk);
                   if (w?.startDate) resolvedDate = w.startDate;
                   else if (w?.dateRangeStr) resolvedDate = w.dateRangeStr;
@@ -414,7 +395,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             </View>
           </TouchableOpacity>
 
-          {/* Right Action: Completion Checkmark OR Restore & Permanent Delete */}
+          {/* Right Action: Completion Checkmark OR Restore Pill */}
           {sortMode === 'trash' ? (
             <View style={styles.trashActionsRow}>
               <TouchableOpacity
@@ -424,28 +405,6 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               >
                 <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
                 <Text style={styles.restorePillText}>Restore</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.permanentTrashBtn}
-                onPress={() => {
-                  Alert.alert(
-                    'Delete Assignment Permanently?',
-                    `Are you sure you want to permanently delete '${assignment.title}'? This action cannot be undone.`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => permanentlyDeleteAssignment(assignment.id)
-                      }
-                    ]
-                  );
-                }}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <TrashIcon size={14} color="#D94033" />
               </TouchableOpacity>
             </View>
           ) : (
@@ -567,9 +526,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       {/* MARK: - Single Course Assignment Loading / Progress Section */}
       {activeCourse && (() => {
         const courseAssigns = assignments.filter(
-          a =>
-            !a.isDeleted &&
-            (a.courseId ? a.courseId === activeCourse.id : (a.courseCode || '').toLowerCase() === (activeCourse.courseCode || activeCourse.courseName).toLowerCase())
+          a => !a.isDeleted && isItemForCourse(a, activeCourse)
         );
         const total = courseAssigns.length;
         const completed = courseAssigns.filter(a => a.isCompleted).length;

@@ -31,7 +31,9 @@ import {
   deduplicateReadingTitle,
   isInvalidAssignmentTitle,
   isGenericPlaceholderTheme,
-  cleanAcademicWeekTheme
+  cleanAcademicWeekTheme,
+  isItemForCourse,
+  matchCourseForItem
 } from '../src/utils/readingDisplayHelper';
 import { sanitizeAssignment, sanitizeReading } from '../src/context/CoursePalContext';
 import { Reading, Course } from '../src/types/models';
@@ -1802,6 +1804,68 @@ if let doc = PDFDocument(url: url), let str = doc.string {
       expect(cleanAcademicWeekTheme('Readings')).toBe('');
       expect(cleanAcademicWeekTheme(null)).toBe('');
       expect(cleanAcademicWeekTheme('')).toBe('');
+    });
+  });
+
+  describe('isItemForCourse & matchCourseForItem (Universal Resilient Matcher)', () => {
+    const courseA = {
+      id: 'c-cpc512-active',
+      courseCode: 'CPC 512',
+      courseName: 'Family Systems Approaches to Counselling'
+    };
+    const courseB = {
+      id: 'c-psyc612-active',
+      courseCode: 'PSYC 612',
+      courseName: 'Cognitive Neuroscience'
+    };
+
+    it('matches by direct courseId equality even if courseCode is missing or divergent', () => {
+      const reading = { courseId: 'c-cpc512-active', courseCode: 'OTHER' };
+      expect(isItemForCourse(reading, courseA)).toBe(true);
+      expect(isItemForCourse(reading, courseB)).toBe(false);
+    });
+
+    it('matches by alphanumeric normalized course code when courseId differs or is unset', () => {
+      const r1 = { courseId: 'diff-id', courseCode: 'CPC512' };
+      expect(isItemForCourse(r1, courseA)).toBe(true);
+
+      const r2 = { courseId: null, courseCode: 'cpc 512' };
+      expect(isItemForCourse(r2, courseA)).toBe(true);
+
+      const r3 = { courseId: undefined, courseCode: 'CPC-512' };
+      expect(isItemForCourse(r3, courseA)).toBe(true);
+    });
+
+    it('matches department and course number regex tokens across long titles', () => {
+      const rLong = { courseId: 'diff-id-2', courseCode: 'CPC 512 - Summer 2026' };
+      expect(isItemForCourse(rLong, courseA)).toBe(true);
+
+      const cLong = { id: 'c-new', courseCode: 'CPC 512: Family Systems', courseName: 'Family Systems Approaches to Counselling' };
+      const rShort = { courseId: 'diff-id-3', courseCode: 'CPC 512' };
+      expect(isItemForCourse(rShort, cLong)).toBe(true);
+    });
+
+    it('matches course name containment when course code contains or matches course name', () => {
+      const rByName = { courseId: 'diff-id-4', courseCode: 'Family Systems Approaches' };
+      expect(isItemForCourse(rByName, courseA)).toBe(true);
+    });
+
+    it('returns false for null, undefined, or unrelated courses', () => {
+      expect(isItemForCourse(null, courseA)).toBe(false);
+      expect(isItemForCourse({ courseCode: 'CS 101' }, courseA)).toBe(false);
+      expect(isItemForCourse(undefined, undefined)).toBe(false);
+    });
+
+    it('matchCourseForItem finds the correct owning course from a course list', () => {
+      const readingA = { courseId: 'old-uuid', courseCode: 'CPC512' };
+      const matched = matchCourseForItem(readingA, [courseB, courseA]);
+      expect(matched?.id).toBe(courseA.id);
+
+      const readingB = { courseId: courseB.id };
+      expect(matchCourseForItem(readingB, [courseA, courseB])?.id).toBe(courseB.id);
+
+      const readingUnknown = { courseId: 'unknown', courseCode: 'BIO 100' };
+      expect(matchCourseForItem(readingUnknown, [courseA, courseB])).toBeUndefined();
     });
   });
 });

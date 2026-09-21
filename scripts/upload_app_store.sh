@@ -3,7 +3,7 @@ set -e
 
 PROJECT_DIR="/Users/slava/Downloads/Projects/ClassPal"
 DATE_STR=$(date +%Y-%m-%d)
-ARCHIVE_PATH="$HOME/Library/Developer/Xcode/Archives/$DATE_STR/CoursePal 1.4.1 (Build 2).xcarchive"
+ARCHIVE_PATH="$HOME/Library/Developer/Xcode/Archives/$DATE_STR/CoursePal 1.4.2 (Build 5).xcarchive"
 UPLOAD_DIR="$PROJECT_DIR/build/UploadAppStore"
 
 mkdir -p "$UPLOAD_DIR"
@@ -31,7 +31,7 @@ cat << 'UPLOAD_PLIST' > "$UPLOAD_DIR/UploadOptions.plist"
 </plist>
 UPLOAD_PLIST
 
-echo "🚀 Uploading CoursePal 1.4.1 (Build 2) to App Store Connect..."
+echo "🚀 Uploading CoursePal 1.4.2 (Build 5) to App Store Connect..."
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportOptionsPlist "$UPLOAD_DIR/UploadOptions.plist" \

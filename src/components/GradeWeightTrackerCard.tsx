@@ -10,6 +10,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Course, Assignment } from '../types/models';
 import { CoursePalTheme } from '../constants/theme';
 import { computeGradeWeights, calculateTargetGradeNeeded } from '../utils/gradeWeightHelper';
+import { isItemForCourse } from '../utils/readingDisplayHelper';
 
 export interface GradeWeightTrackerCardProps {
   course: Course;
@@ -28,11 +29,9 @@ export const GradeWeightTrackerCard: React.FC<GradeWeightTrackerCardProps> = ({
   // Active deliverables for this course
   const courseAssignments = useMemo(() => {
     return assignments.filter(
-      a =>
-        !a.isDeleted &&
-        (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === courseCodeKey)
+      a => !a.isDeleted && isItemForCourse(a, course)
     );
-  }, [assignments, course.id, courseCodeKey]);
+  }, [assignments, course]);
 
   const {
     totalWeight,

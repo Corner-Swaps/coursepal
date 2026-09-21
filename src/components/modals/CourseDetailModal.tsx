@@ -20,7 +20,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Course, Assignment, Reading } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
 import { SparklesIcon, ChevronRightIcon } from '../SvgIcons';
-import { formatDisplayTitleWithChapter, formatAuthorAndPagesSubtitle } from '../../utils/readingDisplayHelper';
+import {
+  formatDisplayTitleWithChapter,
+  formatAuthorAndPagesSubtitle,
+  isItemForCourse
+} from '../../utils/readingDisplayHelper';
 
 export interface CourseDetailModalProps {
   visible: boolean;
@@ -65,10 +69,9 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
 
   const courseColor = course.hexColor || CoursePalTheme.accentBlue;
 
-  // Filter assignments & readings for this course
-  const courseCodeKey = (course.courseCode || course.courseName).toLowerCase();
+  // Filter assignments & readings for this course using resilient matching
   const courseAssignments = assignments
-    .filter(a => !a.isDeleted && (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === courseCodeKey))
+    .filter(a => !a.isDeleted && isItemForCourse(a, course))
     .sort((a, b) => {
       const d1 = a.dueDate ? new Date(a.dueDate).getTime() : 0;
       const d2 = b.dueDate ? new Date(b.dueDate).getTime() : 0;
@@ -76,7 +79,7 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
     });
 
   const courseReadings = readings
-    .filter(r => !r.isDeleted && (r.courseId ? r.courseId === course.id : (r.courseCode || '').toLowerCase() === courseCodeKey));
+    .filter(r => !r.isDeleted && isItemForCourse(r, course));
 
   const handleSave = () => {
     const cleanName = courseName.trim();

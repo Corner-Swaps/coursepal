@@ -230,7 +230,7 @@ export const InviteScreen: React.FC = () => {
 
               <View style={styles.aboutTextCol}>
                 <Text style={styles.aboutTitle}>About CoursePal</Text>
-                <Text style={styles.aboutDesc}>100% on-device syllabus companion & version 1.4.1</Text>
+                <Text style={styles.aboutDesc}>100% on-device syllabus companion & version 1.4.2</Text>
               </View>
 
               <ChevronRightIcon size={13} color="#73859E" />
@@ -356,7 +356,7 @@ export const InviteScreen: React.FC = () => {
 
               <View style={styles.aboutTextCol}>
                 <Text style={styles.aboutTitle}>About CoursePal</Text>
-                <Text style={styles.aboutDesc}>100% on-device syllabus companion & version 1.4.1</Text>
+                <Text style={styles.aboutDesc}>100% on-device syllabus companion & version 1.4.2</Text>
               </View>
 
               <ChevronRightIcon size={13} color="#73859E" />

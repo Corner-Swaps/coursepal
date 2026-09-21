@@ -20,7 +20,8 @@ import {
   formatShortDocumentTitle,
   isInvalidAssignmentTitle,
   isGenericPlaceholderTheme,
-  cleanAcademicWeekTheme
+  cleanAcademicWeekTheme,
+  isItemForCourse
 } from '../utils/readingDisplayHelper';
 import { weekNumberForDate } from '../utils/timeFormatters';
 import { extractTextFromPDF, renderPDFPages, extractTextFromDocxBase64 } from '../services/PDFTextExtractor';
@@ -275,6 +276,12 @@ export function sanitizeAssignment(a: Assignment): Assignment {
   };
 }
 
+export const isGenericToken = (t?: string | null) =>
+  !t || /^(new|new course|new cou|reading|assignment|crs|gen\s*101)$/i.test(t.trim());
+
+export const isStubOrFileName = (n?: string | null) =>
+  !n || isGenericToken(n) || /syllabus$/i.test(n.trim()) || /_syllabus$/i.test(n.trim());
+
 export function createDefaultCoursesSeed(): {
   courses: Course[];
   readings: Reading[];
@@ -478,19 +485,11 @@ export function healCanonicalCPC512(
     return (r.courseId && r.courseId === cpc512Course.id) || code === 'CPC512';
   };
   const cpcReadings = rawReadings.filter(isCpc512);
-  const cpcModuleReadings = cpcReadings.filter(r => r.moduleNumber && (!r.weekNumber || r.weekNumber === 0));
   const cpcWeeklyReadings = cpcReadings.filter(r => (r.weekNumber || 0) > 0);
   const hasAllTenModules = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(m =>
-    cpcModuleReadings.some(r => r.moduleNumber === m && !r.isDeleted)
+    cpcReadings.some(r => r.moduleNumber === m && !r.isDeleted)
   );
-  const hasCleanTitles = !cpcModuleReadings.some(r =>
-    (r.title || '').includes('Systems Theory') ||
-    (r.title || '').includes('Diverse Populations') ||
-    (r.title || '').includes('Bowen Family') ||
-    (r.title || '').includes('Structural Family') ||
-    r.dateRangeStr != null ||
-    r.dueDate != null
-  );
+  const hasModule6 = cpcReadings.some(r => r.moduleNumber === 6 && !r.isDeleted);
   const cpcAssignmentsExisting = rawAssignments.filter(a =>
     a.courseId ? a.courseId === cpc512Course.id : (a.courseCode || '').replace(/\s+/g, '').toUpperCase() === 'CPC512'
   );
@@ -511,13 +510,11 @@ export function healCanonicalCPC512(
   );
   const needsHealing =
     !hasAllTenModules ||
-    !hasCleanTitles ||
+    !hasModule6 ||
     !hasPresentation ||
     !hasUnfabricatedPoints ||
     !hasCleanWeeklyTitles ||
-    cpcModuleReadings.length !== 10 ||
     cpcWeeklyReadings.length < 10 ||
-    cpcReadings.some(r => r.moduleNumber && r.weekNumber && r.weekNumber > 0) ||
     cpcWeeklyReadings.some(r => r.weekNumber === 2 && (r.title || '').includes('Chapter 2')) ||
     cpcReadings.some(r =>
       (r.title || '').includes('Mastering Competency') ||
@@ -535,55 +532,12 @@ export function healCanonicalCPC512(
       r.courseId ? r.courseId !== cpc512Course.id : (r.courseCode || '').replace(/\s+/g, '').toUpperCase() !== 'CPC512'
     );
 
-    // 1. Canonical Module Readings (Table 1 Modules: Module 1..10)
-    const canonicalModules = [
-      { modNum: 1, chapter: 'Chapters 1–3', title: 'Gehart (Chapters 1–3)', theme: 'Systems Theory and the History of Family Therapy' },
-      { modNum: 2, chapter: 'Chapter 2', title: 'Gehart (Chapter 2)', theme: 'Family of Origin/ Genograms' },
-      { modNum: 3, chapter: 'Chapters 11–15', title: 'Gehart (Chapters 11–15)', theme: 'Diverse Populations and Family Therapy Case Conceptualization and Application' },
-      { modNum: 4, chapter: 'Chapter 7', title: 'Gehart (Chapter 7)', theme: 'Bowen Family Systems' },
-      { modNum: 5, chapter: 'Chapter 5', title: 'Gehart (Chapter 5)', theme: 'Structural Family Therapy' },
-      { modNum: 6, chapter: 'Chapter 4', title: 'Gehart (Chapter 4)', theme: 'Strategic Family Therapy' },
-      { modNum: 7, chapter: 'Chapter 6', title: 'Gehart (Chapter 6)', theme: 'Experiential Family Therapy' },
-      { modNum: 8, chapter: 'Chapter 7', title: 'Gehart (Chapter 7)', theme: 'Psychoanalytic Family Therapy' },
-      { modNum: 9, chapter: 'Chapter 8', title: 'Gehart (Chapter 8)', theme: 'Cognitive Behavioural Family Therapy Clinical issues in Family Counselling' },
-      { modNum: 10, chapter: 'Chapter 10', title: 'Gehart (Chapter 10)', theme: 'Social Constructionist Family Therapy Future Research and Critiques' }
-    ];
-
-    canonicalModules.forEach(mod => {
-      rawReadings.push({
-        id: `r-cpc512-mod-${mod.modNum}`,
-        title: mod.title,
-        authorName: 'Diane R. Gehart',
-        resourceTitle: null,
-        mediaTypeRaw: 'textbook',
-        mediaType: 'textbook',
-        isCompleted: false,
-        isDeleted: false,
-        summaryText: '',
-        keyTakeawaysText: '',
-        estimatedTimeText: '~45 min read',
-        dueDate: null,
-        dateRangeStr: null,
-        chapterText: mod.chapter,
-        pagesText: null,
-        courseCode: 'CPC 512',
-        courseId: cpc512Course.id,
-        relevantTopics: mod.theme,
-        sourceDocumentName: 'CPC 512 Reading and Assignment Schedule',
-        docColorHex: cpc512Course.hexColor || '#EF4444',
-        isFavorite: false,
-        weekId: undefined,
-        weekNumber: null,
-        moduleNumber: mod.modNum,
-        moduleMention: `Module ${mod.modNum}`
-      });
-    });
-
-    // 2. Table 2 Weekly Schedule Readings (Weeks 1..12 Calendar Schedule)
+    // Canonical Weekly Schedule Readings (Weeks 1..12 Calendar Schedule with Module Mappings)
     const weeklyReadingsData = [
       {
         id: 'r-cpc512-week-1-ch1-3',
         weekNum: 1,
+        modNum: 1,
         chapter: 'Chapters 1–3',
         title: 'Chapters 1–3',
         theme: 'Creating a caring community, Introduction to Family Systems, Course overview',
@@ -594,6 +548,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-2-ch5',
         weekNum: 2,
+        modNum: 2,
         chapter: 'Chapter 5',
         title: 'Chapter 5',
         theme: 'Introduction to Systems Thinking, Introduction to Mapping Tools',
@@ -604,6 +559,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-2-articles',
         weekNum: 2,
+        modNum: 2,
         chapter: null,
         title: 'Articles on Canvas',
         theme: 'Introduction to Systems Thinking, Introduction to Mapping Tools',
@@ -614,6 +570,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-3-ch5-7',
         weekNum: 3,
+        modNum: 3,
         chapter: 'Chapters 5 & 7',
         title: 'Chapters 5 & 7',
         theme: 'From Theory to Practice, Structural Family Systems',
@@ -624,6 +581,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-4-ch7',
         weekNum: 4,
+        modNum: 4,
         chapter: 'Chapter 7',
         title: 'Chapter 7',
         theme: 'Evidence Based Practice and Empirically Supported Models (TBD)',
@@ -634,6 +592,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-5-ch4-10',
         weekNum: 5,
+        modNum: 5,
         chapter: 'Chapters 4–10',
         title: 'Chapters 4–10',
         theme: 'Evidenced-Based Practice & Empirically Supported Models (Presentation Reference)',
@@ -644,6 +603,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-7-ch4-10',
         weekNum: 7,
+        modNum: 6,
         chapter: 'Chapters 4–10',
         title: 'Chapters 4–10',
         theme: 'Evidence Based Practice & Empirically Supported Models (Presentations)',
@@ -654,6 +614,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-8-ch4-10',
         weekNum: 8,
+        modNum: 7,
         chapter: 'Chapters 4–10',
         title: 'Chapters 4–10',
         theme: 'Evidence Based Practice & Empirically Supported Models (Presentations)',
@@ -664,6 +625,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-9-ch11',
         weekNum: 9,
+        modNum: 8,
         chapter: 'Chapter 11',
         title: 'Chapter 11',
         theme: 'Case Conceptualization (Core Theoretical Principles)',
@@ -674,6 +636,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-10-ch11',
         weekNum: 10,
+        modNum: 9,
         chapter: 'Chapter 11',
         title: 'Chapter 11',
         theme: 'Case Conceptualization (Clinical Application & In-Class Evaluation)',
@@ -684,6 +647,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-10-review',
         weekNum: 10,
+        modNum: 9,
         chapter: null,
         title: 'Review Sample Comprehensive Exam Cases in Van General Course Shell',
         theme: 'Case Conceptualization',
@@ -694,6 +658,7 @@ export function healCanonicalCPC512(
       {
         id: 'r-cpc512-week-11-ch8',
         weekNum: 11,
+        modNum: 10,
         chapter: 'Chapter 8',
         title: 'Chapter 8',
         theme: 'Feedback Case Conceptualizations, Addressing Clinical Issues, Counselling Practice',
@@ -728,8 +693,8 @@ export function healCanonicalCPC512(
         isFavorite: false,
         weekId: `w-${wr.weekNum}`,
         weekNumber: wr.weekNum,
-        moduleNumber: null,
-        moduleMention: null
+        moduleNumber: wr.modNum || null,
+        moduleMention: wr.modNum ? `Module ${wr.modNum}` : null
       });
     });
 
@@ -1256,11 +1221,67 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         // If user has old dummy seed courses (cpc-514, cpc-523, cpc-511), filter them out so they don't clutter the view
         const isLegacyDummySeed = (id: string) => /^c-cpc-(514|523|511)-active$/.test(id);
         cleanCourses = cleanCourses.filter(c => !isLegacyDummySeed(c.id));
-        const activeIds = new Set(cleanCourses.map(c => c.id));
-        const activeCodes = new Set(cleanCourses.map(c => (c.courseCode || '').toLowerCase().trim()));
-        rawReadings = rawReadings.filter(r => (r.courseId ? activeIds.has(r.courseId) : activeCodes.has((r.courseCode || '').toLowerCase().trim())));
-        rawAssignments = rawAssignments.filter(a => (a.courseId ? activeIds.has(a.courseId) : activeCodes.has((a.courseCode || '').toLowerCase().trim())));
-        cleanVaultDocs = cleanVaultDocs.filter(d => (d.courseId ? activeIds.has(d.courseId) : activeCodes.has((d.courseCode || '').toLowerCase().trim())));
+
+        // Deduplicate courses if user previously imported the same course/syllabus twice
+        const deduplicatedCourses: Course[] = [];
+        const seenCourseKeys = new Map<string, Course>();
+        for (const c of cleanCourses) {
+          const codeKey = (c.courseCode || '').replace(/\s+/g, '').toUpperCase();
+          const nameKey = (c.courseName || '').trim().toLowerCase();
+          const key = codeKey || nameKey;
+          if (key && !isGenericToken(key)) {
+            if (seenCourseKeys.has(key)) {
+              const existing = seenCourseKeys.get(key)!;
+              const existingScore = (existing.weeks?.length || 0) + (existing.assignments?.length || 0);
+              const currentScore = (c.weeks?.length || 0) + (c.assignments?.length || 0);
+              if (currentScore > existingScore) {
+                const idx = deduplicatedCourses.indexOf(existing);
+                if (idx !== -1) deduplicatedCourses[idx] = c;
+                seenCourseKeys.set(key, c);
+              }
+              continue;
+            }
+            seenCourseKeys.set(key, c);
+          }
+          deduplicatedCourses.push(c);
+        }
+        cleanCourses = deduplicatedCourses;
+
+        // Deduplicate Vault Documents so the same syllabus is never loaded twice
+        const seenDocs = new Set<string>();
+        cleanVaultDocs = cleanVaultDocs.filter(vd => {
+          const docKey = `${(vd.courseCode || '').toUpperCase()}_${(vd.title || '').toLowerCase()}`;
+          if (seenDocs.has(docKey)) return false;
+          seenDocs.add(docKey);
+          return true;
+        });
+
+        rawReadings = rawReadings.filter(r => cleanCourses.some(c => isItemForCourse(r, c)));
+        rawAssignments = rawAssignments.filter(a => cleanCourses.some(c => isItemForCourse(a, c)));
+        cleanVaultDocs = cleanVaultDocs.filter(d => cleanCourses.some(c => isItemForCourse(d, c)));
+
+        // Re-link items to their active course ID to heal any ID divergences from re-imports or deduplication
+        rawReadings = rawReadings.map(r => {
+          const matched = cleanCourses.find(c => isItemForCourse(r, c));
+          if (matched && r.courseId !== matched.id) {
+            return { ...r, courseId: matched.id };
+          }
+          return r;
+        });
+        rawAssignments = rawAssignments.map(a => {
+          const matched = cleanCourses.find(c => isItemForCourse(a, c));
+          if (matched && a.courseId !== matched.id) {
+            return { ...a, courseId: matched.id };
+          }
+          return a;
+        });
+        cleanVaultDocs = cleanVaultDocs.map(d => {
+          const matched = cleanCourses.find(c => isItemForCourse(d, c));
+          if (matched && (d as any).courseId !== matched.id) {
+            return { ...d, courseId: matched.id };
+          }
+          return d;
+        });
 
         if (cleanCourses.length === 0) {
           // If user has 0 courses stored, seed default courses (PSYC 612 and CPC 527)
@@ -1294,10 +1315,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         // Populate course weeks with organized readings
         const updatedCourses = cleanCourses.map(c => {
-          const cCode = (c.courseCode || c.courseName || '').toLowerCase().trim();
-          const cReadings = cleanReadings.filter(
-            r => r.courseId ? r.courseId === c.id : (r.courseCode || '').toLowerCase().trim() === cCode
-          );
+          const cReadings = cleanReadings.filter(r => isItemForCourse(r, c));
           const maxW = Math.max(
             ...cReadings.map(r => r.weekNumber || 1),
             c.termWeeks || 10,
@@ -1330,9 +1348,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           .filter(a => !isInvalidAssignmentTitle(a.title))
           .map(a => {
             if (!a.dueDate && a.weekNumber > 0) {
-              const matchedCourse = updatedCourses.find(
-                c => (a.courseId ? c.id === a.courseId : (c.courseCode || c.courseName).toLowerCase() === (a.courseCode || '').toLowerCase())
-              );
+              const matchedCourse = updatedCourses.find(c => isItemForCourse(a, c));
               const w = matchedCourse?.weeks?.find(wk => wk.weekNumber === a.weekNumber);
               if (w?.startDate) {
                 return { ...a, dueDate: parseSafeDate(w.startDate) };
@@ -1346,9 +1362,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         // Hydrate readings missing dueDate but having weekNumber from course schedule
         const hydratedReadings = cleanReadings.map(r => {
           if (!r.dueDate && (r.weekNumber || 0) > 0) {
-            const matchedCourse = updatedCourses.find(
-              c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
-            );
+            const matchedCourse = updatedCourses.find(c => isItemForCourse(r, c));
             const w = matchedCourse?.weeks?.find(wk => wk.weekNumber === r.weekNumber);
             if (w?.startDate) {
               return {
@@ -1610,19 +1624,16 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const deleteCourse = useCallback((id: string) => {
     const courseToDelete = courses.find(c => c.id === id);
-    const targetCode = courseToDelete
-      ? (courseToDelete.courseCode || courseToDelete.courseName).toLowerCase()
-      : null;
 
     const nextCourses = courses.filter(c => c.id !== id);
     const nextReadings = readings.filter(
-      r => (r.courseId ? r.courseId !== id : (targetCode ? (r.courseCode || '').toLowerCase() !== targetCode : true))
+      r => (courseToDelete ? !isItemForCourse(r, courseToDelete) : r.courseId !== id)
     );
     const nextAssignments = assignments.filter(
-      a => (a.courseId ? a.courseId !== id : (targetCode ? (a.courseCode || '').toLowerCase() !== targetCode : true))
+      a => (courseToDelete ? !isItemForCourse(a, courseToDelete) : a.courseId !== id)
     );
     const nextVaultDocs = vaultDocs.filter(
-      v => (v.courseId ? v.courseId !== id : (targetCode ? (v.courseCode || '').toLowerCase() !== targetCode : true))
+      v => (courseToDelete ? !isItemForCourse(v, courseToDelete) : (v.courseId ? v.courseId !== id : true))
     );
 
     setCourses(nextCourses);
@@ -2054,7 +2065,15 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     persistenceManager.saveTermsAccepted();
   }, []);
 
+  const isImportingRef = useRef<boolean>(false);
+
   const importSyllabusDocument = useCallback(async (params: ImportSyllabusParams) => {
+    if (isImportingRef.current) {
+      console.warn('Import already in progress, skipping duplicate invocation.');
+      return { success: false, message: 'An import is already in progress.' };
+    }
+    isImportingRef.current = true;
+
     const { fileName, fileUri, fileSize, targetCourseId, preferredHexColor } = params;
     let rawText = params.rawText || '';
 
@@ -2063,8 +2082,22 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     // Switch immediately to syllabus tab so user sees the in-page upload status
     setSelectedTab('syllabus');
     setIsUploading(true);
-    setUploadProgress(0.18);
+    setUploadProgress(0.01);
     setUploadStatusText('Reading syllabus, please wait a moment...');
+
+    let currentSimulatedProgress = 0.01;
+    const progressTimer = setInterval(() => {
+      if (currentSimulatedProgress < 0.25) {
+        currentSimulatedProgress += 0.015; // 1% -> 25% steadily during file reading & page rendering
+      } else if (currentSimulatedProgress < 0.60) {
+        currentSimulatedProgress += 0.01; // 25% -> 60% during processing
+      } else if (currentSimulatedProgress < 0.85) {
+        currentSimulatedProgress += 0.006; // 60% -> 85% during normalization
+      } else if (currentSimulatedProgress < 0.94) {
+        currentSimulatedProgress += 0.002; // 85% -> 94% during synthesis
+      }
+      setUploadProgress(Number(currentSimulatedProgress.toFixed(3)));
+    }, 200);
 
     // Request iOS background execution assertion to prevent suspension if app is minimized
     await beginBackgroundTask('SyllabusUpload');
@@ -2187,8 +2220,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
 
       // Stage 2: Multimodal Syllabus Parsing
-      setUploadProgress(0.55);
       setUploadStatusText('Processing coursework, please wait...');
+      currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.25);
 
       let dto: any = null;
       let apiError: string | undefined = undefined;
@@ -2248,6 +2281,8 @@ Tables often have columns like (Week/Module | Topic | Required Readings | Delive
       "mediaType": "textbook | video | podcast | article",
       "videoUrl": "https://...",
       "weekNumber": 1,
+      "moduleNumber": 1,
+      "moduleMention": "Module 1",
       "dueDate": "YYYY-MM-DD or null",
       "isRequired": true,
       "requirementType": "required"
@@ -2270,6 +2305,8 @@ Tables often have columns like (Week/Module | Topic | Required Readings | Delive
   "weeks": [
     {
       "weekNumber": 1,
+      "moduleNumber": 1,
+      "moduleMention": "Module 1",
       "theme": "Weekly Topic / Session Focus",
       "date": "YYYY-MM-DD or null",
       "dateRangeStr": "Explicit date or range if stated (e.g. July 2/3 or Jul 2 – Jul 3)",
@@ -2293,8 +2330,9 @@ EXTRACTION RULES:
    - Clean theme: Strip notes like "(group presentations)" from the "theme" string when a presentation deliverable card is scheduled that week.
    - READING WEEKS & BREAKS: If a week indicates "Reading Week", "Spring Break", or "No Classes", record theme as "Reading Week – No Class" and ensure 0 readings and 0 assignments are placed in that week.
    - For "date", use strict YYYY-MM-DD only when an explicit calendar date exists; otherwise null. Never invent dates.
-3. SCHEDULES WITH MODULES VS STANDALONE CURRICULUM MODULE TABLES:
-   - UNIFIED WEEKLY-MODULE SCHEDULE: When a syllabus has a single schedule table where each row lists both a Week and a Module (e.g. Column 1: "Week 01", Column 2: "Module 01"), this is a SINGLE unified weekly schedule. Extract each row into "weeks" (and "readings") with BOTH "weekNumber": 1 and "moduleNumber": 1. Leave "moduleReadings": [] EMPTY! Do NOT extract duplicate items into both "readings" and "moduleReadings".
+3. MODULES & CURRICULUM:
+   - ALWAYS EXTRACT MODULE NUMBERS: Whenever a syllabus organizes topics into modules, sessions, or curriculum units, extract "moduleNumber" (e.g. 1, 2, 3...) and "moduleMention" (e.g. "Module 1") on BOTH "weeks" and "readings".
+   - UNIFIED WEEKLY-MODULE SCHEDULE: When a syllabus has a schedule table where rows list both a Week and a Module (e.g. "Week 01", "Module 01"), extract each row into "weeks" (and "readings") with BOTH "weekNumber": 1 and "moduleNumber": 1. Leave "moduleReadings": [] EMPTY! Do NOT extract duplicate items into both "readings" and "moduleReadings".
    - DUAL / STANDALONE MODULES TABLE: ONLY populate "moduleReadings" when the syllabus document has two completely distinct tables: an independent curriculum modules table (e.g. Table 1: Modules 1–10 with curriculum themes) AND a separate weekly calendar schedule table (e.g. Table 2: Weekly Schedule Weeks 1–12).
    - When a separate curriculum modules table exists, extract ALL modules into "moduleReadings" with their moduleNumber (e.g. Modules 1 through 10) and full module topic name in "title".
 4. TEXTBOOKS & READINGS:
@@ -2415,8 +2453,8 @@ Output ONLY valid JSON.`;
       );
 
       // Stage 3: Synthesizing Course Repository
-      setUploadProgress(0.85);
       setUploadStatusText('Organizing your schedule, please wait...');
+      currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.75);
 
       const isGenericToken = (t?: string | null) =>
         !t || /^(new|new course|new cou|reading|assignment|crs|gen\s*101)$/i.test(t.trim());
@@ -2432,14 +2470,50 @@ Output ONLY valid JSON.`;
       const hexColor = preferredHexColor || MasterCoursePalette[coursesRef.current.length % MasterCoursePalette.length];
 
       // Find or create course using coursesRef.current (avoids stale closures)
-      // Only merge if targetCourseId was EXPLICITLY passed by the caller (e.g. re-import / update course).
-      // When uploading a new document, NEVER merge into an existing course so readings & total counts remain separate!
       let targetCourse = targetCourseId ? coursesRef.current.find(c => c.id === targetCourseId) : undefined;
+
+      // If targetCourse was not explicitly specified, search for an existing course by course code,
+      // course title, or matching syllabus document so uploading the same document or multiple copies from phone files
+      // updates the existing course instead of creating duplicate courses and documents!
+      if (!targetCourse) {
+        const candidateCode = (courseCode || '').replace(/\s+/g, '').toUpperCase();
+        const candidateName = (courseName || '').trim().toLowerCase();
+        const cleanDocTitle = formatShortDocumentTitle(fileName).toLowerCase();
+        const baseFileName = fileName.toLowerCase().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim();
+
+        targetCourse = coursesRef.current.find(c => {
+          const cCode = (c.courseCode || '').replace(/\s+/g, '').toUpperCase();
+          if (candidateCode && cCode && candidateCode === cCode) return true;
+
+          const cName = (c.courseName || '').trim().toLowerCase();
+          if (candidateName && cName && !isGenericToken(cName)) {
+            if (candidateName === cName) return true;
+          }
+
+          // Check if this course already owns this document (matching title or filename)
+          const hasMatchingDoc = vaultDocsRef.current.some(vd =>
+            ((vd as any).courseId === c.id || (vd.courseCode && c.courseCode && vd.courseCode.toUpperCase() === c.courseCode.toUpperCase())) &&
+            (vd.title?.toLowerCase() === cleanDocTitle || vd.title?.toLowerCase() === fileName.toLowerCase() || vd.title?.toLowerCase() === baseFileName)
+          );
+          if (hasMatchingDoc) return true;
+
+          return false;
+        });
+      }
 
       const courseId = targetCourse ? targetCourse.id : `c-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const effectiveCourseCode = safePreserveCode || safeDtoCode || safeFallbackDtoCode || targetCourse?.courseCode || courseCode;
       const effectiveCourseName = params.preserveCourseTitle || (!isStubOrFileName(targetCourse?.courseName) ? targetCourse?.courseName : undefined) || normalized.courseName || dto?.courseName || targetCourse?.courseName || courseName;
-      const vaultDocId = `vd-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+      const existingVaultDoc = targetCourse
+        ? vaultDocsRef.current.find(vd =>
+            (vd as any).courseId === targetCourse!.id ||
+            (vd.courseCode && targetCourse!.courseCode && vd.courseCode.toUpperCase() === targetCourse!.courseCode.toUpperCase()) ||
+            vd.title?.toLowerCase() === formatShortDocumentTitle(fileName).toLowerCase() ||
+            vd.title?.toLowerCase() === fileName.toLowerCase()
+          )
+        : undefined;
+      const vaultDocId = existingVaultDoc ? existingVaultDoc.id : `vd-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
       // Convert clean readings into Reading objects
       const newReadings: Reading[] = cleanReadingsList.map((r, rIdx) => {
@@ -2465,6 +2539,9 @@ Output ONLY valid JSON.`;
           : (r.requirementType === 'optional' ? false : true);
         const reqType: 'required' | 'optional' = (r.requirementType === 'optional' || isReq === false) ? 'optional' : 'required';
 
+        const resolvedModuleNumber = r.moduleNumber || (matchedWeek as any)?.moduleNumber || ((matchedWeek as any)?.moduleMention && /\d+/.test((matchedWeek as any).moduleMention) ? parseInt((matchedWeek as any).moduleMention.match(/\d+/)![0], 10) : null);
+        const resolvedModuleMention = r.moduleMention || (matchedWeek as any)?.moduleMention || (resolvedModuleNumber ? `Module ${resolvedModuleNumber}` : null);
+
         return {
           ...r,
           id: `r-${Date.now()}-${rIdx}`,
@@ -2477,7 +2554,9 @@ Output ONLY valid JSON.`;
           dateRangeStr: resolvedDateRange,
           relevantTopics: genuineTopic,
           isRequired: isReq,
-          requirementType: reqType
+          requirementType: reqType,
+          moduleNumber: resolvedModuleNumber,
+          moduleMention: resolvedModuleMention
         };
       });
 
@@ -2514,12 +2593,16 @@ Output ONLY valid JSON.`;
         const foundDate = foundWeek?.startDate
           ? parseSafeDate(foundWeek.startDate)
           : (foundWeek?.date ? parseSafeDate(foundWeek.date) : null);
+        const foundModNum = (foundWeek as any)?.moduleNumber || (weekReadings.find(r => r.moduleNumber)?.moduleNumber) || null;
+        const foundModMention = (foundWeek as any)?.moduleMention || (foundModNum ? `Module ${foundModNum}` : null);
         courseWeeks.push({
           id: `w-${w}`,
           weekNumber: w,
           theme: foundTheme,
           startDate: foundDate,
           dateRangeStr: foundWeek?.dateRangeStr || null,
+          moduleNumber: foundModNum,
+          moduleMention: foundModMention,
           courseId,
           readings: weekReadings
         });
@@ -2677,12 +2760,14 @@ Output ONLY valid JSON.`;
       const elapsed = Date.now() - importStartTime;
       const minDisplayMs = 3200; // 3.2s graceful display window
       if (elapsed < minDisplayMs) {
-        setUploadProgress(0.92);
+        currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.90);
+        setUploadProgress(0.90);
         setUploadStatusText('Organizing your schedule, please wait...');
         const pause1 = Math.min(800, minDisplayMs - elapsed);
         await new Promise(r => setTimeout(r, pause1));
 
-        setUploadProgress(0.97);
+        currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.96);
+        setUploadProgress(0.96);
         setUploadStatusText('Setting up your course, please wait...');
         const remaining = minDisplayMs - (Date.now() - importStartTime);
         if (remaining > 0) {
@@ -2690,9 +2775,10 @@ Output ONLY valid JSON.`;
         }
       }
 
+      clearInterval(progressTimer);
       setUploadProgress(1.0);
       setUploadStatusText('Course ready!');
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 600));
 
       setImportBanner({
         type: isFallbackUsed || normalized.isPartial ? 'warning' : 'success',
@@ -2746,6 +2832,8 @@ Output ONLY valid JSON.`;
         message: err.message || 'Failed to parse syllabus document.'
       };
     } finally {
+      clearInterval(progressTimer);
+      isImportingRef.current = false;
       setIsUploading(false);
       setUploadProgress(0);
       setUploadStatusText('');
@@ -2755,6 +2843,7 @@ Output ONLY valid JSON.`;
   }, [courses, triggerConfetti, setSelectedTab]);
 
   const cancelUpload = useCallback(async () => {
+    isImportingRef.current = false;
     setIsUploading(false);
     setUploadProgress(0);
     setUploadStatusText('');
@@ -2803,7 +2892,7 @@ Output ONLY valid JSON.`;
       if (!textToParse && !targetPath) return;
 
       setIsUploading(true);
-      setUploadProgress(0.65);
+      setUploadProgress(0.01);
       setUploadStatusText(`Resuming schedule setup for ${job.fileName}...`);
 
       await importSyllabusDocument({

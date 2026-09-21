@@ -24,7 +24,8 @@ import {
   cleanRubricCriterionName,
   isInvalidAssignmentTitle,
   getReadingChapterSortKey,
-  isRealDateOrRangeString
+  isRealDateOrRangeString,
+  isItemForCourse
 } from '../utils/readingDisplayHelper';
 
 export interface RawAssignmentCandidate {
@@ -440,7 +441,15 @@ export class SyllabusImportManager {
     const textbooks: TextbookResource[] = [];
     const candidateAssignments: RawAssignmentCandidate[] = [];
     const candidateReadings: RawReadingCandidate[] = [];
-    const weeksSummary: { weekNumber: number; theme?: string; date?: string; startDate?: string; dateRangeStr?: string }[] = [];
+    const weeksSummary: {
+      weekNumber: number;
+      theme?: string;
+      date?: string;
+      startDate?: string;
+      dateRangeStr?: string;
+      moduleNumber?: number | null;
+      moduleMention?: string | null;
+    }[] = [];
     const weekDateMap = new Map<number, string>();
 
     let formatAccepted = 'standard';
@@ -478,13 +487,22 @@ export class SyllabusImportManager {
         if (!w || typeof w !== 'object') continue;
         const wkNum = w.weekNumber || w.week_number;
         const rawDate = w.date || w.startDate || w.rawDate || w.dateRangeStr;
+        const wModNum = typeof (w as any).moduleNumber === 'number'
+          ? (w as any).moduleNumber
+          : (typeof (w as any).module_number === 'number'
+              ? (w as any).module_number
+              : ((w as any).moduleMention && /\d+/.test((w as any).moduleMention) ? parseInt((w as any).moduleMention.match(/\d+/)![0], 10) : undefined));
+        const wModMention = (w as any).moduleMention || (wModNum ? `Module ${wModNum}` : undefined);
+
         if (typeof wkNum === 'number' && wkNum > 0) {
           weeksSummary.push({
             weekNumber: wkNum,
             theme: typeof w.theme === 'string' ? w.theme : undefined,
             date: typeof rawDate === 'string' ? rawDate : undefined,
             startDate: typeof (w as any).startDate === 'string' ? (w as any).startDate : (typeof rawDate === 'string' ? rawDate : undefined),
-            dateRangeStr: typeof (w as any).dateRangeStr === 'string' ? (w as any).dateRangeStr : undefined
+            dateRangeStr: typeof (w as any).dateRangeStr === 'string' ? (w as any).dateRangeStr : undefined,
+            moduleNumber: wModNum,
+            moduleMention: wModMention
           });
 
           if (rawDate && typeof rawDate === 'string') {
@@ -505,6 +523,8 @@ export class SyllabusImportManager {
                   dueDate: splitWr.dueDate || splitWr.due_date || (w as any).startDate || (wkNum ? weekDateMap.get(wkNum) : null),
                   dateRangeStr: splitWr.dateRangeStr || (w as any).dateRangeStr || null,
                   weekNumber: splitWr.weekNumber || splitWr.week_number || wkNum,
+                  moduleNumber: splitWr.moduleNumber || (splitWr as any).module_number || wModNum,
+                  moduleMention: splitWr.moduleMention || (splitWr as any).module_mention || wModMention,
                   relevantTopics: splitWr.relevantTopics || w.theme
                 });
               }
@@ -555,15 +575,8 @@ export class SyllabusImportManager {
     // Top-level module readings (e.g. from Table 1 curriculum modules)
     if (Array.isArray((dto as any).moduleReadings)) {
       const rawModuleReadings: any[] = (dto as any).moduleReadings;
-      // Check if moduleReadings is simply a 1:1 duplicate of weekly schedule
-      const isDuplicateOfWeeks = rawModuleReadings.length > 0 && candidateReadings.length > 0 &&
-        rawModuleReadings.every((mr: any) => {
-          const modNum = mr.moduleNumber || mr.module_number;
-          if (!modNum) return false;
-          return candidateReadings.some(cr => cr.weekNumber === modNum);
-        });
-
-      if (!isDuplicateOfWeeks) {
+      const hasAnyWeeklyReadings = candidateReadings.length > 0;
+      if (!hasAnyWeeklyReadings) {
         for (const mr of rawModuleReadings) {
           if (mr && typeof mr === 'object') {
             for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
@@ -579,14 +592,33 @@ export class SyllabusImportManager {
           }
         }
       } else {
-        // Attach moduleNumber to the existing weekly candidateReadings
+        // Attach module metadata to the existing weekly candidateReadings
         for (const mr of rawModuleReadings) {
           const modNum = mr.moduleNumber || mr.module_number;
           if (modNum) {
+            let matched = false;
             for (const cr of candidateReadings) {
-              if (cr.weekNumber === modNum && !cr.moduleNumber) {
-                cr.moduleNumber = modNum;
-                cr.moduleMention = `Module ${modNum}`;
+              if (cr.weekNumber === modNum || cr.moduleNumber === modNum) {
+                matched = true;
+                if (!cr.moduleNumber) cr.moduleNumber = modNum;
+                if (!cr.moduleMention) cr.moduleMention = `Module ${modNum}`;
+                if (!cr.relevantTopics && (mr.relevantTopics || mr.theme)) {
+                  cr.relevantTopics = mr.relevantTopics || mr.theme;
+                }
+              }
+            }
+            if (!matched && mr.title) {
+              // Module reading was not matched to any weekly reading - preserve it so the module curriculum is retained!
+              for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
+                candidateReadings.push({
+                  ...splitMr,
+                  weekNumber: undefined,
+                  moduleNumber: modNum,
+                  moduleMention: splitMr.moduleMention || `Module ${modNum}`,
+                  relevantTopics: mr.relevantTopics || mr.theme || undefined,
+                  summaryText: '',
+                  keyTakeawaysText: ''
+                });
               }
             }
           }
@@ -824,18 +856,17 @@ export class SyllabusImportManager {
         theme: w.theme || `Week ${w.weekNumber}`,
         date: w.startDate || undefined,
         startDate: w.startDate || undefined,
-        dateRangeStr: w.dateRangeStr || undefined
+        dateRangeStr: w.dateRangeStr || undefined,
+        moduleNumber: (w as any).moduleNumber,
+        moduleMention: (w as any).moduleMention || ((w as any).moduleNumber ? `Module ${(w as any).moduleNumber}` : undefined)
       }));
     }
 
-    // Append module readings from localDto if present (Table 1 modules)
+    // Enrich weekly candidate readings with module metadata from localDto if present
     if (Array.isArray(localDto.moduleReadings) && localDto.moduleReadings.length > 0) {
-      for (const mr of localDto.moduleReadings) {
-        const alreadyHasMod = cleanCandidateReadings.some(cr =>
-          cr.moduleNumber === mr.moduleNumber &&
-          (cr.title === mr.title || (cr.chapterText && cr.chapterText === mr.chapterText))
-        );
-        if (!alreadyHasMod) {
+      const hasAnyWeeklyReadings = cleanCandidateReadings.length > 0;
+      if (!hasAnyWeeklyReadings) {
+        for (const mr of localDto.moduleReadings) {
           cleanCandidateReadings.push({
             title: mr.title,
             authorName: mr.authorName || 'Diane R. Gehart',
@@ -851,6 +882,39 @@ export class SyllabusImportManager {
             summaryText: '',
             keyTakeawaysText: ''
           });
+        }
+      } else {
+        // Weekly schedule has readings! Enrich existing readings with module numbers & themes rather than duplicating
+        for (const mr of localDto.moduleReadings) {
+          const modNum = mr.moduleNumber;
+          if (modNum) {
+            let matched = false;
+            for (const cr of cleanCandidateReadings) {
+              if (cr.moduleNumber === modNum || cr.weekNumber === modNum) {
+                matched = true;
+                if (!cr.moduleNumber) cr.moduleNumber = modNum;
+                if (!cr.moduleMention) cr.moduleMention = `Module ${modNum}`;
+                if (!cr.relevantTopics && mr.relevantTopics) cr.relevantTopics = mr.relevantTopics;
+              }
+            }
+            if (!matched && mr.title) {
+              cleanCandidateReadings.push({
+                title: mr.title,
+                authorName: mr.authorName || 'Diane R. Gehart',
+                resourceTitle: mr.resourceTitle || undefined,
+                chapterText: mr.chapterText,
+                pagesText: mr.pagesText,
+                mediaType: mr.mediaType || 'textbook',
+                moduleNumber: modNum,
+                moduleMention: mr.moduleMention || `Module ${modNum}`,
+                dueDate: mr.dueDate || undefined,
+                dateRangeStr: mr.dateRangeStr || undefined,
+                relevantTopics: mr.relevantTopics,
+                summaryText: '',
+                keyTakeawaysText: ''
+              });
+            }
+          }
         }
       }
     }
@@ -1480,10 +1544,10 @@ export class SyllabusImportManager {
 
     // Reconcile assignments: update or append, preserving existing completion and notes
     const courseExistingAssignments = existingAssignments.filter(
-      a => a.courseId ? a.courseId === targetCourseId : (courseCodeKey && (a.courseCode || '').toLowerCase() === courseCodeKey)
+      a => targetCourse ? isItemForCourse(a, targetCourse) : a.courseId === targetCourseId
     );
     const otherAssignments = existingAssignments.filter(
-      a => a.courseId ? a.courseId !== targetCourseId : (!courseCodeKey || (a.courseCode || '').toLowerCase() !== courseCodeKey)
+      a => targetCourse ? !isItemForCourse(a, targetCourse) : a.courseId !== targetCourseId
     );
 
     const mergedCourseAssignments: Assignment[] = [...courseExistingAssignments];
@@ -1531,10 +1595,10 @@ export class SyllabusImportManager {
 
     // Reconcile readings: update or append, preserving completion and user status
     const courseExistingReadings = existingReadings.filter(
-      r => r.courseId ? r.courseId === targetCourseId : (courseCodeKey && (r.courseCode || '').toLowerCase() === courseCodeKey)
+      r => targetCourse ? isItemForCourse(r, targetCourse) : r.courseId === targetCourseId
     );
     const otherReadings = existingReadings.filter(
-      r => r.courseId ? r.courseId !== targetCourseId : (!courseCodeKey || (r.courseCode || '').toLowerCase() !== courseCodeKey)
+      r => targetCourse ? !isItemForCourse(r, targetCourse) : r.courseId !== targetCourseId
     );
 
     const mergedCourseReadings: Reading[] = [...courseExistingReadings];

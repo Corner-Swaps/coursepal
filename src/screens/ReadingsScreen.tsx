@@ -35,10 +35,12 @@ import {
   isReadingWeekEnabled,
   formatWeekHeaderDate,
   cleanDateRangeDisplay,
-  extractReadingWeekNumber,
-  getReadingChapterSortKey,
   isGenericPlaceholderTheme,
-  cleanAcademicWeekTheme
+  cleanAcademicWeekTheme,
+  isItemForCourse,
+  matchCourseForItem,
+  extractReadingWeekNumber,
+  getReadingChapterSortKey
 } from '../utils/readingDisplayHelper';
 import { calculateAcademicWeek } from '../utils/timeFormatters';
 
@@ -73,37 +75,40 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     return deduplicateReadingsList(readings, courses);
   }, [readings, courses]);
 
-  // Active course resolution: defaults to first course if none explicitly selected,
-  // ensuring readings and total counts from different documents are never mixed together!
-  const activeCourse = selectedCourseFilter || (courses.length > 0 ? courses[0] : null);
+  // Active course resolution: matches selectedCourseFilter if explicitly selected,
+  // or null when viewing All Courses (allowing all coursework across active courses to load).
+  const activeCourse = selectedCourseFilter;
+
+  // Helper to get effective week for reading
+  const getEffectiveReadingWeek = (r: Reading): number | null => {
+    const isWeekOn = isReadingWeekEnabled(r);
+    if (isWeekOn) {
+      const w = extractReadingWeekNumber(r);
+      if (w && w > 0) return w;
+    }
+    return null;
+  };
 
   // Filter active (non-deleted) readings
   const activeReadings = useMemo(() => {
     return deduplicatedRawReadings.filter(r => {
       if (sortMode === 'trash') {
         if (!r.isDeleted) return false;
-        if (activeCourse) {
-          const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
-          return r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === cCode;
+        if (activeCourse && !isItemForCourse(r, activeCourse)) {
+          return false;
         }
         return true;
       }
       if (r.isDeleted) return false;
 
-      // Filter strictly by Course so documents are NEVER added together
-      if (activeCourse) {
-        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
-        const matchesCourse =
-          r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === cCode;
-        if (!matchesCourse) {
-          return false;
-        }
+      // Filter strictly by Course when a specific course filter is active
+      if (activeCourse && !isItemForCourse(r, activeCourse)) {
+        return false;
       }
 
-      // Filter by Academic Week
-      if (selectedWeekFilter !== null) {
-        const isWeekOn = isReadingWeekEnabled(r);
-        const w = isWeekOn ? extractReadingWeekNumber(r) : null;
+      // Filter by Academic Week (only when user actively selects a week and in weekly schedule view)
+      if (selectedWeekFilter !== null && groupingViewMode === 'weeks') {
+        const w = getEffectiveReadingWeek(r);
         if (w !== selectedWeekFilter) return false;
       }
 
@@ -114,7 +119,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
 
       return true;
     });
-  }, [deduplicatedRawReadings, sortMode, activeCourse, selectedWeekFilter]);
+  }, [deduplicatedRawReadings, sortMode, activeCourse, selectedWeekFilter, groupingViewMode]);
 
   // Items due on currently selected calendar date (for highlight banner)
   const dateFilteredReadings = useMemo(() => {
@@ -137,13 +142,12 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     return activeReadings.filter(r => r.isCompleted);
   }, [activeReadings, sortMode]);
 
-  // List of all non-deleted readings in the active scope (strictly filtered by activeCourse)
+  // List of all non-deleted readings in the active scope (strictly filtered by activeCourse when specified)
   const scopedReadings = useMemo(() => {
     return deduplicatedRawReadings.filter(r => {
       if (r.isDeleted) return false;
-      if (activeCourse) {
-        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
-        return r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === cCode;
+      if (activeCourse && !isItemForCourse(r, activeCourse)) {
+        return false;
       }
       return true;
     });
@@ -156,9 +160,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
   const deletedCount = useMemo(() => {
     return deduplicatedRawReadings.filter(r => {
       if (!r.isDeleted) return false;
-      if (activeCourse) {
-        const cCode = (activeCourse.courseCode || activeCourse.courseName).toLowerCase();
-        return r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === cCode;
+      if (activeCourse && !isItemForCourse(r, activeCourse)) {
+        return false;
       }
       return true;
     }).length;
@@ -168,10 +171,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
   const readingWeeksList = useMemo(() => {
     const weeks = new Set<number>();
     for (const r of scopedReadings) {
-      if (isReadingWeekEnabled(r)) {
-        const w = extractReadingWeekNumber(r);
-        if (w && w > 0) weeks.add(w);
-      }
+      const w = getEffectiveReadingWeek(r);
+      if (w && w > 0) weeks.add(w);
     }
     return Array.from(weeks).sort((a, b) => a - b);
   }, [scopedReadings]);
@@ -186,7 +187,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     if (readingWeeksList.length === 0) return null;
 
     for (const w of readingWeeksList) {
-      const weekReadings = scopedReadings.filter(r => extractReadingWeekNumber(r) === w);
+      const weekReadings = scopedReadings.filter(r => getEffectiveReadingWeek(r) === w);
       const hasIncomplete = weekReadings.some(r => !r.isCompleted);
       if (hasIncomplete) {
         return w;
@@ -197,7 +198,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     return readingWeeksList[readingWeeksList.length - 1];
   }, [readingWeeksList, scopedReadings]);
 
-  // Keep selectedWeekFilter in sync with where the first week started unless finished, then move to next
+  // Reset selectedWeekFilter when course changes, defaulting to null (all weeks)
+  // so all coursework is immediately visible rather than hiding 90% of readings behind week 1!
   const hasInitializedWeekRef = useRef<boolean>(false);
   const prevCourseIdRef = useRef<string | null>(null);
 
@@ -206,13 +208,9 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     if (!hasInitializedWeekRef.current || prevCourseIdRef.current !== courseKey) {
       hasInitializedWeekRef.current = true;
       prevCourseIdRef.current = courseKey;
-      if (activeStudyWeek !== null) {
-        setSelectedWeekFilter(activeStudyWeek);
-      } else {
-        setSelectedWeekFilter(null);
-      }
+      setSelectedWeekFilter(null);
     }
-  }, [activeCourse, activeStudyWeek]);
+  }, [activeCourse]);
 
   const advanceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -245,7 +243,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     if (willBeCompleted && selectedWeekFilter !== null) {
       const currentWeek = selectedWeekFilter;
       const currentWeekReadings = scopedReadings.filter(
-        r => extractReadingWeekNumber(r) === currentWeek
+        r => getEffectiveReadingWeek(r) === currentWeek
       );
       const otherIncomplete = currentWeekReadings.filter(
         r => r.id !== readingId && !r.isCompleted
@@ -278,9 +276,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       const day = String(d.getDate()).padStart(2, '0');
       const key = `${y}-${m}-${day}`;
 
-      const matchedCourse = courses.find(
-        c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
-      );
+      const matchedCourse = matchCourseForItem(r, courses);
       const color = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
 
       const existing = map.get(key) || [];
@@ -305,7 +301,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         }
       }
       const courseReadings = readings.filter(
-        r => !r.isDeleted && (r.courseId ? r.courseId === selectedCourseFilter.id : (r.courseCode || '').toLowerCase() === (selectedCourseFilter.courseCode || selectedCourseFilter.courseName).toLowerCase())
+        r => !r.isDeleted && isItemForCourse(r, selectedCourseFilter)
       );
       for (const r of courseReadings) {
         if (r.dueDate) {
@@ -375,15 +371,10 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     const allWeeks = new Set<number>();
 
     for (const r of activeReadings) {
-      // If a reading is explicitly a module reading without a week, do not show in weekly schedule
-      if (r.moduleNumber && (!r.weekNumber || r.weekNumber === 0)) {
-        continue;
-      }
-      const isWeekOn = isReadingWeekEnabled(r);
-      if (!isWeekOn) {
+      const w = getEffectiveReadingWeek(r);
+      if (!w) {
         unReadings.push(r);
       } else {
-        const w = extractReadingWeekNumber(r) || 1;
         if (selectedWeekFilter === null || selectedWeekFilter === w) {
           allWeeks.add(w);
           const list = readingsByWeek.get(w) || [];
@@ -425,17 +416,55 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       unassignedReadings: sortedUnReadings,
       groupedWeeks: sortedWeeks
     };
-  }, [activeReadings, selectedWeekFilter, courses, activeCourse]);
+  }, [activeReadings, selectedWeekFilter, courses, activeCourse, groupingViewMode]);
 
   // Group readings by Module curriculum if modules exist
   const groupedModules = useMemo(() => {
     const readingsByMod = new Map<number, Reading[]>();
     const allMods = new Set<number>();
+    const targetCourses = activeCourse ? [activeCourse] : courses;
 
-    for (const r of activeReadings) {
-      const mNum = (r.moduleNumber && r.moduleNumber > 0)
+    // Scan targetCourses for any modules defined in course weeks
+    for (const c of targetCourses) {
+      if (Array.isArray(c.weeks)) {
+        for (const w of c.weeks) {
+          if (typeof w.moduleNumber === 'number' && w.moduleNumber > 0) {
+            allMods.add(w.moduleNumber);
+          } else if (w.moduleMention && /\d+/.test(w.moduleMention)) {
+            allMods.add(parseInt(w.moduleMention.match(/\d+/)![0], 10));
+          }
+        }
+      }
+    }
+
+    // For CPC 512, ensure Modules 1 through 10 are always present
+    const isCpc = targetCourses.some(c =>
+      (c.courseCode || '').toUpperCase().includes('512') ||
+      (c.courseName || '').toLowerCase().includes('family systems')
+    );
+    if (isCpc) {
+      for (let m = 1; m <= 10; m++) {
+        allMods.add(m);
+      }
+    }
+
+    // Group readings by moduleNumber, falling back to course week moduleNumber if needed
+    const sourceList = groupingViewMode === 'modules' ? scopedReadings : activeReadings;
+    for (const r of sourceList) {
+      let mNum = (r.moduleNumber && r.moduleNumber > 0)
         ? r.moduleNumber
         : (r.moduleMention && /\d+/.test(r.moduleMention) ? parseInt(r.moduleMention.match(/\d+/)![0], 10) : null);
+
+      if (!mNum && r.weekNumber && r.weekNumber > 0) {
+        for (const c of targetCourses) {
+          const wk = c.weeks?.find(w => w.weekNumber === r.weekNumber);
+          if (typeof wk?.moduleNumber === 'number' && wk.moduleNumber > 0) {
+            mNum = wk.moduleNumber;
+            break;
+          }
+        }
+      }
+
       if (mNum) {
         allMods.add(mNum);
         const list = readingsByMod.get(mNum) || [];
@@ -443,8 +472,6 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         readingsByMod.set(mNum, list);
       }
     }
-
-    const targetCourses = activeCourse ? [activeCourse] : courses;
 
     return Array.from(allMods)
       .sort((a, b) => a - b)
@@ -483,11 +510,11 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             9: 'Cognitive Behavioural Family Therapy Clinical issues in Family Counselling',
             10: 'Social Constructionist Family Therapy Future Research and Critiques'
           };
-          const isCpc = targetCourses.some(c =>
+          const isCpcCourse = targetCourses.some(c =>
             (c.courseCode || '').toUpperCase().includes('512') ||
             (c.courseName || '').toLowerCase().includes('family systems')
           );
-          if (isCpc && cpcFallbackThemes[m]) {
+          if (isCpcCourse && cpcFallbackThemes[m]) {
             theme = cpcFallbackThemes[m];
           }
         }
@@ -497,51 +524,26 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           readings: rList
         };
       });
-  }, [activeReadings, courses, selectedCourseFilter]);
+  }, [activeReadings, scopedReadings, groupingViewMode, courses, activeCourse]);
 
   const hasDistinctModules = useMemo(() => {
-    if (groupedModules.length === 0) return false;
-    if (groupedWeeks.length === 0) return true;
-
-    // Check if there are standalone module readings (belong to module with no week)
-    const hasStandaloneModuleReadings = activeReadings.some(
-      r => (r.moduleNumber && r.moduleNumber > 0) && (!r.weekNumber || r.weekNumber <= 0)
-    );
-    if (hasStandaloneModuleReadings) return true;
-
-    // Check if any reading has weekNumber != moduleNumber
-    const hasDivergentMapping = activeReadings.some(
-      r => r.moduleNumber && r.weekNumber && r.moduleNumber !== r.weekNumber
-    );
-    if (hasDivergentMapping) return true;
-
-    // If every module's readings exactly match the corresponding week's readings 1:1,
-    // then the modules tab is an exact duplicate of the weekly schedule!
-    const isExactOneToOne = groupedModules.every(mod => {
-      return mod.readings.every(r => r.weekNumber === mod.moduleNum);
-    });
-
-    return !isExactOneToOne;
-  }, [groupedModules, groupedWeeks, activeReadings]);
+    return groupedModules.length > 0;
+  }, [groupedModules]);
 
   useEffect(() => {
     if (!hasDistinctModules && groupingViewMode === 'modules') {
       setGroupingViewMode('weeks');
+    } else if (hasDistinctModules && groupedWeeks.length === 0 && groupingViewMode === 'weeks') {
+      setGroupingViewMode('modules');
     }
-  }, [hasDistinctModules, groupingViewMode]);
+  }, [hasDistinctModules, groupedWeeks.length, groupingViewMode]);
 
   const renderReadingCard = (
     reading: Reading,
     weekDateStr: string | null = null,
     isModuleView: boolean = false
   ) => {
-    const cleanReadingCode = (reading.courseCode || '').replace(/\s+/g, '').toLowerCase();
-    const matchedCourse = courses.find(
-      c =>
-        (reading.courseId ? c.id === reading.courseId : false) ||
-        (c.courseCode || '').replace(/\s+/g, '').toLowerCase() === cleanReadingCode ||
-        (c.courseName || '').toLowerCase() === (reading.courseCode || '').toLowerCase()
-    );
+    const matchedCourse = matchCourseForItem(reading, courses);
     const courseColor = matchedCourse?.hexColor || reading.docColorHex || CoursePalTheme.accentBlue;
     const pillTitle = getSanitizedCoursePill(reading.courseCode, matchedCourse);
     const resolvedMedia = resolveReadingMediaType(reading);
@@ -706,7 +708,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             })()}
           </TouchableOpacity>
 
-          {/* Right-side Action Buttons: Checkmark Ring & Trashcan OR Restore & Permanent Delete */}
+          {/* Right-side Action Buttons: Checkmark Ring & Trashcan OR Restore Pill */}
           {sortMode === 'trash' ? (
             <View style={styles.trashActionsRow}>
               <TouchableOpacity
@@ -716,28 +718,6 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
               >
                 <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
                 <Text style={styles.restorePillText}>Restore</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.permanentTrashBtn}
-                onPress={() => {
-                  Alert.alert(
-                    'Delete Reading Permanently?',
-                    `Are you sure you want to permanently delete '${reading.title}'? This action cannot be undone.`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => permanentlyDeleteReading(reading.id)
-                      }
-                    ]
-                  );
-                }}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <TrashIcon size={14} color="#D94033" />
               </TouchableOpacity>
             </View>
           ) : (
@@ -889,9 +869,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       {/* MARK: - Single Course Reading Loading / Progress Section */}
       {activeCourse && (() => {
         const courseReadings = deduplicatedRawReadings.filter(
-          r =>
-            !r.isDeleted &&
-            (r.courseId ? r.courseId === activeCourse.id : (r.courseCode || '').toLowerCase() === (activeCourse.courseCode || activeCourse.courseName).toLowerCase())
+          r => !r.isDeleted && isItemForCourse(r, activeCourse)
         );
         const total = courseReadings.length;
         const completed = courseReadings.filter(r => r.isCompleted).length;
@@ -993,8 +971,49 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         </View>
       )}
 
+      {/* Segmented Switcher between Weeks and Modules (when course has modules) */}
+      {hasDistinctModules && (
+        <View style={styles.viewModeSegmentContainer}>
+          <TouchableOpacity
+            style={[
+              styles.viewModeSegmentBtn,
+              groupingViewMode === 'weeks' && styles.viewModeSegmentBtnActive
+            ]}
+            onPress={() => setGroupingViewMode('weeks')}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.viewModeSegmentText,
+                groupingViewMode === 'weeks' && styles.viewModeSegmentTextActive
+              ]}
+            >
+              Weeks ({groupedWeeks.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.viewModeSegmentBtn,
+              groupingViewMode === 'modules' && styles.viewModeSegmentBtnActive
+            ]}
+            onPress={() => setGroupingViewMode('modules')}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.viewModeSegmentText,
+                groupingViewMode === 'modules' && styles.viewModeSegmentTextActive
+              ]}
+            >
+              Modules ({groupedModules.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* MARK: - Coursework List (Readings Only) */}
-      {groupedWeeks.length === 0 && unassignedReadings.length === 0 ? (
+      {(groupingViewMode === 'modules' ? groupedModules.length === 0 : (groupedWeeks.length === 0 && unassignedReadings.length === 0)) ? (
         <View style={styles.emptyStateCard}>
           <Text style={styles.emptyTitle}>
             {selectedWeekFilter !== null
@@ -1021,47 +1040,6 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         </View>
       ) : (
         <View style={styles.readingsListContainer}>
-          {/* Segmented Switcher between Weeks and Modules (when course has modules) */}
-          {hasDistinctModules && (
-            <View style={styles.viewModeSegmentContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.viewModeSegmentBtn,
-                  groupingViewMode === 'weeks' && styles.viewModeSegmentBtnActive
-                ]}
-                onPress={() => setGroupingViewMode('weeks')}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.viewModeSegmentText,
-                    groupingViewMode === 'weeks' && styles.viewModeSegmentTextActive
-                  ]}
-                >
-                  Weeks ({groupedWeeks.length})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.viewModeSegmentBtn,
-                  groupingViewMode === 'modules' && styles.viewModeSegmentBtnActive
-                ]}
-                onPress={() => setGroupingViewMode('modules')}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.viewModeSegmentText,
-                    groupingViewMode === 'modules' && styles.viewModeSegmentTextActive
-                  ]}
-                >
-                  Modules ({groupedModules.length})
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
           {isDateFilterActive && (
             <View style={styles.allSectionHeader}>
               <Text style={styles.allSectionTitle}>All Weeks</Text>
@@ -1077,9 +1055,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
               let fallbackDate: string | null = null;
               const wk = r.weekNumber || (r.weekId && /\d+/.test(r.weekId) ? parseInt(r.weekId.match(/\d+/)![0], 10) : null);
               if (wk) {
-                const matchedCourse = courses.find(
-                  c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
-                );
+                const matchedCourse = matchCourseForItem(r, courses);
                 const w = matchedCourse?.weeks?.find(wItem => wItem.weekNumber === wk);
                 if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
                   fallbackDate = w.dateRangeStr;
@@ -1116,15 +1092,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                     : String(firstWithRealDate.dueDate))
                 : null;
 
-            const targetCourse = selectedCourseFilter || courses.find(
-              c => {
-                const sample = weekReadingsList[0];
-                if (sample) {
-                  return sample.courseId ? c.id === sample.courseId : (c.courseCode || c.courseName).toLowerCase() === (sample.courseCode || '').toLowerCase();
-                }
-                return c.weeks?.some(wk => wk.weekNumber === weekNum);
-              }
-            ) || courses[0];
+            const targetCourse = selectedCourseFilter || (weekReadingsList[0] ? matchCourseForItem(weekReadingsList[0], courses) : undefined) || courses.find(c => c.weeks?.some(wk => wk.weekNumber === weekNum)) || courses[0];
 
             if (targetCourse) {
               const w = targetCourse.weeks?.find(wk => wk.weekNumber === weekNum);
@@ -1252,7 +1220,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           {/* Module-grouped readings (when in Course Modules view) */}
           {groupingViewMode === 'modules' && groupedModules.map(({ moduleNum, theme: modTheme, readings: moduleReadingsList }) => {
             const incompleteMod = moduleReadingsList.filter(r => !r.isCompleted);
-            if (incompleteMod.length === 0 && selectedWeekFilter === null) {
+            if (incompleteMod.length === 0 && selectedWeekFilter === null && moduleReadingsList.length > 0) {
               return null;
             }
 
@@ -1278,6 +1246,16 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
 
                 {/* Readings for this Module */}
                 {(() => {
+                  if (moduleReadingsList.length === 0) {
+                    return (
+                      <View style={styles.emptyWeekContainer}>
+                        <Text style={styles.emptyWeekThemeText}>
+                          {cleanModTheme || 'No required readings assigned'}
+                        </Text>
+                      </View>
+                    );
+                  }
+
                   if (incompleteMod.length === 0) {
                     return null;
                   }
@@ -1345,9 +1323,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                   let fallbackDate: string | null = null;
                   const wk = r.weekNumber || (r.weekId && /\d+/.test(r.weekId) ? parseInt(r.weekId.match(/\d+/)![0], 10) : null);
                   if (wk) {
-                    const matchedCourse = courses.find(
-                      c => (r.courseId ? c.id === r.courseId : (c.courseCode || c.courseName).toLowerCase() === (r.courseCode || '').toLowerCase())
-                    );
+                    const matchedCourse = matchCourseForItem(r, courses);
                     const w = matchedCourse?.weeks?.find(wItem => wItem.weekNumber === wk);
                     if (w?.dateRangeStr && isRealDateOrRangeString(w.dateRangeStr)) {
                       fallbackDate = w.dateRangeStr;

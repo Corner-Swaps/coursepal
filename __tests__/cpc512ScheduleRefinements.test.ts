@@ -154,5 +154,34 @@ describe('CPC 512 Schedule & Points Refinements Verification', () => {
       const week6Readings = cpcWeeklyReadings.filter(r => r.weekNumber === 6);
       expect(week6Readings.length).toBe(0);
     });
+
+    it('heals CPC 512 with all 10 modules intact, including Module 6 for Week 7', () => {
+      const { courses, readings } = healCanonicalCPC512([mockCpcCourse], [], []);
+      const cpcReadings = readings.filter(r =>
+        r.courseId ? r.courseId === mockCpcCourse.id : (r.courseCode || '').replace(/\s+/g, '') === 'CPC512'
+      );
+
+      // Verify all 10 modules are present in readings
+      for (let m = 1; m <= 10; m++) {
+        const modReadings = cpcReadings.filter(r => r.moduleNumber === m);
+        expect(modReadings.length).toBeGreaterThan(0);
+      }
+
+      // Explicitly verify Module 6 is attached to Week 7 reading (Strategic Family Therapy)
+      const week7Reading = cpcReadings.find(r => r.weekNumber === 7);
+      expect(week7Reading).toBeDefined();
+      expect(week7Reading?.moduleNumber).toBe(6);
+      expect(week7Reading?.moduleMention).toBe('Module 6');
+
+      // Verify course weeks have module numbers mapped
+      const cpcCourse = courses.find(c => c.id === mockCpcCourse.id);
+      expect(cpcCourse).toBeDefined();
+      const week7 = cpcCourse?.weeks.find(w => w.weekNumber === 7);
+      expect(week7?.moduleNumber).toBe(6);
+      expect(week7?.moduleMention).toBe('Module 6');
+
+      const week11 = cpcCourse?.weeks.find(w => w.weekNumber === 11);
+      expect(week11?.moduleNumber).toBe(10);
+    });
   });
 });

@@ -7,7 +7,7 @@
 import { Share, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import { Assignment, Reading, Course } from '../types/models';
-import { parseSafeDate } from '../utils/readingDisplayHelper';
+import { parseSafeDate, isItemForCourse } from '../utils/readingDisplayHelper';
 
 export class CalendarExportService {
   /**
@@ -165,10 +165,7 @@ export class CalendarExportService {
 
     // Add assignments with due dates
     const courseAssigns = assignments.filter(
-      a =>
-        !a.isDeleted &&
-        a.dueDate &&
-        (a.courseId ? a.courseId === course.id : (a.courseCode || '').toLowerCase() === courseCodeKey)
+      a => !a.isDeleted && a.dueDate && isItemForCourse(a, course)
     );
     for (const a of courseAssigns) {
       const d = parseSafeDate(a.dueDate);
@@ -186,7 +183,7 @@ export class CalendarExportService {
 
     // Add readings with due dates
     const courseReadings = readings.filter(
-      r => !r.isDeleted && r.dueDate && (r.courseId ? r.courseId === course.id : (r.courseCode || '').toLowerCase() === courseCodeKey)
+      r => !r.isDeleted && r.dueDate && isItemForCourse(r, course)
     );
     for (const r of courseReadings) {
       const d = parseSafeDate(r.dueDate);

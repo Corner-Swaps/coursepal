@@ -1635,9 +1635,7 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
       : (typeof (r as any).module_number === 'number' && (r as any).module_number > 0 ? (r as any).module_number : 0);
     const scheduleKey = modNum > 0 && (!weekNum || weekNum === 0) ? `m${modNum}` : (weekNum > 0 ? `w${weekNum}` : `w0`);
 
-    const matchedCourse = courses?.find(
-      c => (c.courseCode || c.courseName || '').toLowerCase() === (r.courseCode || '').toLowerCase()
-    );
+    const matchedCourse = courses ? matchCourseForItem(r, courses) : undefined;
     const courseKey = (matchedCourse?.courseCode || matchedCourse?.courseName || r.courseCode || 'default')
       .trim()
       .toLowerCase();
@@ -2696,4 +2694,70 @@ export function cleanUploadStatusMessage(msg?: string | null): string {
   if (!cleaned) return 'Processing syllabus, please wait...';
   cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
   return cleaned;
+}
+
+/**
+ * Resilient, universal matcher checking if a Reading, Assignment, or VaultDoc belongs to a Course.
+ * 1. Checks direct ID equality: item.courseId === course.id
+ * 2. Checks course code equivalence (ignoring whitespace, hyphens, and casing e.g. "CPC 512" === "CPC512")
+ * 3. Checks course code against course name
+ */
+export function isItemForCourse(
+  item: { courseId?: string | null; courseCode?: string | null } | null | undefined,
+  course: { id?: string | null; courseCode?: string | null; courseName?: string | null } | null | undefined
+): boolean {
+  if (!item || !course) return false;
+
+  // 1. Direct ID match
+  if (item.courseId && course.id && item.courseId === course.id) {
+    return true;
+  }
+
+  const cleanItemCode = (item.courseCode || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanCourseCode = (course.courseCode || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanCourseName = (course.courseName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // 2. Alphanumeric normalized course code match & inclusion
+  if (cleanItemCode && cleanCourseCode) {
+    if (cleanItemCode === cleanCourseCode) return true;
+    if (cleanItemCode.length >= 3 && cleanCourseCode.length >= 3) {
+      if (cleanCourseCode.includes(cleanItemCode) || cleanItemCode.includes(cleanCourseCode)) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Department + Course Number extraction match (e.g. "CPC 512" vs "CPC512 - Family Systems")
+  const itemDeptNum = cleanItemCode.match(/([a-z]{2,5}\d{3,4})/i);
+  if (itemDeptNum) {
+    const targetToken = itemDeptNum[1].toLowerCase();
+    const courseCodeDeptNum = cleanCourseCode.match(/([a-z]{2,5}\d{3,4})/i);
+    if (courseCodeDeptNum && courseCodeDeptNum[1].toLowerCase() === targetToken) {
+      return true;
+    }
+    const courseNameDeptNum = cleanCourseName.match(/([a-z]{2,5}\d{3,4})/i);
+    if (courseNameDeptNum && courseNameDeptNum[1].toLowerCase() === targetToken) {
+      return true;
+    }
+  }
+
+  // 4. Course name containment or match
+  if (cleanItemCode && cleanCourseName && cleanItemCode.length >= 3) {
+    if (cleanItemCode === cleanCourseName || cleanCourseName.includes(cleanItemCode) || cleanItemCode.includes(cleanCourseName)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Finds the course from a list that owns the given item, using resilient matching.
+ */
+export function matchCourseForItem<C extends { id?: string | null; courseCode?: string | null; courseName?: string | null }>(
+  item: { courseId?: string | null; courseCode?: string | null } | null | undefined,
+  courses: C[]
+): C | undefined {
+  if (!item || !courses || courses.length === 0) return undefined;
+  return courses.find(c => isItemForCourse(item, c));
 }

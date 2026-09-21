@@ -23,4 +23,4 @@ export * from './InlineCalendarPicker';
 export * from './SvgIcons';
 export * from './modals';
 
-export const UI_COMPONENTS_VERSION = '1.4.1';
+export const UI_COMPONENTS_VERSION = '1.4.2';
