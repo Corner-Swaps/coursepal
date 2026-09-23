@@ -33,7 +33,8 @@ import {
   isGenericPlaceholderTheme,
   cleanAcademicWeekTheme,
   isItemForCourse,
-  matchCourseForItem
+  matchCourseForItem,
+  getAssignmentInstructionSummary
 } from '../src/utils/readingDisplayHelper';
 import { sanitizeAssignment, sanitizeReading } from '../src/context/CoursePalContext';
 import { Reading, Course } from '../src/types/models';
@@ -1537,7 +1538,7 @@ if let doc = PDFDocument(url: url), let str = doc.string {
       expect(split1).toHaveLength(2);
       expect(split1[0].title).toBe('Lezak et al. (Ch. 1–3)');
       expect(split1[0].authorName).toBe('Lezak et al.');
-      expect(split1[0].chapterText).toBe('Chapter 1–3');
+      expect(split1[0].chapterText).toBe('Chapters 1–3');
       expect(split1[1].title).toBe('Luria (Ch. 2)');
       expect(split1[1].authorName).toBe('Luria');
       expect(split1[1].chapterText).toBe('Chapter 2');
@@ -1550,7 +1551,7 @@ if let doc = PDFDocument(url: url), let str = doc.string {
       expect(split2).toHaveLength(2);
       expect(split2[0].title).toBe('Groth-Marnat (Ch. 4 & 5)');
       expect(split2[0].authorName).toBe('Groth-Marnat');
-      expect(split2[0].chapterText).toBe('Chapter 4 & 5');
+      expect(split2[0].chapterText).toBe('Chapters 4 & 5');
       expect(split2[1].title).toBe('Lichtenberger (Ch. 2)');
       expect(split2[1].authorName).toBe('Lichtenberger');
       expect(split2[1].chapterText).toBe('Chapter 2');
@@ -1775,7 +1776,7 @@ if let doc = PDFDocument(url: url), let str = doc.string {
     it('cleans messy multi-column table crossover string with dates, citations, and numbers', () => {
       const input = '4-6; DSM 5-TR The History and Section 1, Section 3 - 4/10/26 Modul Cultural Context Culture and e 2 of Clinical Diagnosis (...';
       const cleaned = cleanAcademicWeekTheme(input);
-      expect(cleaned).toBe('Cultural Context and Clinical Diagnosis');
+      expect(cleaned).toBe('The History and Cultural Context of Clinical Diagnosis');
     });
 
     it('returns empty string when input is entirely citations and dates without genuine topic', () => {
@@ -1866,6 +1867,84 @@ if let doc = PDFDocument(url: url), let str = doc.string {
 
       const readingUnknown = { courseId: 'unknown', courseCode: 'BIO 100' };
       expect(matchCourseForItem(readingUnknown, [courseA, courseB])).toBeUndefined();
+    });
+  });
+
+  describe('getAssignmentInstructionSummary (Deadline down below, zero week-leak, non-repetitive)', () => {
+    const courseNoWeeks = {
+      id: 'cpc-514',
+      courseCode: 'CPC 514',
+      courseName: 'Research Methods and Statistics',
+      weeks: []
+    } as unknown as Course;
+
+    const courseWithWeeks = {
+      id: 'cpc-512',
+      courseCode: 'CPC 512',
+      courseName: 'Family Systems',
+      weeks: [{ id: 'w1', weekNumber: 1, theme: 'Intro', readings: [] }, { id: 'w2', weekNumber: 2, theme: 'Theory', readings: [] }]
+    } as unknown as Course;
+
+    it('strips deadlines and due dates so they are kept strictly down below on the card', () => {
+      const assign = {
+        title: 'Research Article Analysis-Group Presentation',
+        noteText: 'Presentations: Weeks 4–8 · Deadline: July 8',
+        subTypeRaw: 'presentation'
+      };
+      const summary = getAssignmentInstructionSummary(assign, courseNoWeeks);
+      expect(summary).not.toMatch(/deadline/i);
+      expect(summary).not.toMatch(/july 8/i);
+    });
+
+    it('suppresses week references when the course has no weeks', () => {
+      const assign = {
+        title: 'Research Article Analysis-Group Presentation',
+        noteText: 'Presentations: Weeks 4–8 · Deadline: July 8',
+        subTypeRaw: 'presentation'
+      };
+      const summary = getAssignmentInstructionSummary(assign, courseNoWeeks);
+      expect(summary).not.toMatch(/\bweeks?\b/i);
+      expect(summary).not.toMatch(/4[–-]8/);
+      expect(summary).toBe('In small groups · Slide deck with presenter notes');
+    });
+
+    it('never repeats presentation up top when assignment title already indicates presentation', () => {
+      const assign = {
+        title: 'Research Article Analysis-Group Presentation',
+        noteText: 'Presentations: Weeks 4–8 · Deadline: July 8',
+        subTypeRaw: 'presentation'
+      };
+      const summary = getAssignmentInstructionSummary(assign, courseNoWeeks);
+      expect(summary).not.toMatch(/presentation/i);
+    });
+
+    it('never repeats week up top in assignment instruction summary', () => {
+      const assign = {
+        title: 'Reflective Paper',
+        noteText: 'Week 3 · 4–5 pages double spaced',
+        subTypeRaw: 'paper'
+      };
+      const summary = getAssignmentInstructionSummary(assign, courseWithWeeks);
+      expect(summary).not.toMatch(/\bweeks?\s*\d+\b/i);
+      expect(summary).toBe('4–5 pages double spaced');
+    });
+
+    it('preserves clean deliverables and instruction details when non-repetitive', () => {
+      const assign1 = {
+        title: 'Peer Review Discussion Board Activity',
+        noteText: 'Weekly peer feedback posts · 4 Word Document files',
+        subTypeRaw: 'assignment'
+      };
+      const summary1 = getAssignmentInstructionSummary(assign1, courseNoWeeks);
+      expect(summary1).toBe('Weekly peer feedback posts · 4 Word Document files');
+
+      const assign2 = {
+        title: 'Research Study Design-Individual Paper',
+        noteText: '10–12 pages double-spaced with IRB ethics proposal',
+        subTypeRaw: 'paper'
+      };
+      const summary2 = getAssignmentInstructionSummary(assign2, courseNoWeeks);
+      expect(summary2).toBe('10–12 pages double-spaced with IRB ethics proposal');
     });
   });
 });

@@ -14,10 +14,12 @@ import {
   MediaType,
   ImportOutcome,
   TextbookResource,
-  RubricCriterionDTO
+  RubricCriterionDTO,
+  GradingScaleTier
 } from '../types/models';
 import {
   cleanChapterFromRaw,
+  cleanAssignmentTitle,
   isGenericPlaceholderReadingTitle,
   isDeliverableNotReading,
   parseSafeDate,
@@ -27,6 +29,11 @@ import {
   isRealDateOrRangeString,
   isItemForCourse
 } from '../utils/readingDisplayHelper';
+import {
+  resolveFullAuthorName,
+  enrichAuthorsInReadings,
+  enrichAuthorsInTextbooks
+} from '../utils/authorResolver';
 
 export interface RawAssignmentCandidate {
   title?: string;
@@ -68,6 +75,9 @@ export interface RawAssignmentCandidate {
   courseCode?: string | null;
   course_code?: string | null;
   pointsBreakdown?: string | null;
+  assignmentNumber?: number | null;
+  assignment_number?: number | null;
+  assignmentNumberLabel?: string | null;
 }
 
 export interface RawReadingCandidate {
@@ -75,21 +85,20 @@ export interface RawReadingCandidate {
   name?: string;
   readingTitle?: string;
   resourceTitle?: string;
+  resource_title?: string;
   bookTitle?: string;
   authorName?: string | null;
   author?: string | null;
   authors?: string | null;
+  author_name?: string | null;
   chapterText?: string | null;
+  chapter_text?: string | null;
   chapter?: string | null;
   chapters?: string | null;
   chaptersOrPages?: string | null;
   pagesText?: string | null;
+  pages_text?: string | null;
   pages?: string | null;
-  mediaType?: string | null;
-  videoUrl?: string | null;
-  mediaUrl?: string | null;
-  url?: string | null;
-  link?: string | null;
   weekNumber?: number | null;
   week_number?: number | null;
   moduleNumber?: number | null;
@@ -97,13 +106,23 @@ export interface RawReadingCandidate {
   moduleMention?: string | null;
   dueDate?: string | null;
   due_date?: string | null;
+  dueDateIso?: string | null;
   dateRangeStr?: string | null;
+  mediaType?: MediaType | string | null;
+  media_type?: MediaType | string | null;
+  videoUrl?: string | null;
+  video_url?: string | null;
+  mediaUrl?: string | null;
+  url?: string | null;
+  link?: string | null;
   summaryText?: string | null;
   keyTakeawaysText?: string | null;
   estimatedTimeText?: string | null;
   relevantTopics?: string | null;
-  isRequired?: boolean | null;
-  requirementType?: 'required' | 'optional' | null;
+  courseCode?: string | null;
+  course_code?: string | null;
+  requirementType?: string | null;
+  isRequired?: boolean;
 }
 
 export interface NormalizedSyllabusPayload {
@@ -112,6 +131,7 @@ export interface NormalizedSyllabusPayload {
   courseDescription?: string;
   instructorName?: string;
   instructorEmail?: string;
+  officeHours?: string | null;
   termWeeks?: number;
   termYear?: number | null;
   textbooks: TextbookResource[];
@@ -126,6 +146,8 @@ export interface NormalizedSyllabusPayload {
     dateRangeStr?: string;
   }[];
   externalScheduleNotice?: string | null;
+  gradingScale?: string | null;
+  gradingScaleRows?: GradingScaleTier[] | null;
   formatAccepted: string;
   isPartial: boolean;
   validationErrors: string[];
@@ -212,6 +234,66 @@ export class SyllabusImportManager {
   }
 
   /**
+   * Parses textbook citation strings (APA, author-title, or raw strings) into a structured TextbookResource.
+   */
+  public static parseCitationStringToTextbook(str: string): TextbookResource | null {
+    if (!str || typeof str !== 'string') return null;
+    const trimmed = str.trim();
+    if (trimmed.length < 5) return null;
+
+    let isbn: string | null = null;
+    const isbnMatch = trimmed.match(/ISBN(?:-1[03])?:?\s*([\d\-X]{10,17})/i);
+    if (isbnMatch) {
+      isbn = isbnMatch[1].trim();
+    }
+
+    let edition: string | null = null;
+    const editionMatch = trimmed.match(/\b(\d+(?:st|nd|rd|th)\s*(?:ed(?:\.|ition)?))/i);
+    if (editionMatch) {
+      edition = editionMatch[1].trim();
+    }
+
+    // Try APA format: Author(s) (Year). Title...
+    // e.g. Creswell, J.W., & Creswell. J. D. (2022). Research Design: Qualitative, Quantitative, and Mixed Methods Approaches (6th ed.). SAGE Publications.
+    const apaMatch = trimmed.match(/^([^()]+?)\s*\((?:c\.?\s*)?(\d{4}[a-z]?)\)\.?\s*([^.]+?)(?:\.|\((?:\d+(?:st|nd|rd|th)\s*ed|\b[A-Z]))/i);
+    if (apaMatch) {
+      const rawAuthor = apaMatch[1].replace(/^[•\-\*\s]+/, '').trim();
+      const authorName = resolveFullAuthorName(rawAuthor) || rawAuthor;
+      let title = apaMatch[3].trim();
+      title = title.replace(/\s*\(\d+(?:st|nd|rd|th)\s*ed\.?\)$/i, '').trim();
+      if (title.length > 2 && authorName.length > 2) {
+        return { title, authorName, edition, isbn };
+      }
+    }
+
+    // "By" format: Title by Author
+    const byMatch = trimmed.match(/^(.+?)\s+by\s+([A-Z][a-zA-Z\s,.'&]+)$/i);
+    if (byMatch) {
+      const title = byMatch[1].replace(/^[•\-\*\s]+/, '').trim();
+      const rawAuthor = byMatch[2].trim();
+      const authorName = resolveFullAuthorName(rawAuthor) || rawAuthor;
+      if (title.length > 2 && authorName.length > 2) {
+        return { title, authorName, edition, isbn };
+      }
+    }
+
+    // Pattern: Author: Title OR Author - Title
+    const dashMatch = trimmed.match(/^([A-Z][a-zA-Z\s,.'&]+?)\s*[-:]\s*(.+)$/);
+    if (dashMatch && !dashMatch[1].toLowerCase().startsWith('isbn') && !dashMatch[1].toLowerCase().startsWith('required') && !dashMatch[1].toLowerCase().startsWith('recommended')) {
+      const rawAuthor = dashMatch[1].trim();
+      const authorName = resolveFullAuthorName(rawAuthor) || rawAuthor;
+      const title = dashMatch[2].replace(/\s*\([^)]*edition[^)]*\)/i, '').trim();
+      if (authorName.length > 2 && title.length > 3) {
+        return { title, authorName, edition, isbn };
+      }
+    }
+
+    // Fallback: title is the entire string (cleaned of leading bullet points)
+    const cleanStr = trimmed.replace(/^[•\-\*\d\.\)\s]+/, '').trim();
+    return { title: cleanStr, authorName: null, edition, isbn };
+  }
+
+  /**
    * Splits lumped reading candidates that contain multiple citations separated by semicolons
    * or requirement sections (Required: ... Optional: ...)
    * e.g. "Required: Wada & Fellner, 2025; Maddux & Winstead, (2019): Ch 1&2, 4-6; DSM 5-TR: Section 1, Section 3 - Culture and Psychiatric Diagnosis pg. 859. Optional: World Health Organization (2010) ICD. http://www.who.int/classifications/icd/en."
@@ -223,12 +305,15 @@ export class SyllabusImportManager {
 
     const hasSemicolon = rawTitle.includes(';') || rawAuthor.includes(';');
     const hasRequirementMarkers = /\b(?:Required|Optional|Recommended|Supplemental|Mandatory)\s*[:\-–—]/i.test(rawTitle);
+    const hasNewlines = rawTitle.includes('\n');
+    const hasCommaCitations = /(?<=[)\d]|\b(?:ch(?:apter)?s?\.?\s*[\d\s&–-]+|pp?\.?\s*[\d\s&–-]+|pages?\s*[\d\s&–-]+))\s*,\s*(?=[A-Z][a-zA-Z\s.&'–-]+?(?:\(\s*\d{4}\s*\)|(?:\s*,\s*|\s+)(?:chapters?|chaps?\.?|chs?\.?|ch\b)\s*\d+|(?:\s*,\s*|\s+)\(?\s*\d{4}\s*\)?|\s*,\s*[A-Z]\.|\s*:\s*[A-Z]))/i.test(rawTitle);
 
-    if (!hasSemicolon && !hasRequirementMarkers) {
+    // If candidate has no multi-item delimiters and already has authorName and chapterText, return directly
+    if (!hasSemicolon && !hasRequirementMarkers && !hasNewlines && !hasCommaCitations && candidate.authorName && candidate.chapterText) {
       return [candidate];
     }
 
-    if (rawAuthor.includes(';') && !rawTitle.includes(';') && !hasRequirementMarkers) {
+    if (rawAuthor.includes(';') && (!candidate.title || candidate.title === rawAuthor) && !hasRequirementMarkers) {
       const authParts = rawAuthor.split(';').map(a => a.trim()).filter(a => a.length >= 2);
       if (authParts.length > 1) {
         return authParts.map((auth, idx) => ({
@@ -306,12 +391,32 @@ export class SyllabusImportManager {
     const results: RawReadingCandidate[] = [];
 
     for (const chunk of sectionChunks) {
-      const rawSegments = chunk.text.includes(';')
-        ? chunk.text.split(';').map(s => s.trim()).filter(s => s.length >= 3)
-        : [chunk.text];
+      // 1. Split on newlines
+      const lines = chunk.text.split(/\r?\n+/).map(l => l.trim()).filter(l => l.length >= 2);
+      const subSegments: string[] = [];
 
-      for (let sIdx = 0; sIdx < rawSegments.length; sIdx++) {
-        let seg = rawSegments[sIdx];
+      for (const rawLine of (lines.length > 0 ? lines : [chunk.text])) {
+        // Pre-clean combined semicolon/comma artifacts: e.g. "; ," or ", ;" -> "; "
+        const line = rawLine.replace(/;\s*,\s*|,\s*;\s*/g, '; ');
+        // 2. Split on semicolons
+        const semiParts = line.includes(';')
+          ? line.split(';').map(s => s.trim()).filter(s => s.length >= 3)
+          : [line];
+
+        for (const sp of semiParts) {
+          // 3. Split on commas separating distinct citations (e.g. "Gehart chapters 1-3, Corey chapter 4" or "Gehart, Ch. 1, Corey, Ch. 4")
+          const commaCitationPattern = /(?<=[)\d]|\b(?:ch(?:apter)?s?\.?\s*[\d\s&–-]+|pp?\.?\s*[\d\s&–-]+|pages?\s*[\d\s&–-]+))\s*,\s*(?=[A-Z][a-zA-Z\s.&'–-]+?(?:\(\s*\d{4}\s*\)|(?:\s*,\s*|\s+)(?:chapters?|chaps?\.?|chs?\.?|ch\b)\s*\d+|(?:\s*,\s*|\s+)\(?\s*\d{4}\s*\)?|\s*,\s*[A-Z]\.|\s*:\s*[A-Z]))/i;
+          if (commaCitationPattern.test(sp)) {
+            const commaParts = sp.split(commaCitationPattern).map(s => s.trim()).filter(s => s.length >= 3);
+            subSegments.push(...commaParts);
+          } else {
+            subSegments.push(sp);
+          }
+        }
+      }
+
+      for (let sIdx = 0; sIdx < subSegments.length; sIdx++) {
+        let seg = subSegments[sIdx];
 
         let videoUrl: string | undefined = candidate.videoUrl || undefined;
         const urlMatch = seg.match(/https?:\/\/[^\s)\]]+/i);
@@ -326,35 +431,115 @@ export class SyllabusImportManager {
 
         if (seg.length < 2) continue;
 
-        const authMatch = seg.match(/^([A-Z][a-zA-Z0-9\s.&–-]+?)(?:,\s*\(?\s*\d{4}\)?|\s*\(\s*\d{4}\)|\s*\(\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|pp?\.?|\d)|:\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|section|sec\.?|\d)|:\s+[A-Z])/i) ||
-                          seg.match(/^([A-Z][a-zA-Z\s.&–-]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|pp?\.?|\d)/i);
-        let extractedAuthor = authMatch ? authMatch[1].trim() : undefined;
+        // If segment is purely digits, connectors, or orphan chapter numbers (e.g. "4-6"), stitch to previous candidate or skip
+        if (/^[\d\s&,\-–—]+$/.test(seg.trim())) {
+          if (results.length > 0) {
+            const prev = results[results.length - 1];
+            if (prev.chapterText) {
+              prev.chapterText = cleanChapterFromRaw(`${prev.chapterText}, ${seg.trim()}`) || prev.chapterText;
+            }
+          }
+          continue;
+        }
+
+        // Clean table column crossover noise (dates, fragmented module headers, broken text)
+        seg = seg.replace(/[-–—]?\s*\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b\s*[-–—]?/g, ' ');
+        seg = seg.replace(/\bModul\w*\s*(?:[A-Za-z\s]+)?e\s*\d+\s+of\b/gi, ' ');
+        seg = seg.replace(/\bModul\w*\s*\d*\b/gi, ' ');
+        seg = seg.replace(/\be\s*\d+\s+of\b/gi, ' ');
+        seg = seg.replace(/\bCultural\s+Context\s+Culture\s+and\b/gi, 'Cultural Context and');
+        seg = seg.replace(/\s+/g, ' ').trim();
+
+        // Extract topic if embedded after a dash e.g. "DSM 5-TR: Section 1, Section 3 - Culture and Psychiatric Diagnosis pg. 859"
+        let extractedTopic: string | undefined = undefined;
+        const dashTopicMatch = seg.match(/\s+[-–—]\s+([A-Z][a-zA-Z0-9\s,&'–-]+?)(?:\s+(?:pp?\.?|pages?|pg\.?)\s*[\d\s\-–—]+|\s*$)/);
+        if (dashTopicMatch && dashTopicMatch[1].trim().length >= 3 && !/^(?:chapter|section|page|vol)/i.test(dashTopicMatch[1].trim())) {
+          extractedTopic = dashTopicMatch[1].trim();
+        }
+
+        // Author Recognition:
+        // A. APA style with initials e.g. "Gehart, D. R. (2018)", "Wada, K., & Fellner, K. D. (2014)"
+        const apaAuthMatch = seg.match(/^((?:[A-Z][a-zA-Z'’-]+(?:,\s*[A-Z][a-zA-Z'’.-]*(?:\s+[A-Z][a-zA-Z'’.-]*)*)?)(?:\s*(?:,\s*&|,\s*and|&|and|,)\s*(?:[A-Z][a-zA-Z'’-]+(?:,\s*[A-Z][a-zA-Z'’.-]*(?:\s+[A-Z][a-zA-Z'’.-]*)*)?))*)\s*(?:\(\s*\d{4}\s*\)|,\s*\(?\s*\d{4}\s*\)?|:\s+[A-Z])/i);
+
+        // B. Direct author followed by chapter without parens e.g. "Gehart chapters 1-3", "Corey Chapter 4", "Nichols ch. 5"
+        const directChAuthMatch = seg.match(/^([A-Z][a-zA-Z\s.&'’–-]+?)(?:,\s*|\s+)(?:chapters?|chaps?\.?|chs?\.?|ch\b)\s*([\d\s&,\-–—]+)/i);
+
+        // C. Author followed by parenthesized chapter e.g. "Gehart (Ch. 1)", "Corey (Chapters 1-3)"
+        const parenChAuthMatch = seg.match(/^([A-Z][a-zA-Z\s.&'’–-]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|pp?\.?|\d)/i);
+
+        // D. General auth match with year or colon
+        const generalAuthMatch = seg.match(/^([A-Z][a-zA-Z0-9\s.&–-]+?)(?:,\s*\(?\s*\d{4}\)?|\s*\(\s*\d{4}\)|\s*\(\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|pp?\.?|\d)|:\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|sections?|sec\.?|\d)|:\s+[A-Z])/i);
+
+        // E. Manual / organization citations like DSM 5-TR, APA, WHO
+        const manualAuthMatch = seg.match(/\b(DSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?)\b/i);
+
+        let extractedAuthor = apaAuthMatch ? apaAuthMatch[1].trim()
+          : (directChAuthMatch ? directChAuthMatch[1].trim()
+          : (parenChAuthMatch ? parenChAuthMatch[1].trim()
+          : (generalAuthMatch ? generalAuthMatch[1].trim()
+          : (manualAuthMatch ? manualAuthMatch[1].trim() : undefined))));
+
+        if (extractedAuthor) {
+          extractedAuthor = extractedAuthor.replace(/[:;,\s]+$/, '').trim();
+          if (/^(?:chapter|chapters|ch\b|week|weeks|module|modules|unit|session|required|optional|recommended|supplemental|read|watch|listen|view)$/i.test(extractedAuthor)) {
+            extractedAuthor = undefined;
+          }
+        }
+
         if (!extractedAuthor && sIdx === 0 && rawAuthor && !rawAuthor.includes(';')) {
           extractedAuthor = rawAuthor;
         }
 
-        const chMatch = seg.match(/\((?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*([\d\s&,\-–—]+)\)/i) ||
-                        seg.match(/\b(?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*([\d\s&,\-–—]+)/i) ||
-                        seg.match(/\b(?:sections?|sec\.?)\s*([\d\s&,\-–—]+)/i);
-        const extractedChapter = chMatch ? `Chapter ${chMatch[1].trim()}` : (sIdx === 0 ? candidate.chapterText : undefined);
+        let extractedChapter: string | null | undefined = undefined;
+        if (directChAuthMatch && directChAuthMatch[2]) {
+          extractedChapter = cleanChapterFromRaw(directChAuthMatch[2]) || undefined;
+        } else {
+          const chMatch = seg.match(/\((?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*([\d\s&,\-–—]+)\)/i) ||
+                          seg.match(/\b(?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*([\d\s&,\-–—]+)/i);
+          const secMatch = seg.match(/\b(?:sections?|sec\.?)\s*[:\-–.]*\s*(\d+(?:[\s&,:\-–andto]+(?:sections?|sec\.?)?\s*\d+)*)/i);
+          if (chMatch) {
+            extractedChapter = cleanChapterFromRaw(chMatch[0]) || (chMatch[1] ? `Chapter ${chMatch[1].trim()}` : undefined);
+          } else if (secMatch) {
+            extractedChapter = cleanChapterFromRaw(secMatch[0]) || `Section ${secMatch[1].trim()}`;
+          } else if (sIdx === 0) {
+            extractedChapter = candidate.chapterText;
+          }
+        }
 
         const pgMatch = seg.match(/\b(?:pp?\.?|pages?|pg\.?)\s*([\d\s\-–—]+)/i);
-        const extractedPages = pgMatch ? `pg. ${pgMatch[1].trim()}` : (sIdx === 0 ? candidate.pagesText : undefined);
+        const extractedPages: string | null | undefined = pgMatch ? `pg. ${pgMatch[1].trim()}` : (sIdx === 0 ? candidate.pagesText : undefined);
 
         let mediaType = candidate.mediaType;
         if (videoUrl) {
           mediaType = /youtube\.com|youtu\.be|vimeo/i.test(videoUrl) ? 'video' : 'article';
         }
 
+        // Clean page indicators from segment title
+        let cleanSegTitle = seg
+          .replace(/\b(?:pp?\.?|pages?|pg\.?)\s*[\d\s\-–—]+/gi, '')
+          .replace(/\s+(?:pp?\.?|pages?|pg\.?)\s*$/i, '')
+          .replace(/^[•\-*▪●: \t\n ]+|[•\-*▪●: \t\n ]+$/g, '')
+          .replace(/[:;·•\-–—.]+\s*$/, '')
+          .trim();
+
+        // Isolate clean resource / book title if author or book prefix is present
+        let cleanResTitle = cleanSegTitle;
+        if (extractedAuthor && cleanSegTitle.toLowerCase().startsWith(extractedAuthor.toLowerCase())) {
+          cleanResTitle = extractedAuthor;
+        } else if (candidate.resourceTitle && candidate.resourceTitle !== candidate.title) {
+          cleanResTitle = candidate.resourceTitle;
+        }
+
         results.push({
           ...candidate,
-          title: seg,
-          authorName: extractedAuthor,
-          chapterText: extractedChapter || undefined,
-          pagesText: extractedPages || undefined,
+          title: cleanSegTitle,
+          authorName: extractedAuthor || candidate.authorName,
+          chapterText: extractedChapter || candidate.chapterText || undefined,
+          pagesText: extractedPages || candidate.pagesText || undefined,
           videoUrl: videoUrl,
           mediaType: mediaType || candidate.mediaType,
-          resourceTitle: seg,
+          resourceTitle: cleanResTitle,
+          relevantTopics: extractedTopic || candidate.relevantTopics,
           isRequired: chunk.isRequired,
           requirementType: chunk.requirementType
         });
@@ -457,15 +642,29 @@ export class SyllabusImportManager {
     // Extract textbooks into resource catalog ONLY (do NOT add to candidateReadings)
     const rawTextbooks = Array.isArray(dto.textbooks)
       ? dto.textbooks
-      : (Array.isArray(dto.resources) ? dto.resources : []);
+      : (Array.isArray(dto.resources)
+          ? dto.resources
+          : (Array.isArray(dto.textbooks_and_key_authors)
+              ? dto.textbooks_and_key_authors
+              : (Array.isArray(dto.required_textbooks) ? dto.required_textbooks : [])));
 
     for (const tb of rawTextbooks) {
-      if (!tb || typeof tb !== 'object') continue;
+      if (!tb) continue;
+      if (typeof tb === 'string') {
+        const parsed = SyllabusImportManager.parseCitationStringToTextbook(tb);
+        if (parsed && parsed.title) {
+          textbooks.push(parsed);
+        }
+        continue;
+      }
+      if (typeof tb !== 'object') continue;
       const title = (tb.title || tb.name || tb.bookTitle || '').trim();
       if (!title) continue;
-      const authorName = (tb.authorName || tb.author || tb.authors || null)?.trim() || null;
+      const rawAuthor = (tb.authorName || tb.author || tb.authors || null)?.trim() || null;
+      const authorName = resolveFullAuthorName(rawAuthor, rawTextContext) || rawAuthor;
       const edition = (tb.edition || null)?.trim() || null;
-      textbooks.push({ title, authorName, edition });
+      const isbn = (tb.isbn || null)?.trim() || null;
+      textbooks.push({ title, authorName, edition, isbn });
     }
 
     // Check for explicit term year (NO hardcoded 2026 fallback!)
@@ -548,79 +747,379 @@ export class SyllabusImportManager {
       }
     }
 
-    // Top-level assignments & deliverables
+    // Process modular curriculum schedule blocks (e.g. from research dossiers or unit/schedule matrices)
+    if (Array.isArray(dto.schedule)) {
+      formatAccepted = 'schedule_blocks';
+      for (let sIdx = 0; sIdx < dto.schedule.length; sIdx++) {
+        const block = dto.schedule[sIdx];
+        if (!block || typeof block !== 'object') continue;
+
+        // Parse week span (e.g., "Weeks 1-2", "Week 1", or 1)
+        let startWk = (sIdx * 2) + 1;
+        let endWk = (sIdx * 2) + 2;
+        if (typeof block.weeks === 'string') {
+          const rangeMatch = block.weeks.match(/(\d+)\s*[-–—to]+\s*(\d+)/i);
+          if (rangeMatch) {
+            startWk = parseInt(rangeMatch[1], 10);
+            endWk = parseInt(rangeMatch[2], 10);
+          } else {
+            const singleMatch = block.weeks.match(/\d+/);
+            if (singleMatch) {
+              startWk = endWk = parseInt(singleMatch[0], 10);
+            }
+          }
+        } else if (typeof block.weeks === 'number') {
+          startWk = endWk = block.weeks;
+        }
+
+        // Parse module numbers (e.g., "1 & 2", "Modules: 1 & 2")
+        let modNumbers: number[] = [];
+        if (typeof block.modules === 'string') {
+          modNumbers = (block.modules.match(/\d+/g) || []).map(Number);
+        } else if (typeof block.modules === 'number') {
+          modNumbers = [block.modules];
+        }
+        if (modNumbers.length === 0) {
+          modNumbers = [startWk, endWk];
+        }
+
+        // Populate weekly summary
+        for (let w = startWk; w <= endWk; w++) {
+          if (!weeksSummary.some(ws => ws.weekNumber === w)) {
+            const modForWk = (modNumbers.length === (endWk - startWk + 1))
+              ? modNumbers[w - startWk]
+              : (modNumbers[0] || w);
+            weeksSummary.push({
+              weekNumber: w,
+              theme: block.core_theoretical_focus || block.unit || `Week ${w}`,
+              moduleNumber: modForWk,
+              moduleMention: `Module ${modForWk}`
+            });
+          }
+        }
+
+        // Process schedule block readings
+        if (Array.isArray(block.readings)) {
+          const numWeeks = Math.max(1, endWk - startWk + 1);
+          for (let rIdx = 0; rIdx < block.readings.length; rIdx++) {
+            const rItem = block.readings[rIdx];
+            if (!rItem) continue;
+
+            const assignedWeek = block.readings.length === numWeeks
+              ? (startWk + rIdx)
+              : (startWk + Math.min(rIdx, numWeeks - 1));
+            const assignedMod = (modNumbers.length === block.readings.length)
+              ? modNumbers[rIdx]
+              : (modNumbers[Math.min(rIdx, modNumbers.length - 1)] || assignedWeek);
+
+            let cand: RawReadingCandidate;
+            if (typeof rItem === 'string') {
+              const parts = rItem.split('|').map((p: string) => p.trim());
+              if (parts.length >= 3) {
+                const authorName = parts[0];
+                const resTitle = parts[1];
+                const chPart = parts.slice(2).join(' | ');
+                const chMatch = chPart.match(/\b(Ch(?:s|apters?)?\.?\s*\d+(?:\s*(?:&|and|-|–|—)\s*\d+)?)/i);
+                const ppMatch = chPart.match(/\b(pp?\.?\s*\d+[\s–—\-]+\d+)/i);
+                cand = {
+                  title: resTitle,
+                  resourceTitle: resTitle,
+                  authorName: authorName,
+                  chapterText: chMatch ? chMatch[1].trim() : (chPart.includes('Ch') ? chPart : undefined),
+                  pagesText: ppMatch ? ppMatch[1].trim() : undefined,
+                  mediaType: 'textbook',
+                  weekNumber: assignedWeek,
+                  moduleNumber: assignedMod,
+                  moduleMention: `Module ${assignedMod}`,
+                  relevantTopics: block.core_theoretical_focus || block.unit
+                };
+              } else if (parts.length === 2) {
+                cand = {
+                  title: parts[1],
+                  resourceTitle: parts[1],
+                  authorName: parts[0],
+                  mediaType: 'textbook',
+                  weekNumber: assignedWeek,
+                  moduleNumber: assignedMod,
+                  moduleMention: `Module ${assignedMod}`,
+                  relevantTopics: block.core_theoretical_focus || block.unit
+                };
+              } else {
+                cand = {
+                  title: rItem,
+                  mediaType: 'textbook',
+                  weekNumber: assignedWeek,
+                  moduleNumber: assignedMod,
+                  moduleMention: `Module ${assignedMod}`,
+                  relevantTopics: block.core_theoretical_focus || block.unit
+                };
+              }
+            } else if (typeof rItem === 'object') {
+              cand = {
+                title: rItem.title || rItem.name || rItem.readingTitle || '',
+                authorName: rItem.author || rItem.authorName || null,
+                resourceTitle: rItem.resourceTitle || rItem.title || null,
+                chapterText: rItem.chapter || rItem.chapterText || null,
+                pagesText: rItem.pages || rItem.pagesText || null,
+                mediaType: rItem.mediaType || 'textbook',
+                weekNumber: rItem.weekNumber || assignedWeek,
+                moduleNumber: rItem.moduleNumber || assignedMod,
+                moduleMention: `Module ${rItem.moduleNumber || assignedMod}`,
+                relevantTopics: rItem.relevantTopics || block.core_theoretical_focus || block.unit
+              };
+            } else {
+              continue;
+            }
+
+            // Push weekly reading candidate
+            candidateReadings.push(cand);
+
+            // Also create pure curriculum module reading (Zero Cross-Bleed Rule)
+            candidateReadings.push({
+              ...cand,
+              weekNumber: undefined,
+              dueDate: null,
+              dateRangeStr: null,
+              summaryText: '',
+              keyTakeawaysText: ''
+            });
+          }
+        }
+
+        // Process schedule block assignments
+        if (Array.isArray(block.assignments)) {
+          for (let aIdx = 0; aIdx < block.assignments.length; aIdx++) {
+            const aItem = block.assignments[aIdx];
+            if (!aItem || typeof aItem !== 'object') continue;
+
+            const rawTitle = (aItem.title || aItem.name || '').trim();
+            const dueStr = (aItem.due || aItem.dueDate || aItem.due_date || '').toString();
+            const dueWkMatch = dueStr.match(/week\s*(\d+)/i) || rawTitle.match(/week\s*(\d+)/i);
+            const aWeek = dueWkMatch ? parseInt(dueWkMatch[1], 10) : (startWk + Math.min(aIdx, Math.max(0, endWk - startWk)));
+            const deliv = (aItem.deliverable || aItem.fullInstructions || aItem.instructions || aItem.description || '').trim();
+
+            const rawPts = aItem.points != null ? aItem.points : (aItem.pointsPossible || null);
+            const rawWt = aItem.weight != null ? aItem.weight : (aItem.weightPercentage || null);
+            let aItemWeight: string | null = null;
+            if (typeof rawWt === 'number' && !isNaN(rawWt)) {
+              aItemWeight = rawWt > 0 && rawWt <= 1 ? `${Math.round(rawWt * 100)}%` : `${Math.round(rawWt)}%`;
+            } else if (typeof rawWt === 'string' && rawWt.trim()) {
+              aItemWeight = rawWt.trim().includes('%') ? rawWt.trim() : `${rawWt.trim()}%`;
+            }
+            let aItemPoints: string | null = null;
+            if (typeof rawPts === 'number' && rawPts > 0) {
+              aItemPoints = `${rawPts} Points`;
+            } else if (typeof rawPts === 'string' && rawPts.trim() && rawPts.trim().toLowerCase() !== 'n/a') {
+              aItemPoints = /pts|points/i.test(rawPts.trim()) ? rawPts.trim() : `${rawPts.trim()} Points`;
+            }
+
+            candidateAssignments.push({
+              title: rawTitle,
+              weekNumber: aWeek,
+              noteText: deliv || undefined,
+              fullInstructions: deliv || undefined,
+              pointsPossible: aItemPoints,
+              weightPercentage: aItemWeight,
+              dueDate: aItem.dueDate || null
+            });
+          }
+        }
+      }
+    }
+
+    // Helper for robust assignment title comparison
+    const stemWord = (w: string) => w.toLowerCase().replace(/s+$/, '');
+    const getAssignWords = (t: string) =>
+      cleanAssignmentTitle(t)
+        .toLowerCase()
+        .replace(/^(?:in[\s-]class|due|completed?)\s+/i, '')
+        .split(/[\s,./\-_]+/)
+        .map(stemWord)
+        .filter(w => w.length >= 4 && !/^(assignment|deliverable|project|paper|report|final|midterm|exam|quiz|grade|mark|class|course|student|students|worth)$/.test(w));
+
+    // Top-level assignments & deliverables (enrich existing candidates from weeks[] rather than creating duplicates)
     if (Array.isArray(dto.assignments)) {
       for (const a of dto.assignments) {
-        if (a && typeof a === 'object') candidateAssignments.push(a);
+        if (a && typeof a === 'object') {
+          const rawA = (a.title || a.name || a.assignmentName || '').trim();
+          const cleanA = cleanAssignmentTitle(rawA);
+          const normA = cleanA.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const stemA = normA.replace(/s+$/, '');
+          const wordsA = getAssignWords(rawA);
+
+          const existing = normA.length >= 4 ? candidateAssignments.find(ca => {
+            const caRaw = (ca.title || ca.name || ca.assignmentName || '').trim();
+            const caClean = cleanAssignmentTitle(caRaw);
+            const caNorm = caClean.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const caStem = caNorm.replace(/s+$/, '');
+            if (caNorm === normA || (caStem.length >= 5 && caStem === stemA)) return true;
+            if (stemA.length >= 8 && caStem.length >= 8 && (stemA.includes(caStem) || caStem.includes(stemA))) return true;
+
+            const wordsCa = getAssignWords(caRaw);
+            const overlap = wordsA.filter(w => wordsCa.includes(w));
+            if (overlap.length >= 2 || (wordsA.length === 1 && wordsCa.length === 1 && overlap.length === 1)) {
+              const numA = (rawA.match(/\b(?:assignment|simulation|quiz|part|milestone|module|exam|phase|stage|paper|deliverable|project|osce)\s*(\d+)\b/i) || rawA.match(/\b(\d+)\b/))?.[1];
+              const numCa = (caRaw.match(/\b(?:assignment|simulation|quiz|part|milestone|module|exam|phase|stage|paper|deliverable|project|osce)\s*(\d+)\b/i) || caRaw.match(/\b(\d+)\b/))?.[1];
+              if (numA && numCa && numA !== numCa) return false;
+
+              const wkA = a.weekNumber || (a as any).week_number;
+              const wkCa = ca.weekNumber || (ca as any).week_number;
+              if (wkA && wkCa && wkA > 0 && wkCa > 0 && wkA !== wkCa) return false;
+
+              const wA = a.weightPercentage || a.weight;
+              const wCa = ca.weightPercentage || ca.weight;
+              if (wA && wCa) {
+                const nA = parseInt(String(wA).replace(/\D/g, ''), 10);
+                const nCa = parseInt(String(wCa).replace(/\D/g, ''), 10);
+                if (!isNaN(nA) && !isNaN(nCa) && nA !== nCa) return false;
+              }
+              const isADisc = /\b(?:discussion|forum|db)\b/i.test(rawA);
+              const isCaDisc = /\b(?:discussion|forum|db)\b/i.test(caRaw);
+              if (isADisc !== isCaDisc) return false;
+              return true;
+            }
+            return false;
+          }) : null;
+
+          if (existing) {
+            // Prefer the authoritative overview assignment title over informal schedule notes
+            if (rawA.length >= 4 && !/^(?:due|complete|students\s+will|in[\s-_]class)\b/i.test(rawA)) {
+              existing.title = rawA;
+            }
+            if (!existing.weightPercentage && (a.weightPercentage || a.weight || (a as any).percentage)) {
+              const rawW = a.weightPercentage || a.weight || (a as any).percentage;
+              if (typeof rawW === 'number' && !isNaN(rawW)) {
+                existing.weightPercentage = rawW > 0 && rawW <= 1 ? `${Math.round(rawW * 100)}%` : `${Math.round(rawW)}%`;
+              } else if (typeof rawW === 'string' && rawW.trim()) {
+                existing.weightPercentage = rawW.trim().includes('%') ? rawW.trim() : `${rawW.trim()}%`;
+              }
+            }
+            if (!existing.pointsPossible && (a.pointsPossible || a.points || (a as any).totalPoints)) {
+              const rawP = a.pointsPossible || a.points || (a as any).totalPoints;
+              if (typeof rawP === 'number' && rawP > 0) {
+                existing.pointsPossible = `${rawP} Points`;
+              } else if (typeof rawP === 'string' && rawP.trim() && rawP.trim().toLowerCase() !== 'n/a') {
+                existing.pointsPossible = /pts|points/i.test(rawP.trim()) ? rawP.trim() : `${rawP.trim()} Points`;
+              }
+            }
+            if (!existing.dueDate && (a.dueDate || a.due_date)) existing.dueDate = a.dueDate || a.due_date;
+            if ((!existing.weekNumber || existing.weekNumber <= 0) && (a.weekNumber || a.week_number)) existing.weekNumber = a.weekNumber || a.week_number;
+            if ((!existing.fullInstructions || existing.fullInstructions.length < 30) && (a.fullInstructions || a.instructions || a.description)) {
+              existing.fullInstructions = a.fullInstructions || a.instructions || a.description;
+            }
+            if (!existing.rubricCriteria && a.rubricCriteria) existing.rubricCriteria = a.rubricCriteria;
+            if (!existing.scheduledWeeks && a.scheduledWeeks) existing.scheduledWeeks = a.scheduledWeeks;
+            // Also backfill onto 'a' in case 'a' had richer overview details
+            if (!a.weekNumber && existing.weekNumber) a.weekNumber = existing.weekNumber;
+            if (!a.dueDate && existing.dueDate) a.dueDate = existing.dueDate;
+          } else {
+            candidateAssignments.push(a);
+          }
+        }
       }
     }
     if (Array.isArray(dto.deliverables)) {
       formatAccepted = 'deliverables_split';
       for (const d of dto.deliverables) {
-        if (d && typeof d === 'object') candidateAssignments.push(d);
+        if (d && typeof d === 'object') {
+          const rawD = (d.title || d.name || d.assignmentName || '').trim();
+          const cleanD = cleanAssignmentTitle(rawD);
+          const normD = cleanD.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const stemD = normD.replace(/s+$/, '');
+          const wordsD = getAssignWords(rawD);
+
+          const existing = normD.length >= 4 ? candidateAssignments.find(ca => {
+            const caRaw = (ca.title || ca.name || ca.assignmentName || '').trim();
+            const caClean = cleanAssignmentTitle(caRaw);
+            const caNorm = caClean.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const caStem = caNorm.replace(/s+$/, '');
+            if (caNorm === normD || (caStem.length >= 5 && caStem === stemD)) return true;
+            if (stemD.length >= 8 && caStem.length >= 8 && (stemD.includes(caStem) || caStem.includes(normD))) return true;
+
+            const wordsCa = getAssignWords(caRaw);
+            const overlap = wordsD.filter(w => wordsCa.includes(w));
+            if (overlap.length >= 2 || (wordsD.length === 1 && wordsCa.length === 1 && overlap.length === 1)) {
+              const numD = (rawD.match(/\b(?:assignment|simulation|quiz|part|milestone|module|exam|phase|stage|paper|deliverable|project|osce)\s*(\d+)\b/i) || rawD.match(/\b(\d+)\b/))?.[1];
+              const numCa = (caRaw.match(/\b(?:assignment|simulation|quiz|part|milestone|module|exam|phase|stage|paper|deliverable|project|osce)\s*(\d+)\b/i) || caRaw.match(/\b(\d+)\b/))?.[1];
+              if (numD && numCa && numD !== numCa) return false;
+
+              const wkD = d.weekNumber || (d as any).week_number;
+              const wkCa = ca.weekNumber || (ca as any).week_number;
+              if (wkD && wkCa && wkD > 0 && wkCa > 0 && wkD !== wkCa) return false;
+
+              return true;
+            }
+            return false;
+          }) : null;
+
+          if (existing) {
+            if (rawD.length >= 4 && !/^(?:due|complete|students\s+will|in[\s-_]class)\b/i.test(rawD)) {
+              existing.title = rawD;
+            }
+            if (!existing.weightPercentage && (d.weightPercentage || d.weight)) existing.weightPercentage = d.weightPercentage || d.weight;
+            if (!existing.pointsPossible && (d.pointsPossible || d.points)) existing.pointsPossible = d.pointsPossible || d.points;
+            if (!existing.dueDate && (d.dueDate || d.due_date)) existing.dueDate = d.dueDate || d.due_date;
+            if ((!existing.weekNumber || existing.weekNumber <= 0) && (d.weekNumber || d.week_number)) existing.weekNumber = d.weekNumber || d.week_number;
+            if ((!existing.fullInstructions || existing.fullInstructions.length < 30) && (d.fullInstructions || d.instructions || d.description)) {
+              existing.fullInstructions = d.fullInstructions || d.instructions || d.description;
+            }
+          } else {
+            candidateAssignments.push(d);
+          }
+        }
       }
     }
 
-    // Top-level readings
+    // Top-level readings (enrich existing candidates from weeks[] rather than duplicating)
     if (Array.isArray(dto.readings)) {
       for (const r of dto.readings) {
         if (r && typeof r === 'object') {
           for (const splitR of SyllabusImportManager.splitMultiCitationCandidate(r)) {
-            candidateReadings.push(splitR);
+            const rawR = (splitR.title || splitR.readingTitle || splitR.resourceTitle || splitR.name || '').trim();
+            const normR = rawR.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            const existing = normR.length >= 6 ? candidateReadings.find(cr => {
+              const crRaw = (cr.title || cr.readingTitle || cr.resourceTitle || cr.name || '').trim();
+              const crNorm = crRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (crNorm === normR) return true;
+              if (normR.length >= 10 && crNorm.length >= 10 && (normR.includes(crNorm) || crNorm.includes(normR))) return true;
+              return false;
+            }) : null;
+
+            if (existing) {
+              if (!existing.authorName && splitR.authorName) existing.authorName = splitR.authorName;
+              if (!existing.chapterText && splitR.chapterText) existing.chapterText = splitR.chapterText;
+              if (!existing.pagesText && splitR.pagesText) existing.pagesText = splitR.pagesText;
+              if (!existing.videoUrl && splitR.videoUrl) existing.videoUrl = splitR.videoUrl;
+              if (existing.isRequired === undefined && splitR.isRequired !== undefined) {
+                existing.isRequired = splitR.isRequired;
+                existing.requirementType = splitR.requirementType;
+              }
+            } else {
+              candidateReadings.push(splitR);
+            }
           }
         }
       }
     }
 
     // Top-level module readings (e.g. from Table 1 curriculum modules)
+    // Always preserve all canonical modules as dedicated module curriculum entities!
     if (Array.isArray((dto as any).moduleReadings)) {
       const rawModuleReadings: any[] = (dto as any).moduleReadings;
-      const hasAnyWeeklyReadings = candidateReadings.length > 0;
-      if (!hasAnyWeeklyReadings) {
-        for (const mr of rawModuleReadings) {
-          if (mr && typeof mr === 'object') {
-            for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
-              candidateReadings.push({
-                ...splitMr,
-                weekNumber: undefined,
-                moduleNumber: splitMr.moduleNumber || (splitMr as any).module_number,
-                moduleMention: splitMr.moduleMention || (splitMr.moduleNumber ? `Module ${splitMr.moduleNumber}` : null),
-                summaryText: '',
-                keyTakeawaysText: ''
-              });
-            }
-          }
-        }
-      } else {
-        // Attach module metadata to the existing weekly candidateReadings
-        for (const mr of rawModuleReadings) {
+      for (const mr of rawModuleReadings) {
+        if (mr && typeof mr === 'object') {
           const modNum = mr.moduleNumber || mr.module_number;
-          if (modNum) {
-            let matched = false;
-            for (const cr of candidateReadings) {
-              if (cr.weekNumber === modNum || cr.moduleNumber === modNum) {
-                matched = true;
-                if (!cr.moduleNumber) cr.moduleNumber = modNum;
-                if (!cr.moduleMention) cr.moduleMention = `Module ${modNum}`;
-                if (!cr.relevantTopics && (mr.relevantTopics || mr.theme)) {
-                  cr.relevantTopics = mr.relevantTopics || mr.theme;
-                }
-              }
-            }
-            if (!matched && mr.title) {
-              // Module reading was not matched to any weekly reading - preserve it so the module curriculum is retained!
-              for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
-                candidateReadings.push({
-                  ...splitMr,
-                  weekNumber: undefined,
-                  moduleNumber: modNum,
-                  moduleMention: splitMr.moduleMention || `Module ${modNum}`,
-                  relevantTopics: mr.relevantTopics || mr.theme || undefined,
-                  summaryText: '',
-                  keyTakeawaysText: ''
-                });
-              }
-            }
+          for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
+            candidateReadings.push({
+              ...splitMr,
+              weekNumber: undefined,
+              moduleNumber: modNum || splitMr.moduleNumber || (splitMr as any).module_number,
+              moduleMention: splitMr.moduleMention || (modNum ? `Module ${modNum}` : null),
+              relevantTopics: mr.relevantTopics || mr.theme || splitMr.relevantTopics || undefined,
+              summaryText: '',
+              keyTakeawaysText: ''
+            });
           }
         }
       }
@@ -711,20 +1210,82 @@ export class SyllabusImportManager {
       validationErrors.push('Only 1 task extracted from a multi-page/large document.');
     }
 
+    const resolvedCourseName = (
+      (typeof dto.courseName === 'string' && dto.courseName.trim()) ||
+      (dto.course_details && typeof dto.course_details.title === 'string' && dto.course_details.title.trim()) ||
+      (dto.course_details && typeof dto.course_details.course_name === 'string' && dto.course_details.course_name.trim()) ||
+      (dto.course && typeof dto.course.title === 'string' && dto.course.title.trim()) ||
+      undefined
+    );
+
+    const resolvedCourseCode = (
+      (typeof dto.courseCode === 'string' && dto.courseCode.trim()) ||
+      (dto.course_details && typeof dto.course_details.archival_reference === 'string' && dto.course_details.archival_reference.trim()) ||
+      (dto.course_details && typeof dto.course_details.course_code === 'string' && dto.course_details.course_code.trim()) ||
+      (dto.course && typeof dto.course.code === 'string' && dto.course.code.trim()) ||
+      undefined
+    );
+
+    const resolvedCourseDescription = (
+      (typeof dto.courseDescription === 'string' && dto.courseDescription.trim()) ||
+      (dto.course_details && typeof dto.course_details.program === 'string' && dto.course_details.program.trim()) ||
+      (dto.course_details && typeof dto.course_details.description === 'string' && dto.course_details.description.trim()) ||
+      undefined
+    );
+
+    let resolvedTermWeeks = typeof dto.termWeeks === 'number' && dto.termWeeks > 0 ? dto.termWeeks : undefined;
+    if (!resolvedTermWeeks && weeksSummary.length > 0) {
+      resolvedTermWeeks = Math.max(...weeksSummary.map(w => w.weekNumber));
+    }
+
+    // If no explicit textbooks were cataloged, synthesize textbook resources from candidate readings
+    if (textbooks.length === 0 && candidateReadings.length > 0) {
+      const seen = new Set<string>();
+      for (const cr of candidateReadings) {
+        if (cr.authorName && cr.authorName.trim().length > 1) {
+          const author = cr.authorName.trim();
+          const title = (cr.resourceTitle || cr.title || '').trim();
+          if (title && !/^(?:chapter|week|module|session|reading)\s*\d+$/i.test(title)) {
+            const dedupeKey = `${author.toLowerCase()}|${title.toLowerCase()}`;
+            if (!seen.has(dedupeKey)) {
+              seen.add(dedupeKey);
+              textbooks.push({
+                title,
+                authorName: author,
+                edition: null
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const resolvedOfficeHours =
+      (typeof dto.officeHours === 'string' && dto.officeHours.trim()) ? dto.officeHours.trim() :
+      (typeof dto.office_hours === 'string' && dto.office_hours.trim()) ? dto.office_hours.trim() :
+      (typeof dto.instructorOfficeHours === 'string' && dto.instructorOfficeHours.trim()) ? dto.instructorOfficeHours.trim() :
+      (typeof (dto as any).meetingTimes === 'string' && (dto as any).meetingTimes.trim()) ? (dto as any).meetingTimes.trim() :
+      (typeof (dto as any).schedule === 'string' && (dto as any).schedule.trim()) ? (dto as any).schedule.trim() :
+      (typeof (dto as any).office_hours_text === 'string' && (dto as any).office_hours_text.trim()) ? (dto as any).office_hours_text.trim() :
+      null;
+
     return {
-      courseName: typeof dto.courseName === 'string' ? dto.courseName.trim() : undefined,
-      courseCode: typeof dto.courseCode === 'string' ? dto.courseCode.trim() : undefined,
-      courseDescription: typeof dto.courseDescription === 'string' ? dto.courseDescription.trim() : undefined,
+      courseName: resolvedCourseName,
+      courseCode: resolvedCourseCode,
+      courseDescription: resolvedCourseDescription,
       instructorName: typeof dto.instructorName === 'string' ? dto.instructorName.trim() : undefined,
       instructorEmail: typeof dto.instructorEmail === 'string' ? dto.instructorEmail.trim() : undefined,
-      termWeeks: typeof dto.termWeeks === 'number' && dto.termWeeks > 0 ? dto.termWeeks : undefined,
+      officeHours: resolvedOfficeHours,
+      termWeeks: resolvedTermWeeks,
       termYear,
-      textbooks,
+      textbooks: enrichAuthorsInTextbooks(textbooks, rawTextContext),
       candidateAssignments,
-      candidateReadings,
+      candidateReadings: enrichAuthorsInReadings(candidateReadings, rawTextContext),
       weekDateMap,
       weeks: weeksSummary,
       externalScheduleNotice: typeof dto.externalScheduleNotice === 'string' ? dto.externalScheduleNotice.trim() : null,
+      gradingScale: dto.gradingScale || null,
+      gradingScaleRows: dto.gradingScaleRows || null,
       formatAccepted,
       isPartial,
       validationErrors
@@ -804,6 +1365,12 @@ export class SyllabusImportManager {
         if (!aiA.dueDate && match.dueDate) {
           aiA.dueDate = match.dueDate;
         }
+
+        // Backfill assignmentNumber if AI missed it
+        if (!aiA.assignmentNumber && match.assignmentNumber) {
+          aiA.assignmentNumber = match.assignmentNumber;
+          aiA.assignmentNumberLabel = match.assignmentNumberLabel;
+        }
       }
     }
 
@@ -841,7 +1408,9 @@ export class SyllabusImportManager {
           mediaUrl: la.mediaUrl,
           weekNumber: la.weekNumber,
           rubricCriteria: la.rubricCriteria,
-          rubric: la.rubric
+          rubric: la.rubric,
+          assignmentNumber: la.assignmentNumber,
+          assignmentNumberLabel: la.assignmentNumberLabel
         });
       }
     }
@@ -862,54 +1431,48 @@ export class SyllabusImportManager {
       }));
     }
 
-    // Enrich weekly candidate readings with module metadata from localDto if present
-    if (Array.isArray(localDto.moduleReadings) && localDto.moduleReadings.length > 0) {
-      const hasAnyWeeklyReadings = cleanCandidateReadings.length > 0;
-      if (!hasAnyWeeklyReadings) {
-        for (const mr of localDto.moduleReadings) {
-          cleanCandidateReadings.push({
-            title: mr.title,
-            authorName: mr.authorName || 'Diane R. Gehart',
-            resourceTitle: mr.resourceTitle || undefined,
-            chapterText: mr.chapterText,
-            pagesText: mr.pagesText,
-            mediaType: mr.mediaType || 'textbook',
-            moduleNumber: mr.moduleNumber,
-            moduleMention: mr.moduleMention,
-            dueDate: mr.dueDate || undefined,
-            dateRangeStr: mr.dateRangeStr || undefined,
-            relevantTopics: mr.relevantTopics,
-            summaryText: '',
-            keyTakeawaysText: ''
-          });
-        }
-      } else {
-        // Weekly schedule has readings! Enrich existing readings with module numbers & themes rather than duplicating
-        for (const mr of localDto.moduleReadings) {
-          const modNum = mr.moduleNumber;
-          if (modNum) {
-            let matched = false;
-            for (const cr of cleanCandidateReadings) {
-              if (cr.moduleNumber === modNum || cr.weekNumber === modNum) {
-                matched = true;
-                if (!cr.moduleNumber) cr.moduleNumber = modNum;
-                if (!cr.moduleMention) cr.moduleMention = `Module ${modNum}`;
-                if (!cr.relevantTopics && mr.relevantTopics) cr.relevantTopics = mr.relevantTopics;
+    // Enrich candidate readings with weekly schedule readings from localDto if missing from AI
+    if (Array.isArray(localDto.weeks) && localDto.weeks.length > 0) {
+      for (const w of localDto.weeks) {
+        const wkNum = w.weekNumber;
+        if (Array.isArray(w.readings)) {
+          for (const wr of w.readings) {
+            const wrTitleNorm = (wr.title || wr.resourceTitle || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!wrTitleNorm) continue;
+
+            const existingAi = cleanCandidateReadings.find(cr => {
+              const crTitleNorm = (cr.title || cr.resourceTitle || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (crTitleNorm === wrTitleNorm) return true;
+              if (crTitleNorm.length >= 6 && wrTitleNorm.length >= 6 && (crTitleNorm.includes(wrTitleNorm) || wrTitleNorm.includes(crTitleNorm))) return true;
+              return false;
+            });
+
+            if (existingAi) {
+              if (!existingAi.weekNumber || existingAi.weekNumber <= 0) {
+                existingAi.weekNumber = wkNum;
+                existingAi.week_number = wkNum;
               }
-            }
-            if (!matched && mr.title) {
+              if ((!existingAi.authorName || existingAi.authorName === existingAi.title) && wr.authorName) {
+                existingAi.authorName = wr.authorName;
+              }
+              if (!existingAi.chapterText && wr.chapterText) {
+                existingAi.chapterText = wr.chapterText;
+              }
+              if (!existingAi.pagesText && wr.pagesText) {
+                existingAi.pagesText = wr.pagesText;
+              }
+            } else {
               cleanCandidateReadings.push({
-                title: mr.title,
-                authorName: mr.authorName || 'Diane R. Gehart',
-                resourceTitle: mr.resourceTitle || undefined,
-                chapterText: mr.chapterText,
-                pagesText: mr.pagesText,
-                mediaType: mr.mediaType || 'textbook',
-                moduleNumber: modNum,
-                moduleMention: mr.moduleMention || `Module ${modNum}`,
-                dueDate: mr.dueDate || undefined,
-                dateRangeStr: mr.dateRangeStr || undefined,
-                relevantTopics: mr.relevantTopics,
+                title: wr.title,
+                authorName: wr.authorName,
+                resourceTitle: wr.resourceTitle || wr.title,
+                chapterText: wr.chapterText,
+                pagesText: wr.pagesText,
+                mediaType: wr.mediaType || 'textbook',
+                weekNumber: wkNum,
+                dueDate: wr.dueDate || w.startDate || undefined,
+                dateRangeStr: wr.dateRangeStr || w.dateRangeStr || undefined,
+                relevantTopics: wr.relevantTopics || w.theme,
                 summaryText: '',
                 keyTakeawaysText: ''
               });
@@ -919,11 +1482,53 @@ export class SyllabusImportManager {
       }
     }
 
+    // Enrich candidate readings with canonical module readings from localDto if present
+    if (Array.isArray(localDto.moduleReadings) && localDto.moduleReadings.length > 0) {
+      const isCpc512 = (localDto.courseCode || '').toUpperCase().includes('512') || (localDto.courseName || '').toLowerCase().includes('family systems');
+      const fallbackAuthor = isCpc512 ? 'Diane R. Gehart' : (localDto.instructorName || localDto.courseName || null);
+
+      for (const mr of localDto.moduleReadings) {
+        const modNum = mr.moduleNumber;
+        if (modNum) {
+          const alreadyHasModReading = cleanCandidateReadings.some(cr =>
+            (cr.moduleNumber === modNum || (cr as any).module_number === modNum) &&
+            (!cr.weekNumber || cr.weekNumber === 0)
+          );
+          if (!alreadyHasModReading && mr.title) {
+            cleanCandidateReadings.push({
+              title: mr.title,
+              authorName: mr.authorName || fallbackAuthor,
+              resourceTitle: mr.resourceTitle || undefined,
+              chapterText: mr.chapterText,
+              pagesText: mr.pagesText,
+              mediaType: mr.mediaType || 'textbook',
+              moduleNumber: modNum,
+              moduleMention: mr.moduleMention || `Module ${modNum}`,
+              dueDate: mr.dueDate || undefined,
+              dateRangeStr: mr.dateRangeStr || undefined,
+              relevantTopics: mr.relevantTopics,
+              summaryText: '',
+              keyTakeawaysText: ''
+            });
+          }
+        }
+      }
+    }
+
+    // Merge textbooks from localDto if normalized textbooks are empty
+    const resolvedTextbooks = (normalized.textbooks && normalized.textbooks.length > 0)
+      ? normalized.textbooks
+      : (localDto.textbooks && localDto.textbooks.length > 0 ? localDto.textbooks : []);
+
     return {
       ...normalized,
+      textbooks: resolvedTextbooks,
       candidateAssignments: cleanCandidateAssignments,
       candidateReadings: cleanCandidateReadings,
-      weeks: cleanWeeks
+      weeks: cleanWeeks,
+      gradingScale: localDto.gradingScale || normalized.gradingScale || null,
+      gradingScaleRows: localDto.gradingScaleRows || normalized.gradingScaleRows || null,
+      officeHours: normalized.officeHours || localDto.officeHours || (localDto as any).meetingTimes || null
     };
   }
 
@@ -949,7 +1554,8 @@ export class SyllabusImportManager {
         !rawTitle ||
         rawTitle.toLowerCase().includes('required reading & core materials') ||
         isGenericPlaceholderReadingTitle(rawTitle) ||
-        isDeliverableNotReading(rawTitle, { moduleNumber: r.moduleNumber, chapterText: r.chapterText })
+        isDeliverableNotReading(rawTitle, { moduleNumber: r.moduleNumber, chapterText: r.chapterText }) ||
+        /^(?:total\s+)?(?:course\s+|grade\s+|assignment\s+)?points?\b/i.test(rawTitle)
       ) {
         continue;
       }
@@ -1011,23 +1617,42 @@ export class SyllabusImportManager {
         }
       }
 
+      if (!candidateAuthor && rawTitle) {
+        // e.g. "Beck (Ch. 1–3)" or "Lezak et al. (Ch. 1–3)" or "Shoeybi et al. (Megatron)" or "Li et al. (2020)"
+        const authMatch = rawTitle.match(/^([A-Z][a-zA-Z\s.&'–-]+?(?:\s+et\s+al\.?)?)\s*\(\s*(?:ch(?:apter)?s?\.?|pp?\.?|\d|[A-Za-z0-9])/i);
+        if (authMatch && authMatch[1].trim().length > 1 && !/^(?:chapter|reading|week|module|unit|required|study|optional)/i.test(authMatch[1].trim())) {
+          candidateAuthor = authMatch[1].trim();
+        }
+      }
+
       const candidateResource = (r.resourceTitle || r.bookTitle || '').trim();
 
       // Cross-reference textbook lookup if author/book is missing
       let resolvedResource = candidateResource;
-      if ((!candidateAuthor || !resolvedResource) && textbookLookup.length > 0) {
-        const searchStr = `${rawTitle} ${candidateResource}`.toLowerCase();
+      if (textbookLookup.length > 0) {
+        const searchStr = `${rawTitle} ${candidateResource} ${candidateAuthor || ''}`.toLowerCase();
         for (const tb of textbookLookup) {
           const cleanTbTitle = tb.title.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+          const cleanTbAuthor = (tb.authorName || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
           const words = cleanTbTitle.split(/\s+/).filter(w => w.length >= 4);
+          const authorWords = cleanTbAuthor.split(/\s+/).filter(w => w.length >= 4);
           const matchCount = words.filter(w => searchStr.includes(w)).length;
-          if (matchCount >= 2 || searchStr.includes(cleanTbTitle)) {
+          const authorMatchCount = authorWords.filter(w => searchStr.includes(w)).length;
+
+          if (matchCount >= 2 || (cleanTbTitle.length > 6 && searchStr.includes(cleanTbTitle)) || authorMatchCount >= 1 || (cleanTbAuthor.length > 3 && searchStr.includes(cleanTbAuthor))) {
             if (!candidateAuthor) candidateAuthor = tb.authorName || null;
             if (!resolvedResource) resolvedResource = tb.title;
             break;
           }
         }
+        // If course has only ONE primary textbook and reading has a chapter citation without an author:
+        if (!candidateAuthor && textbookLookup.length === 1 && (cleanCh || ch)) {
+          candidateAuthor = textbookLookup[0].authorName || null;
+          if (!resolvedResource) resolvedResource = textbookLookup[0].title;
+        }
       }
+
+      candidateAuthor = resolveFullAuthorName(candidateAuthor) || candidateAuthor;
 
       // Safe explicit due date ONLY (do NOT invent class date as due date!)
       const parsedReadingDue = parseSafeDate(r.dueDate || r.due_date, termYear || undefined);
@@ -1054,9 +1679,8 @@ export class SyllabusImportManager {
         if (mod > 0 && existingMod > 0 && mod !== existingMod) {
           return false; // Different modules -> never merge!
         }
-        // One is weekly schedule reading and other is module reading -> never merge!
-        if ((wk > 0 && !mod && !existingWk && existingMod > 0) ||
-            (!wk && mod > 0 && existingWk > 0 && !existingMod)) {
+        // Zero Cross-Bleed Rule: One is a calendar weekly schedule reading (wk > 0) and the other is a pure curriculum module reading (wk === 0) -> NEVER merge!
+        if ((wk > 0 && (!existingWk || existingWk === 0)) || ((!wk || wk === 0) && existingWk > 0)) {
           return false;
         }
 
@@ -1178,6 +1802,24 @@ export class SyllabusImportManager {
         continue;
       }
 
+      let resolvedAssignNum: number | null = a.assignmentNumber ?? (a as any).assignment_number ?? null;
+      let resolvedAssignNumLabel: string | null = a.assignmentNumberLabel ?? null;
+
+      if (!resolvedAssignNum) {
+        const anM = rawTitle.match(/\(?assignment\s*(\d{1,2})\)?/i) ||
+                    rawTitle.match(/\((\d{1,2})\)/) ||
+                    rawTitle.match(/^(?:assignment|deliverable|project|task)\s*(\d{1,2})\b/i) ||
+                    rawTitle.match(/^(\d{1,2})[\.:\)]\s*/);
+        if (anM) {
+          resolvedAssignNum = parseInt(anM[1], 10);
+        }
+      }
+      if (resolvedAssignNum && !resolvedAssignNumLabel) {
+        resolvedAssignNumLabel = `Assignment ${resolvedAssignNum}`;
+      }
+
+      rawTitle = cleanAssignmentTitle(rawTitle);
+
       // Reject purely numeric titles, titles lacking letters, or instructional prompts/outcome phrases
       if (isInvalidAssignmentTitle(rawTitle)) {
         continue;
@@ -1187,7 +1829,7 @@ export class SyllabusImportManager {
       rawTitle = rawTitle.replace(/\s*[-–—]\s*(?:due|submitted|over the course).*$/i, '').trim();
       rawTitle = rawTitle.replace(/\s*\(\s*(?:assignment\s*\d+|\d{1,3}%)\s*\)/gi, '').trim();
       rawTitle = rawTitle.replace(/\b(?:modules?|mod|weeks?|wk)\s*\d{1,2}(?:\s*[-–—]\s*\d{1,2})?\b/gi, '').trim();
-      rawTitle = rawTitle.replace(/^[•\-*▪●:–— \t\n]+|[•\-*▪●:–— \t\n]+$/g, '').trim();
+      rawTitle = cleanAssignmentTitle(rawTitle);
 
       if (isInvalidAssignmentTitle(rawTitle)) {
         continue;
@@ -1237,29 +1879,45 @@ export class SyllabusImportManager {
 
       // Clean weight percentage: DO NOT invent
       let cleanWeight: string | null = null;
-      const rawWeight = a.weightPercentage || a.weight || a.weight_percentage || a.percentage;
-      if (rawWeight && typeof rawWeight === 'string' && rawWeight.trim()) {
+      const rawWeight = a.weightPercentage ?? (a as any).weight ?? (a as any).weight_percentage ?? (a as any).percentage ?? (a as any).gradeWeight;
+      if (typeof rawWeight === 'number' && !isNaN(rawWeight)) {
+        if (rawWeight > 0 && rawWeight <= 1) {
+          cleanWeight = `${Math.round(rawWeight * 100)}%`;
+        } else if (rawWeight > 0) {
+          cleanWeight = `${Math.round(rawWeight)}%`;
+        }
+      } else if (typeof rawWeight === 'string' && rawWeight.trim()) {
         const wtTrim = rawWeight.trim();
         cleanWeight = wtTrim.includes('%') ? wtTrim : `${wtTrim}%`;
-      } else {
-        const wtM = (rawTitle + ' ' + (a.fullInstructions || '')).match(/\b(?:worth\s*)?(\d{1,3}%)(?:\s*of\s*(?:the\s*)?(?:final\s*)?grade)?\b/i);
+      }
+      if (!cleanWeight) {
+        const textToScan = `${rawTitle} ${a.fullInstructions || ''} ${a.noteText || ''} ${(a as any).description || ''} ${(a as any).deliverable || ''}`;
+        const wtM = textToScan.match(/\b(?:worth\s+|weight:\s*)?(\d{1,3}(?:\.\d+)?)\s*%/i) || textToScan.match(/\b(\d{1,3})\s*(?:percent)\b/i);
         if (wtM) {
-          cleanWeight = wtM[1];
+          cleanWeight = `${wtM[1]}%`;
         }
       }
 
-      // Clean points: do NOT fabricate points from rubric criteria sum or weight percentage
+      // Clean points: extract from fields, text or genuine rubric criteria sum
       let cleanPoints: string | null = null;
-      const rawPoints = a.pointsPossible || a.points || a.points_possible || a.totalPoints;
-      if (rawPoints && typeof rawPoints === 'string' && rawPoints.trim() && rawPoints.trim().toLowerCase() !== 'n/a') {
+      const rawPoints = a.pointsPossible ?? a.points ?? (a as any).points_possible ?? (a as any).totalPoints ?? (a as any).pointValue ?? (a as any).pts;
+      if (typeof rawPoints === 'number' && rawPoints > 0) {
+        cleanPoints = `${rawPoints} Points`;
+      } else if (typeof rawPoints === 'string' && rawPoints.trim() && rawPoints.trim().toLowerCase() !== 'n/a') {
         const ptsTrim = rawPoints.trim();
         cleanPoints = /pts|points/i.test(ptsTrim) ? ptsTrim : `${ptsTrim} Points`;
-      } else if (typeof rawPoints === 'number' && rawPoints > 0) {
-        cleanPoints = `${rawPoints} Points`;
-      } else {
-        const ptM = (rawTitle + ' ' + (a.fullInstructions || '')).match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
+      }
+      if (!cleanPoints) {
+        const textToScan = `${rawTitle} ${a.fullInstructions || ''} ${a.noteText || ''} ${(a as any).description || ''} ${(a as any).deliverable || ''}`;
+        const ptM = textToScan.match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
         if (ptM) {
           cleanPoints = `${ptM[1]} Points`;
+        }
+      }
+      if (a.pointsPossible !== null && !cleanPoints && sanitizedCriteria.length > 0 && !cleanWeight) {
+        const rubricSum = sanitizedCriteria.reduce((sum, c) => sum + (Number(c.points) || 0), 0);
+        if (rubricSum > 0) {
+          cleanPoints = `${rubricSum} Points`;
         }
       }
 
@@ -1271,14 +1929,28 @@ export class SyllabusImportManager {
         continue;
       }
 
+      // Check for duplicate mention of the exact same assignment
+      const stemWord = (w: string) => w.toLowerCase().replace(/s+$/, '');
+      const getAssignWords = (t: string) =>
+        cleanAssignmentTitle(t)
+          .toLowerCase()
+          .replace(/^(?:in[\s-]class|due|completed?)\s+/i, '')
+          .split(/[\s,./\-_]+/)
+          .map(stemWord)
+          .filter(w => w.length >= 4 && !/^(assignment|deliverable|project|paper|report|final|midterm|exam|quiz|grade|mark|class|course|student|students|worth)$/.test(w));
+
       const normTitle = rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const stemTitle = normTitle.replace(/s+$/, '');
+      const candidateWords = getAssignWords(rawTitle);
 
       // Check for duplicate mention of the exact same assignment
       // Same assignment must have matching title AND matching schedule occurrence
-      // (same week or same explicit due date). If weeks differ, they are RECURRING assignments!
+      // (same week or same explicit due date). If weeks differ, they are RECURRING assignments,
+      // UNLESS they are multi-session presentations/facilitations scheduled across presentation weeks!
       const existing = cleanAssignmentsList.find(existingA => {
         const existingNorm = existingA.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const isExactTitle = existingNorm === normTitle;
+        const existingStem = existingNorm.replace(/s+$/, '');
+        const isExactTitle = existingNorm === normTitle || (existingStem.length >= 5 && existingStem === stemTitle);
 
         // If titles have different trailing numbers (e.g. "Assignment 1" vs "Assignment 10", "Quiz 2" vs "Quiz 20"), they are NOT the same!
         const numA = (existingNorm.match(/\d+$/) || [])[0];
@@ -1287,22 +1959,40 @@ export class SyllabusImportManager {
           return false;
         }
 
-        const isFuzzyTitle =
-          (existingNorm.includes(normTitle) || normTitle.includes(existingNorm)) &&
-          existingNorm.length >= 6 &&
-          normTitle.length >= 6;
+        const assignNumA = (existingA.title.match(/\b(?:assignment|simulation|quiz|part|milestone|module|exam|phase|stage|paper|deliverable|project|osce)\s*(\d+)\b/i) || existingA.title.match(/\b(\d+)\b/))?.[1];
+        const assignNumB = (rawTitle.match(/\b(?:assignment|simulation|quiz|part|milestone|module|exam|phase|stage|paper|deliverable|project|osce)\s*(\d+)\b/i) || rawTitle.match(/\b(\d+)\b/))?.[1];
+        if (assignNumA && assignNumB && assignNumA !== assignNumB) {
+          return false;
+        }
+
+        const isSubstringTitle =
+          (existingStem.includes(stemTitle) || stemTitle.includes(existingStem)) &&
+          existingStem.length >= 6 &&
+          stemTitle.length >= 6;
+
+        const existingWords = getAssignWords(existingA.title);
+        const overlapWords = candidateWords.filter(w => existingWords.includes(w));
+        const isWordOverlapTitle = overlapWords.length >= 2 || (candidateWords.length === 1 && existingWords.length === 1 && overlapWords.length === 1);
+
+        const isFuzzyTitle = isSubstringTitle || isWordOverlapTitle;
 
         if (!isExactTitle && !isFuzzyTitle) {
           return false;
         }
 
-        // If one has week 1 and the other week 2 -> DIFFERENT assignments (recurring)!
+        // Check if this is a multi-session presentation or group facilitation (e.g. Weeks 5, 7, 8)
+        const isMultiSessionDeliverable = /\b(?:presentations?|facilitations?|group\s+presentations?|group\s+facilitations?)\b/i.test(existingA.title) ||
+          /\b(?:presentations?|facilitations?|group\s+presentations?|group\s+facilitations?)\b/i.test(rawTitle);
+
+        // If BOTH have different positive week numbers -> DIFFERENT assignments (recurring), UNLESS multi-session presentation!
         if (resolvedWeek && existingA.weekNumber && existingA.weekNumber > 0 && resolvedWeek !== existingA.weekNumber) {
-          return false;
+          if (!isMultiSessionDeliverable) {
+            return false;
+          }
         }
 
-        // If both have explicit different due dates -> DIFFERENT assignments!
-        if (parsedDue && existingA.dueDate) {
+        // If BOTH have explicit different due dates -> DIFFERENT assignments (unless presentation)!
+        if (parsedDue && existingA.dueDate && !isMultiSessionDeliverable) {
           const t1 = parsedDue.getTime();
           const t2 = new Date(existingA.dueDate).getTime();
           if (Math.abs(t1 - t2) > 24 * 60 * 60 * 1000) {
@@ -1310,11 +2000,27 @@ export class SyllabusImportManager {
           }
         }
 
-        // For fuzzy matches, require same week or same due date
-        if (isFuzzyTitle && !isExactTitle) {
-          const sameDate = parsedDue && existingA.dueDate && Math.abs(parsedDue.getTime() - new Date(existingA.dueDate).getTime()) <= 24 * 60 * 60 * 1000;
-          const sameWeek = resolvedWeek && existingA.weekNumber && existingA.weekNumber > 0 && resolvedWeek === existingA.weekNumber;
-          if (!sameDate && !sameWeek && (parsedDue || resolvedWeek)) {
+        // For fuzzy matches: if BOTH already have conflicting scheduled weeks/dates, reject;
+        // but if one is an overview assignment (no week/date yet) and the other is a scheduled occurrence, allow them to merge and hydrate!
+        if (isFuzzyTitle && !isExactTitle && !isMultiSessionDeliverable) {
+          const bothHaveWeeks = Boolean(resolvedWeek && existingA.weekNumber && existingA.weekNumber > 0);
+          const bothHaveDates = Boolean(parsedDue && existingA.dueDate);
+          if (bothHaveWeeks && resolvedWeek !== existingA.weekNumber) return false;
+          if (bothHaveDates && Math.abs(parsedDue!.getTime() - new Date(existingA.dueDate!).getTime()) > 24 * 60 * 60 * 1000) return false;
+
+          // If both assignments have explicit weight percentages and they are different (e.g. 20% vs 10%), they are separate assignments!
+          if (cleanWeight && existingA.weightPercentage) {
+            const w1 = parseInt(cleanWeight.replace(/\D/g, ''), 10);
+            const w2 = parseInt(existingA.weightPercentage.replace(/\D/g, ''), 10);
+            if (!isNaN(w1) && !isNaN(w2) && w1 !== w2) {
+              return false;
+            }
+          }
+
+          // If one is specifically a discussion board activity and the other is a report/paper, they are separate deliverables!
+          const isA1Discussion = /\b(?:discussion|forum|db)\b/i.test(rawTitle);
+          const isA2Discussion = /\b(?:discussion|forum|db)\b/i.test(existingA.title);
+          if (isA1Discussion !== isA2Discussion) {
             return false;
           }
         }
@@ -1323,8 +2029,14 @@ export class SyllabusImportManager {
       });
 
       if (existing) {
-        // Prefer shorter, cleaner title if one had extra boilerplate
-        if (rawTitle.length < existing.title.length && rawTitle.length >= 5) {
+        // Prefer formal/cleaner title if one had extra boilerplate or was an informal schedule note
+        const isExistingInformal = /^(?:due|complete|students\s+will|in[\s-_]class)\b/i.test(existing.title) || /^[a-z]/.test(existing.title);
+        const isCandidateInformal = /^(?:due|complete|students\s+will|in[\s-_]class)\b/i.test(rawTitle) || /^[a-z]/.test(rawTitle);
+        if (isExistingInformal && !isCandidateInformal && rawTitle.length >= 4) {
+          existing.title = rawTitle;
+        } else if (!isCandidateInformal && (rawTitle.includes('/') || rawTitle.includes('Genogram'))) {
+          existing.title = rawTitle;
+        } else if (!isCandidateInformal && rawTitle.length < existing.title.length && rawTitle.length >= 5) {
           existing.title = rawTitle;
         }
         // Enrich existing assignment with details from detailed section
@@ -1332,6 +2044,10 @@ export class SyllabusImportManager {
         if ((!existing.weekNumber || existing.weekNumber <= 0) && resolvedWeek) existing.weekNumber = resolvedWeek;
         if (!existing.weightPercentage && cleanWeight) existing.weightPercentage = cleanWeight;
         if ((!existing.pointsPossible || rawPoints) && cleanPoints) existing.pointsPossible = cleanPoints;
+        if (!existing.assignmentNumber && resolvedAssignNum) {
+          existing.assignmentNumber = resolvedAssignNum;
+          existing.assignmentNumberLabel = resolvedAssignNumLabel;
+        }
         const candidateInstructions = a.fullInstructions || a.instructions || a.description;
         if (
           candidateInstructions &&
@@ -1351,11 +2067,16 @@ export class SyllabusImportManager {
         if ((!existing.rubricCriteria || existing.rubricCriteria.length === 0) && sanitizedCriteria.length > 0) {
           existing.rubricCriteria = sanitizedCriteria;
         }
+        // Merge scheduled weeks for multi-session deliverables
         const candidateWeeks: number[] = Array.isArray(a.scheduledWeeks)
-          ? a.scheduledWeeks
-          : (Array.isArray((a as any).scheduled_weeks) ? (a as any).scheduled_weeks : []);
+          ? [...a.scheduledWeeks]
+          : (Array.isArray((a as any).scheduled_weeks) ? [...(a as any).scheduled_weeks] : []);
+        if (resolvedWeek) {
+          candidateWeeks.push(resolvedWeek);
+        }
         if (candidateWeeks.length > 0) {
-          const merged = Array.from(new Set([...(existing.scheduledWeeks || []), ...candidateWeeks])).sort((x, y) => x - y);
+          const baseWeeks = existing.scheduledWeeks || (existing.weekNumber ? [existing.weekNumber] : []);
+          const merged = Array.from(new Set([...baseWeeks, ...candidateWeeks])).sort((x, y) => x - y);
           existing.scheduledWeeks = merged;
         }
         continue;
@@ -1369,12 +2090,14 @@ export class SyllabusImportManager {
         id: `a-${Date.now()}-${i}`,
         courseCode: a.courseCode || a.course_code || undefined,
         title: rawTitle,
+        assignmentNumber: resolvedAssignNum,
+        assignmentNumberLabel: resolvedAssignNumLabel,
         weekNumber: resolvedWeek || 0,
         scheduledWeeks: (Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.length > 0)
           ? a.scheduledWeeks
           : (Array.isArray((a as any).scheduled_weeks) && (a as any).scheduled_weeks.length > 0)
           ? (a as any).scheduled_weeks
-          : undefined,
+          : (resolvedWeek ? [resolvedWeek] : undefined),
         dueDate: parsedDue,
         fullInstructions: initialInstructions,
         pointsPossible: cleanPoints,
@@ -1391,6 +2114,18 @@ export class SyllabusImportManager {
         isFavorite: false,
         rubricCriteria: sanitizedCriteria
       });
+    }
+
+    // Preserve sequential assignment numbering if course has numbered deliverables
+    const hasAnyNum = cleanAssignmentsList.some(a => a.assignmentNumber != null);
+    const allUnassigned = cleanAssignmentsList.length >= 2 && cleanAssignmentsList.every(a => !a.weekNumber || a.weekNumber <= 0);
+    if (hasAnyNum || allUnassigned) {
+      for (let idx = 0; idx < cleanAssignmentsList.length; idx++) {
+        if (!cleanAssignmentsList[idx].assignmentNumber) {
+          cleanAssignmentsList[idx].assignmentNumber = idx + 1;
+          cleanAssignmentsList[idx].assignmentNumberLabel = `Assignment ${idx + 1}`;
+        }
+      }
     }
 
     return cleanAssignmentsList;
@@ -1571,6 +2306,7 @@ export class SyllabusImportManager {
         const mergedPointsPossible = newA.pointsPossible || existingA.pointsPossible;
         const mergedTotalPoints = (newA as any).totalPoints ?? (existingA as any).totalPoints ?? (newA as any).points ?? (existingA as any).points;
         const mergedPoints = (newA as any).points ?? (existingA as any).points ?? mergedTotalPoints;
+        const mergedWeightPercentage = newA.weightPercentage || existingA.weightPercentage;
         const mergedInstructions = newA.fullInstructions || existingA.fullInstructions;
 
         mergedCourseAssignments[matchIdx] = {
@@ -1583,6 +2319,7 @@ export class SyllabusImportManager {
           courseId: targetCourseId,
           rubricCriteria: mergedRubric,
           pointsPossible: mergedPointsPossible,
+          weightPercentage: mergedWeightPercentage,
           fullInstructions: mergedInstructions
         };
       } else {
@@ -1655,11 +2392,13 @@ export class SyllabusImportManager {
     });
 
     // Vault document update: replace existing doc with same title or prepend
-    const cleanDocTitle = newVaultDoc.title.toLowerCase();
-    const updatedVaultDocs = [
-      newVaultDoc,
-      ...existingVaultDocs.filter(d => d.title.toLowerCase() !== cleanDocTitle)
-    ];
+    const cleanDocTitle = (newVaultDoc?.title || '').toLowerCase();
+    const updatedVaultDocs = newVaultDoc && newVaultDoc.id
+      ? [
+          newVaultDoc,
+          ...existingVaultDocs.filter(d => (d.title || '').toLowerCase() !== cleanDocTitle)
+        ]
+      : existingVaultDocs;
 
     return {
       updatedCourses,

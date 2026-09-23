@@ -150,26 +150,17 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
     return days;
   }, [currentWeekStart]);
 
-  // Accurate month & year string: ensures Week 1 correctly displays the starting month
+  // Accurate month & year string: strictly displays one single month and year (e.g., "June 2025" or "July 2025")
   const monthYearString = useMemo(() => {
     if (weekDays.length < 7) {
       return currentWeekStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }
-    const start = weekDays[0];
-    const end = weekDays[6];
-    const startMonth = start.toLocaleDateString('en-US', { month: 'long' });
-    const endMonth = end.toLocaleDateString('en-US', { month: 'long' });
-    const startYear = start.getFullYear();
-    const endYear = end.getFullYear();
-
-    if (startMonth === endMonth && startYear === endYear) {
-      return `${startMonth} ${startYear}`;
-    }
-    if (startYear === endYear) {
-      return `${startMonth} – ${endMonth} ${startYear}`;
-    }
-    return `${startMonth} ${startYear} – ${endMonth} ${endYear}`;
-  }, [weekDays, currentWeekStart]);
+    // Select the primary representative day for the week (user selectedDate if within week, or Wednesday / majority day)
+    const primaryDay = (selectedDate && selectedDate >= weekDays[0] && selectedDate <= weekDays[6])
+      ? selectedDate
+      : (weekDays[3] || currentWeekStart);
+    return primaryDay.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [weekDays, currentWeekStart, selectedDate]);
 
   // Notify parent of visible month/year (e.g. for page header display)
   useEffect(() => {
@@ -178,7 +169,7 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
     }
   }, [monthYearString, onMonthYearChange]);
 
-  // Formatted week date range, e.g. "Sep 13 – Sep 19" or "Aug 30 – Sep 5"
+  // Formatted week date range, e.g. "Sep 13 to Sep 19" or "Aug 30 to Sep 5"
   const weekRangeString = useMemo(() => {
     if (weekDays.length < 7) return '';
     const start = weekDays[0];
@@ -186,9 +177,9 @@ export const DeadlinesCalendarCard: React.FC<DeadlinesCalendarCardProps> = ({
     const startM = start.toLocaleDateString('en-US', { month: 'short' });
     const endM = end.toLocaleDateString('en-US', { month: 'short' });
     if (startM === endM) {
-      return `${startM} ${start.getDate()} – ${end.getDate()}`;
+      return `${startM} ${start.getDate()} to ${end.getDate()}`;
     }
-    return `${startM} ${start.getDate()} – ${endM} ${end.getDate()}`;
+    return `${startM} ${start.getDate()} to ${endM} ${end.getDate()}`;
   }, [weekDays]);
 
   const isSameDay = (d1: Date, d2: Date) => {

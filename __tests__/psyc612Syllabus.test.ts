@@ -119,13 +119,13 @@ TIMELINE & NOTIFICATION ENGINE
     const week1 = res.weeks?.find(w => w.weekNumber === 1);
     expect(week1?.theme).toBe('MODULE 01: Cognitive Case Conceptualization Frameworks');
     expect(week1?.readings?.map(r => r.title)).toEqual(['Beck (Ch. 1–3)', 'Persons (Ch. 1)']);
-    expect(week1?.readings?.[0]?.authorName).toBe('Beck');
+    expect(week1?.readings?.[0]?.authorName).toBe('Judith S. Beck');
     expect(week1?.readings?.[0]?.chapterText).toBe('Chapters 1–3');
-    expect(week1?.readings?.[1]?.authorName).toBe('Persons');
+    expect(week1?.readings?.[1]?.authorName).toBe('Jacqueline B. Persons');
 
     const week4 = res.weeks?.find(w => w.weekNumber === 4);
     expect(week4?.theme).toBe('MODULE 04: Acceptance & Mindfulness Architecture (ACT)');
-    expect(week4?.readings?.[0]?.authorName).toBe('Hayes et al.');
+    expect(week4?.readings?.[0]?.authorName).toBe('Steven C. Hayes et al.');
     expect(week4?.readings?.[0]?.chapterText).toBe('Chapters 3–5');
 
     const week6 = res.weeks?.find(w => w.weekNumber === 6);

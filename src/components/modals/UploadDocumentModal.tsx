@@ -57,9 +57,6 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
   // MARK: - Native iOS Document Picker
   const handlePickDocument = async () => {
     try {
-      if (isUploading) {
-        await cancelUpload();
-      }
       setIsPickingFile(true);
       const result = await DocumentPicker.getDocumentAsync({
         type: [
@@ -105,9 +102,6 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
 
   // MARK: - Instant Catalog Syllabus Import
   const handleImportCatalogItem = async (item: BundledSyllabusItem) => {
-    if (isUploading) {
-      await cancelUpload();
-    }
     onClose();
     await importSyllabusDocument({
       fileName: item.fileName,
@@ -128,10 +122,6 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
         'Please paste more of your course syllabus text (at least course title, schedule, or reading list).'
       );
       return;
-    }
-
-    if (isUploading) {
-      await cancelUpload();
     }
 
     onClose();
@@ -652,12 +642,12 @@ const styles = StyleSheet.create({
   cancelUploadButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#2470F5',
     borderRadius: 8
   },
   cancelUploadButtonText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1D4ED8'
+    color: '#FFFFFF'
   }
 });

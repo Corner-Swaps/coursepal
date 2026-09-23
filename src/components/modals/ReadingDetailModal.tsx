@@ -37,6 +37,7 @@ import {
   resolveReadingMediaType,
   isGenericPlaceholderTheme
 } from '../../utils/readingDisplayHelper';
+import { resolveFullAuthorName } from '../../utils/authorResolver';
 import { InlineCalendarPicker } from '../InlineCalendarPicker';
 
 export interface ReadingDetailModalProps {
@@ -115,6 +116,55 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
     return null;
   };
 
+  const resolveReadingAuthor = (r: Reading | null): string => {
+    if (!r) return '';
+    if (r.authorName && r.authorName.trim().length > 0) {
+      const a = r.authorName.trim();
+      if (
+        !/^(required|watch|read|reading|readings|author|null|undefined|none|see brightspace)$/i.test(a) &&
+        !a.toLowerCase().startsWith('required:') &&
+        !a.toLowerCase().startsWith('watch:')
+      ) {
+        return resolveFullAuthorName(a) || a;
+      }
+    }
+    const targetText = r.resourceTitle || r.title || '';
+    if (targetText) {
+      if (targetText.toLowerCase().includes('groth-marnat') || /\bMarnat\b/i.test(targetText)) {
+        return 'Gary Groth-Marnat';
+      }
+      const m = targetText.match(/^([A-Z][a-zA-Z\s.&'–-]+?(?:\s+et\s+al\.?)?)\s*\(\s*(?:ch(?:apter)?s?\.?|pp?\.?|\d|[A-Za-z0-9])/i);
+      if (m && m[1].trim().length > 1 && !/^(?:chapter|reading|week|module|unit|required|study|optional)/i.test(m[1].trim())) {
+        const rawAuth = m[1].trim();
+        return resolveFullAuthorName(rawAuth) || rawAuth;
+      }
+    }
+    if (matchedCourse?.textbooks && matchedCourse.textbooks.length > 0) {
+      const searchStr = `${r.title || ''} ${r.resourceTitle || ''}`.toLowerCase();
+      for (const tb of matchedCourse.textbooks) {
+        if (tb.authorName) {
+          const authClean = tb.authorName.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+          const authWords = authClean.split(/\s+/).filter(w => w.length >= 4);
+          if (authClean.length > 3 && searchStr.includes(authClean)) {
+            return resolveFullAuthorName(tb.authorName) || tb.authorName;
+          }
+          if (authWords.some(w => searchStr.includes(w))) {
+            return resolveFullAuthorName(tb.authorName) || tb.authorName;
+          }
+          const tbTitleClean = tb.title.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+          const tbWords = tbTitleClean.split(/\s+/).filter(w => w.length >= 4);
+          if (tbWords.filter(w => searchStr.includes(w)).length >= 2) {
+            return resolveFullAuthorName(tb.authorName) || tb.authorName;
+          }
+        }
+      }
+      if (matchedCourse.textbooks.length === 1 && matchedCourse.textbooks[0].authorName) {
+        return resolveFullAuthorName(matchedCourse.textbooks[0].authorName) || matchedCourse.textbooks[0].authorName;
+      }
+    }
+    return '';
+  };
+
   // Schedule Week (always visible stepper; 0 = No Week / Unassigned)
   const [weekNumber, setWeekNumber] = useState<number>(() => {
     const isWeekOn = isReadingWeekEnabled(reading);
@@ -135,7 +185,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
 
   const [chapterInput, setChapterInput] = useState<string>(() => reading?.chapterText || '');
   const [pagesInput, setPagesInput] = useState<string>(() => reading?.pagesText || '');
-  const [authorInput, setAuthorInput] = useState<string>(() => reading?.authorName || '');
+  const [authorInput, setAuthorInput] = useState<string>(() => resolveReadingAuthor(reading));
   const [topicInputs, setTopicInputs] = useState<string[]>(() =>
     reading ? discoverReadingTopics(reading, courses) : []
   );
@@ -229,7 +279,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
       const chDisplay = reading.chapterText || '';
       setChapterInput(chDisplay);
       setPagesInput(reading.pagesText || '');
-      setAuthorInput(reading.authorName || '');
+      setAuthorInput(resolveReadingAuthor(reading));
 
       const realTopics = discoverReadingTopics(reading, courses);
       setTopicInputs(realTopics);
@@ -554,7 +604,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                       setPagesInput(t);
                       saveAllChanges({ pagesText: t.trim() || undefined });
                     }}
-                    placeholder="e.g. pp. 120–155"
+                    placeholder="e.g. pp. 120-155"
                     placeholderTextColor="#94A3B8"
                   />
                 </View>
@@ -592,28 +642,27 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               <View style={styles.formRow}>
                 <Text style={styles.rowLabel}>Due Date</Text>
                 <View style={styles.dueRightRow}>
-                  <View style={styles.selectedDateBanner}>
-                    <CalendarIcon size={14} color="#2470F5" />
-                    <Text style={styles.selectedDateBannerText}>
-                      {suggestedDate
-                        ? `Read by ${suggestedDate.toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })}`
-                        : 'No date set'}
-                    </Text>
-                  </View>
+                  <Text style={styles.dueDateSimpleText}>
+                    {suggestedDate
+                      ? `Read by ${suggestedDate.toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}`
+                      : 'No date set'}
+                  </Text>
                   {suggestedDate && (
                     <TouchableOpacity
                       onPress={() => {
                         setSuggestedDate(null);
                         saveAllChanges({ dueDate: null });
                       }}
-                      style={styles.clearDateBtn}
+                      style={styles.clearDateIconBtn}
                       activeOpacity={0.7}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel="Clear due date"
                     >
-                      <Text style={styles.clearDateBtnText}>Clear</Text>
+                      <XMarkCircleFillIcon size={18} color="#94A3B8" />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -750,7 +799,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                     <Text style={[styles.openLinkActionText, isYouTube && styles.youtubeActionText]}>
                       {isYouTube ? 'Watch Video' : 'Open'}
                     </Text>
-                    <ArrowUpRightIcon size={12} color={isYouTube ? '#FFFFFF' : '#2470F5'} />
+                    <ArrowUpRightIcon size={12} color="#FFFFFF" />
                   </View>
                 </TouchableOpacity>
               ) : (
@@ -761,7 +810,18 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
             </View>
 
             {/* MARK: - Section 6: Notes (Keyboard-Aware, No Giant Bottom Gap) */}
-            <Text style={styles.sectionHeaderTitle}>Notes</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeaderTitleRow}>Notes</Text>
+              <TouchableOpacity
+                onPress={handleAddNote}
+                style={styles.addNoteHeaderBtn}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Add note"
+              >
+                <PlusCircleFillIcon size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
             <View style={styles.sectionCard}>
 
               {noteInputs.map((note, idx) => (
@@ -795,11 +855,11 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
 
               <TouchableOpacity
                 onPress={handleAddNote}
-                style={styles.addNotePillBtn}
+                style={styles.addNoteSimpleBtn}
                 activeOpacity={0.7}
               >
-                <PlusCircleFillIcon size={15} color="#2470F5" />
-                <Text style={styles.addNotePillBtnText}>Add Note</Text>
+                <PlusCircleFillIcon size={18} color="#94A3B8" />
+                <Text style={styles.addNoteSimpleBtnText}>Add Note</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -1108,35 +1168,18 @@ const styles = StyleSheet.create({
   dueRightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: 6
   },
-  selectedDateBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8
+  dueDateSimpleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+    textAlign: 'right'
   },
-  selectedDateBannerText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#2470F5',
-    includeFontPadding: false
-  },
-  clearDateBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  clearDateBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#DC2626'
+  clearDateIconBtn: {
+    padding: 2,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   emptyTopicsBox: {
     paddingVertical: 10,
@@ -1291,7 +1334,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#2470F5',
     padding: 8,
     borderRadius: 8,
     marginTop: 6
@@ -1299,7 +1342,7 @@ const styles = StyleSheet.create({
   openLinkPillText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2470F5'
+    color: '#FFFFFF'
   },
   noteItemCard: {
     flexDirection: 'row',
@@ -1345,24 +1388,42 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     lineHeight: 17
   },
-  addNotePillBtn: {
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginLeft: 4,
+    marginRight: 4,
+    marginBottom: 8,
+    marginTop: 10
+  },
+  sectionHeaderTitleRow: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#596B85',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5
+  },
+  addNoteHeaderBtn: {
+    padding: 2
+  },
+  addNoteSimpleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#EFF6FF',
+    paddingVertical: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 18,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginTop: 6,
-    marginBottom: 2
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    marginTop: 6
   },
-  addNotePillBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#2470F5'
+  addNoteSimpleBtnText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#64748B'
   },
   resourceLinkCard: {
     flexDirection: 'row',
@@ -1387,26 +1448,23 @@ const styles = StyleSheet.create({
     gap: 8
   },
   resourceTypeBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#2470F5',
     paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#BFDBFE'
+    borderRadius: 6
   },
   youtubeTypeBadge: {
-    backgroundColor: '#FFE4E6',
-    borderColor: '#FDA4AF'
+    backgroundColor: '#E11D48'
   },
   resourceTypeBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2470F5'
+    color: '#FFFFFF'
   },
   youtubeTypeBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#E11D48'
+    color: '#FFFFFF'
   },
   resourceCardUrlText: {
     flex: 1,
@@ -1418,7 +1476,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#2470F5',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8
@@ -1429,7 +1487,7 @@ const styles = StyleSheet.create({
   openLinkActionText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2470F5'
+    color: '#FFFFFF'
   },
   youtubeActionText: {
     fontSize: 12,

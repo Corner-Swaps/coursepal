@@ -46,8 +46,8 @@ describe('Document Import Pipeline Regression Test Suite (9 Core Repairs)', () =
     it('demonstrates success after repair: SyllabusImportManager preserves both readings as separate', () => {
       const deduplicated = SyllabusImportManager.deduplicateReadings(rawReadings as any);
       expect(deduplicated).toHaveLength(2);
-      expect(deduplicated[0].authorName).toBe('Corey');
-      expect(deduplicated[1].authorName).toBe('Yalom');
+      expect(deduplicated[0].authorName).toBe('Gerald Corey');
+      expect(deduplicated[1].authorName).toBe('Irvin D. Yalom');
     });
 
     it('demonstrates success after repair: deduplicateReadingsList preserves both readings in display helper', () => {
@@ -262,7 +262,7 @@ describe('Document Import Pipeline Regression Test Suite (9 Core Repairs)', () =
       // Resource is retained in course textbooks:
       expect(normalized.textbooks).toHaveLength(1);
       expect(normalized.textbooks![0].title).toContain('Cognitive Psychology');
-      expect(normalized.textbooks![0].authorName).toBe('Goldstein, E. Bruce');
+      expect(normalized.textbooks![0].authorName).toBe('E. Bruce Goldstein');
       // No synthetic reading tasks created:
       expect(normalized.candidateReadings).toHaveLength(0);
     });

@@ -133,7 +133,7 @@ export const AssignmentsMonthCalendarCard: React.FC<AssignmentsMonthCalendarCard
               activeOpacity={0.7}
             >
               <Text style={styles.filterActiveBadgeText}>Filtered</Text>
-              <XMarkIcon size={10} color={CoursePalTheme.accentBlue} />
+              <XMarkIcon size={10} color="#FFFFFF" />
             </TouchableOpacity>
           )}
         </View>
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(36, 112, 245, 0.12)',
+    backgroundColor: CoursePalTheme.accentBlue,
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 10
@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
   filterActiveBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: CoursePalTheme.accentBlue
+    color: '#FFFFFF'
   },
   navButton: {
     width: 28,

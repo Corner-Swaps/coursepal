@@ -57,7 +57,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   onClose,
   onCourseCreated
 }) => {
-  const { addCourse, importSyllabusDocument, vaultDocs } = useCoursePal();
+  const { addCourse, importSyllabusDocument, vaultDocs, isUploading } = useCoursePal();
   const scrollRef = useRef<ScrollView>(null);
 
   const [courseName, setCourseName] = useState<string>('');
@@ -73,11 +73,14 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   if (!visible) return null;
 
   const hasSyllabusSource = !!(attachedFileName && attachedFileName.length > 0);
-  const canSave = courseName.trim().length > 0 && hasSyllabusSource;
+  const canSave = courseName.trim().length > 0;
   const isNameMissing = showValidationHighlight && !courseName.trim();
-  const isDocMissing = showValidationHighlight && !hasSyllabusSource;
 
   const handleAttachRealDoc = async () => {
+    if (isUploading) {
+      Alert.alert('Upload in Progress', 'Please wait for the current syllabus upload to finish.');
+      return;
+    }
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: [
@@ -102,8 +105,8 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       setShowValidationHighlight(false);
 
       // Instantly start document processing on single click
-      const currentName = courseName.trim();
-      const codeMatch = currentName.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
+      const userEnteredName = courseName.trim();
+      const codeMatch = userEnteredName.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
       const derivedCode = codeMatch ? codeMatch[1].toUpperCase().replace(/\s+/g, ' ') : '';
       
       setCourseName('');
@@ -120,28 +123,32 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
         fileUri: asset.uri,
         fileSize: fileSizeStr,
         preferredHexColor: selectedColorHex,
-        preserveCourseTitle: currentName || undefined,
+        preserveCourseTitle: userEnteredName || undefined,
         preserveCourseSubtitle: courseDescription.trim() || undefined,
-        preserveCourseCode: derivedCode || undefined
+        preserveCourseCode: derivedCode || undefined,
+        isNewCourse: true
+      }).then(res => {
+        if (res && !res.success) {
+          Alert.alert('Import Notice', res.message || 'Could not parse syllabus document.');
+        }
+      }).catch(err => {
+        Alert.alert('Import Failed', err?.message || 'Error processing syllabus document.');
       });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Document picker cancelled or failed:', err);
+      Alert.alert('File Selection Failed', err?.message || 'Unable to open file picker.');
     }
   };
 
   const handleSave = () => {
     const trimmedName = courseName.trim();
 
-    if (!trimmedName || !hasSyllabusSource) {
+    if (!trimmedName) {
       setShowValidationHighlight(true);
-      if (!trimmedName) {
-        scrollRef.current?.scrollTo({ y: 0, animated: true });
-      } else {
-        scrollRef.current?.scrollToEnd({ animated: true });
-      }
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
       Alert.alert(
         'Required Information Missing',
-        'Please enter a course name and upload a syllabus document before saving.'
+        'Please enter a course name before saving.'
       );
       return;
     }
@@ -155,14 +162,23 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       : (trimmedName.length <= 8 && /^[A-Za-z0-9\s-]+$/.test(trimmedName) ? trimmedName.toUpperCase() : '');
 
     if (attachedFileName) {
+      const chosenDoc = vaultDocs.find(d => selectedVaultDocIds.includes(d.id));
       importSyllabusDocument({
         fileName: attachedFileName,
-        fileUri: attachedFileUri,
-        fileSize: attachedFileSize,
+        fileUri: attachedFileUri || chosenDoc?.rawFileDataUri || undefined,
+        rawText: chosenDoc?.fileContent || undefined,
+        fileSize: attachedFileSize || chosenDoc?.fileSize,
         preferredHexColor: selectedColorHex,
         preserveCourseTitle: isGenericCourseName ? undefined : trimmedName,
         preserveCourseSubtitle: courseDescription.trim() || undefined,
-        preserveCourseCode: derivedCode || undefined
+        preserveCourseCode: derivedCode || undefined,
+        isNewCourse: true
+      }).then(res => {
+        if (res && !res.success) {
+          Alert.alert('Import Notice', res.message || 'Could not parse syllabus document.');
+        }
+      }).catch(err => {
+        Alert.alert('Import Failed', err?.message || 'Error processing syllabus document.');
       });
     } else {
       addCourse({
@@ -196,6 +212,13 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
     const chosen = vaultDocs.filter(d => selectedVaultDocIds.includes(d.id));
     if (chosen.length > 0) {
       setAttachedFileName(chosen.map(d => d.title).join(', '));
+      const firstDoc = chosen[0];
+      if (firstDoc.rawFileDataUri) {
+        setAttachedFileUri(firstDoc.rawFileDataUri);
+      }
+      if (firstDoc.fileSize) {
+        setAttachedFileSize(firstDoc.fileSize);
+      }
       setShowValidationHighlight(false);
     }
     setShowingVaultSelector(false);
@@ -328,15 +351,11 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           {/* Section 4: Upload Class Material */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>Upload Class Material</Text>
-            {hasSyllabusSource ? (
+            {hasSyllabusSource && (
               <View style={styles.attachedBadge}>
                 <Text style={styles.badgeTextWhite}>ATTACHED</Text>
               </View>
-            ) : isDocMissing ? (
-              <View style={styles.requiredStatusBadge}>
-                <Text style={styles.badgeTextWhite}>REQUIRED</Text>
-              </View>
-            ) : null}
+            )}
           </View>
 
           <View style={styles.uploadCard}>
@@ -374,7 +393,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
                 onPress={() => setAttachedFileName(null)}
                 activeOpacity={0.7}
               >
-                <TrashIcon size={11} color="#EC4545" />
+                <TrashIcon size={11} color="#FFFFFF" />
                 <Text style={styles.removePillText}>Remove</Text>
               </TouchableOpacity>
             )}
@@ -432,7 +451,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
               <View style={styles.noticeTextCol}>
                 <Text style={styles.noticeTitle}>Upload One Course at a Time</Text>
                 <Text style={styles.noticeDesc}>
-                  Document processing takes 1–2 minutes. You can safely exit or minimize the app while it runs in the background.
+                  Document processing takes 1 to 2 minutes. You can safely exit or minimize the app while it runs in the background.
                 </Text>
               </View>
             </View>
@@ -820,13 +839,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(236, 69, 69, 0.12)',
+    backgroundColor: '#EF4444',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16
   },
   removePillText: {
-    color: '#EC4545',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700'
   },

@@ -21,6 +21,7 @@ export * from './AssignmentsMonthCalendarCard';
 export * from './GradeWeightTrackerCard';
 export * from './InlineCalendarPicker';
 export * from './SvgIcons';
+export * from './ThreeDotsWave';
 export * from './modals';
 
 export const UI_COMPONENTS_VERSION = '1.4.2';

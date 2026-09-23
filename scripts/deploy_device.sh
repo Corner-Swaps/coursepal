@@ -61,12 +61,32 @@ if [ "$1" == "--native" ] || [ ! -d "$APP_PATH" ]; then
 else
   echo "⚡️ 4. Native binary exists; injecting fresh production bundle into CoursePal.app..."
   cp ios/CoursePal/main.jsbundle "$APP_PATH/main.jsbundle"
+  if [ -d "ios/CoursePal/assets" ]; then
+    cp -R ios/CoursePal/assets "$APP_PATH/"
+  fi
+  # Ensure Info.plist variables are properly resolved and AppIcon is declared
+  plutil -replace CFBundleIdentifier -string "com.coursepal.app" "$APP_PATH/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundleExecutable -string "CoursePal" "$APP_PATH/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundleName -string "CoursePal" "$APP_PATH/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundleDevelopmentRegion -string "en" "$APP_PATH/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundlePackageType -string "APPL" "$APP_PATH/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundleIconName -string "AppIcon" "$APP_PATH/Info.plist" 2>/dev/null || true
 fi
 
 echo "🔏 5. Extracting entitlements & code-signing app bundle..."
 security cms -D -i "$APP_PATH/embedded.mobileprovision" > /tmp/profile.plist
 plutil -extract Entitlements xml1 -o /tmp/entitlements.plist /tmp/profile.plist
 plutil -replace application-identifier -string "$APP_ID_ENTITLEMENT" /tmp/entitlements.plist
+
+# Sign embedded frameworks if present
+if [ -d "$APP_PATH/Frameworks" ]; then
+  echo "🔏 Signing embedded frameworks..."
+  for fw in "$APP_PATH/Frameworks"/*; do
+    if [ -d "$fw" ] || [ -f "$fw" ]; then
+      codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$fw"
+    fi
+  done
+fi
 
 # Sign widget extension if present
 if [ -d "$APP_PATH/PlugIns/CoursePalWidget.appex" ]; then

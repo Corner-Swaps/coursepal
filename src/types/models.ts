@@ -33,6 +33,7 @@ export interface ReadingDTO {
   keyTakeawaysText?: string | null;
   estimatedTimeText?: string | null;
   videoUrl?: string | null;
+  mediaUrl?: string | null;
   dueDate?: string | null;
   dateRangeStr?: string | null;
   relevantTopics?: string | null;
@@ -77,6 +78,15 @@ export interface AssignmentDTO {
   points?: number | null;
   totalPoints?: number | null;
   scheduledWeeks?: number[];
+  assignmentNumber?: number | null;
+  assignmentNumberLabel?: string | null;
+}
+
+export interface GradingScaleTier {
+  gradeRange: string;
+  decimalGpa: string;
+  performanceStandard: string;
+  letterGrade?: string | null;
 }
 
 export interface ItemDTO {
@@ -120,7 +130,7 @@ export interface DiagnosticImportRecord {
   appBuildVersion: string;
   documentHash: string;
   receivedByteCount: number;
-  parserSource: 'PROVIDER_AI' | 'BACKEND_FALLBACK' | 'LOCAL_DEVICE_FALLBACK';
+  parserSource: 'LOCAL_DETERMINISTIC' | 'PROVIDER_AI' | 'BACKEND_FALLBACK' | 'LOCAL_DEVICE_FALLBACK';
   providerModel?: string | null;
   responseStatus: string;
   fallbackReason?: string | null;
@@ -162,6 +172,8 @@ export interface CourseDTO {
   isFavorite?: boolean | null;
   chatHistoryJSON?: string | null;
   externalScheduleNotice?: string | null;
+  gradingScale?: string | null;
+  gradingScaleRows?: GradingScaleTier[] | null;
 }
 
 export interface Course {
@@ -172,6 +184,7 @@ export interface Course {
   courseDescription?: string | null;
   instructorName?: string | null;
   instructorEmail?: string | null;
+  officeHours?: string | null;
   hexColor: string;
   termWeeks: number;
   sharingCode: string;
@@ -179,6 +192,8 @@ export interface Course {
   isFavorite: boolean;
   chatHistoryJSON?: string | null;
   externalScheduleNotice?: string | null;
+  gradingScale?: string | null;
+  gradingScaleRows?: GradingScaleTier[] | null;
   createdAt: Date;
   weeks: Week[];
   assignments: Assignment[];
@@ -257,6 +272,8 @@ export interface Assignment {
   courseId?: string;
   rubricCriteria: RubricCriterionDTO[];
   scheduledWeeks?: number[];
+  assignmentNumber?: number | null;
+  assignmentNumberLabel?: string | null;
 }
 
 export interface SyllabusDocument {

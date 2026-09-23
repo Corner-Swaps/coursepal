@@ -28,7 +28,8 @@ import {
   getSanitizedCoursePill,
   isInvalidAssignmentTitle,
   isItemForCourse,
-  matchCourseForItem
+  matchCourseForItem,
+  getAssignmentInstructionSummary
 } from '../utils/readingDisplayHelper';
 import { calculateAcademicWeek } from '../utils/timeFormatters';
 
@@ -76,6 +77,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
 
   // Filter active assignments (strictly filtered by activeCourse when specified)
   const activeAssignments = useMemo(() => {
+    if (courses.length === 0) return [];
     return assignments.filter(a => {
       if (sortMode === 'trash') {
         if (!a.isDeleted) return false;
@@ -116,9 +118,21 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     });
   }, [activeAssignments, isDateFilterActive, selectedDate]);
 
+  const scopedAssignments = useMemo(() => {
+    if (courses.length === 0) return [];
+    return assignments.filter(a => {
+      if (a.isDeleted) return false;
+      if (isInvalidAssignmentTitle(a.title)) return false;
+      if (activeCourse && !isItemForCourse(a, activeCourse)) {
+        return false;
+      }
+      return true;
+    });
+  }, [assignments, activeCourse, courses.length]);
+
   const completedCount = useMemo(() => {
-    return activeAssignments.filter(a => a.isCompleted).length;
-  }, [activeAssignments]);
+    return scopedAssignments.filter(a => a.isCompleted).length;
+  }, [scopedAssignments]);
 
   const deletedCount = useMemo(() => {
     return assignments.filter(a => {
@@ -287,53 +301,11 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             onPress={() => setSelectedAssignmentForDetail(assignment)}
             activeOpacity={0.7}
           >
-            {/* Top Line: Course Title Pill, Presentation Badge, Continuous Badge, Grade Weight & Video Badge */}
+            {/* Top Line: Course Title Pill */}
             <View style={styles.pillRow}>
               <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
                 <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
               </View>
-
-              {/* Concise Presentation Badge */}
-              {isPresentation && (
-                <View style={styles.presentationBadge}>
-                  <Text style={styles.presentationBadgeText}>
-                    {isGroupPresentation ? 'Group Presentation' : 'Presentation'}
-                  </Text>
-                </View>
-              )}
-
-              {/* Grade Weight Badge */}
-              {(() => {
-                let weight = assignment.weightPercentage;
-                if (!weight) {
-                  const wm = (assignment.title + ' ' + (assignment.fullInstructions || '')).match(/(?:worth\s+|weight:\s*)?(\d{1,2}(?:\.\d+)?)\s*%/i);
-                  if (wm) weight = `${wm[1]}%`;
-                }
-                if (weight) {
-                  return (
-                    <View style={styles.gradeBadge}>
-                      <Text style={styles.gradeBadgeText}>{weight}</Text>
-                    </View>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* Continuous Assessment Badge */}
-              {isContinuous && (
-                <View style={styles.continuousBadge}>
-                  <Text style={styles.continuousBadgeText}>Continuous</Text>
-                </View>
-              )}
-
-              {/* Video Deliverable Badge */}
-              {assignment.mediaUrl && (
-                <View style={styles.videoBadge}>
-                  <Text style={styles.videoBadgeText}>
-                    {/youtube\.com|youtu\.be/i.test(assignment.mediaUrl) ? 'YouTube' : 'Video'}
-                  </Text>
-                </View>
-              )}
             </View>
 
             {/* Card Title */}
@@ -342,57 +314,116 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 styles.assignmentTitle,
                 assignment.isCompleted && styles.assignmentTitleCompleted
               ]}
-              numberOfLines={3}
+              numberOfLines={2}
             >
-              {assignment.title}
+              {(() => {
+                return (assignment.title || '')
+                  .replace(/\s*\((?:assignment\s*)?\d+\)\s*$/i, '')
+                  .replace(/-\s*(?:Group Presentation|Individual Paper|Instructor Determined Assignment)\b/i, '')
+                  .replace(/^(?:assignment\s*)?\d+[\s:\-–—]+/i, '')
+                  .trim();
+              })()}
             </Text>
 
-            {/* Date Display & Points Badges (Clean, no giant deliverable pills) */}
-            <View style={styles.assignmentDateRow}>
-              {(() => {
+            {/* Subtitle / Metadata in Gray Text (mirroring Readings screen) */}
+            {(() => {
+              const parts: string[] = [];
+
+              // 1. Modality / Deliverable format in gray text
+              const titleLower = (assignment.title || '').toLowerCase();
+              const noteLower = (assignment.noteText || '').toLowerCase();
+
+              const c = matchCourseForItem(assignment, courses);
+              const courseHasWeeks = Boolean(
+                c?.weeks && c.weeks.length > 0 && c.weeks.some(w => w.weekNumber && w.weekNumber > 0)
+              );
+
+              if (isGroupPresentation || titleLower.includes('group presentation')) {
+                parts.push('Group Presentation');
+              } else if (isPresentation || titleLower.includes('presentation')) {
+                parts.push('Presentation');
+              } else if (titleLower.includes('discussion') || noteLower.includes('discussion') || noteLower.includes('peer feedback')) {
+                parts.push('Discussion Board Activity');
+              } else if (titleLower.includes('video') || noteLower.includes('video') || (assignment.mediaUrl && /youtube|youtu\.be|vimeo/i.test(assignment.mediaUrl))) {
+                parts.push('Video & Summary');
+              } else if (titleLower.includes('paper') || noteLower.includes('paper') || titleLower.includes('study design')) {
+                parts.push('Individual Paper');
+              } else if (isContinuous || titleLower.includes('attendance') || titleLower.includes('participation')) {
+                parts.push('Continuous Evaluation');
+              }
+
+              // 2. Schedule / Due Date
+              if ((titleLower.includes('discussion') || noteLower.includes('discussion')) && noteLower.includes('weekly')) {
+                parts.push('Weekly Submission');
+              } else {
                 const targetWk = weekContext !== undefined && weekContext > 0 ? weekContext : assignment.weekNumber;
                 let resolvedDate: Date | string | null | undefined = assignment.dueDate;
                 if ((!resolvedDate || (weekContext !== undefined && weekContext !== assignment.weekNumber)) && targetWk && targetWk > 0) {
-                  const c = matchCourseForItem(assignment, courses);
                   const w = c?.weeks?.find(wk => wk.weekNumber === targetWk);
                   if (w?.startDate) resolvedDate = w.startDate;
                   else if (w?.dateRangeStr) resolvedDate = w.dateRangeStr;
                 }
+                if (!resolvedDate && assignment.noteText) {
+                  const dm = assignment.noteText.match(/deadline[:\s]+([A-Za-z]+ \d{1,2}(?:, \d{4})?)/i);
+                  if (dm) resolvedDate = parseSafeDate(dm[1]);
+                }
                 const formattedDate = resolvedDate ? formatAssignmentDueDate(resolvedDate) : null;
-
-                const isMultiWeek = Array.isArray(assignment.scheduledWeeks) && assignment.scheduledWeeks.length > 1;
+                const isMultiWeek = courseHasWeeks && Array.isArray(assignment.scheduledWeeks) && assignment.scheduledWeeks.length > 1;
                 const weekRangeStr = isMultiWeek
-                  ? `Weeks ${Math.min(...assignment.scheduledWeeks!)}–${Math.max(...assignment.scheduledWeeks!)}`
+                  ? `Weeks ${Math.min(...assignment.scheduledWeeks!)} to ${Math.max(...assignment.scheduledWeeks!)}`
                   : null;
 
-                let dateDisplay: string;
-                if (weekRangeStr) {
-                  dateDisplay = formattedDate ? `${weekRangeStr} • ${formattedDate}` : `${weekRangeStr} • Presentation Window`;
+                if (weekRangeStr && formattedDate) {
+                  parts.push(`${weekRangeStr} • ${formattedDate}`);
                 } else if (formattedDate) {
-                  dateDisplay = formattedDate;
-                } else {
-                  dateDisplay = 'No due date';
+                  parts.push(formattedDate);
+                } else if (weekRangeStr) {
+                  parts.push(`${weekRangeStr} • Presentation Window`);
+                } else if (titleLower.includes('attendance') || titleLower.includes('participation') || isContinuous) {
+                  parts.push('Throughout Term');
                 }
+              }
 
-                return (
-                  <Text style={styles.assignmentDateText}>
-                    {dateDisplay}
-                  </Text>
-                );
-              })()}
-              {(() => {
-                const points = assignment.pointsPossible;
-                if (
-                  points &&
-                  !/^\s*100\s*(?:pts?|points)?\s*$/i.test(points) &&
-                  !points.includes('%') &&
-                  !assignment.weightPercentage
-                ) {
-                  return <Text style={styles.weightText}>• {points}</Text>;
+              // 3. Weight Percentage (clean, e.g. 20%, 10%, 40%)
+              let weight = assignment.weightPercentage;
+              if (!weight) {
+                const textToScan = `${assignment.title || ''} ${assignment.fullInstructions || ''} ${assignment.noteText || ''} ${assignment.relevantTopics || ''}`;
+                const wm = textToScan.match(/\b(?:worth\s+|weight:\s*)?(\d{1,2}(?:\.\d+)?)\s*%/i) || textToScan.match(/\b(\d{1,2})\s*percent\b/i);
+                if (wm) weight = `${wm[1]}%`;
+              } else if (!weight.endsWith('%')) {
+                weight = `${weight}%`;
+              }
+              if (weight) {
+                parts.push(weight);
+              }
+
+              // 4. Points Possible
+              let points = assignment.pointsPossible;
+              if (!points && assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
+                const sumPts = assignment.rubricCriteria.reduce((sum, c) => sum + (Number(c.points) || 0), 0);
+                if (sumPts > 0) points = `${sumPts} pts`;
+              }
+              if (!points) {
+                const textToScan = `${assignment.title || ''} ${assignment.fullInstructions || ''} ${assignment.noteText || ''}`;
+                const pm = textToScan.match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
+                if (pm) points = `${pm[1]} pts`;
+              }
+              if (points && !points.includes('%')) {
+                const cleanP = points.replace(/Points/i, 'pts').trim();
+                if (cleanP !== weight) {
+                  parts.push(cleanP);
                 }
-                return null;
-              })()}
-            </View>
+              }
+
+              const bottomText = parts.join(' · ');
+              if (!bottomText) return null;
+
+              return (
+                <Text style={styles.assignmentSubtitle} numberOfLines={2}>
+                  {bottomText}
+                </Text>
+              );
+            })()}
           </TouchableOpacity>
 
           {/* Right Action: Completion Checkmark OR Restore Pill */}
@@ -403,7 +434,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 onPress={() => restoreAssignment(assignment.id)}
                 activeOpacity={0.7}
               >
-                <ArrowPathIcon size={13} color={CoursePalTheme.accentBlue} />
+                <ArrowPathIcon size={13} color="#FFFFFF" />
                 <Text style={styles.restorePillText}>Restore</Text>
               </TouchableOpacity>
             </View>
@@ -503,8 +534,8 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             activeOpacity={0.7}
             testID="assignments-trash-pill"
           >
-            <TrashIcon size={17} color="#D94033" />
-            <Text style={styles.trashCountText}>{deletedCount}</Text>
+            <TrashIcon size={17} color={sortMode === 'trash' ? '#FFFFFF' : '#D94033'} />
+            <Text style={[styles.trashCountText, sortMode === 'trash' && { color: '#FFFFFF' }]}>{deletedCount}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -640,20 +671,46 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         <View style={styles.assignmentsListContainer}>
           {isDateFilterActive && (
             <View style={styles.allSectionHeader}>
-              <Text style={styles.allSectionTitle}>All Course Deliverables</Text>
+              <Text style={styles.allSectionTitle}>All Assignments</Text>
             </View>
           )}
           {/* Non-week assignments (when week toggle is turned off or course-wide deliverables) */}
           {unassignedAssignments.length > 0 && (
             <View style={styles.unassignedGroupSection}>
-              {groupedAssignments.length > 0 && (
-                <View style={styles.weekHeaderRow}>
-                  <View style={styles.weekPill}>
-                    <Text style={styles.weekPillText}>Course-Wide Assessments</Text>
+              {unassignedAssignments.some(a => a.assignmentNumber != null) ? (
+                unassignedAssignments.map((a, idx) => {
+                  const assignNum = a.assignmentNumber || (idx + 1);
+                  const assignLabel = a.assignmentNumberLabel || `Assignment ${assignNum}`;
+                  const c = matchCourseForItem(a, courses);
+                  const desc = getAssignmentInstructionSummary(a, c);
+                  return (
+                    <View key={a.id} style={{ gap: 6, marginBottom: 4 }}>
+                      <View style={styles.weekHeaderRow}>
+                        <View style={styles.weekPill}>
+                          <Text style={styles.weekPillText}>{assignLabel}</Text>
+                        </View>
+                      </View>
+                      {desc ? (
+                        <View style={styles.weekThemeHeaderRow}>
+                          <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
+                            {desc}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {renderAssignmentCard(a)}
+                    </View>
+                  );
+                })
+              ) : (
+                <>
+                  <View style={styles.weekHeaderRow}>
+                    <View style={styles.weekPill}>
+                      <Text style={styles.weekPillText}>Assignments</Text>
+                    </View>
                   </View>
-                </View>
+                  {unassignedAssignments.map(a => renderAssignmentCard(a))}
+                </>
               )}
-              {unassignedAssignments.map(a => renderAssignmentCard(a))}
             </View>
           )}
 
@@ -790,7 +847,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(46, 184, 102, 0.15)'
   },
   actionPillTrashActive: {
-    backgroundColor: 'rgba(217, 64, 51, 0.15)'
+    backgroundColor: '#EF4444'
   },
   completedCountText: {
     fontSize: 13,
@@ -972,6 +1029,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF'
   },
+  weekThemeHeaderRow: {
+    paddingHorizontal: 2,
+    marginTop: 2,
+    marginBottom: 4
+  },
+  weekThemeHeaderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+    lineHeight: 18
+  },
   calendarDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1038,6 +1106,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF'
   },
+  assignmentNumberBadge: {
+    backgroundColor: '#738094',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  assignmentNumberBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
   gradeBadge: {
     backgroundColor: '#475569',
     paddingHorizontal: 9,
@@ -1081,15 +1163,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF'
   },
   currentWeekHeaderBadge: {
-    backgroundColor: 'rgba(36, 112, 245, 0.12)',
+    backgroundColor: '#475569',
+    borderRadius: 6,
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8
+    paddingVertical: 3.5,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   currentWeekHeaderBadgeText: {
-    fontSize: 11,
+    color: '#FFFFFF',
+    fontSize: 10.5,
     fontWeight: '700',
-    color: CoursePalTheme.accentBlue
+    letterSpacing: 0.2
   },
   assignmentTitle: {
     fontSize: 14.5,
@@ -1101,6 +1186,13 @@ const styles = StyleSheet.create({
   assignmentTitleCompleted: {
     textDecorationLine: 'line-through',
     color: '#8E9BAE'
+  },
+  assignmentSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#596B85',
+    marginTop: 4,
+    lineHeight: 18
   },
   assignmentDateRow: {
     flexDirection: 'row',
@@ -1166,7 +1258,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(36, 112, 245, 0.12)',
+    backgroundColor: CoursePalTheme.accentBlue,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10
@@ -1174,7 +1266,7 @@ const styles = StyleSheet.create({
   restorePillText: {
     fontSize: 12,
     fontWeight: '700',
-    color: CoursePalTheme.accentBlue
+    color: '#FFFFFF'
   },
   emptyStateCard: {
     backgroundColor: '#FFFFFF',
@@ -1244,17 +1336,15 @@ const styles = StyleSheet.create({
     color: CoursePalTheme.accentBlue
   },
   clearDateFilterBtn: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: CoursePalTheme.accentBlue,
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#D4E4FC'
+    paddingVertical: 4
   },
   clearDateFilterBtnText: {
     fontSize: 11,
     fontWeight: '700',
-    color: CoursePalTheme.accentBlue
+    color: '#FFFFFF'
   },
   dateFilterCardsList: {
     gap: 8

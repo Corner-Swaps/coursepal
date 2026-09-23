@@ -165,7 +165,7 @@ export const InviteScreen: React.FC = () => {
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>No Courses Available</Text>
                 <Text style={styles.emptyDesc}>
-                  Upload a syllabus to get started — your course codes will appear here.
+                  Upload a syllabus to get started. Your course codes will appear here.
                 </Text>
               </View>
             ) : (

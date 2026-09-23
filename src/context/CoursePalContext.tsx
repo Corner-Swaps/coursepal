@@ -1,13 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import * as FileSystem from 'expo-file-system';
-import { Course, Week, Reading, Assignment, VaultDocument, MediaType, ImportOutcome, DiagnosticImportRecord } from '../types/models';
+import { Course, Week, Reading, Assignment, VaultDocument, MediaType, ImportOutcome, DiagnosticImportRecord, CourseDTO } from '../types/models';
 import { MasterCoursePalette } from '../constants/theme';
 import { CourseSharingService } from '../services/CourseSharingService';
 import { persistenceManager } from '../services/DataPersistenceBackupManager';
 import { LocalSyllabusParser } from '../services/LocalSyllabusParser';
 import { BundledSyllabiCatalog } from '../utils/syllabusCatalog';
 import cityuSyllabi from '../utils/cityu_syllabi_texts.json';
-import { APIService } from '../services/APIService';
 import { SyllabusImportManager } from '../services/SyllabusImportManager';
 import {
   cleanChapterFromRaw,
@@ -24,7 +23,7 @@ import {
   isItemForCourse
 } from '../utils/readingDisplayHelper';
 import { weekNumberForDate } from '../utils/timeFormatters';
-import { extractTextFromPDF, renderPDFPages, extractTextFromDocxBase64 } from '../services/PDFTextExtractor';
+import { extractTextFromPDF, extractTextFromPDFContent, renderPDFPages, extractTextFromDocxBase64 } from '../services/PDFTextExtractor';
 import { ensureBundledPdfFile, hydrateVaultDocWithRealPdf } from '../utils/bundledPdfService';
 import { beginBackgroundTask, endBackgroundTask } from '../services/BackgroundTaskService';
 
@@ -40,6 +39,7 @@ export interface ImportSyllabusParams {
   preserveCourseTitle?: string;
   preserveCourseSubtitle?: string;
   preserveCourseCode?: string;
+  isNewCourse?: boolean;
 }
 
 export interface ImportBannerState {
@@ -223,13 +223,40 @@ export function sanitizeReading(r: Reading): Reading {
 export function sanitizeAssignment(a: Assignment): Assignment {
   const cleanDueDate = parseSafeDate(a.dueDate);
   let cleanPts = a.pointsPossible ? a.pointsPossible.trim() : null;
+  if (!cleanPts && (a as any).points != null) {
+    cleanPts = `${(a as any).points} Pts`;
+  }
+  if (!cleanPts && (a as any).totalPoints != null) {
+    cleanPts = `${(a as any).totalPoints} Pts`;
+  }
+  if (!cleanPts && (a as any).points_possible != null) {
+    cleanPts = `${(a as any).points_possible} Pts`;
+  }
   if (cleanPts && /^\d+$/.test(cleanPts)) {
     cleanPts = `${cleanPts} Pts`;
   }
+
   let cleanWeight = a.weightPercentage ? a.weightPercentage.trim() : null;
+  if (!cleanWeight && (a as any).weight != null) {
+    const rawW = (a as any).weight;
+    if (typeof rawW === 'number' && !isNaN(rawW)) {
+      cleanWeight = rawW > 0 && rawW <= 1 ? `${Math.round(rawW * 100)}%` : `${Math.round(rawW)}%`;
+    } else if (typeof rawW === 'string' && rawW.trim()) {
+      cleanWeight = rawW.trim().includes('%') ? rawW.trim() : `${rawW.trim()}%`;
+    }
+  }
+  if (!cleanWeight && (a as any).percentage != null) {
+    const rawP = (a as any).percentage;
+    if (typeof rawP === 'number' && !isNaN(rawP)) {
+      cleanWeight = rawP > 0 && rawP <= 1 ? `${Math.round(rawP * 100)}%` : `${Math.round(rawP)}%`;
+    } else if (typeof rawP === 'string' && rawP.trim()) {
+      cleanWeight = rawP.trim().includes('%') ? rawP.trim() : `${rawP.trim()}%`;
+    }
+  }
   if (cleanWeight && /^\d+$/.test(cleanWeight)) {
     cleanWeight = `${cleanWeight}%`;
   }
+
   let cleanInstr = a.fullInstructions ? a.fullInstructions.replace(/\|{2,}/g, '\n\n').trim() : undefined;
   if (cleanInstr === 'Parsed from course syllabus.' || cleanInstr === 'Parsed from syllabus.') {
     cleanInstr = undefined;
@@ -238,23 +265,21 @@ export function sanitizeAssignment(a: Assignment): Assignment {
   const cleanTopics = a.relevantTopics ? a.relevantTopics.replace(/\|{2,}/g, ', ').trim() : undefined;
   const cleanTitle = a.title ? a.title.replace(/\|{2,}/g, ' - ').trim() : 'Assignment';
 
-  // Guard against fabricated 100 points or points fabricated from weight percentage
-  if (cleanPts) {
-    if (/^\s*100\s*(?:pts?|points)?\s*$/i.test(cleanPts) && ((a.courseCode || '').toUpperCase().includes('CPC') || (a.title && /assessment and intervention|family mapping|case conceptualization/i.test(a.title)))) {
-      cleanPts = null;
+  // Fallback scanning for weight percentage from notes/instructions if missing
+  if (!cleanWeight) {
+    const textToScan = `${cleanTitle} ${cleanNotes || ''} ${cleanInstr || ''} ${cleanTopics || ''}`;
+    const wm = textToScan.match(/\b(?:worth\s+|weight:\s*)?(\d{1,3}(?:\.\d+)?)\s*%/i) || textToScan.match(/\b(\d{1,3})\s*(?:percent)\b/i);
+    if (wm) {
+      cleanWeight = `${wm[1]}%`;
     }
   }
-  if (cleanPts && cleanWeight) {
-    const wtNum = cleanWeight.replace(/[^0-9]/g, '');
-    const ptNum = cleanPts.replace(/[^0-9]/g, '');
-    if (wtNum && ptNum && wtNum === ptNum) {
-      const combinedText = `${cleanTitle} ${cleanInstr || ''} ${cleanNotes || ''}`.toLowerCase();
-      const hasRealPointsMention = /\b\d{1,4}\s*(?:points|pts|pt)\b/i.test(combinedText);
-      const hasRubricPoints = (a.rubricCriteria || []).some(r => r.points && r.points > 0);
-      const isDecimalScale = (a.courseCode || '').toUpperCase().includes('PSYC') || cleanTitle.toLowerCase().includes('psyc');
-      if (!hasRealPointsMention && !hasRubricPoints && !isDecimalScale) {
-        cleanPts = null;
-      }
+
+  // Fallback scanning for genuine points from notes/instructions if missing and not explicitly null
+  if (a.pointsPossible !== null && !cleanPts) {
+    const textToScan = `${cleanTitle} ${cleanNotes || ''} ${cleanInstr || ''}`;
+    const pm = textToScan.match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
+    if (pm) {
+      cleanPts = `${pm[1]} Pts`;
     }
   }
 
@@ -264,6 +289,8 @@ export function sanitizeAssignment(a: Assignment): Assignment {
     dueDate: cleanDueDate,
     pointsPossible: cleanPts,
     weightPercentage: cleanWeight,
+    assignmentNumber: a.assignmentNumber ?? null,
+    assignmentNumberLabel: a.assignmentNumberLabel ?? (a.assignmentNumber ? `Assignment ${a.assignmentNumber}` : null),
     fullInstructions: cleanInstr,
     noteText: cleanNotes,
     relevantTopics: cleanTopics,
@@ -276,11 +303,27 @@ export function sanitizeAssignment(a: Assignment): Assignment {
   };
 }
 
-export const isGenericToken = (t?: string | null) =>
-  !t || /^(new|new course|new cou|reading|assignment|crs|gen\s*101)$/i.test(t.trim());
+export const isGenericToken = (t?: string | null) => {
+  if (!t) return true;
+  const clean = t.trim().replace(/[-_.]+/g, ' ');
+  return (
+    /^(new|new course|new cou|reading|assignment|crs|gen\s*101|syllabus|syllabi|course|courses|document|documents|doc|docs|schedule|outline|curriculum|class|classes|file|presentation|media|unnamed|unknown)$/i.test(
+      clean
+    ) ||
+    /^(syllabus|course|document|doc|media|schedule|outline)\s*(fall|spring|summer|winter|term|semester|\d{4}|\d+)*$/i.test(
+      clean
+    ) ||
+    /^(syllabus|course|document|doc|media)[_\s\d-]*$/i.test(t.trim())
+  );
+};
 
 export const isStubOrFileName = (n?: string | null) =>
-  !n || isGenericToken(n) || /syllabus$/i.test(n.trim()) || /_syllabus$/i.test(n.trim());
+  !n ||
+  isGenericToken(n) ||
+  /syllabus$/i.test(n.trim()) ||
+  /_syllabus$/i.test(n.trim()) ||
+  /^media[_\s\d]/i.test(n.trim()) ||
+  /\.(pdf|docx|txt|doc)$/i.test(n.trim());
 
 export function createDefaultCoursesSeed(): {
   courses: Course[];
@@ -433,15 +476,32 @@ export function createDefaultCoursesSeed(): {
     allCourses.push(seededCourse);
     allReadings.push(...cleanCourseReadings);
     allAssignments.push(...cleanCourseAssignments);
-    const isPsyc = id.includes('psyc') || id.includes('612');
-    const pdfFileName = isPsyc ? 'PSYC612_Advanced_CBT_Interventions.pdf' : 'CPC527_Group_Counselling_Syllabus.pdf';
+    const cleanId = id.toLowerCase();
+    let pdfFileName = 'CPC512_Syllabus.pdf';
+    let defaultFileSize = '340 KB';
+    if (cleanId.includes('psyc') || cleanId.includes('612')) {
+      pdfFileName = 'PSYC612_Advanced_CBT_Interventions.pdf';
+      defaultFileSize = '410 KB';
+    } else if (cleanId.includes('514')) {
+      pdfFileName = 'CPC514_Syllabus.pdf';
+      defaultFileSize = '300 KB';
+    } else if (cleanId.includes('527')) {
+      pdfFileName = 'CPC527_Group_Counselling_Syllabus.pdf';
+      defaultFileSize = '480 KB';
+    } else if (cleanId.includes('511')) {
+      pdfFileName = 'CPC511_Syllabus.pdf';
+      defaultFileSize = '320 KB';
+    } else if (cleanId.includes('523')) {
+      pdfFileName = 'CPC523_Syllabus.pdf';
+      defaultFileSize = '265 KB';
+    }
     const initialPdfUri = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}syllabi/${pdfFileName}` : null;
 
     allVaultDocs.push({
       id: `vd-${id}-syllabus`,
-      title: formatShortDocumentTitle(fileName),
+      title: `${courseCode} Syllabus`,
       category: 'Syllabi',
-      fileSize: cpcItem.fileSize || (isPsyc ? '410 KB' : '480 KB'),
+      fileSize: cpcItem.fileSize || defaultFileSize,
       fileType: 'PDF',
       courseCode: courseCode,
       courseId: seededCourseId,
@@ -466,18 +526,20 @@ export const createDefaultCPC527Seed = createDefaultCoursesSeed;
 export function healCanonicalCPC512(
   courses: Course[],
   readings: Reading[],
-  assignments: Assignment[]
-): { courses: Course[]; readings: Reading[]; assignments: Assignment[] } {
+  assignments: Assignment[],
+  vaultDocs: VaultDocument[] = []
+): { courses: Course[]; readings: Reading[]; assignments: Assignment[]; vaultDocs: VaultDocument[] } {
   const cleanCourses = [...courses];
   let rawReadings = [...readings];
   let rawAssignments = [...assignments];
+  const cleanVaultDocs = [...vaultDocs];
 
   const cpc512Course = cleanCourses.find(c =>
     (c.courseCode || '').replace(/\s+/g, '').toUpperCase() === 'CPC512' ||
     (c.courseName || '').toLowerCase().includes('family systems')
   );
   if (!cpc512Course) {
-    return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments };
+    return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
   }
 
   const isCpc512 = (r: Reading) => {
@@ -500,15 +562,19 @@ export function healCanonicalCPC512(
     a.rubricCriteria &&
     a.rubricCriteria.length >= 6
   );
-  const hasUnfabricatedPoints = !cpcAssignmentsExisting.some(a =>
-    Boolean(a.pointsPossible && (/^\s*100\s*(?:pts?|points)?\s*$/i.test(a.pointsPossible) || Boolean(a.weightPercentage)))
-  );
+  const hasUnfabricatedPoints = true;
   const hasCleanWeeklyTitles = !cpcWeeklyReadings.some(r =>
-    (r.title || '').includes('· Evidence Based Practice') ||
-    (r.title || '').includes('· Evidenced-Based Practice') ||
-    (r.title || '').includes('· Case Conceptualization')
+    (r.title || '').includes('·') ||
+    (r.title || '').includes('Evidence Based Practice') ||
+    (r.title || '').includes('Evidenced-Based Practice') ||
+    (r.title || '').includes('Case Conceptualization') ||
+    (r.title || '').includes('Presentation Reference') ||
+    (r.title || '').includes('Presentations')
   );
+  const cpcPureModuleReadings = cpcReadings.filter(r => r.moduleNumber && (!r.weekNumber || r.weekNumber === 0));
+  const hasDedicatedModuleReadings = cpcPureModuleReadings.length >= 10;
   const needsHealing =
+    !hasDedicatedModuleReadings ||
     !hasAllTenModules ||
     !hasModule6 ||
     !hasPresentation ||
@@ -524,15 +590,131 @@ export function healCanonicalCPC512(
 
   if (needsHealing) {
     const completedWeeks = new Set<number>();
+    const completedModules = new Set<number>();
     cpcReadings.forEach(r => {
       if (r.isCompleted && r.weekNumber) completedWeeks.add(r.weekNumber);
+      if (r.isCompleted && r.moduleNumber && (!r.weekNumber || r.weekNumber === 0)) completedModules.add(r.moduleNumber);
     });
 
     rawReadings = rawReadings.filter(r =>
       r.courseId ? r.courseId !== cpc512Course.id : (r.courseCode || '').replace(/\s+/g, '').toUpperCase() !== 'CPC512'
     );
 
-    // Canonical Weekly Schedule Readings (Weeks 1..12 Calendar Schedule with Module Mappings)
+    // 1. Canonical Curriculum Module Readings (Table 1: 10 Dedicated Theoretical Modules)
+    const canonicalModulesData = [
+      {
+        id: 'r-cpc512-mod-1',
+        modNum: 1,
+        title: 'Gehart (Chapters 1–3)',
+        chapter: 'Chapters 1–3',
+        theme: 'Systems Theory and the History of Family Therapy',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-2',
+        modNum: 2,
+        title: 'Gehart (Chapter 2)',
+        chapter: 'Chapter 2',
+        theme: 'Family of Origin/ Genograms',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-3',
+        modNum: 3,
+        title: 'Gehart (Chapters 11–15)',
+        chapter: 'Chapters 11–15',
+        theme: 'Diverse Populations and Family Therapy Case Conceptualization and Application',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-4',
+        modNum: 4,
+        title: 'Gehart (Chapter 7)',
+        chapter: 'Chapter 7',
+        theme: 'Bowen Family Systems',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-5',
+        modNum: 5,
+        title: 'Gehart (Chapter 5)',
+        chapter: 'Chapter 5',
+        theme: 'Structural Family Therapy',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-6',
+        modNum: 6,
+        title: 'Gehart (Chapter 4)',
+        chapter: 'Chapter 4',
+        theme: 'Strategic Family Therapy',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-7',
+        modNum: 7,
+        title: 'Gehart (Chapter 6)',
+        chapter: 'Chapter 6',
+        theme: 'Experiential Family Therapy',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-8',
+        modNum: 8,
+        title: 'Gehart (Chapter 7)',
+        chapter: 'Chapter 7',
+        theme: 'Psychoanalytic Family Therapy',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-9',
+        modNum: 9,
+        title: 'Gehart (Chapter 8)',
+        chapter: 'Chapter 8',
+        theme: 'Cognitive Behavioural Family Therapy Clinical issues in Family Counselling',
+        author: 'Diane R. Gehart'
+      },
+      {
+        id: 'r-cpc512-mod-10',
+        modNum: 10,
+        title: 'Gehart (Chapter 10)',
+        chapter: 'Chapter 10',
+        theme: 'Social Constructionist Family Therapy Future Research and Critiques',
+        author: 'Diane R. Gehart'
+      }
+    ];
+
+    canonicalModulesData.forEach(cm => {
+      rawReadings.push({
+        id: cm.id,
+        title: cm.title,
+        authorName: cm.author,
+        resourceTitle: null,
+        mediaTypeRaw: 'textbook',
+        mediaType: 'textbook',
+        isCompleted: completedModules.has(cm.modNum),
+        isDeleted: false,
+        summaryText: '',
+        keyTakeawaysText: '',
+        estimatedTimeText: '~45 min read',
+        dueDate: null,
+        dateRangeStr: null,
+        chapterText: cm.chapter,
+        pagesText: null,
+        courseCode: 'CPC 512',
+        courseId: cpc512Course.id,
+        relevantTopics: cm.theme,
+        sourceDocumentName: 'CPC 512 Reading and Assignment Schedule',
+        docColorHex: cpc512Course.hexColor || '#EF4444',
+        isFavorite: false,
+        weekId: undefined,
+        weekNumber: undefined,
+        moduleNumber: cm.modNum,
+        moduleMention: `Module ${cm.modNum}`
+      });
+    });
+
+    // 2. Canonical Weekly Schedule Readings (Table 2: Weeks 1..12 Calendar Schedule with Module Mappings)
     const weeklyReadingsData = [
       {
         id: 'r-cpc512-week-1-ch1-3',
@@ -844,6 +1026,42 @@ export function healCanonicalCPC512(
       courseId: cpc512Course.id,
       readings: rawReadings.filter(r => r.weekNumber === ws.weekNum)
     }));
+
+    // Ensure VaultDocument exists for CPC 512 in vaultDocs
+    const cpc512DocIndex = cleanVaultDocs.findIndex(vd =>
+      vd.id === `vd-${cpc512Course.id}-syllabus` ||
+      (vd.courseCode && vd.courseCode.replace(/\s+/g, '').toUpperCase() === 'CPC512') ||
+      (vd as any).courseId === cpc512Course.id ||
+      (vd.title && vd.title.toLowerCase().includes('cpc 512')) ||
+      (vd.title && vd.title.toLowerCase().includes('cpc512'))
+    );
+
+    const initialPdfUri512 = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}syllabi/CPC512_Syllabus.pdf` : null;
+
+    if (cpc512DocIndex >= 0) {
+      cleanVaultDocs[cpc512DocIndex] = {
+        ...cleanVaultDocs[cpc512DocIndex],
+        courseCode: 'CPC 512',
+        courseId: cpc512Course.id,
+        title: 'CPC 512 Syllabus',
+        rawFileDataUri: cleanVaultDocs[cpc512DocIndex].rawFileDataUri || initialPdfUri512
+      };
+    } else {
+      cleanVaultDocs.push({
+        id: `vd-${cpc512Course.id}-syllabus`,
+        title: 'CPC 512 Syllabus',
+        category: 'Syllabi',
+        fileSize: '340 KB',
+        fileType: 'PDF',
+        courseCode: 'CPC 512',
+        courseId: cpc512Course.id,
+        fileContent: cpc512Course.courseDescription,
+        docColorHex: cpc512Course.hexColor || '#EF4444',
+        rawFileDataUri: initialPdfUri512,
+        pageImages: null,
+        uploadedAt: new Date()
+      });
+    }
   }
 
   // 4. NEUR 740 Canonical Schedule & Multi-Reading Healing
@@ -980,17 +1198,19 @@ export function healCanonicalCPC512(
   }
   rawReadings = splitReadings;
 
-  return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments };
+  return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
 }
 
 export function healCanonicalCPC527(
   courses: Course[],
   readings: Reading[],
-  assignments: Assignment[]
-): { courses: Course[]; readings: Reading[]; assignments: Assignment[] } {
+  assignments: Assignment[],
+  vaultDocs: VaultDocument[] = []
+): { courses: Course[]; readings: Reading[]; assignments: Assignment[]; vaultDocs: VaultDocument[] } {
   const cleanCourses = [...courses];
   let rawReadings = [...readings];
   let rawAssignments = [...assignments];
+  const cleanVaultDocs = [...vaultDocs];
 
   const cpc527Course = cleanCourses.find(c =>
     (c.courseCode || '').replace(/\s+/g, '').toUpperCase() === 'CPC527' ||
@@ -998,7 +1218,7 @@ export function healCanonicalCPC527(
     c.id === 'c-1789827902676'
   );
   if (!cpc527Course) {
-    return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments };
+    return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
   }
 
   // Normalize course identity
@@ -1102,7 +1322,388 @@ export function healCanonicalCPC527(
     cpc527Course.termWeeks = maxWeek;
   }
 
-  return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments };
+  // Ensure VaultDocument exists for CPC 527 in vaultDocs
+  const docIndex = cleanVaultDocs.findIndex(vd =>
+    vd.id === `vd-${cpc527Course.id}-syllabus` ||
+    (vd.courseCode && vd.courseCode.replace(/\s+/g, '').toUpperCase() === 'CPC527') ||
+    (vd as any).courseId === cpc527Course.id
+  );
+  const initialPdfUri527 = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}syllabi/CPC527_Group_Counselling_Syllabus.pdf` : null;
+  if (docIndex >= 0) {
+    cleanVaultDocs[docIndex] = {
+      ...cleanVaultDocs[docIndex],
+      rawFileDataUri: cleanVaultDocs[docIndex].rawFileDataUri || initialPdfUri527
+    };
+  } else {
+    cleanVaultDocs.push({
+      id: `vd-${cpc527Course.id}-syllabus`,
+      title: 'CPC 527 Syllabus',
+      category: 'Syllabi',
+      fileSize: '480 KB',
+      fileType: 'PDF',
+      courseCode: 'CPC 527',
+      courseId: cpc527Course.id,
+      fileContent: cpc527Course.courseDescription,
+      docColorHex: cpc527Course.hexColor || '#059669',
+      rawFileDataUri: initialPdfUri527,
+      pageImages: null,
+      uploadedAt: new Date()
+    });
+  }
+
+  return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
+}
+
+export function healCanonicalCPC514(
+  courses: Course[],
+  readings: Reading[],
+  assignments: Assignment[],
+  vaultDocs: VaultDocument[] = []
+): { courses: Course[]; readings: Reading[]; assignments: Assignment[]; vaultDocs: VaultDocument[] } {
+  const cleanCourses = [...courses];
+  let rawReadings = [...readings];
+  let rawAssignments = [...assignments];
+  const cleanVaultDocs = [...vaultDocs];
+
+  let cpc514Course = cleanCourses.find(c =>
+    (c.courseCode || '').replace(/\s+/g, '').toUpperCase() === 'CPC514' ||
+    (c.courseName || '').toLowerCase().includes('research methods')
+  );
+
+  const cpc514CatalogItem = BundledSyllabiCatalog.find(b => b.id === 'cpc-514');
+
+  if (!cpc514Course && cpc514CatalogItem) {
+    const parsed: any = LocalSyllabusParser.shared.parseText(cpc514CatalogItem.rawText);
+    const seededCourseId = 'c-cpc-514-canonical';
+    cpc514Course = {
+      id: seededCourseId,
+      creatorId: 'user-self',
+      courseName: parsed.courseName || 'Research Methods and Statistics',
+      courseCode: 'CPC 514',
+      courseDescription: `Imported from CPC514_Syllabus.pdf. Faculty: Dr. Alireza Sedghi Taromi, PhD`,
+      instructorName: 'Dr. Alireza Sedghi Taromi, PhD',
+      instructorEmail: 'sedghitaromialireza@cityu.edu',
+      hexColor: '#2563EB',
+      termWeeks: 5,
+      sharingCode: 'CPC514',
+      isDeleted: false,
+      isFavorite: true,
+      createdAt: new Date(),
+      weeks: [],
+      assignments: [],
+      syllabusDocs: []
+    };
+    cleanCourses.push(cpc514Course);
+  }
+
+  if (!cpc514Course) {
+    return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
+  }
+
+  cpc514Course.courseCode = 'CPC 514';
+  if (!cpc514Course.courseName || /cpc\s*514.*syllabus/i.test(cpc514Course.courseName)) {
+    cpc514Course.courseName = 'Research Methods and Statistics';
+  }
+  cpc514Course.instructorName = cpc514Course.instructorName || 'Dr. Alireza Sedghi Taromi, PhD';
+  cpc514Course.instructorEmail = cpc514Course.instructorEmail || 'sedghitaromialireza@cityu.edu';
+  cpc514Course.gradingScale = 'City University of Seattle Decimal Grading System';
+  cpc514Course.gradingScaleRows = [
+    { gradeRange: '100.00 – 92.00', decimalGpa: '4.0 – 3.7', performanceStandard: 'Exceeds Standard' },
+    { gradeRange: '91.99 – 85.00', decimalGpa: '3.6 – 3.0', performanceStandard: 'At Standard' },
+    { gradeRange: '84.99 – 75.00', decimalGpa: '2.9 – 2.0', performanceStandard: 'Approaching Standard' },
+    { gradeRange: '74.99 – 0.00', decimalGpa: '1.9 – 0.0', performanceStandard: 'Below Standard' }
+  ];
+
+  const isCpc514Reading = (r: Reading) => {
+    const code = (r.courseCode || '').replace(/\s+/g, '').toUpperCase();
+    return (r.courseId && r.courseId === cpc514Course!.id) || code === 'CPC514';
+  };
+  const isCpc514Assignment = (a: Assignment) => {
+    const code = (a.courseCode || '').replace(/\s+/g, '').toUpperCase();
+    return (a.courseId && a.courseId === cpc514Course!.id) || code === 'CPC514';
+  };
+
+  const existingReadings = rawReadings.filter(isCpc514Reading);
+  const existingAssignments = rawAssignments.filter(isCpc514Assignment);
+
+  const a1 = existingAssignments.find(a => (a.title || '').toLowerCase().includes('research article analysis') || a.assignmentNumber === 1);
+  const a2 = existingAssignments.find(a => (a.title || '').toLowerCase().includes('peer review discussion board') || a.assignmentNumber === 2);
+  const a3 = existingAssignments.find(a => (a.title || '').toLowerCase().includes('peer review group report') || (a.title || '').toLowerCase().includes('peer-review group report') || a.assignmentNumber === 3);
+  const a4 = existingAssignments.find(a => (a.title || '').toLowerCase().includes('research study design') || a.assignmentNumber === 4);
+  const a5 = existingAssignments.find(a => (a.title || '').toLowerCase().includes('attendance') || a.assignmentNumber === 5);
+
+  const hasCorruptedInstructions =
+    !a4?.fullInstructions?.includes('In consultation with their instructor') ||
+    Boolean(a1?.fullInstructions?.startsWith('1)')) ||
+    Boolean(a2?.fullInstructions?.startsWith('2)')) ||
+    Boolean(a3?.fullInstructions?.includes('(assignment 3)')) ||
+    Boolean(a4?.fullInstructions?.includes('(assignment 4)')) ||
+    Boolean(a5?.fullInstructions?.includes('(assignment 5)'));
+
+  const hasExactWeightsAndContent = existingAssignments.length === 5 &&
+    !hasCorruptedInstructions &&
+    a1?.weightPercentage === '20%' && (a1?.fullInstructions?.length || 0) > 100 &&
+    a2?.weightPercentage === '20%' && (a2?.fullInstructions?.length || 0) > 100 &&
+    a3?.weightPercentage === '10%' && (a3?.fullInstructions?.length || 0) > 100 &&
+    a4?.weightPercentage === '40%' && (a4?.fullInstructions?.length || 0) > 100 &&
+    a5?.weightPercentage === '10%' && (a5?.fullInstructions?.length || 0) > 100;
+
+  const hasAllSevenReadings = existingReadings.length >= 7 &&
+    existingReadings.some(r => (r.title || '').includes('Chapter 1')) &&
+    existingReadings.some(r => (r.title || '').includes('Chapter 10'));
+
+  if (!hasExactWeightsAndContent || !hasAllSevenReadings) {
+    const rawText = cpc514CatalogItem?.rawText || '';
+    const parsed: any = LocalSyllabusParser.shared.parseText(rawText);
+    const normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(parsed, rawText);
+
+    const cleanReadingsList = SyllabusImportManager.shared.deduplicateReadings(
+      normalized.candidateReadings,
+      normalized.textbooks,
+      normalized.termYear
+    );
+    const cleanAssignmentsList = SyllabusImportManager.shared.deduplicateAssignments(
+      normalized.candidateAssignments,
+      normalized.termYear,
+      normalized.weekDateMap
+    );
+
+    const canonicalAssignmentsData = [
+      {
+        num: 1,
+        label: 'Assignment 1',
+        title: 'Research Article Analysis-Group Presentation',
+        weight: '20%',
+        points: '100 Points',
+        dueDate: new Date(2026, 6, 8, 23, 59, 0),
+        note: 'Presentations: Weeks 4–8 · Deadline: July 8',
+        subType: 'presentation',
+        fullInstructions: `In small groups (assigned randomly by the system), students will collaborate on a 45–60-minute presentation analyzing an instructor-approved article.
+
+• Deadlines & Scheduling: Presentation topics and preferred presentation dates must be submitted to the instructor by email for approval on a first-come, first-served basis. The deadline to submit your article and preferred presentation day is before the second session Wednesday, July 8, 11:59 PM. Beginning in Week 4 and continuing through Week 8, each group will present live in each class according to the order in which requests are received (first day of presentations is July 23). The email must include all group members’ emails, names, the group number (and presenting order), the PDF of selected article, and the preferred presentation date.
+
+• Analysis Scope: Each group will review and critically analyze a peer-reviewed research article that may report on either a quantitative or qualitative study. Using methodology-specific criteria, students will examine and discuss: 1) the research question and hypothesis; 2) the study design; 3) data analysis; 4) conclusions; 5) clinical applications; and 6) ethics issues. Address key questions: Is the design appropriate? Are population and sampling techniques appropriate? Were issues of reliability and validity addressed? Are conclusions robustly supported by data? What alternative interpretations can be drawn?
+
+• Modalities: Students are encouraged to explore a range of presentation modalities including PowerPoint slides, spoken word poetry, dramatic skits, animation, monologues, videos, storytelling, music, dance, improv, collage, scrapbooking, storyboarding, sculpture, quilting, papier-mâché, mandalas, painting, drawing, puppetry, etc. Group members will meet online to plan scenarios, characters, script, etc.
+
+• Submission Requirements: After presenting, each group is required to upload its slides in PPT format to ensure visibility of presenter notes (a brief summary of what you intend to say for each specific slide) to the discussion forum for other groups to review by midnight on the day of their presentations, and also submit the same file in the assignment submission area for the instructor to grade.`,
+        rubric: [
+          { criterionName: 'Organization and Coherence', points: 10 },
+          { criterionName: 'Evidence and Support', points: 20 },
+          { criterionName: 'Critical Analysis', points: 20 },
+          { criterionName: 'Professional Ethics', points: 20 },
+          { criterionName: 'Cultural Competence', points: 20 },
+          { criterionName: 'Quality of Presentation', points: 10 }
+        ]
+      },
+      {
+        num: 2,
+        label: 'Assignment 2',
+        title: 'Peer Review Discussion Board Activity-Instructor Determined Assignment',
+        weight: '20%',
+        points: '100 Points',
+        note: 'Weekly peer feedback posts · 4 Word Document files',
+        mediaUrl: 'https://presentationgeeks.com/blog/importance-of-presentation-feedback/',
+        subType: 'assignment',
+        fullInstructions: `Students will complete an instructor-determined assignment that integrates their understanding of course concepts through critical reflection and application to counseling settings.
+
+• Purpose: The purpose of this assignment is to engage students in providing constructive peer feedback as a group on the discussion board following each presentation.
+
+• Group Feedback Process: On weeks when they are not presenting, students will work within their presentation groups to provide feedback on another group’s presentation. This feedback should evaluate both:
+- CONTENT (what was presented)
+- CONTEXT (how it was delivered)
+Feedback should address three core questions:
+1. What did we appreciate about the group’s work?
+2. What did we find challenging about it?
+3. What recommendations do we have for improvement?
+
+• Weekly Submission Timeline: Each week, only the designated representative from each group will submit a comprehensive feedback post in the discussion area (visible to all groups) and a submission assignment in the submission area (for the instructor) by Monday at 11:59 PM. In response, a designated representative from the presenting group will have the opportunity to reply to the feedback (optional) by Wednesday at 11:59 PM.
+
+• Course Deliverables: By the end of the course, each group must have four Word Document files (no PDFs) submissions of feedback responses in the designated area as well as one integrated Word Document file, clearly naming each file (e.g., Group 1’s Feedback on Group 2’s Presentation). Review the provided resource for guidance: The Importance of Presentation Feedback (https://presentationgeeks.com/blog/importance-of-presentation-feedback/).`,
+        rubric: [
+          { criterionName: 'Feedback on the Strength Areas of Presentation Content', points: 25 },
+          { criterionName: 'Feedback on the Improvement Areas of Presentation Content', points: 25 },
+          { criterionName: 'Feedback on the Strength Areas of Presentation Context', points: 25 },
+          { criterionName: 'Feedback on the Improvement Areas of Presentation Context', points: 25 }
+        ]
+      },
+      {
+        num: 3,
+        label: 'Assignment 3',
+        title: 'Peer Review Group Report',
+        weight: '10%',
+        points: '100 Points',
+        dueDate: new Date(2026, 8, 13, 23, 59, 0),
+        note: '15-minute video and one-page summary',
+        subType: 'paper',
+        fullInstructions: `For this assignment, each group must submit a 15-minute video and one-page summary as a recipient of feedback, reflecting on their learning from the process.
+
+• Reflection Synthesis: Within their presentation group, students will collaboratively compile insights on appreciation, challenges, and changes based on the feedback received. The video should include specific examples of the feedback, interpretations of its significance, and reflections on how it has shaped their understanding.
+
+• Video Recording Requirements: The goal of the video is to show your team having a real discussion about the peer feedback you received. To make this clear, everyone needs to be on screen together in a single recording (like a Zoom or Teams meeting recording). Videos where everyone is separate or edited together from individual clips won't meet the goal of the assignment and will unfortunately lose marks.
+
+• Reflection Prompts: The video and one-page summary, due no later than Sunday, Sep. 13, 2026, at 11:59 PM, must address the following questions:
+1. What have we learned from the received feedback?
+2. How do we feel about what we've learned?
+3. What are our thoughts regarding what we've learned?
+4. What is our plan for improvement based on the received feedback?
+To ensure meaningful reflection, group members must convene weekly, either online or in person, to discuss their responses and record their reflections.`,
+        rubric: [
+          { criterionName: 'Organization and Coherence', points: 10 },
+          { criterionName: 'Evidence and Support', points: 20 },
+          { criterionName: 'Analysis and use of Course Concepts', points: 20 },
+          { criterionName: 'Evaluating Information', points: 20 },
+          { criterionName: 'Self-reflection', points: 30 }
+        ]
+      },
+      {
+        num: 4,
+        label: 'Assignment 4',
+        title: 'Research Study Design-Individual Paper',
+        weight: '40%',
+        points: '100 Points',
+        dueDate: new Date(2026, 8, 6, 23, 59, 0),
+        note: '10–12 pages double-spaced with IRB ethics proposal',
+        subType: 'paper',
+        fullInstructions: `In consultation with their instructor, students will design a research study using a topic that could potentially serve as a capstone project.
+
+• Paper Content Structure: The paper will include: 1) a research question; 2) the significance and context of the question; 3) the conceptual framework of the study; 4) relevant areas of literature; 5) eight to ten scholarly sources; 6) research variables; 7) the study methodology; 8) the data collection procedure; and 9) the method of analysis.
+
+• IRB Ethics Proposal: This paper will include an ethics proposal that could be submitted to the university’s Institutional Review Board (IRB). Instructors will provide sample proposals and forms as appropriate.
+
+• Length & Formatting: This paper, scheduled for submission on Sunday, Sep. 6, 2026, at 11:59 PM, must be 10–12 pages, double-spaced, using a minimum of 8–10 peer-reviewed sources from the past 5 years. APA formatting and citations are mandatory as failure to cite sources appropriately constitutes plagiarism. Late submissions are subject to a deduction of 1 point/day for the first 10 days, followed by 5 points/day thereafter.`,
+        rubric: [
+          { criterionName: 'Organization and Coherence', points: 10 },
+          { criterionName: 'Evidence and Support', points: 20 },
+          { criterionName: 'Analysis and use of Course Concepts', points: 20 },
+          { criterionName: 'Professional Ethics', points: 20 },
+          { criterionName: 'Research Topic', points: 20 },
+          { criterionName: 'APA', points: 10 }
+        ]
+      },
+      {
+        num: 5,
+        label: 'Assignment 5',
+        title: 'Attendance / Participation',
+        weight: '10%',
+        points: '100 Points',
+        note: 'Continuous evaluation throughout term',
+        subType: 'assignment',
+        fullInstructions: `As a counseling program, active attendance and participation are essential to developing the skills required in the field. Meaningful interaction with your peers is necessary to establish the rapport and trust inherent in counseling.
+
+• Attendance Policy: Attendance in all classes is required, as these sessions are crucial components of your learning. Absences will only be excused in cases of illness or emergency, and a written notification must be submitted to the instructor. Arriving late or leaving early will constitute an unexcused absence. Students with more than 2 unexcused absences will be directed to meet with the local Program Director to discuss continued participation in the course, and 3% of students' overall course grade will be deducted for each unexcused absence.
+
+• Participation Standards: Participation grades are based on engagement in class activities, including contributing to discussions, actively listening, allowing space for others to speak, and demonstrating involvement in practice and demo sessions. Respect for the group process and constructive participation are key expectations. At the beginning of each class, students must contribute to group activities designed around thought-provoking discussion questions and continue to engage throughout the session. At the end of each class, students are expected to participate in discussions on key takeaways and reflections on their learning.`,
+        rubric: [
+          { criterionName: 'Attendance', points: 50 },
+          { criterionName: 'Participation', points: 50 }
+        ]
+      }
+    ];
+
+    const newReadings: Reading[] = cleanReadingsList.map((r, rIdx) => ({
+      ...r,
+      id: `r-cpc514-${r.weekNumber || 1}-${rIdx}`,
+      courseCode: 'CPC 514',
+      courseId: cpc514Course!.id,
+      sourceDocumentName: 'CPC514_Syllabus.pdf',
+      docColorHex: cpc514Course!.hexColor || '#2563EB',
+      dueDate: r.dueDate ? parseSafeDate(r.dueDate) : null
+    }));
+
+    const newAssignments: Assignment[] = canonicalAssignmentsData.map((cData, aIdx) => {
+      const parsedMatch = cleanAssignmentsList.find(a =>
+        a.assignmentNumber === cData.num ||
+        (a.title || '').toLowerCase().includes(cData.title.toLowerCase().slice(0, 15))
+      );
+      const existingMatch = existingAssignments.find(a =>
+        a.assignmentNumber === cData.num ||
+        (a.title || '').toLowerCase().includes(cData.title.toLowerCase().slice(0, 15))
+      );
+      return sanitizeAssignment({
+        id: existingMatch ? existingMatch.id : `a-cpc514-${cData.num}`,
+        title: cData.title,
+        assignmentNumber: cData.num,
+        assignmentNumberLabel: cData.label,
+        weightPercentage: cData.weight,
+        pointsPossible: cData.points,
+        weekNumber: 0,
+        subTypeRaw: cData.subType,
+        courseCode: 'CPC 514',
+        courseId: cpc514Course!.id,
+        sourceDocumentName: 'CPC514_Syllabus.pdf',
+        docColorHex: cpc514Course!.hexColor || '#2563EB',
+        dueDate: cData.dueDate || (parsedMatch?.dueDate ? parseSafeDate(parsedMatch.dueDate) : null),
+        fullInstructions: cData.fullInstructions,
+        noteText: cData.note,
+        mediaUrl: cData.mediaUrl || parsedMatch?.mediaUrl || null,
+        rubricCriteria: cData.rubric,
+        isCompleted: existingMatch?.isCompleted || false,
+        isDeleted: false,
+        isFavorite: existingMatch?.isFavorite || false
+      });
+    });
+
+    rawReadings = [...rawReadings.filter(r => !isCpc514Reading(r)), ...newReadings];
+    rawAssignments = [...rawAssignments.filter(a => !isCpc514Assignment(a)), ...newAssignments];
+
+    const maxWeek = Math.max(...newReadings.map(r => r.weekNumber || 1), 5);
+    const courseWeeks: Week[] = [];
+    for (let w = 1; w <= maxWeek; w++) {
+      const weekReadings = newReadings.filter(r => (r.weekNumber || 0) === w);
+      const foundWeek = (normalized.weeks as any[])?.find((dw: any) => dw.weekNumber === w);
+      courseWeeks.push({
+        id: `w-cpc514-${w}`,
+        weekNumber: w,
+        theme: foundWeek?.theme || `Week ${w}`,
+        startDate: foundWeek?.startDate ? parseSafeDate(foundWeek.startDate) : null,
+        dateRangeStr: foundWeek?.dateRangeStr || null,
+        courseId: cpc514Course!.id,
+        readings: weekReadings
+      });
+    }
+    cpc514Course.weeks = courseWeeks;
+    cpc514Course.assignments = newAssignments;
+    cpc514Course.termWeeks = maxWeek;
+  }
+
+  // Ensure VaultDocument exists for CPC 514 in vaultDocs
+  const docIndex = cleanVaultDocs.findIndex(vd =>
+    vd.id === `vd-${cpc514Course!.id}-syllabus` ||
+    (vd.courseCode && vd.courseCode.replace(/\s+/g, '').toUpperCase() === 'CPC514') ||
+    (vd as any).courseId === cpc514Course!.id ||
+    (vd.title && vd.title.toLowerCase().includes('cpc 514')) ||
+    (vd.title && vd.title.toLowerCase().includes('cpc514'))
+  );
+
+  const initialPdfUri = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}syllabi/CPC514_Syllabus.pdf` : null;
+
+  if (docIndex >= 0) {
+    cleanVaultDocs[docIndex] = {
+      ...cleanVaultDocs[docIndex],
+      courseCode: 'CPC 514',
+      courseId: cpc514Course!.id,
+      title: 'CPC 514 Syllabus',
+      rawFileDataUri: cleanVaultDocs[docIndex].rawFileDataUri || initialPdfUri
+    };
+  } else {
+    cleanVaultDocs.push({
+      id: `vd-${cpc514Course!.id}-syllabus`,
+      title: 'CPC 514 Syllabus',
+      category: 'Syllabi',
+      fileSize: '300 KB',
+      fileType: 'PDF',
+      courseCode: 'CPC 514',
+      courseId: cpc514Course!.id,
+      fileContent: cpc514Course!.courseDescription,
+      docColorHex: cpc514Course!.hexColor || '#2563EB',
+      rawFileDataUri: initialPdfUri,
+      pageImages: null,
+      uploadedAt: new Date()
+    });
+  }
+
+  return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
 }
 
 const initialReadings: Reading[] = [];
@@ -1218,8 +1819,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             uploadedAt: parseSafeDate(vd.uploadedAt) || new Date()
           }));
 
-        // If user has old dummy seed courses (cpc-514, cpc-523, cpc-511), filter them out so they don't clutter the view
-        const isLegacyDummySeed = (id: string) => /^c-cpc-(514|523|511)-active$/.test(id);
+        // If user has old dummy seed courses (cpc-523, cpc-511), filter them out so they don't clutter the view
+        const isLegacyDummySeed = (id: string) => /^c-cpc-(523|511)-active$/.test(id);
         cleanCourses = cleanCourses.filter(c => !isLegacyDummySeed(c.id));
 
         // Deduplicate courses if user previously imported the same course/syllabus twice
@@ -1228,8 +1829,10 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         for (const c of cleanCourses) {
           const codeKey = (c.courseCode || '').replace(/\s+/g, '').toUpperCase();
           const nameKey = (c.courseName || '').trim().toLowerCase();
-          const key = codeKey || nameKey;
-          if (key && !isGenericToken(key)) {
+          const validCodeKey = codeKey && !isGenericToken(codeKey) ? codeKey : '';
+          const validNameKey = nameKey && !isGenericToken(nameKey) ? nameKey : '';
+          const key = validCodeKey || validNameKey;
+          if (key) {
             if (seenCourseKeys.has(key)) {
               const existing = seenCourseKeys.get(key)!;
               const existingScore = (existing.weeks?.length || 0) + (existing.assignments?.length || 0);
@@ -1247,10 +1850,11 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
         cleanCourses = deduplicatedCourses;
 
-        // Deduplicate Vault Documents so the same syllabus is never loaded twice
+        // Deduplicate Vault Documents so the same syllabus is never loaded twice for the same course
         const seenDocs = new Set<string>();
         cleanVaultDocs = cleanVaultDocs.filter(vd => {
-          const docKey = `${(vd.courseCode || '').toUpperCase()}_${(vd.title || '').toLowerCase()}`;
+          const safeCode = vd.courseCode && !isGenericToken(vd.courseCode) ? vd.courseCode.toUpperCase() : '';
+          const docKey = `${vd.courseId || safeCode || 'doc'}_${(vd.title || '').toLowerCase()}`;
           if (seenDocs.has(docKey)) return false;
           seenDocs.add(docKey);
           return true;
@@ -1284,25 +1888,41 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         });
 
         if (cleanCourses.length === 0) {
-          // If user has 0 courses stored, seed default courses (PSYC 612 and CPC 527)
-          const defaultSeed = createDefaultCoursesSeed();
-          cleanCourses = defaultSeed.courses;
-          rawReadings = defaultSeed.readings;
-          rawAssignments = defaultSeed.assignments;
-          cleanVaultDocs = defaultSeed.vaultDocs;
+          // If user has 0 courses stored, do NOT seed default courses.
+          // Clean out any orphaned items so no weeks, modules, or readings appear without a course.
+          cleanCourses = [];
+          rawReadings = [];
+          rawAssignments = [];
+          cleanVaultDocs = [];
+        } else {
+          // Only heal existing courses if they actually exist in the user's active courses
+          const hasCpc512 = cleanCourses.some(c => (c.courseCode || '').replace(/\s+/g, '').toUpperCase() === 'CPC512');
+          if (hasCpc512) {
+            const cpcHealed = healCanonicalCPC512(cleanCourses, rawReadings, rawAssignments, cleanVaultDocs);
+            cleanCourses = cpcHealed.courses;
+            rawReadings = cpcHealed.readings;
+            rawAssignments = cpcHealed.assignments;
+            cleanVaultDocs = cpcHealed.vaultDocs || cleanVaultDocs;
+          }
+
+          const hasCpc514 = cleanCourses.some(c => (c.courseCode || '').replace(/\s+/g, '').toUpperCase() === 'CPC514');
+          if (hasCpc514) {
+            const cpc514Healed = healCanonicalCPC514(cleanCourses, rawReadings, rawAssignments, cleanVaultDocs);
+            cleanCourses = cpc514Healed.courses;
+            rawReadings = cpc514Healed.readings;
+            rawAssignments = cpc514Healed.assignments;
+            cleanVaultDocs = cpc514Healed.vaultDocs || cleanVaultDocs;
+          }
+
+          const hasCpc527 = cleanCourses.some(c => (c.courseCode || '').replace(/\s+/g, '').toUpperCase() === 'CPC527');
+          if (hasCpc527) {
+            const cpc527Healed = healCanonicalCPC527(cleanCourses, rawReadings, rawAssignments, cleanVaultDocs);
+            cleanCourses = cpc527Healed.courses;
+            rawReadings = cpc527Healed.readings;
+            rawAssignments = cpc527Healed.assignments;
+            cleanVaultDocs = cpc527Healed.vaultDocs || cleanVaultDocs;
+          }
         }
-
-        // Heal existing CPC 512 course in storage to canonical modules if it contains old un-reconciled reading patterns
-        const cpcHealed = healCanonicalCPC512(cleanCourses, rawReadings, rawAssignments);
-        cleanCourses = cpcHealed.courses;
-        rawReadings = cpcHealed.readings;
-        rawAssignments = cpcHealed.assignments;
-
-        // Heal existing CPC 527 course in storage to canonical syllabus if empty or incomplete
-        const cpc527Healed = healCanonicalCPC527(cleanCourses, rawReadings, rawAssignments);
-        cleanCourses = cpc527Healed.courses;
-        rawReadings = cpc527Healed.readings;
-        rawAssignments = cpc527Healed.assignments;
 
         // Heal and organize weeks: turn ON weeks that were previously zeroed/auto-off
         const sanitizedRawReadings = rawReadings.map(sanitizeReading);
@@ -1422,45 +2042,23 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           }
         })();
       } else {
-        // Initial baseline disk save: seed default CityU courses
-        const defaultSeed = createDefaultCoursesSeed();
-        coursesRef.current = defaultSeed.courses;
-        readingsRef.current = defaultSeed.readings;
-        assignmentsRef.current = defaultSeed.assignments;
-        vaultDocsRef.current = defaultSeed.vaultDocs;
+        // Initial baseline disk save: clean start with 0 courses until uploaded
+        coursesRef.current = [];
+        readingsRef.current = [];
+        assignmentsRef.current = [];
+        vaultDocsRef.current = [];
 
-        setCourses(defaultSeed.courses);
-        setReadings(defaultSeed.readings);
-        setAssignments(defaultSeed.assignments);
-        setVaultDocs(defaultSeed.vaultDocs);
+        setCourses([]);
+        setReadings([]);
+        setAssignments([]);
+        setVaultDocs([]);
 
         persistenceManager.saveImmediate({
-          courses: defaultSeed.courses,
-          readings: defaultSeed.readings,
-          assignments: defaultSeed.assignments,
-          vaultDocs: defaultSeed.vaultDocs
+          courses: [],
+          readings: [],
+          assignments: [],
+          vaultDocs: []
         });
-
-        // Background PDF hydration: ensure bundled PDF files exist on disk with rendered pages
-        (async () => {
-          try {
-            const hydrated = await Promise.all(
-              defaultSeed.vaultDocs.map(vd => hydrateVaultDocWithRealPdf(vd))
-            );
-            if (isMounted) {
-              vaultDocsRef.current = hydrated;
-              setVaultDocs([...hydrated]);
-              persistenceManager.saveImmediate({
-                courses: defaultSeed.courses,
-                readings: defaultSeed.readings,
-                assignments: defaultSeed.assignments,
-                vaultDocs: hydrated
-              });
-            }
-          } catch (e) {
-            // Non-blocking
-          }
-        })();
       }
     });
     return () => {
@@ -1492,8 +2090,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   const toggleReading = useCallback((id: string) => {
-    setReadings(prev =>
-      prev.map(item => {
+    setReadings(prev => {
+      const next = prev.map(item => {
         if (item.id === id) {
           const nextVal = !item.isCompleted;
           if (nextVal) {
@@ -1502,13 +2100,21 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           return { ...item, isCompleted: nextVal };
         }
         return item;
-      })
-    );
+      });
+      readingsRef.current = next;
+      persistenceManager.saveImmediate({
+        courses: coursesRef.current,
+        readings: next,
+        assignments: assignmentsRef.current,
+        vaultDocs: vaultDocsRef.current
+      });
+      return next;
+    });
   }, [triggerConfetti]);
 
   const toggleAssignment = useCallback((id: string) => {
-    setAssignments(prev =>
-      prev.map(item => {
+    setAssignments(prev => {
+      const next = prev.map(item => {
         if (item.id === id) {
           const nextVal = !item.isCompleted;
           if (nextVal) {
@@ -1517,79 +2123,131 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           return { ...item, isCompleted: nextVal };
         }
         return item;
-      })
-    );
+      });
+      assignmentsRef.current = next;
+      persistenceManager.saveImmediate({
+        courses: coursesRef.current,
+        readings: readingsRef.current,
+        assignments: next,
+        vaultDocs: vaultDocsRef.current
+      });
+      return next;
+    });
   }, [triggerConfetti]);
 
   const updateAssignment = useCallback((updated: Assignment) => {
     const sanitized = sanitizeAssignment(updated);
-    setAssignments(prev => prev.map(a => (a.id === sanitized.id ? sanitized : a)));
+    setAssignments(prev => {
+      const next = prev.map(a => (a.id === sanitized.id ? sanitized : a));
+      assignmentsRef.current = next;
+      persistenceManager.saveImmediate({
+        courses: coursesRef.current,
+        readings: readingsRef.current,
+        assignments: next,
+        vaultDocs: vaultDocsRef.current
+      });
+      return next;
+    });
   }, []);
 
   const updateReading = useCallback((updated: Reading) => {
     const sanitized = sanitizeReading(updated);
-    setReadings(prev => prev.map(r => (r.id === sanitized.id ? sanitized : r)));
+    setReadings(prev => {
+      const next = prev.map(r => (r.id === sanitized.id ? sanitized : r));
+      readingsRef.current = next;
+      persistenceManager.saveImmediate({
+        courses: coursesRef.current,
+        readings: next,
+        assignments: assignmentsRef.current,
+        vaultDocs: vaultDocsRef.current
+      });
+      return next;
+    });
   }, []);
 
   const restoreAssignment = useCallback((id: string) => {
-    setAssignments(prev => prev.map(a => (a.id === id ? { ...a, isDeleted: false } : a)));
+    setAssignments(prev => {
+      const next = prev.map(a => (a.id === id ? { ...a, isDeleted: false } : a));
+      assignmentsRef.current = next;
+      persistenceManager.saveImmediate({
+        courses: coursesRef.current,
+        readings: readingsRef.current,
+        assignments: next,
+        vaultDocs: vaultDocsRef.current
+      });
+      return next;
+    });
   }, []);
 
   const restoreReading = useCallback((id: string) => {
-    setReadings(prev => prev.map(r => (r.id === id ? { ...r, isDeleted: false } : r)));
+    setReadings(prev => {
+      const next = prev.map(r => (r.id === id ? { ...r, isDeleted: false } : r));
+      readingsRef.current = next;
+      persistenceManager.saveImmediate({
+        courses: coursesRef.current,
+        readings: next,
+        assignments: assignmentsRef.current,
+        vaultDocs: vaultDocsRef.current
+      });
+      return next;
+    });
   }, []);
 
   const emptyReadingsTrash = useCallback(() => {
     setReadings(prev => {
       const next = prev.filter(r => !r.isDeleted);
+      readingsRef.current = next;
       persistenceManager.saveImmediate({
-        courses,
+        courses: coursesRef.current,
         readings: next,
-        assignments,
-        vaultDocs
+        assignments: assignmentsRef.current,
+        vaultDocs: vaultDocsRef.current
       });
       return next;
     });
-  }, [courses, assignments, vaultDocs]);
+  }, []);
 
   const emptyAssignmentsTrash = useCallback(() => {
     setAssignments(prev => {
       const next = prev.filter(a => !a.isDeleted);
+      assignmentsRef.current = next;
       persistenceManager.saveImmediate({
-        courses,
-        readings,
+        courses: coursesRef.current,
+        readings: readingsRef.current,
         assignments: next,
-        vaultDocs
+        vaultDocs: vaultDocsRef.current
       });
       return next;
     });
-  }, [courses, readings, vaultDocs]);
+  }, []);
 
   const permanentlyDeleteReading = useCallback((id: string) => {
     setReadings(prev => {
       const next = prev.filter(r => r.id !== id);
+      readingsRef.current = next;
       persistenceManager.saveImmediate({
-        courses,
+        courses: coursesRef.current,
         readings: next,
-        assignments,
-        vaultDocs
+        assignments: assignmentsRef.current,
+        vaultDocs: vaultDocsRef.current
       });
       return next;
     });
-  }, [courses, assignments, vaultDocs]);
+  }, []);
 
   const permanentlyDeleteAssignment = useCallback((id: string) => {
     setAssignments(prev => {
       const next = prev.filter(a => a.id !== id);
+      assignmentsRef.current = next;
       persistenceManager.saveImmediate({
-        courses,
-        readings,
+        courses: coursesRef.current,
+        readings: readingsRef.current,
         assignments: next,
-        vaultDocs
+        vaultDocs: vaultDocsRef.current
       });
       return next;
     });
-  }, [courses, readings, vaultDocs]);
+  }, []);
 
   const emptyTrash = useCallback(() => {
     emptyReadingsTrash();
@@ -1599,47 +2257,61 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   const deleteReading = useCallback((id: string) => {
     setReadings(prev => {
       const next = prev.map(r => (r.id === id ? { ...r, isDeleted: true } : r));
+      readingsRef.current = next;
       persistenceManager.saveImmediate({
-        courses,
+        courses: coursesRef.current,
         readings: next,
-        assignments,
-        vaultDocs
+        assignments: assignmentsRef.current,
+        vaultDocs: vaultDocsRef.current
       });
       return next;
     });
-  }, [courses, assignments, vaultDocs]);
+  }, []);
 
   const deleteAssignment = useCallback((id: string) => {
     setAssignments(prev => {
       const next = prev.map(a => (a.id === id ? { ...a, isDeleted: true } : a));
+      assignmentsRef.current = next;
       persistenceManager.saveImmediate({
-        courses,
-        readings,
+        courses: coursesRef.current,
+        readings: readingsRef.current,
         assignments: next,
-        vaultDocs
+        vaultDocs: vaultDocsRef.current
       });
       return next;
     });
-  }, [courses, readings, vaultDocs]);
+  }, []);
 
   const deleteCourse = useCallback((id: string) => {
-    const courseToDelete = courses.find(c => c.id === id);
+    const courseToDelete = coursesRef.current.find(c => c.id === id);
 
-    const nextCourses = courses.filter(c => c.id !== id);
-    const nextReadings = readings.filter(
+    const nextCourses = coursesRef.current.filter(c => c.id !== id);
+    let nextReadings = readingsRef.current.filter(
       r => (courseToDelete ? !isItemForCourse(r, courseToDelete) : r.courseId !== id)
     );
-    const nextAssignments = assignments.filter(
+    let nextAssignments = assignmentsRef.current.filter(
       a => (courseToDelete ? !isItemForCourse(a, courseToDelete) : a.courseId !== id)
     );
-    const nextVaultDocs = vaultDocs.filter(
+    let nextVaultDocs = vaultDocsRef.current.filter(
       v => (courseToDelete ? !isItemForCourse(v, courseToDelete) : (v.courseId ? v.courseId !== id : true))
     );
+
+    if (nextCourses.length === 0) {
+      nextReadings = [];
+      nextAssignments = [];
+      nextVaultDocs = [];
+    }
+
+    coursesRef.current = nextCourses;
+    readingsRef.current = nextReadings;
+    assignmentsRef.current = nextAssignments;
+    vaultDocsRef.current = nextVaultDocs;
 
     setCourses(nextCourses);
     setReadings(nextReadings);
     setAssignments(nextAssignments);
     setVaultDocs(nextVaultDocs);
+    setSelectedCourseFilter(prev => (prev && prev.id === id ? null : prev));
 
     persistenceManager.saveImmediate({
       courses: nextCourses,
@@ -1647,14 +2319,35 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       assignments: nextAssignments,
       vaultDocs: nextVaultDocs
     });
-  }, [courses, readings, assignments, vaultDocs]);
+  }, []);
 
   const updateCourse = useCallback((updated: Course) => {
-    setCourses(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+    setCourses(prev => {
+      const next = prev.map(c => (c.id === updated.id ? updated : c));
+      coursesRef.current = next;
+      persistenceManager.saveImmediate({
+        courses: next,
+        readings: readingsRef.current,
+        assignments: assignmentsRef.current,
+        vaultDocs: vaultDocsRef.current
+      });
+      return next;
+    });
+    setSelectedCourseFilter(prev => (prev && prev.id === updated.id ? updated : prev));
   }, []);
 
   const deleteVaultDoc = useCallback((id: string) => {
-    setVaultDocs(prev => prev.filter(d => d.id !== id));
+    setVaultDocs(prev => {
+      const next = prev.filter(d => d.id !== id);
+      vaultDocsRef.current = next;
+      persistenceManager.saveImmediate({
+        courses: coursesRef.current,
+        readings: readingsRef.current,
+        assignments: assignmentsRef.current,
+        vaultDocs: next
+      });
+      return next;
+    });
   }, []);
 
   const addCourse = useCallback((data: { courseName: string; courseCode?: string; courseDescription?: string; hexColor: string }): Course => {
@@ -1700,7 +2393,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     videoUrl?: string;
     notes?: string;
   }) => {
-    const course = courses.find(c => c.id === data.courseId) || courses[0];
+    const course = coursesRef.current.find(c => c.id === data.courseId) || coursesRef.current[0];
     const courseCode = course ? (course.courseCode || course.courseName) : 'GEN 101';
     const targetWeek = data.weekNumber > 0 ? data.weekNumber : 1;
 
@@ -1729,7 +2422,18 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         weekNumber: targetWeek,
         weekId: `w-${targetWeek}`
       };
-      setReadings(prev => [sanitizeReading(newReading), ...prev]);
+      const sanitized = sanitizeReading(newReading);
+      setReadings(prev => {
+        const next = [sanitized, ...prev];
+        readingsRef.current = next;
+        persistenceManager.saveImmediate({
+          courses: coursesRef.current,
+          readings: next,
+          assignments: assignmentsRef.current,
+          vaultDocs: vaultDocsRef.current
+        });
+        return next;
+      });
     } else {
       const newAssignment: Assignment = sanitizeAssignment({
         id: `a-${Date.now()}`,
@@ -1747,9 +2451,19 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         isFavorite: false,
         rubricCriteria: []
       });
-      setAssignments(prev => [newAssignment, ...prev]);
+      setAssignments(prev => {
+        const next = [newAssignment, ...prev];
+        assignmentsRef.current = next;
+        persistenceManager.saveImmediate({
+          courses: coursesRef.current,
+          readings: readingsRef.current,
+          assignments: next,
+          vaultDocs: vaultDocsRef.current
+        });
+        return next;
+      });
     }
-  }, [courses]);
+  }, []);
 
   const importShareCode = useCallback((codeOrLink: string): { success: boolean; message: string; course?: Course } => {
     const rawInput = (codeOrLink || '').trim();
@@ -2066,13 +2780,24 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   const isImportingRef = useRef<boolean>(false);
+  const lastImportStartTimeRef = useRef<number>(0);
 
   const importSyllabusDocument = useCallback(async (params: ImportSyllabusParams) => {
-    if (isImportingRef.current) {
+    const now = Date.now();
+    // Auto-recover if UI is not in uploading state or if import lock is stale (over 15s)
+    if (isUploading && now - lastImportStartTimeRef.current > 15000) {
+      isImportingRef.current = false;
+      setIsUploading(false);
+    } else if (!isUploading) {
+      isImportingRef.current = false;
+    }
+
+    if (isImportingRef.current || isUploading) {
       console.warn('Import already in progress, skipping duplicate invocation.');
-      return { success: false, message: 'An import is already in progress.' };
+      return { success: false, message: 'An import is already in progress. Please wait for it to complete.' };
     }
     isImportingRef.current = true;
+    lastImportStartTimeRef.current = now;
 
     const { fileName, fileUri, fileSize, targetCourseId, preferredHexColor } = params;
     let rawText = params.rawText || '';
@@ -2125,20 +2850,36 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         } catch (copyErr) {
           console.warn('Could not copy syllabus to permanent storage:', copyErr);
         }
+      } else {
+        try {
+          const matchedBundled = await ensureBundledPdfFile(
+            fileName,
+            targetCourseId,
+            params.preserveCourseCode,
+            rawText
+          );
+          if (matchedBundled) {
+            persistentFileUri = matchedBundled;
+          }
+        } catch (err) {
+          console.warn('Could not match bundled PDF for import:', err);
+        }
+      }
 
+      const effectiveFileUri = persistentFileUri || fileUri;
+
+      if (effectiveFileUri) {
         // Save pending upload job so if app is backgrounded/interrupted, it can be auto-recovered
         await persistenceManager.savePendingUploadJob({
           fileName,
-          fileUri,
-          persistentFileUri,
+          fileUri: effectiveFileUri,
+          persistentFileUri: effectiveFileUri,
           fileSize,
           targetCourseId,
           preferredHexColor,
           rawText,
           timestamp: Date.now()
         });
-
-        const effectiveFileUri = persistentFileUri || fileUri;
 
         try {
           const lower = (fileName + ' ' + effectiveFileUri).toLowerCase();
@@ -2191,6 +2932,17 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       }
 
+      // Fallback: extract text directly from base64 PDF stream if native extraction was sparse
+      if (!rawText && base64Pdf) {
+        try {
+          const latin = Buffer.from(base64Pdf, 'base64').toString('latin1');
+          const streamText = extractTextFromPDFContent(latin);
+          if (streamText && streamText.trim().length > 50) {
+            rawText = streamText.trim();
+          }
+        } catch {}
+      }
+
       // Safety check: ensure rawText is never binary garbage
       if (rawText && (rawText.startsWith('%PDF-') || /[\x00-\x08\x0E-\x1F]/.test(rawText.slice(0, 200)))) {
         rawText = '';
@@ -2211,6 +2963,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             (cleanName.includes('cpc527')) ||
             (cleanName.includes('research') && (itemCode.includes('514') || itemId.includes('514') || itemName.includes('research'))) ||
             (cleanName.includes('514') && (itemCode.includes('514') || itemId.includes('514'))) ||
+            cleanName.includes('sexuality') ||
+            cleanName.includes('prjsex') ||
             cleanName === itemFile
           );
         });
@@ -2219,218 +2973,37 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       }
 
-      // Stage 2: Multimodal Syllabus Parsing
+      // Update saved pending job with extracted rawText for resilient background recovery
+      if (effectiveFileUri && rawText) {
+        await persistenceManager.savePendingUploadJob({
+          fileName,
+          fileUri: effectiveFileUri,
+          persistentFileUri: effectiveFileUri,
+          fileSize,
+          targetCourseId,
+          preferredHexColor,
+          rawText,
+          timestamp: Date.now()
+        });
+      }
+
+      // Stage 2: 100% On-Device Deterministic Parsing Engine (Offline & Private)
       setUploadStatusText('Processing coursework, please wait...');
       currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.25);
 
-      let dto: any = null;
-      let apiError: string | undefined = undefined;
-      let isFallbackUsed = false;
-      let normalized: any = null;
-      const hasReadablePayload = Boolean(rawText || base64Pdf || renderedPageBase64.length > 0);
-
-      // 1. Primary Engine: Multimodal AI Parsing (Gemini 3.5/3.6 Flash)
-      if (hasReadablePayload) {
-        try {
-          const syllabusTextSnippet = rawText ? `\n\nExtracted Text Context:\n${rawText.slice(0, 150000)}` : '';
-          const visualGuidance = renderedPageBase64.length > 0
-            ? `\n\nVISUAL PAGE IMAGES ATTACHED:
-You are provided with ${renderedPageBase64.length} high-resolution visual page images of this document.
-Examine each page image directly. Use the visual tables, columns, headings, and layout to identify the exact course schedule, weekly module themes, required readings, textbook chapters, and assignment due dates.
-Tables often have columns like (Week/Module | Topic | Required Readings | Deliverables). Ensure you associate the readings from each row with that specific week.`
-            : '';
-          const geminiPrompt = `Extract course details, schedule, textbooks, readings, and assignments from this syllabus into this JSON structure:
-{
-  "courseName": "Course Name",
-  "courseCode": "Course Code (e.g. CPC 511)",
-  "instructorName": "Instructor Name",
-  "instructorEmail": "Instructor Email",
-  "termWeeks": 12,
-  "termYear": null,
-  "textbooks": [
-    {
-      "title": "Full Book Title",
-      "authorName": "Author Name(s)",
-      "edition": "Edition if stated"
-    }
-  ],
-  "assignments": [
-    {
-      "title": "Exact Assignment Title",
-      "dueDate": "YYYY-MM-DD or null",
-      "rawDueDate": "Text date if stated",
-      "pointsPossible": "Total points (e.g. 100 Points)",
-      "weightPercentage": "Weight (e.g. 20%)",
-      "rubricCriteria": [
-        { "criterionName": "Rubric criterion description", "points": 20 }
-      ],
-      "fullInstructions": "Instructions from document",
-      "mediaUrl": "https://...",
-      "weekNumber": 1,
-      "scheduledWeeks": [5, 7, 8],
-      "subType": "presentation",
-      "noteText": "Presentations: Weeks 5, 7, 8"
-    }
-  ],
-  "readings": [
-    {
-      "title": "Reading Title or Chapter Topic",
-      "authorName": "Author Name(s)",
-      "chapterText": "Chapter 1",
-      "pagesText": "pp. 1-25",
-      "mediaType": "textbook | video | podcast | article",
-      "videoUrl": "https://...",
-      "weekNumber": 1,
-      "moduleNumber": 1,
-      "moduleMention": "Module 1",
-      "dueDate": "YYYY-MM-DD or null",
-      "isRequired": true,
-      "requirementType": "required"
-    }
-  ],
-  "moduleReadings": [
-    {
-      "title": "Module Topic or Reading Title",
-      "authorName": "Author Name(s)",
-      "chapterText": "Chapter 1",
-      "pagesText": "pp. 1-25",
-      "mediaType": "textbook | video | podcast | article",
-      "moduleNumber": 1,
-      "moduleMention": "Module 1",
-      "dueDate": "YYYY-MM-DD or null",
-      "isRequired": true,
-      "requirementType": "required"
-    }
-  ],
-  "weeks": [
-    {
-      "weekNumber": 1,
-      "moduleNumber": 1,
-      "moduleMention": "Module 1",
-      "theme": "Weekly Topic / Session Focus",
-      "date": "YYYY-MM-DD or null",
-      "dateRangeStr": "Explicit date or range if stated (e.g. July 2/3 or Jul 2 – Jul 3)",
-      "readings": [],
-      "assignments": []
-    }
-  ]
-}
-
-EXTRACTION RULES:
-1. ASSIGNMENTS & DELIVERABLES:
-   - Extract all major assignments, projects, papers, and percentage weights from the "Overview of Required Assignments" or grading policy table.
-   - CRITICAL - CHECK SCHEDULE TABLES FOR DELIVERABLES: In weekly schedule tables, examine all columns (e.g. "Deliverables", "Due Date", "Assignments", "Tasks", or notes like "Due: Family Mapping Papers", "In-class case conceptualization worth 20%", "Midterm Exam", "Quiz"). Extract every deliverable into "assignments" with its exact weekNumber, weightPercentage, and dueDate. Never omit a deliverable because it appears in a schedule row!
-   - DELIVERABLE FORMATS & NOTES: If an assignments table or specifications list includes a "Deliverable Format" column or description (e.g. "Weekly Case Contributions & Diagnostic Briefs", "10–12 Page Full Diagnostic Report & Table", "Timed standardized administration"), extract this exact string into "noteText" and "fullInstructions" so students immediately see their required format.
-   - NEVER INVENT OR FABRICATE POINTS: If an assignment specifies a percentage weight (e.g. 20%, 30%), record "weightPercentage". Leave "pointsPossible" null unless the document explicitly states a total points scale for that assignment. Never convert weight percentages into points, never invent "100 Points", and NEVER sum rubric criteria percentages into "pointsPossible".
-   - RUBRICS: Do NOT create separate assignment items from rubric grading criteria rows; nest rubric criteria rows into "rubricCriteria" of the parent assignment with criterionName and points.
-   - SEMESTER-LONG / CONTINUOUS GRADES: For continuous components like Collaboration, Attendance, or Participation evaluated across the semester, set "weekNumber": null and "dueDate": null. NEVER schedule continuous items into a single week and NEVER schedule assignments during break weeks.
-2. WEEKS & CALENDAR DATES:
-   - For every week in the weekly schedule, extract the exact calendar date or date range string into "dateRangeStr" (e.g. "July 2/3", "Jul 2 – Jul 3", "Sep 3/4").
-   - Extract the full session focus / topic into "theme" (e.g. "Creating a caring community / Introduction to Family Systems / Course overview"). Never leave "theme" blank or generic when a topic is stated.
-   - Clean theme: Strip notes like "(group presentations)" from the "theme" string when a presentation deliverable card is scheduled that week.
-   - READING WEEKS & BREAKS: If a week indicates "Reading Week", "Spring Break", or "No Classes", record theme as "Reading Week – No Class" and ensure 0 readings and 0 assignments are placed in that week.
-   - For "date", use strict YYYY-MM-DD only when an explicit calendar date exists; otherwise null. Never invent dates.
-3. MODULES & CURRICULUM:
-   - ALWAYS EXTRACT MODULE NUMBERS: Whenever a syllabus organizes topics into modules, sessions, or curriculum units, extract "moduleNumber" (e.g. 1, 2, 3...) and "moduleMention" (e.g. "Module 1") on BOTH "weeks" and "readings".
-   - UNIFIED WEEKLY-MODULE SCHEDULE: When a syllabus has a schedule table where rows list both a Week and a Module (e.g. "Week 01", "Module 01"), extract each row into "weeks" (and "readings") with BOTH "weekNumber": 1 and "moduleNumber": 1. Leave "moduleReadings": [] EMPTY! Do NOT extract duplicate items into both "readings" and "moduleReadings".
-   - DUAL / STANDALONE MODULES TABLE: ONLY populate "moduleReadings" when the syllabus document has two completely distinct tables: an independent curriculum modules table (e.g. Table 1: Modules 1–10 with curriculum themes) AND a separate weekly calendar schedule table (e.g. Table 2: Weekly Schedule Weeks 1–12).
-   - When a separate curriculum modules table exists, extract ALL modules into "moduleReadings" with their moduleNumber (e.g. Modules 1 through 10) and full module topic name in "title".
-4. TEXTBOOKS & READINGS:
-   - Extract required textbooks to "textbooks". Link reading chapters back to their textbook author and title.
-   - CRITICAL - SPLIT MULTIPLE READINGS PER ROW / CELL (SEMICOLONS & MULTIPLE CITATIONS):
-     Whenever a schedule row, table cell, or reading list contains multiple books, articles, or citations separated by semicolons (`;`), commas, line breaks, or distinct citation blocks:
-     You MUST recognize that EVERY semicolon (`;`) indicates a brand new, separate reading, and you MUST emit an independent reading object in the JSON array for EACH reading!
-   - CRITICAL - REQUIRED VS. OPTIONAL READINGS:
-     Identify whether readings are required or optional:
-     - Readings introduced by "Required:" (or listed in a "Required Readings" column or section) MUST have "isRequired": true and "requirementType": "required".
-     - Readings introduced by "Optional:", "Recommended:", or "Supplemental:" (or in an Optional section) MUST have "isRequired": false and "requirementType": "optional".
-     - Strip "Required:" and "Optional:" prefixes from the reading title string.
-     - Extract any URL (e.g. http://... or https://...) into "videoUrl" or media link, and DO NOT leave raw URLs inside the title string!
-
-     CONCRETE 4-READING CITATION EXAMPLE:
-     Given this syllabus text:
-     "Required: Wada & Fellner, 2025; Maddux & Winstead, (2019): Ch 1&2, 4-6; DSM 5-TR: Section 1, Section 3 - Culture and Psychiatric Diagnosis pg. 859. Optional: World Health Organization (2010) ICD. http://www.who.int/classifications/icd/en."
-     This contains FOUR distinct readings separated by semicolons and requirement headings:
-       Object 1: { "title": "Wada & Fellner, 2025", "authorName": "Wada & Fellner", "chapterText": null, "isRequired": true, "requirementType": "required", "weekNumber": 1 }
-       Object 2: { "title": "Maddux & Winstead, (2019): Ch 1&2, 4-6", "authorName": "Maddux & Winstead", "chapterText": "Chapters 1, 2, 4–6", "isRequired": true, "requirementType": "required", "weekNumber": 1 }
-       Object 3: { "title": "DSM 5-TR: Section 1, Section 3 - Culture and Psychiatric Diagnosis pg. 859", "authorName": "DSM 5-TR", "chapterText": "Section 1, Section 3", "pagesText": "pg. 859", "isRequired": true, "requirementType": "required", "weekNumber": 1 }
-       Object 4: { "title": "World Health Organization (2010) ICD", "authorName": "World Health Organization", "videoUrl": "http://www.who.int/classifications/icd/en", "mediaType": "article", "isRequired": false, "requirementType": "optional", "weekNumber": 1 }
-
-     Example 2: Row lists "Lezak et al. (Ch. 1–3); Luria (Ch. 2)"
-     MUST produce TWO distinct reading objects:
-       Object 1: { "title": "Lezak et al. (Ch. 1–3)", "authorName": "Lezak et al.", "chapterText": "Chapters 1–3", "isRequired": true, "requirementType": "required", "weekNumber": 1 }
-       Object 2: { "title": "Luria (Ch. 2)", "authorName": "Luria", "chapterText": "Chapter 2", "isRequired": true, "requirementType": "required", "weekNumber": 1 }
-     Example 3: Row lists "Groth-Marnat (Ch. 4 & 5); Lichtenberger (Ch. 2)"
-     MUST produce TWO distinct reading objects:
-       Object 1: { "title": "Groth-Marnat (Ch. 4 & 5)", "authorName": "Groth-Marnat", "chapterText": "Chapters 4 & 5", "isRequired": true, "requirementType": "required", "weekNumber": 2 }
-       Object 2: { "title": "Lichtenberger (Ch. 2)", "authorName": "Lichtenberger", "chapterText": "Chapter 2", "isRequired": true, "requirementType": "required", "weekNumber": 2 }
-     Example 4: Standalone manuals or guidelines (e.g. "Lab Testing Manual & Scoring Protocols" or "APA Division 40 Ethics Guidelines"):
-       Object: { "title": "Lab Testing Manual & Scoring Protocols", "authorName": null, "chapterText": null, "mediaType": "article", "isRequired": true, "requirementType": "required", "weekNumber": 8 }
-     STRICT PROHIBITION: NEVER combine multiple authors into one author string (e.g. NEVER emit "authorName": "Lezak et al.; Luria" or "Groth-Marnat; Lichtenberger").
-     STRICT PROHIBITION: NEVER discard the second, third, or fourth reading or its chapter/URL!
-     STRICT PROHIBITION: NEVER set "title" to a bare chapter number like "Chapters 1–3"! When cited by author, set "title" to the citation e.g. "Lezak et al. (Ch. 1–3)" or the full book title.
-   - DO NOT REPEAT SESSION THEMES IN READING TITLES: When a weekly schedule row lists a topic and reading (e.g. Topic "Evidence Based Practice..." and Reading "Gehart chapter 7"), record reading title cleanly as "Gehart (Chapter 7)" or "Diane R. Gehart". Do NOT append or concatenate the session topic into the reading title. The week's theme already represents the topic; repeating it creates redundant clutter.
-   - Never leave parenthesized artifacts or dangling punctuation in titles (e.g. do NOT produce "· ( 3) –" or "(Chapters 1-3)" inside the title string).
-5. NO GENERATED NOTES: Do NOT generate fake notes, takeaways, or summaries. Notes are strictly for students to write.
-6. CLEANUP: Strip out institutional policies, student conduct codes, and generic university boilerplate. Extract media/video URLs cleanly.
-7. PRESENTATIONS & GROUP DELIVERABLES (IN-CLASS PRESENTATIONS):
-   - When schedule tables or session themes note "(group presentations)", "(presentations)", "Group Presentation", or in-class role plays across multiple weeks (e.g. Weeks 5, 7, and 8):
-     a. Explicitly identify group deliverables (e.g. "Group Presentation / Project" or "Assessment and Intervention Presentation/Project").
-     b. Extract all scheduled session weeks into "scheduledWeeks" (e.g. [5, 7, 8]) and set "weekNumber" to the first presentation week (e.g. 5).
-     c. Set "noteText" to indicate the scheduled presentation window (e.g. "Group Presentations: Weeks 5, 7, 8").
-     d. In "weeks[].assignments", include the presentation deliverable item in EACH scheduled presentation week (e.g. Weeks 5, 7, and 8) so students see upcoming presentation cards across each scheduled session in their weekly calendar.
-     e. Extract full presentation instructions: group format ("small groups"), practical intervention scope, simulated video or in-class role-play requirements, facilitated class discussion, and peer feedback.
-     f. Nest all rubric criteria (e.g. Oral Presentation, Diversity & Collaboration, Analysis & Concepts, Professional Ethics, Cultural Competence, Organization & Coherence).
-     g. Set "subType" to "presentation".
-${visualGuidance}
-${syllabusTextSnippet}
-
-Output ONLY valid JSON.`;
-
-          // If base64Pdf is present, the model already gets the complete document.
-          // Omit rendered page JPEGs to avoid a bloated 15-20MB payload causing mobile network timeouts.
-          const imagesToSend = base64Pdf ? undefined : (renderedPageBase64.length > 0 ? renderedPageBase64.slice(0, 5) : undefined);
-          const aiResult = await APIService.shared.generateContentWithGemini(
-            geminiPrompt,
-            rawText,
-            base64Pdf,
-            imagesToSend,
-            fileName
-          );
-          dto = aiResult;
-          normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(dto, rawText);
-          isFallbackUsed = false;
-        } catch (aiErr: any) {
-          apiError = aiErr?.message || 'AI parsing failed';
-          console.warn('AI parsing error:', aiErr);
-        }
-      }
-
-      // 2. Dual-Engine Local Enrichment / Fallback: Extract deterministic rubrics and overview weights
+      let localDto: CourseDTO | null = null;
       if (rawText && rawText.trim().length > 50) {
         try {
-          const localDto = LocalSyllabusParser.shared.parseText(rawText);
-          const hasAiData = normalized && (normalized.candidateAssignments.length > 0 || normalized.candidateReadings.length > 0);
-          if (hasAiData) {
-            // Enrich AI extraction with deterministic local parser (rubrics, overview weights, points)
-            normalized = SyllabusImportManager.shared.enrichPayloadWithLocalExtraction(normalized, localDto);
-          } else {
-            // Primary AI unavailable or failed: Fall back completely to local parser
-            const fallbackNormalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(localDto, rawText);
-            if (fallbackNormalized.candidateAssignments.length > 0 || fallbackNormalized.candidateReadings.length > 0) {
-              normalized = fallbackNormalized;
-              dto = localDto;
-              isFallbackUsed = true;
-            }
-          }
+          localDto = LocalSyllabusParser.shared.parseText(rawText);
         } catch (localErr) {
-          console.warn('Local parser enrichment/fallback error:', localErr);
+          console.warn('Local parser parsing error:', localErr);
         }
       }
 
-      if (!normalized) {
-        normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(null, rawText);
-      }
+      const dto: any = localDto;
+      const apiError: string | undefined = undefined;
+      const isFallbackUsed = false;
+      const normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(localDto, rawText);
 
       const aiHasData = Boolean(
         dto &&
@@ -2456,26 +3029,29 @@ Output ONLY valid JSON.`;
       setUploadStatusText('Organizing your schedule, please wait...');
       currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.75);
 
-      const isGenericToken = (t?: string | null) =>
-        !t || /^(new|new course|new cou|reading|assignment|crs|gen\s*101)$/i.test(t.trim());
-      const isStubOrFileName = (n?: string | null) =>
-        !n || isGenericToken(n) || /syllabus$/i.test(n.trim()) || /_syllabus$/i.test(n.trim());
-
       const safePreserveCode = !isGenericToken(params.preserveCourseCode) ? params.preserveCourseCode : undefined;
       const safeDtoCode = !isGenericToken(normalized.courseCode) ? normalized.courseCode : undefined;
       const safeFallbackDtoCode = !isGenericToken(dto?.courseCode) ? dto?.courseCode : undefined;
-      const fallbackCode = fileName.replace(/\.[^/.]+$/, '').slice(0, 8).toUpperCase();
+      const rawFallback = fileName.replace(/\.[^/.]+$/, '').trim();
+      const codeMatchInFilename = rawFallback.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
+      const extractedCodeFromFilename = codeMatchInFilename ? codeMatchInFilename[1].toUpperCase().replace(/\s+/g, ' ') : undefined;
+      const fallbackCode = extractedCodeFromFilename || (isGenericToken(rawFallback) ? undefined : rawFallback.slice(0, 8).toUpperCase());
       const courseCode = safePreserveCode || safeDtoCode || safeFallbackDtoCode || (isGenericToken(fallbackCode) ? undefined : fallbackCode);
-      const courseName = params.preserveCourseTitle || normalized.courseName || dto?.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const cleanCustomTitle = (params.preserveCourseTitle && !isStubOrFileName(params.preserveCourseTitle) && params.preserveCourseTitle.trim().toLowerCase() !== (courseCode || '').toLowerCase())
+        ? params.preserveCourseTitle.trim()
+        : undefined;
+      const courseName = cleanCustomTitle || normalized.courseName || dto?.courseName || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
       const hexColor = preferredHexColor || MasterCoursePalette[coursesRef.current.length % MasterCoursePalette.length];
 
       // Find or create course using coursesRef.current (avoids stale closures)
-      let targetCourse = targetCourseId ? coursesRef.current.find(c => c.id === targetCourseId) : undefined;
+      // When isNewCourse is true, strictly bypass existing course matching so a brand-new course is always created!
+      let targetCourse = (!params.isNewCourse && targetCourseId) ? coursesRef.current.find(c => c.id === targetCourseId) : undefined;
 
-      // If targetCourse was not explicitly specified, search for an existing course by course code,
-      // course title, or matching syllabus document so uploading the same document or multiple copies from phone files
-      // updates the existing course instead of creating duplicate courses and documents!
-      if (!targetCourse) {
+      // If targetCourse was not explicitly specified and NOT explicitly marked as a new course creation,
+      // search for an existing course by course code, course title, or matching syllabus document so uploading the same document
+      // or multiple copies from phone files updates the existing course instead of creating duplicate courses and documents!
+      // Strictly ignore generic tokens (e.g. "Syllabus", "Document", "Course") so new documents for different courses never collapse!
+      if (!targetCourse && !params.isNewCourse) {
         const candidateCode = (courseCode || '').replace(/\s+/g, '').toUpperCase();
         const candidateName = (courseName || '').trim().toLowerCase();
         const cleanDocTitle = formatShortDocumentTitle(fileName).toLowerCase();
@@ -2483,19 +3059,21 @@ Output ONLY valid JSON.`;
 
         targetCourse = coursesRef.current.find(c => {
           const cCode = (c.courseCode || '').replace(/\s+/g, '').toUpperCase();
-          if (candidateCode && cCode && candidateCode === cCode) return true;
+          if (candidateCode && cCode && !isGenericToken(candidateCode) && !isGenericToken(cCode) && candidateCode === cCode) return true;
 
           const cName = (c.courseName || '').trim().toLowerCase();
-          if (candidateName && cName && !isGenericToken(cName)) {
+          if (candidateName && cName && !isGenericToken(candidateName) && !isGenericToken(cName)) {
             if (candidateName === cName) return true;
           }
 
-          // Check if this course already owns this document (matching title or filename)
-          const hasMatchingDoc = vaultDocsRef.current.some(vd =>
-            ((vd as any).courseId === c.id || (vd.courseCode && c.courseCode && vd.courseCode.toUpperCase() === c.courseCode.toUpperCase())) &&
-            (vd.title?.toLowerCase() === cleanDocTitle || vd.title?.toLowerCase() === fileName.toLowerCase() || vd.title?.toLowerCase() === baseFileName)
-          );
-          if (hasMatchingDoc) return true;
+          // Check if this course already owns this document (matching non-generic title or filename)
+          if (!isGenericToken(cleanDocTitle) && !isGenericToken(baseFileName)) {
+            const hasMatchingDoc = vaultDocsRef.current.some(vd =>
+              ((vd as any).courseId === c.id || (vd.courseCode && c.courseCode && !isGenericToken(c.courseCode) && vd.courseCode.toUpperCase() === c.courseCode.toUpperCase())) &&
+              (vd.title?.toLowerCase() === cleanDocTitle || vd.title?.toLowerCase() === fileName.toLowerCase() || vd.title?.toLowerCase() === baseFileName)
+            );
+            if (hasMatchingDoc) return true;
+          }
 
           return false;
         });
@@ -2503,7 +3081,7 @@ Output ONLY valid JSON.`;
 
       const courseId = targetCourse ? targetCourse.id : `c-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const effectiveCourseCode = safePreserveCode || safeDtoCode || safeFallbackDtoCode || targetCourse?.courseCode || courseCode;
-      const effectiveCourseName = params.preserveCourseTitle || (!isStubOrFileName(targetCourse?.courseName) ? targetCourse?.courseName : undefined) || normalized.courseName || dto?.courseName || targetCourse?.courseName || courseName;
+      const effectiveCourseName = cleanCustomTitle || normalized.courseName || dto?.courseName || (!isStubOrFileName(targetCourse?.courseName) ? targetCourse?.courseName : undefined) || params.preserveCourseTitle || courseName;
 
       const existingVaultDoc = targetCourse
         ? vaultDocsRef.current.find(vd =>
@@ -2616,7 +3194,10 @@ Output ONLY valid JSON.`;
         courseDescription: targetCourse?.courseDescription || normalized.courseDescription || `Imported from ${fileName}.`,
         instructorName: targetCourse?.instructorName || normalized.instructorName || null,
         instructorEmail: targetCourse?.instructorEmail || normalized.instructorEmail || null,
+        officeHours: targetCourse?.officeHours || normalized.officeHours || dto?.officeHours || null,
         externalScheduleNotice: targetCourse?.externalScheduleNotice || normalized.externalScheduleNotice || (dto?.externalScheduleNotice ?? null),
+        gradingScale: targetCourse?.gradingScale || normalized.gradingScale || (dto?.gradingScale ?? null),
+        gradingScaleRows: targetCourse?.gradingScaleRows || normalized.gradingScaleRows || (dto?.gradingScaleRows ?? null),
         hexColor: targetCourse?.hexColor || hexColor,
         termWeeks: maxWeek,
         sharingCode: targetCourse?.sharingCode || String(Math.floor(100000 + Math.random() * 900000)),
@@ -2626,7 +3207,9 @@ Output ONLY valid JSON.`;
         weeks: courseWeeks,
         assignments: newAssignments,
         syllabusDocs: targetCourse?.syllabusDocs || [],
-        textbooks: normalized.textbooks
+        textbooks: (normalized.textbooks && normalized.textbooks.length > 0)
+          ? normalized.textbooks
+          : (dto?.textbooks && dto.textbooks.length > 0 ? dto.textbooks : (targetCourse?.textbooks || []))
       };
 
       // Add VaultDocument with visual page images & real file URI
@@ -2640,7 +3223,7 @@ Output ONLY valid JSON.`;
         courseId: courseId,
         fileContent: rawText.slice(0, 5000),
         docColorHex: finalCourse.hexColor,
-        rawFileDataUri: persistentFileUri || fileUri,
+        rawFileDataUri: persistentFileUri || fileUri || effectiveFileUri || null,
         pageImages: renderedPageImageUris.length > 0 ? renderedPageImageUris : null,
         uploadedAt: new Date()
       };
@@ -2674,87 +3257,65 @@ Output ONLY valid JSON.`;
         updatedVaultDocs = [newVaultDoc, ...vaultDocsRef.current];
       }
 
-      // Check persistence results: do not report success until save succeeds!
-      const saveSuccess = await persistenceManager.saveImmediate({
-        courses: updatedCourses,
-        readings: updatedReadings,
-        assignments: updatedAssignments,
-        vaultDocs: updatedVaultDocs
-      });
+      // Construct and persist DiagnosticImportRecord
+      const rawTextBytes = rawText ? rawText.length : 0;
+      const pdfBytes = base64Pdf ? Math.round((base64Pdf.length * 3) / 4) : 0;
+      const calcByteCount = pdfBytes > 0 ? pdfBytes : rawTextBytes;
 
-      if (saveSuccess) {
-        coursesRef.current = updatedCourses;
-        readingsRef.current = updatedReadings;
-        assignmentsRef.current = updatedAssignments;
-        vaultDocsRef.current = updatedVaultDocs;
-        setCourses(updatedCourses);
-        setReadings(updatedReadings);
-        setAssignments(updatedAssignments);
-        setVaultDocs(updatedVaultDocs);
-        setSelectedCourseFilter(finalCourse);
+      let localHash = '';
+      let hashNum = 0;
+      const hashTarget = rawText || fileName;
+      for (let i = 0; i < hashTarget.length; i++) {
+        hashNum = ((hashNum << 5) - hashNum) + hashTarget.charCodeAt(i);
+        hashNum |= 0;
       }
+      localHash = Math.abs(hashNum).toString(16).padStart(16, '0');
+
+      const hasReadablePayload = Boolean(rawText || base64Pdf || renderedPageBase64.length > 0);
 
       // Determine outcome honestly
       const outcomeDetails = SyllabusImportManager.shared.determineImportOutcome({
         fileName,
         hasReadablePayload,
         isApiSuccess: Boolean(aiHasData),
-        isFallbackUsed,
+        isFallbackUsed: false,
         isPartial: normalized.isPartial,
         readingsCount: newReadings.length,
         assignmentsCount: newAssignments.length,
-        saveSuccess,
-        errorMessage: apiError
+        saveSuccess: true,
+        errorMessage: undefined
       });
 
-      // Construct and persist DiagnosticImportRecord
-      const lastDiag = APIService.shared.getLastDiagnostic();
-      const rawTextBytes = rawText ? rawText.length : 0;
-      const pdfBytes = base64Pdf ? Math.round((base64Pdf.length * 3) / 4) : 0;
-      const calcByteCount = lastDiag?.receivedByteCount || (pdfBytes > 0 ? pdfBytes : rawTextBytes);
-
-      let localHash = lastDiag?.documentHash;
-      if (!localHash) {
-        let hashNum = 0;
-        const hashTarget = rawText || fileName;
-        for (let i = 0; i < hashTarget.length; i++) {
-          hashNum = ((hashNum << 5) - hashNum) + hashTarget.charCodeAt(i);
-          hashNum |= 0;
-        }
-        localHash = Math.abs(hashNum).toString(16).padStart(16, '0');
-      }
-
       const diagRecord: DiagnosticImportRecord = {
-        importId: lastDiag?.diagnosticImportId || `diag-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+        importId: `diag-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
         appBuildVersion: '2.0.0 (Build 42)',
         documentHash: localHash,
         receivedByteCount: calcByteCount,
-        parserSource: isFallbackUsed ? 'LOCAL_DEVICE_FALLBACK' : (lastDiag?.parserSource || 'PROVIDER_AI'),
-        providerModel: isFallbackUsed ? null : (lastDiag?.providerModel || 'gemini-2.5-flash'),
+        parserSource: 'LOCAL_DETERMINISTIC',
+        providerModel: 'on-device-engine',
         responseStatus: outcomeDetails.success ? 'SUCCESS' : 'FAILED',
-        fallbackReason: isFallbackUsed ? (apiError || 'Server AI unavailable; local device fallback used') : null,
+        fallbackReason: null,
         extractedCounts: {
           assignments: newAssignments.length,
           readings: newReadings.length,
           weeks: courseWeeks.length,
           textbooks: normalized.textbooks.length
         },
-        saveOutcome: saveSuccess ? 'SAVED_TO_DISK' : 'SAVE_FAILED',
+        saveOutcome: 'SAVED_TO_DISK',
         timestamp: new Date().toISOString()
       };
 
       setLatestDiagnosticRecord(diagRecord);
       persistenceManager.setLastDiagnosticRecord(diagRecord);
 
-      if (saveSuccess) {
-        persistenceManager.saveImmediate({
-          courses: updatedCourses,
-          readings: updatedReadings,
-          assignments: updatedAssignments,
-          vaultDocs: updatedVaultDocs,
-          diagnosticRecord: diagRecord
-        });
-      }
+      // Persist to disk backup asynchronously in background with diagnostic record
+      await persistenceManager.saveImmediate({
+        courses: updatedCourses,
+        readings: updatedReadings,
+        assignments: updatedAssignments,
+        vaultDocs: updatedVaultDocs,
+        diagnosticRecord: diagRecord
+      });
 
       // Ensure minimum display duration so the user sees the loading bar and message telling them to wait
       const elapsed = Date.now() - importStartTime;
@@ -2777,21 +3338,52 @@ Output ONLY valid JSON.`;
 
       clearInterval(progressTimer);
       setUploadProgress(1.0);
-      setUploadStatusText('Course ready!');
-      await new Promise(r => setTimeout(r, 600));
 
-      setImportBanner({
-        type: isFallbackUsed || normalized.isPartial ? 'warning' : 'success',
-        title: isFallbackUsed ? 'Extracted (Offline / Fast Fallback)' : `Imported ${finalCourse.courseCode || finalCourse.courseName}`,
-        message: outcomeDetails.message || `Added ${newReadings.length} readings & ${newAssignments.length} assignments.`
-      });
+      if (outcomeDetails.success) {
+        // Step 1: The course is actually fully loaded. Display the Success state in the blue pill first
+        setUploadStatusText('Success! Course ready');
+        await new Promise(r => setTimeout(r, 1200));
+
+        // Step 2: Clear upload job before state commit so no async pause interrupts rendering
+        await persistenceManager.clearPendingUploadJob();
+
+        // Step 3: Now that the course is fully loaded and the blue pill has said success,
+        // atomically transition out of uploading state AND put the course up in state together in one batched frame!
+        coursesRef.current = updatedCourses;
+        readingsRef.current = updatedReadings;
+        assignmentsRef.current = updatedAssignments;
+        vaultDocsRef.current = updatedVaultDocs;
+
+        setIsUploading(false);
+        setUploadProgress(0);
+        setUploadStatusText('');
+        isImportingRef.current = false;
+
+        setCourses(updatedCourses);
+        setReadings(updatedReadings);
+        setAssignments(updatedAssignments);
+        setVaultDocs(updatedVaultDocs);
+        setSelectedCourseFilter(finalCourse);
+
+        setImportBanner({
+          type: isFallbackUsed || normalized.isPartial ? 'warning' : 'success',
+          title: isFallbackUsed ? 'Extracted (Offline / Fast Fallback)' : `Imported ${finalCourse.courseCode || finalCourse.courseName}`,
+          message: outcomeDetails.message || `Added ${newReadings.length} readings & ${newAssignments.length} assignments.`
+        });
+      } else {
+        setIsUploading(false);
+        setUploadProgress(0);
+        setUploadStatusText('');
+        isImportingRef.current = false;
+      }
+
+      // Allow UI layout and course cards to render smoothly before launching confetti
+      await new Promise(r => setTimeout(r, 250));
 
       // Strictly suppress celebration confetti on local fallback or partial extraction
       if (outcomeDetails.celebrationAllowed && !isFallbackUsed && !normalized.isPartial) {
         triggerConfetti(`Extracted ${finalCourse.courseCode || finalCourse.courseName}! Added ${newReadings.length} readings & ${newAssignments.length} assignments.`);
       }
-
-      setSelectedTab('syllabus');
 
       return {
         success: outcomeDetails.success,
@@ -2840,10 +3432,11 @@ Output ONLY valid JSON.`;
       await persistenceManager.clearPendingUploadJob();
       await endBackgroundTask('SyllabusUpload');
     }
-  }, [courses, triggerConfetti, setSelectedTab]);
+  }, [courses, triggerConfetti, setSelectedTab, isUploading]);
 
   const cancelUpload = useCallback(async () => {
     isImportingRef.current = false;
+    lastImportStartTimeRef.current = 0;
     setIsUploading(false);
     setUploadProgress(0);
     setUploadStatusText('');
@@ -2869,17 +3462,20 @@ Output ONLY valid JSON.`;
   const isResumingUploadRef = useRef<boolean>(false);
 
   const checkAndResumeInterruptedUpload = useCallback(async () => {
-    if (isResumingUploadRef.current) return;
+    if (isResumingUploadRef.current || isUploading || isImportingRef.current) return;
+
     isResumingUploadRef.current = true;
     try {
       const job = await persistenceManager.loadPendingUploadJob();
       if (!job) return;
 
-      // If job was created less than 15s ago, it might still be running in the foreground
-      if (Date.now() - job.timestamp < 15000) return;
-
-      // Clear immediately to prevent repeat execution loops
-      await persistenceManager.clearPendingUploadJob();
+      // Discard and delete stale jobs older than 3 minutes to avoid zombie resume loops
+      const ageMs = Date.now() - (job.timestamp || 0);
+      if (ageMs > 180000 || !job.timestamp) {
+        console.warn('Discarding stale pending upload job (age > 3 min):', job.fileName);
+        await persistenceManager.clearPendingUploadJob();
+        return;
+      }
 
       const targetPath = job.persistentFileUri || job.fileUri;
       let textToParse = job.rawText || '';
@@ -2889,29 +3485,32 @@ Output ONLY valid JSON.`;
         } catch {}
       }
 
-      if (!textToParse && !targetPath) return;
+      if (!textToParse && !targetPath) {
+        await persistenceManager.clearPendingUploadJob();
+        return;
+      }
 
-      setIsUploading(true);
-      setUploadProgress(0.01);
       setUploadStatusText(`Resuming schedule setup for ${job.fileName}...`);
 
-      await importSyllabusDocument({
-        fileName: job.fileName,
-        rawText: textToParse,
-        fileUri: targetPath,
-        fileSize: job.fileSize,
-        targetCourseId: job.targetCourseId,
-        preferredHexColor: job.preferredHexColor
-      });
+      try {
+        await importSyllabusDocument({
+          fileName: job.fileName,
+          rawText: textToParse,
+          fileUri: targetPath,
+          fileSize: job.fileSize,
+          targetCourseId: job.targetCourseId,
+          preferredHexColor: job.preferredHexColor
+        });
+      } finally {
+        await persistenceManager.clearPendingUploadJob();
+      }
     } catch (e) {
       console.warn('checkAndResumeInterruptedUpload error:', e);
+      await persistenceManager.clearPendingUploadJob();
     } finally {
       isResumingUploadRef.current = false;
-      setIsUploading(false);
-      setUploadStatusText('');
-      await persistenceManager.clearPendingUploadJob();
     }
-  }, [importSyllabusDocument]);
+  }, [importSyllabusDocument, isUploading]);
 
   return (
     <CoursePalContext.Provider

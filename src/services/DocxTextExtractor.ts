@@ -29,14 +29,14 @@ function decodeXmlEntities(str: string): string {
 /**
  * Extracts all text from <w:t> elements inside an XML snippet
  */
-function extractTextFromSnippet(xmlSnippet: string): string {
+function extractTextFromSnippet(xmlSnippet: string, delimiter: string = ' '): string {
   if (!xmlSnippet) return '';
   const pMatches = xmlSnippet.match(/<w:p\b[^>]*>([\s\S]*?)<\/w:p>/gi);
   if (pMatches && pMatches.length > 0) {
     return pMatches.map(pSnippet => {
       const textMatches = pSnippet.match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || [];
       return decodeXmlEntities(textMatches.map(m => m.replace(/<[^>]+>/g, '')).join(''));
-    }).filter(t => t.trim().length > 0).join(' ');
+    }).filter(t => t.trim().length > 0).join(delimiter);
   }
   const textMatches = xmlSnippet.match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || [];
   const text = textMatches.map(m => m.replace(/<[^>]+>/g, '')).join('');
@@ -73,7 +73,7 @@ export function parseDocxXmlToMarkdown(documentXml: string): string {
         const cells: string[] = [];
 
         while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
-          const cellText = extractTextFromSnippet(cellMatch[1]).replace(/\s+/g, ' ').trim();
+          const cellText = extractTextFromSnippet(cellMatch[1], '<br>').replace(/\s+/g, ' ').trim();
           cells.push(cellText);
         }
 

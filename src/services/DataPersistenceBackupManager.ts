@@ -172,10 +172,14 @@ export class DataPersistenceBackupManager {
   }): Promise<boolean> {
     if (this.activeWritePromise) {
       return new Promise<boolean>(resolve => {
-        if (this.pendingWrite) {
-          this.pendingWrite.resolve(false);
-        }
-        this.pendingWrite = { data, resolve };
+        const previousResolve = this.pendingWrite?.resolve;
+        this.pendingWrite = {
+          data,
+          resolve: (val: boolean) => {
+            if (previousResolve) previousResolve(val);
+            resolve(val);
+          }
+        };
       });
     }
 

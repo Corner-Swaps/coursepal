@@ -4,7 +4,7 @@
  * day grid, and quick date selection presets.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { CoursePalTheme } from '../constants/theme';
 import { ChevronLeftIcon, ChevronRightIcon } from './SvgIcons';
@@ -27,6 +27,15 @@ export const InlineCalendarPicker: React.FC<InlineCalendarPickerProps> = ({
   accentColor = CoursePalTheme.accentBlue
 }) => {
   const [viewDate, setViewDate] = useState<Date>(() => new Date((selectedDate || new Date()).getTime()));
+
+  useEffect(() => {
+    if (selectedDate && (
+      selectedDate.getFullYear() !== viewDate.getFullYear() ||
+      selectedDate.getMonth() !== viewDate.getMonth()
+    )) {
+      setViewDate(new Date(selectedDate.getTime()));
+    }
+  }, [selectedDate]);
 
   const viewYear = viewDate.getFullYear();
   const viewMonth = viewDate.getMonth();
@@ -288,13 +297,13 @@ const styles = StyleSheet.create({
   },
   presetButton: {
     paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingVertical: 6,
     backgroundColor: '#F1F5F9',
     borderRadius: 8
   },
   presetButtonText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: CoursePalTheme.accentBlue
+    fontWeight: '700',
+    color: '#475569'
   }
 });

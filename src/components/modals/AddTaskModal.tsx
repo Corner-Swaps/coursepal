@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCoursePal } from '../../context/CoursePalContext';
 import { CoursePalTheme } from '../../constants/theme';
 import { MediaType } from '../../types/models';
+import { parseSafeDate } from '../../utils/readingDisplayHelper';
 
 interface AddTaskModalProps {
   visible: boolean;
@@ -46,21 +47,33 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
       setCategory(initialCategory);
       if (initialCourseId) {
         setSelectedCourseId(initialCourseId);
+      } else if (!courses.some(c => c.id === selectedCourseId)) {
+        setSelectedCourseId(courses[0]?.id ?? '');
       }
     }
-  }, [visible, initialCategory, initialCourseId]);
+  }, [visible, initialCategory, initialCourseId, courses, selectedCourseId]);
 
   if (!visible) return null;
 
   const handleSave = () => {
     if (!taskTitle.trim()) return;
 
+    const course = courses.find(c => c.id === selectedCourseId);
+    let resolvedDueDate = new Date(Date.now() + weekNumber * 7 * 86400000);
+    if (course?.weeks && course.weeks.length > 0) {
+      const targetW = course.weeks.find(w => w.weekNumber === weekNumber);
+      if (targetW?.startDate) {
+        const parsed = parseSafeDate(targetW.startDate);
+        if (parsed) resolvedDueDate = parsed;
+      }
+    }
+
     addTask({
       category,
       title: taskTitle.trim(),
       courseId: selectedCourseId,
       weekNumber,
-      dueDate: new Date(Date.now() + weekNumber * 7 * 86400000),
+      dueDate: resolvedDueDate,
       points,
       weight,
       mediaType,

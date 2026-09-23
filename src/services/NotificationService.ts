@@ -10,7 +10,7 @@
  */
 
 import { Assignment, Reading, Course } from '../types/models';
-import { parseSafeDate, formatAssignmentDueDate } from '../utils/readingDisplayHelper';
+import { parseSafeDate, formatAssignmentDueDate, isItemForCourse } from '../utils/readingDisplayHelper';
 
 export interface ScheduledNotificationItem {
   id: string;
@@ -28,7 +28,7 @@ export interface WidgetUpcomingItem {
   title: string;
   courseCode: string;
   hexColor: string;
-  type: 'assignment' | 'reading';
+  type: 'assignment' | 'reading' | 'module';
   dueText: string;
   isCompleted: boolean;
   priorityScore: number; // lower means more urgent
@@ -110,7 +110,7 @@ export class NotificationService {
 
     // Process assignments
     activeAssignments.forEach(a => {
-       const c = resolveCourse(a.courseCode);
+       const c = courses.find(course => isItemForCourse(a, course)) || resolveCourse(a.courseCode);
        const hexColor = c?.hexColor || '#2470F5';
        const courseCode = (c?.courseCode || a.courseCode || 'Assignment').toUpperCase();
        const dueDate = parseSafeDate(a.dueDate);
@@ -167,15 +167,20 @@ export class NotificationService {
        });
      });
 
-    // Process readings
+    // Process readings and modules
     activeReadings.forEach(r => {
-      const c = resolveCourse(r.courseCode);
+      const c = courses.find(course => isItemForCourse(r, course)) || resolveCourse(r.courseCode);
       const hexColor = c?.hexColor || '#2470F5';
       const courseCode = (c?.courseCode || r.courseCode || 'Reading').toUpperCase();
       const dueDate = parseSafeDate(r.dueDate);
 
-      let dueText = r.chapterText || (r.weekNumber ? `Week ${r.weekNumber}` : 'Reading');
-      let priorityScore = 500;
+      const isModule = Boolean(r.moduleNumber && (!r.weekNumber || r.weekNumber === 0));
+      const itemType: 'assignment' | 'reading' | 'module' = isModule ? 'module' : 'reading';
+
+      let dueText = isModule
+        ? (r.moduleMention || `Module ${r.moduleNumber}`)
+        : (r.chapterText || (r.weekNumber ? `Week ${r.weekNumber}` : 'Reading'));
+      let priorityScore = isModule ? 450 : 500;
       let urgencyLevel: 'overdue' | 'today' | 'tomorrow' | 'upcoming' | 'completed' = 'upcoming';
       let dueCountdown: string | undefined = undefined;
 
@@ -213,18 +218,68 @@ export class NotificationService {
         title: r.title,
         courseCode,
         hexColor,
-        type: 'reading',
+        type: itemType,
         dueText,
         isCompleted: !!r.isCompleted,
         priorityScore: r.isCompleted ? priorityScore + 10000 : priorityScore,
         urgencyLevel,
         dueCountdown,
-        deepLinkUrl: `coursepal://tab/readings?id=${encodeURIComponent(r.id)}`
+        deepLinkUrl: isModule
+          ? `coursepal://tab/readings?viewMode=modules&module=${encodeURIComponent(r.moduleNumber || 1)}`
+          : `coursepal://tab/readings?id=${encodeURIComponent(r.id)}`
       });
     });
 
     // Sort by priority (uncompleted first, then soonest deadline)
     upcoming.sort((a, b) => a.priorityScore - b.priorityScore);
+
+    // Ensure representation across all active task types (assignment, reading, module)
+    // so if the user has an assignment, reading, and module to do, all three are prioritized into the top slots!
+    const pendingUpcoming = upcoming.filter(item => !item.isCompleted);
+    const completedUpcoming = upcoming.filter(item => item.isCompleted);
+
+    // Urgent items (overdue, today, tomorrow) always take top precedence
+    const urgentPending = pendingUpcoming.filter(
+      item => item.urgencyLevel === 'overdue' || item.urgencyLevel === 'today' || item.urgencyLevel === 'tomorrow'
+    );
+    const regularPending = pendingUpcoming.filter(
+      item => item.urgencyLevel !== 'overdue' && item.urgencyLevel !== 'today' && item.urgencyLevel !== 'tomorrow'
+    );
+
+    const topPriorityDiverse: WidgetUpcomingItem[] = [];
+    const usedIds = new Set<string>();
+
+    // 1. Add urgent items in priority order
+    urgentPending.forEach(item => {
+      topPriorityDiverse.push(item);
+      usedIds.add(item.id);
+    });
+
+    // 2. Ensure missing categories (assignment, reading, module) from regular items are promoted into top slots
+    const presentTypes = new Set(topPriorityDiverse.map(item => item.type));
+    (['assignment', 'reading', 'module'] as const).forEach(targetType => {
+      if (!presentTypes.has(targetType)) {
+        const firstOfType = regularPending.find(item => item.type === targetType && !usedIds.has(item.id));
+        if (firstOfType) {
+          topPriorityDiverse.push(firstOfType);
+          usedIds.add(firstOfType.id);
+          presentTypes.add(targetType);
+        }
+      }
+    });
+
+    // 3. Add remaining regular pending items in priority order
+    regularPending.forEach(item => {
+      if (!usedIds.has(item.id)) {
+        topPriorityDiverse.push(item);
+        usedIds.add(item.id);
+      }
+    });
+
+    // 4. Add completed items at the end
+    completedUpcoming.forEach(item => {
+      topPriorityDiverse.push(item);
+    });
 
     const pendingDeliverables = upcoming.filter(item => !item.isCompleted);
     const hasOverdue = pendingDeliverables.some(item => item.urgencyLevel === 'overdue');
@@ -239,12 +294,10 @@ export class NotificationService {
       smartGreeting = 'Upcoming Deadlines';
     }
 
-
     // Per-course breakdown
     const coursesSummary = courses.map(c => {
-      const key = (c.courseCode || c.courseName || '').toLowerCase().trim();
-      const cReadings = activeReadings.filter(r => (r.courseCode || '').toLowerCase().trim() === key);
-      const cAssignments = activeAssignments.filter(a => (a.courseCode || '').toLowerCase().trim() === key);
+      const cReadings = activeReadings.filter(r => isItemForCourse(r, c));
+      const cAssignments = activeAssignments.filter(a => isItemForCourse(a, c));
       const cTotal = cReadings.length + cAssignments.length;
       const cDone = cReadings.filter(r => r.isCompleted).length + cAssignments.filter(a => a.isCompleted).length;
       const pct = cTotal > 0 ? Math.round((cDone / cTotal) * 100) : 0;
@@ -267,7 +320,7 @@ export class NotificationService {
       overallCompletionPct: overallPct,
       pendingDeliverablesCount: pendingDeliverables.length,
       smartGreeting,
-      upcomingItems: upcoming.slice(0, 10),
+      upcomingItems: topPriorityDiverse.slice(0, 10),
       coursesSummary
     };
 

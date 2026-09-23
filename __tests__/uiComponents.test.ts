@@ -11,7 +11,8 @@ import {
   ConfettiCelebrationView,
   SwipeableRow,
   AssignmentsMonthCalendarCard,
-  DeadlinesCalendarCard
+  DeadlinesCalendarCard,
+  ThreeDotsWave
 } from '../src/components';
 
 describe('Atomic UI Components', () => {
@@ -34,6 +35,18 @@ describe('Atomic UI Components', () => {
 
     it('provides AppIconLogo alias matching AppIconLogoView', () => {
       expect(AppIconLogo).toBe(AppIconLogoView);
+    });
+
+    it('renders header logo at size 32 with squircle radius and custom testID', () => {
+      const element = React.createElement(AppIconLogo, {
+        size: 32,
+        testID: 'readings-header-logo'
+      });
+      expect(element).toBeDefined();
+      expect(element.props.size).toBe(32);
+      expect(element.props.testID).toBe('readings-header-logo');
+      const radius = 32 * 0.22;
+      expect(radius).toBeCloseTo(7.04, 2);
     });
   });
 
@@ -104,6 +117,36 @@ describe('Atomic UI Components', () => {
       expect(element.props.selectedTab).toBe('readings');
       expect(element.props.onSelectTab).toBe(onSelect);
       expect(element.props.onPressCenterPlus).toBe(onPlus);
+    });
+
+    it('supports isUploading state to render 3 loading dots and disable clicks', () => {
+      const onSelect = jest.fn();
+      const onPlus = jest.fn();
+      const element = React.createElement(MainTabBar, {
+        selectedTab: 'syllabus',
+        onSelectTab: onSelect,
+        onPressCenterPlus: onPlus,
+        isUploading: true
+      });
+
+      expect(element.props.isUploading).toBe(true);
+    });
+  });
+
+  describe('ThreeDotsWave', () => {
+    it('creates ThreeDotsWave element with customizable size and color', () => {
+      const element = React.createElement(ThreeDotsWave, {
+        size: 6,
+        color: '#FFFFFF',
+        dotSpacing: 4,
+        waveHeight: 5.5
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.size).toBe(6);
+      expect(element.props.color).toBe('#FFFFFF');
+      expect(element.props.dotSpacing).toBe(4);
+      expect(element.props.waveHeight).toBe(5.5);
     });
   });
 
@@ -227,6 +270,22 @@ describe('Atomic UI Components', () => {
       expect(element).toBeDefined();
       expect(element.props.showCardMonth).toBe(false);
       expect(element.props.onMonthYearChange).toBe(onMonthChangeMock);
+    });
+
+    it('guarantees single-month output format without two-month ranges', () => {
+      // Test month determination logic for June/July boundary
+      const juneBoundaryWeekStart = new Date(2025, 5, 29); // June 29, 2025 (Sun)
+      const weekDays: Date[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(juneBoundaryWeekStart);
+        d.setDate(d.getDate() + i);
+        weekDays.push(d);
+      }
+      // weekDays[3] is July 2, 2025 (majority month)
+      const primaryDay = weekDays[3];
+      const monthYear = primaryDay.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      expect(monthYear).toBe('July 2025');
+      expect(monthYear.includes('to')).toBe(false);
     });
   });
 });

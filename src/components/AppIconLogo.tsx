@@ -11,15 +11,19 @@ import { ImageAssets } from '../assets';
 export interface AppIconLogoProps {
   size?: number;
   style?: StyleProp<ViewStyle>;
+  testID?: string;
 }
 
 export type AppIconLogoViewProps = AppIconLogoProps;
 
 export const AppIconLogo: React.FC<AppIconLogoProps> = ({
   size = 80,
-  style
+  style,
+  testID = 'app-icon-logo-view'
 }) => {
   const borderRadius = size * 0.22;
+  const shadowRadius = Math.max(2, size * 0.1);
+  const shadowHeight = Math.max(1, Math.round(size * 0.04));
 
   return (
     <View
@@ -28,11 +32,13 @@ export const AppIconLogo: React.FC<AppIconLogoProps> = ({
         {
           width: size,
           height: size,
-          borderRadius
+          borderRadius,
+          shadowRadius,
+          shadowOffset: { width: 0, height: shadowHeight }
         },
         style
       ]}
-      testID="app-icon-logo-view"
+      testID={testID}
     >
       <Image
         source={ImageAssets.appLogo}

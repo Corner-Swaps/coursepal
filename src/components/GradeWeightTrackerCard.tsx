@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5
   },
   warningPill: {
-    backgroundColor: 'rgba(217, 64, 51, 0.12)',
+    backgroundColor: '#EF4444',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
   warningPillText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#D94033'
+    color: '#FFFFFF'
   },
   targetLabel: {
     fontSize: 12,

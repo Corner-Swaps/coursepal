@@ -106,7 +106,24 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         }
       }
 
-      // 2. Check if pre-existing page images exist on disk (iOS NSCachesDirectory can purge them)
+      // 2. Fallback to bundled PDF file if still no file
+      if (!activeRawUri) {
+        setIsLoadingPages(true);
+        const ensured = await ensureBundledPdfFile(
+          document.courseCode,
+          document.title,
+          document.id,
+          document.rawFileDataUri
+        );
+        if (ensured) {
+          activeRawUri = ensured;
+          setEffectiveFileUri(ensured);
+          document.rawFileDataUri = ensured;
+        }
+      }
+
+      // 3. Check if pre-existing page images exist on disk (iOS NSCachesDirectory can purge them)
+      let pagesFound = false;
       if (document.pageImages && document.pageImages.length > 0) {
         const resolvedImages = document.pageImages
           .map(resolveLocalPath)
@@ -117,37 +134,28 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             if (firstInfo.exists) {
               setPages(resolvedImages);
               setIsLoadingPages(false);
-              return;
+              pagesFound = true;
             }
           } catch {}
         }
       }
 
-      // 3. Fallback to bundled PDF file if still no file
-      if (!activeRawUri) {
-        setIsLoadingPages(true);
-        const ensured = await ensureBundledPdfFile(document.id || document.courseCode || document.title);
-        if (ensured) {
-          activeRawUri = ensured;
-          setEffectiveFileUri(ensured);
-          document.rawFileDataUri = ensured;
-        }
-      }
-
-      // 4. Render PDF pages dynamically
-      if (activeRawUri) {
+      // 4. Render PDF pages dynamically if not already loaded
+      if (!pagesFound && activeRawUri) {
         setIsLoadingPages(true);
         try {
           const res = await renderPDFPages(activeRawUri, 30);
           if (res.imageUris && res.imageUris.length > 0) {
             setPages(res.imageUris);
+            document.pageImages = res.imageUris;
+            setEffectiveFileUri(activeRawUri);
           }
         } catch (err) {
           console.warn('Failed to dynamically render document pages:', err);
         } finally {
           setIsLoadingPages(false);
         }
-      } else {
+      } else if (!pagesFound) {
         setIsLoadingPages(false);
       }
     };

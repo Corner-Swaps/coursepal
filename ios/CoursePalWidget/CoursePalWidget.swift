@@ -235,10 +235,10 @@ struct SmallWidgetView: View {
 
             Spacer()
 
-            // Deliverable category: Reading vs Assignment
+            // Deliverable category: Reading vs Assignment vs Module
             if let type = upcoming?.type {
                 HStack(spacing: 4) {
-                    Image(systemName: type == "reading" ? "book.closed.fill" : "doc.text.fill")
+                    Image(systemName: type == "reading" ? "book.closed.fill" : (type == "module" ? "square.stack.3d.up.fill" : "doc.text.fill"))
                         .font(.system(size: 9))
                         .foregroundColor(courseColor)
 
@@ -304,7 +304,7 @@ struct MediumWidgetView: View {
             Divider()
 
             // Right Column: Upcoming Tasks with Direct Links
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack {
                     Text(smartGreeting.uppercased())
                         .font(.system(size: 9, weight: .bold))
@@ -330,12 +330,12 @@ struct MediumWidgetView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     Spacer()
                 } else {
-                    ForEach(upcoming.prefix(2)) { item in
+                    ForEach(upcoming.prefix(3)) { item in
                         Link(destination: URL(string: item.deepLinkUrl ?? "coursepal://tab/assignments")!) {
                             HStack(alignment: .center, spacing: 8) {
                                 RoundedRectangle(cornerRadius: 2.5)
                                     .fill(Color(hex: item.hexColor))
-                                    .frame(width: 3.5, height: 32)
+                                    .frame(width: 3.5, height: 27)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 4) {
@@ -343,7 +343,7 @@ struct MediumWidgetView: View {
                                             .font(.system(size: 9, weight: .bold))
                                             .foregroundColor(Color(hex: item.hexColor))
 
-                                        Image(systemName: item.type == "reading" ? "book.fill" : "doc.text.fill")
+                                        Image(systemName: item.type == "reading" ? "book.fill" : (item.type == "module" ? "square.stack.3d.up.fill" : "doc.text.fill"))
                                             .font(.system(size: 8))
                                             .foregroundColor(Color(hex: "#7A8A9E"))
 

@@ -214,9 +214,9 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
                       </View>
 
                       <View style={styles.policySectionCard}>
-                        <Text style={styles.policySectionHeading}>3. Secure Visual AI Processing</Text>
+                        <Text style={styles.policySectionHeading}>3. 100% On-Device Document Processing</Text>
                         <Text style={styles.policyBodyText}>
-                          When parsing syllabus documents with multimodal AI, page visuals are sent solely to secure endpoint APIs for direct document structure parsing and are never retained to train public commercial AI models.
+                          When importing syllabus documents, text extraction and schedule parsing run entirely locally on your device without transmitting your course materials or personal data to external servers.
                         </Text>
                       </View>
 
@@ -295,9 +295,9 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
                       </View>
 
                       <View style={styles.policySectionCard}>
-                        <Text style={styles.policySectionHeading}>2. AI & OCR Verification Notice</Text>
+                        <Text style={styles.policySectionHeading}>2. Automated Parsing Verification Notice</Text>
                         <Text style={styles.policyBodyText}>
-                          Computer vision and Large Language Models interpret complex multi-column documents. While highly accurate, users must inspect extracted assignments, due dates, and readings to ensure complete alignment with official course schedules.
+                          Automated document parsing interprets complex multi-column documents. While highly accurate, users must inspect extracted assignments, due dates, and readings to ensure complete alignment with official course schedules.
                         </Text>
                       </View>
 

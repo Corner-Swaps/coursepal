@@ -19,12 +19,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Course, Assignment, Reading } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
-import { SparklesIcon, ChevronRightIcon } from '../SvgIcons';
+import { ChevronRightIcon } from '../SvgIcons';
 import {
   formatDisplayTitleWithChapter,
   formatAuthorAndPagesSubtitle,
   isItemForCourse
 } from '../../utils/readingDisplayHelper';
+import { resolveFullAuthorName } from '../../utils/authorResolver';
 
 export interface CourseDetailModalProps {
   visible: boolean;
@@ -57,6 +58,7 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
   const [courseCode, setCourseCode] = useState<string>(course.courseCode || '');
   const [instructorName, setInstructorName] = useState<string>(course.instructorName || '');
   const [instructorEmail, setInstructorEmail] = useState<string>(course.instructorEmail || '');
+  const [officeHours, setOfficeHours] = useState<string>(course.officeHours || '');
 
   useEffect(() => {
     if (course) {
@@ -64,6 +66,7 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
       setCourseCode(course.courseCode || '');
       setInstructorName(course.instructorName || '');
       setInstructorEmail(course.instructorEmail || '');
+      setOfficeHours(course.officeHours || '');
     }
   }, [course]);
 
@@ -86,13 +89,15 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
     const cleanCode = courseCode.trim();
     const cleanInstructor = instructorName.trim();
     const cleanEmail = instructorEmail.trim();
+    const cleanOffice = officeHours.trim();
 
     const updated: Course = {
       ...course,
       courseName: cleanName.length > 0 ? cleanName : course.courseName,
       courseCode: cleanCode.length > 0 ? cleanCode : course.courseCode,
       instructorName: cleanInstructor.length > 0 ? cleanInstructor : undefined,
-      instructorEmail: cleanEmail.length > 0 ? cleanEmail : undefined
+      instructorEmail: cleanEmail.length > 0 ? cleanEmail : undefined,
+      officeHours: cleanOffice.length > 0 ? cleanOffice : undefined
     };
 
     onSave(updated);
@@ -142,25 +147,6 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
             bounces={true}
             overScrollMode="never"
           >
-            {/* MARK: - 0. Ask Course AI Assistant Card */}
-            <View style={styles.aiCard}>
-              <View style={[styles.aiIconCircle, { backgroundColor: `${courseColor}18` }]}>
-                <SparklesIcon size={20} color={courseColor} />
-              </View>
-
-              <View style={styles.aiTextCol}>
-                <View style={styles.aiTitleRow}>
-                  <Text style={styles.aiTitleText}>Ask Course AI</Text>
-                  <View style={[styles.aiBadgePill, { backgroundColor: `${courseColor}18` }]}>
-                    <Text style={[styles.aiBadgeText, { color: courseColor }]}>AI</Text>
-                  </View>
-                </View>
-                <Text style={styles.aiSubtitleText}>Instant answers for policies, rubrics & schedule</Text>
-              </View>
-
-              <ChevronRightIcon size={14} color="#8E9BAE" />
-            </View>
-
             {/* MARK: - 1. Course Header Section */}
             <Text style={styles.sectionHeaderTitle}>Course Header</Text>
             <View style={styles.sectionCard}>
@@ -216,6 +202,19 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
                   placeholderTextColor="#8E9BAE"
                   keyboardType="email-address"
                   autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.fieldBlock}>
+                <Text style={styles.fieldLabel}>SCHEDULE / OFFICE HOURS</Text>
+                <TextInput
+                  style={[styles.textInput, { color: CoursePalTheme.accentBlue }]}
+                  value={officeHours}
+                  onChangeText={setOfficeHours}
+                  placeholder="Schedule / Office Hours (e.g. Tuesdays 2–4 PM)"
+                  placeholderTextColor="#8E9BAE"
                 />
               </View>
             </View>
@@ -280,9 +279,21 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
                     activeOpacity={0.7}
                   >
                     <Text style={styles.itemRowTitle}>{dispTitle}</Text>
-                    {dispSub.length > 0 && (
-                      <Text style={styles.itemRowSubtitle}>{dispSub}</Text>
-                    )}
+                    {(() => {
+                      let cleanSub = (dispSub || '').replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
+                      const rawAuth = reading.authorName?.trim() ||
+                        (course.textbooks?.length === 1 ? course.textbooks[0].authorName : undefined);
+                      const resolvedAuthor = resolveFullAuthorName(rawAuth) || rawAuth;
+                      if (!cleanSub && resolvedAuthor && !dispTitle.toLowerCase().includes(resolvedAuthor.toLowerCase())) {
+                        cleanSub = resolvedAuthor;
+                      } else if (!cleanSub && reading.resourceTitle && !dispTitle.toLowerCase().includes(reading.resourceTitle.toLowerCase())) {
+                        cleanSub = reading.resourceTitle;
+                      } else if (!cleanSub && resolvedAuthor) {
+                        cleanSub = `By ${resolvedAuthor}`;
+                      }
+                      if (!cleanSub) return null;
+                      return <Text style={styles.itemRowSubtitle}>{cleanSub}</Text>;
+                    })()}
                     {reading.dueDate && (
                       <Text style={styles.itemRowDate}>
                         Due {new Date(reading.dueDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -300,6 +311,42 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
                 <Text style={styles.actionPillText}>+ Add Reading</Text>
               </TouchableOpacity>
             </View>
+
+            {/* MARK: - 5. Course Textbooks & Authors Section */}
+            {(() => {
+              const cleanTextbooks = (course.textbooks || [])
+                .map(tb => {
+                  if (/^\(?\s*ch(?:apter)?s?\.?\s*[\d\s&,\-–—]+\s*\)?$/i.test(tb.title.trim())) {
+                    if (tb.authorName) {
+                      return { ...tb, title: `Core Literature: ${tb.authorName}` };
+                    }
+                    return null;
+                  }
+                  return tb;
+                })
+                .filter((tb): tb is NonNullable<typeof tb> => tb !== null);
+
+              if (cleanTextbooks.length === 0) return null;
+
+              return (
+                <>
+                  <Text style={styles.sectionHeaderTitle}>Required Textbooks & Authors</Text>
+                  <View style={styles.sectionCard}>
+                    {cleanTextbooks.map((tb, idx) => (
+                      <View key={`modal-tb-${idx}`} style={styles.textbookRow}>
+                        <Text style={styles.itemRowTitle}>{tb.title}</Text>
+                        {tb.authorName ? (
+                          <Text style={styles.itemRowSubtitle}>Author: {resolveFullAuthorName(tb.authorName) || tb.authorName}</Text>
+                        ) : null}
+                        {tb.edition ? (
+                          <Text style={styles.textbookEditionSubtitle}>Edition: {tb.edition}</Text>
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
+                </>
+              );
+            })()}
           </ScrollView>
         </SafeAreaView>
       </TouchableWithoutFeedback>
@@ -490,13 +537,27 @@ const styles = StyleSheet.create({
   },
   actionPillButton: {
     padding: 12,
-    backgroundColor: '#F0F4FC',
+    backgroundColor: CoursePalTheme.accentBlue,
     borderRadius: 12,
     alignItems: 'center'
   },
   actionPillText: {
     fontSize: 14,
     fontWeight: '700',
-    color: CoursePalTheme.accentBlue
+    color: '#FFFFFF'
+  },
+  textbookRow: {
+    padding: 14,
+    backgroundColor: '#F8FAFD',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+    gap: 4,
+    marginBottom: 8
+  },
+  textbookEditionSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#8E9BAE'
   }
 });

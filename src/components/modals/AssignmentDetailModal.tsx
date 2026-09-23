@@ -92,26 +92,16 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   const resolveAssignmentPoints = (assign: Assignment): string => {
     if (assign.pointsPossible && assign.pointsPossible.trim()) {
       const ptsTrim = assign.pointsPossible.trim();
-      // Guard against default 100 points if weightPercentage is present
-      if (/^\s*100\s*(?:pts?|points)?\s*$/i.test(ptsTrim) && assign.weightPercentage) {
-        return '';
-      }
-      // Guard against points fabricated from weightPercentage (e.g. 20% -> 20 Points)
-      if (assign.weightPercentage) {
-        const wtNum = assign.weightPercentage.replace(/[^0-9]/g, '');
-        const ptNum = ptsTrim.replace(/[^0-9]/g, '');
-        if (wtNum && ptNum && wtNum === ptNum) {
-          const combined = `${assign.title} ${assign.fullInstructions || ''} ${assign.noteText || ''}`.toLowerCase();
-          const hasRealPointsMention = /\b\d{1,4}\s*(?:points|pts|pt)\b/i.test(combined);
-          const hasRubricPoints = (assign.rubricCriteria || []).some(r => r.points && r.points > 0);
-          if (!hasRealPointsMention && !hasRubricPoints) {
-            return '';
-          }
-        }
-      }
+      const numM = ptsTrim.match(/\b\d{1,4}\b/);
+      if (numM) return `${numM[0]} Points`;
       return ptsTrim;
     }
-    const match = (assign.title + ' ' + (assign.fullInstructions || '')).match(/(\d{1,4})\s*(?:points|pts)\b/i);
+    if (assign.rubricCriteria && assign.rubricCriteria.length > 0) {
+      const sumPts = assign.rubricCriteria.reduce((sum, c) => sum + (Number(c.points) || 0), 0);
+      if (sumPts > 0) return `${sumPts} Points`;
+    }
+    const combined = `${assign.title || ''} ${assign.fullInstructions || ''} ${assign.noteText || ''}`;
+    const match = combined.match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
     if (match) return `${match[1]} Points`;
     return '';
   };
@@ -120,9 +110,10 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   const resolveAssignmentWeight = (assign: Assignment): number | null => {
     if (assign.weightPercentage) {
       const num = parseInt(assign.weightPercentage.replace(/[^0-9]/g, ''), 10);
-      if (!isNaN(num)) return num;
+      if (!isNaN(num) && num > 0 && num <= 100) return num;
     }
-    const match = (assign.title + ' ' + (assign.fullInstructions || '')).match(/(?:worth\s+|weight:\s*)?(\d{1,2}(?:\.\d+)?)\s*%/i);
+    const combined = `${assign.title || ''} ${assign.fullInstructions || ''} ${assign.noteText || ''}`;
+    const match = combined.match(/\b(?:worth\s+|weight:\s*)?(\d{1,2}(?:\.\d+)?)\s*%/i) || combined.match(/\b(\d{1,2})\s*percent\b/i);
     if (match) {
       const num = parseInt(match[1], 10);
       if (!isNaN(num) && num > 0 && num <= 100) return num;
@@ -338,10 +329,6 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
       let hasUpdates = false;
       if (!assignment.pointsPossible && resolvedPts) {
         updatesToSync.pointsPossible = resolvedPts;
-        hasUpdates = true;
-      }
-      if (assignment.pointsPossible && !resolvedPts) {
-        updatesToSync.pointsPossible = null;
         hasUpdates = true;
       }
       if (!assignment.weightPercentage && resolvedWt !== null) {
@@ -698,10 +685,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
               {/* Due Date Row (Always Visible) */}
               <View style={styles.formRow}>
                 <Text style={styles.rowLabel}>Due Date</Text>
-                <View style={styles.selectedDateBanner}>
-                  <CalendarIcon size={14} color="#2470F5" />
-                  <Text style={styles.selectedDateBannerText}>{formattedDueDateStr}</Text>
-                </View>
+                <Text style={styles.dueDateSimpleText}>{formattedDueDateStr}</Text>
               </View>
 
               <View style={styles.rowDivider} />
@@ -723,17 +707,37 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
               {instructionParagraphs.length > 0 ? (
                 instructionParagraphs.map((para, idx) => {
                   const trimmed = para.trim();
-                  const isHeader =
-                    /^(?:overview|background|description|directions|instructions|requirements|guidelines|format|formatting|submission|evaluation|evaluation\s+criteria|grading\s+criteria|framing\s+questions?|prompt|objectives|purpose|notes?|part\s+\d+|step\s+\d+|phase\s+\d+)[:\-–—]?$/i.test(trimmed) ||
-                    /^(?:overview|directions|instructions|requirements|guidelines|format|submission|evaluation|framing\s+questions?|objectives|part\s+\d+|step\s+\d+)[:\-–—]\s*/i.test(trimmed);
+                  // Check if paragraph starts with a section label like "• Deadlines & Scheduling:" or "Purpose:"
+                  const inlineLabelMatch = trimmed.match(/^([•▪●]?\s*[A-Za-z0-9\s&/–—-]{2,45}[:\-–—])\s*([\s\S]+)$/);
+                  const isStandaloneHeader =
+                    /^(?:overview|background|description|directions|instructions|requirements|guidelines|format|formatting|submission|evaluation|evaluation\s+criteria|grading\s+criteria|framing\s+questions?|prompt|objectives|purpose|notes?|part\s+\d+|step\s+\d+|phase\s+\d+)[:\-–—]?$/i.test(trimmed);
                   const isBullet = /^[•\-*▪●]|\b\d+[\.)]\s+/.test(trimmed);
+
+                  if (inlineLabelMatch && !isStandaloneHeader) {
+                    const labelPart = inlineLabelMatch[1];
+                    const contentPart = inlineLabelMatch[2];
+                    return (
+                      <Text
+                        key={`instruction-para-${idx}`}
+                        style={[
+                          styles.instructionParagraph,
+                          isBullet && styles.instructionBulletParagraph,
+                          idx === instructionParagraphs.length - 1 && styles.instructionParagraphLast
+                        ]}
+                        selectable={true}
+                      >
+                        <Text style={styles.instructionInlineHeader}>{labelPart} </Text>
+                        {contentPart}
+                      </Text>
+                    );
+                  }
 
                   return (
                     <Text
                       key={`instruction-para-${idx}`}
                       style={[
                         styles.instructionParagraph,
-                        isHeader && styles.instructionHeaderParagraph,
+                        isStandaloneHeader && styles.instructionHeaderParagraph,
                         isBullet && styles.instructionBulletParagraph,
                         idx === instructionParagraphs.length - 1 && styles.instructionParagraphLast
                       ]}
@@ -770,7 +774,11 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                 <Text style={styles.rowLabel}>Assignment Points</Text>
                 <View style={styles.weightBadge}>
                   <Text style={styles.weightBadgeText}>
-                    {pointsPossibleText ? `${pointsPossibleText} pts` : (totalRubricPoints > 0 ? `${totalRubricPoints} pts` : '—')}
+                    {pointsPossibleText
+                      ? (pointsPossibleText.toLowerCase().includes('point') || pointsPossibleText.toLowerCase().includes('pt')
+                          ? pointsPossibleText.replace(/Points/i, 'pts').replace(/Pts/i, 'pts')
+                          : `${pointsPossibleText} pts`)
+                      : (totalRubricPoints > 0 ? `${totalRubricPoints} pts` : 'N/A')}
                   </Text>
                 </View>
               </View>
@@ -858,7 +866,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                     <Text style={[styles.openLinkActionText, isYouTube && styles.youtubeActionText]}>
                       {isYouTube ? 'Watch Video' : 'Open'}
                     </Text>
-                    <ArrowUpRightIcon size={12} color={isYouTube ? '#FFFFFF' : '#2470F5'} />
+                    <ArrowUpRightIcon size={12} color="#FFFFFF" />
                   </View>
                 </TouchableOpacity>
               ) : (
@@ -1313,20 +1321,13 @@ const styles = StyleSheet.create({
     color: '#141F38',
     paddingVertical: 4
   },
-  selectedDateBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8
-  },
-  selectedDateBannerText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#2470F5',
-    includeFontPadding: false
+  dueDateSimpleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+    textAlign: 'right',
+    flexShrink: 1,
+    marginLeft: 12
   },
   multilineInstructionsInput: {
     fontSize: 14.5,
@@ -1342,6 +1343,10 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     lineHeight: 24,
     marginBottom: 16
+  },
+  instructionInlineHeader: {
+    fontWeight: '700',
+    color: '#0F172A'
   },
   instructionHeaderParagraph: {
     fontSize: 15.5,
@@ -1584,7 +1589,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#2470F5',
     padding: 8,
     borderRadius: 8,
     marginTop: 6
@@ -1592,7 +1597,7 @@ const styles = StyleSheet.create({
   openLinkPillText: {
     fontSize: 12.5,
     fontWeight: '600',
-    color: '#2470F5'
+    color: '#FFFFFF'
   },
   noteItemCard: {
     flexDirection: 'row',
@@ -1643,9 +1648,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    backgroundColor: '#2470F5',
     borderRadius: 18,
     paddingVertical: 9,
     paddingHorizontal: 16,
@@ -1655,7 +1658,7 @@ const styles = StyleSheet.create({
   addNotePillBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2470F5'
+    color: '#FFFFFF'
   },
   emptyRubricContainer: {
     paddingVertical: 14,
@@ -1799,26 +1802,23 @@ const styles = StyleSheet.create({
     gap: 8
   },
   resourceTypeBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#2470F5',
     paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#BFDBFE'
+    borderRadius: 6
   },
   youtubeTypeBadge: {
-    backgroundColor: '#FFE4E6',
-    borderColor: '#FDA4AF'
+    backgroundColor: '#E11D48'
   },
   resourceTypeBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2470F5'
+    color: '#FFFFFF'
   },
   youtubeTypeBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#E11D48'
+    color: '#FFFFFF'
   },
   resourceCardUrlText: {
     flex: 1,
@@ -1830,7 +1830,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#2470F5',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8
@@ -1841,7 +1841,7 @@ const styles = StyleSheet.create({
   openLinkActionText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2470F5'
+    color: '#FFFFFF'
   },
   youtubeActionText: {
     fontSize: 12,

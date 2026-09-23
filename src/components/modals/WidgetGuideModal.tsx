@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#EEF2F6',
+    backgroundColor: '#2470F5',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   stepBadgeText: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#2470F5'
+    color: '#FFFFFF'
   },
   stepContent: {
     flex: 1

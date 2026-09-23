@@ -1,4 +1,3 @@
-export * from './APIService';
 export * from './AudioEngineService';
 export * from './CourseSharingService';
 export * from './DataPersistenceBackupManager';

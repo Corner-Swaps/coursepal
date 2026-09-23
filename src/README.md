@@ -38,13 +38,13 @@ src/
 │   └── CoursePalContext.tsx # Centralized state container (active tab, courses, confetti, timer)
 │
 ├── services/                # Device & Intelligence Services
-│   ├── APIService.ts        # Gemini AI syllabus extraction & remote API client
 │   ├── AudioEngineService.ts # Background audio playback, loopable ambient tracks & speech
 │   ├── CourseSharingService.ts # URL-safe Base64 serialization & course data codecs
 │   ├── DataPersistenceBackupManager.ts # Encrypted JSON state snapshots & migration
 │   ├── FacultyExtractor.ts  # Academic faculty name, email, and contact parsing
 │   ├── HapticsService.ts    # Throttled 60Hz CoreHaptics impact and notification engine
-│   └── LocalSyllabusParser.ts # Offline regex & heuristic document extraction engine
+│   ├── LocalSyllabusParser.ts # 100% on-device deterministic multi-pass syllabus parser
+│   └── SyllabusImportManager.ts # Document ingestion, deduplication & normalization orchestrator
 │
 ├── hooks/                   # Custom React Hooks
 │   ├── useAudio.ts          # Audio playback lifecycle & volume fading

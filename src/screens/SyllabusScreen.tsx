@@ -12,8 +12,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { useCoursePal } from '../context/CoursePalContext';
 import { CoursePalTheme } from '../constants/theme';
@@ -27,7 +27,9 @@ import {
   ChevronUpIcon,
   EyeFillIcon,
   DocBadgePlusIcon,
-  FolderBadgePlusIcon
+  FolderBadgePlusIcon,
+  CalendarIcon,
+  CheckmarkIcon
 } from '../components/SvgIcons';
 import { Course, VaultDocument, Assignment, Reading } from '../types/models';
 import {
@@ -45,15 +47,19 @@ import {
   parseSafeDate,
   getReadingChapterSortKey,
   isInvalidAssignmentTitle,
+  isGenericPlaceholderReadingTitle,
+  isDeliverableNotReading,
   cleanUploadStatusMessage,
-  isItemForCourse
+  isItemForCourse,
+  getAssignmentInstructionSummary
 } from '../utils/readingDisplayHelper';
+import { resolveFullAuthorName } from '../utils/authorResolver';
 import { CalendarExportService } from '../services/CalendarExportService';
 import { ensureBundledPdfFile } from '../utils/bundledPdfService';
 
 interface SyllabusScreenProps {
   onOpenAddTaskModal: (courseId?: string, category?: 'assignment' | 'reading') => void;
-  onOpenAddCourseModal: () => void;
+  onOpenAddCourseModal?: () => void;
 }
 
 export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
@@ -164,6 +170,11 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
       dispTitle,
       courseName
     );
+    const rawAuth = reading.authorName?.trim() || '';
+    const resolvedAuth = resolveFullAuthorName(rawAuth) || rawAuth;
+    const finalAuthorSub = dispSub.length > 0
+      ? dispSub
+      : resolvedAuth;
     return (
       <TouchableOpacity
         key={reading.id}
@@ -172,7 +183,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         activeOpacity={0.7}
       >
         <Text style={styles.itemTitleText}>{dispTitle}</Text>
-        {dispSub.length > 0 && <Text style={styles.itemAuthorText}>{dispSub}</Text>}
+        {finalAuthorSub.length > 0 && <Text style={styles.itemAuthorText}>{finalAuthorSub}</Text>}
         {reading.dueDate && (() => {
           const d = parseSafeDate(reading.dueDate);
           if (!d) return null;
@@ -259,43 +270,32 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         {selectedCategory === 'syllabi' ? (
           /* Courses List */
           <View style={styles.listContainer}>
-            {/* Blue Loading Bar Pill Above Top Course */}
+            {/* MARK: - In-Page Upload Status Pill placed above No Courses Found */}
             {isUploading && (
               <View style={styles.uploadStatusBanner}>
-                <View style={styles.uploadStatusTop}>
-                  <ActivityIndicator size="small" color={CoursePalTheme.accentBlue} />
+                <View style={styles.uploadStatusHeaderRow}>
+                  {uploadStatusText.toLowerCase().includes('success') ? (
+                    <CheckmarkIcon size={16} color="#FFFFFF" strokeWidth={2.6} />
+                  ) : (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  )}
                   <Text style={styles.uploadStatusTitle} numberOfLines={1}>
                     {cleanUploadStatusMessage(uploadStatusText)}
                   </Text>
-                  <Text style={styles.uploadStatusPercent}>
-                    {Math.round(Math.min(100, Math.max(1, (uploadProgress ?? 0.01) * 100)))}%
-                  </Text>
                 </View>
-
-                {/* Horizontal Blue Loading Bar Track & Fill */}
-                <View style={styles.uploadProgressBarTrack}>
-                  <View
-                    style={[
-                      styles.uploadProgressBarFill,
-                      {
-                        width: `${Math.round(Math.min(100, Math.max(1, (uploadProgress ?? 0.01) * 100)))}%`
-                      }
-                    ]}
-                  />
-                </View>
-
-                {/* Whole Message */}
                 <Text style={styles.uploadStatusEducational}>
-                  Deep analysis takes 1–2 minutes to extract all readings and assignments accurately. You can freely browse other sections or exit the app — processing will continue in the background.
+                  {uploadStatusText.toLowerCase().includes('success')
+                    ? 'Your course schedule, readings, and assignments are ready.'
+                    : 'Deep analysis takes 1 to 2 minutes to extract all readings and assignments accurately. You can freely browse other sections or exit the app. Processing will continue in the background.'}
                 </Text>
               </View>
             )}
 
-            {activeCourses.length === 0 ? (
+            {activeCourses.length === 0 && !isUploading ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>No Courses Found</Text>
                 <Text style={styles.emptyDesc}>
-                  Upload a syllabus document or create a course to get started.
+                  Add your courses to keep track of readings and assignments.
                 </Text>
               </View>
             ) : (
@@ -303,7 +303,12 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 const isExpanded = expandedCourseIds.has(course.id);
                 const cleanCourseCode = (course.courseCode || course.courseName || '').replace(/\s+/g, '').toLowerCase();
                 const courseReadings = readings.filter(
-                  r => !r.isDeleted && isItemForCourse(r, course)
+                  r =>
+                    !r.isDeleted &&
+                    isItemForCourse(r, course) &&
+                    !isGenericPlaceholderReadingTitle(r.title) &&
+                    !isDeliverableNotReading(r.title, { moduleNumber: r.moduleNumber, chapterText: r.chapterText }) &&
+                    !/^(?:total\s+)?(?:course\s+|grade\s+|assignment\s+)?points?\b/i.test(r.title || '')
                 );
 
                 const courseAssignments = assignments
@@ -427,113 +432,155 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                 {course.instructorEmail || 'Not specified'}
                               </Text>
                             </View>
-                          </TouchableOpacity>
-
-                          {/* View Original Syllabus PDF Action */}
-                          <TouchableOpacity
-                            style={[
-                              styles.viewPdfActionRow,
-                              { borderColor: (course.hexColor || CoursePalTheme.accentBlue) + '40' }
-                            ]}
-                            activeOpacity={0.7}
-                            onPress={async () => {
-                              const matchedDoc = vaultDocs.find(d =>
-                                (d.courseCode && course.courseCode && d.courseCode.toUpperCase() === course.courseCode.toUpperCase()) ||
-                                (d as any).courseId === course.id ||
-                                d.id === `vd-${course.id}-syllabus`
-                              );
-                              if (matchedDoc) {
-                                setPreviewDoc(matchedDoc);
-                              } else {
-                                const pdfUri = await ensureBundledPdfFile(course.courseCode || course.courseName);
-                                setPreviewDoc({
-                                  id: `vd-${course.id}-syllabus`,
-                                  title: `${course.courseCode || course.courseName} Syllabus`,
-                                  category: 'Syllabi',
-                                  fileSize: '410 KB',
-                                  fileType: 'PDF',
-                                  courseCode: course.courseCode,
-                                  fileContent: course.courseDescription,
-                                  docColorHex: course.hexColor,
-                                  rawFileDataUri: pdfUri,
-                                  pageImages: null,
-                                  uploadedAt: new Date()
-                                });
-                              }
-                            }}
-                          >
-                            <View
-                              style={[
-                                styles.viewPdfIconBox,
-                                { backgroundColor: (course.hexColor || CoursePalTheme.accentBlue) + '18' }
-                              ]}
-                            >
-                              <DocFillIcon size={17} color={course.hexColor || CoursePalTheme.accentBlue} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.viewPdfText, { color: course.hexColor || CoursePalTheme.accentBlue }]}>
-                                View Original Syllabus PDF
-                              </Text>
-                              <Text style={styles.viewPdfSubtext}>
-                                High-res document viewer & Apple Quick Look
-                              </Text>
-                            </View>
-                            <ChevronRightIcon size={14} color={course.hexColor || CoursePalTheme.accentBlue} />
+                            {course.officeHours ? (
+                              <View style={styles.detailRow}>
+                                <Text style={styles.detailKey}>Schedule / Office Hours:</Text>
+                                <Text style={styles.detailVal} numberOfLines={2}>
+                                  {course.officeHours}
+                                </Text>
+                              </View>
+                            ) : null}
                           </TouchableOpacity>
                         </View>
 
+                        {/* Required Textbooks & Key Authors */}
+                        {course.textbooks && course.textbooks.length > 0 && (
+                          <View style={styles.sectionContainer}>
+                            <Text style={styles.sectionTitle}>Required Textbooks & Authors</Text>
+                            <View style={styles.textbooksContainer}>
+                              {course.textbooks.map((tb, tbIdx) => (
+                                <View key={`tb-${course.id}-${tbIdx}`} style={styles.textbookItemCard}>
+                                  <Text style={styles.textbookTitleText}>{tb.title}</Text>
+                                  {tb.authorName ? (
+                                    <Text style={styles.textbookAuthorText}>Author: {resolveFullAuthorName(tb.authorName) || tb.authorName}</Text>
+                                  ) : null}
+                                  {tb.edition ? (
+                                    <Text style={styles.textbookEditionText}>Edition: {tb.edition}</Text>
+                                  ) : null}
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        )}
 
                         {/* Assignments Section */}
                         <View style={styles.sectionContainer}>
-                          <Text style={styles.sectionTitle}>Assignments</Text>
+                          <Text style={styles.sectionTitle}>
+                            {courseAssignments.some(a => a.assignmentNumber != null)
+                              ? `Assignments (1 to ${courseAssignments.length})`
+                              : 'Assignments'}
+                          </Text>
                           <View style={styles.itemsListContainer}>
-                            {courseAssignments.map(assign => {
+                            {courseAssignments.map((assign, index) => {
                               let resolvedWeight = assign.weightPercentage;
                               if (!resolvedWeight) {
-                                const wm = (assign.title + ' ' + (assign.fullInstructions || '')).match(/(?:worth\s+|weight:\s*)?(\d{1,2}(?:\.\d+)?)\s*%/i);
+                                const textToScan = `${assign.title || ''} ${assign.fullInstructions || ''} ${assign.noteText || ''} ${assign.relevantTopics || ''}`;
+                                const wm = textToScan.match(/\b(?:worth\s+|weight:\s*)?(\d{1,2}(?:\.\d+)?)\s*%/i) || textToScan.match(/\b(\d{1,2})\s*percent\b/i);
                                 if (wm) resolvedWeight = `${wm[1]}%`;
-                                else if (assign.pointsPossible) resolvedWeight = assign.pointsPossible;
                               } else if (!resolvedWeight.endsWith('%')) {
                                 resolvedWeight = `${resolvedWeight}%`;
                               }
 
+                              let cleanPts = assign.pointsPossible
+                                ? assign.pointsPossible.replace(/Points/i, 'pts').trim()
+                                : null;
+
+                              // Harmonize points: if missing, calculate from rubric criteria or notes
+                              if (!cleanPts && assign.rubricCriteria && assign.rubricCriteria.length > 0) {
+                                const sumPts = assign.rubricCriteria.reduce((sum, c) => sum + (Number(c.points) || 0), 0);
+                                if (sumPts > 0) {
+                                  cleanPts = `${sumPts} pts`;
+                                }
+                              }
+                              if (!cleanPts) {
+                                const textToScan = `${assign.title || ''} ${assign.fullInstructions || ''} ${assign.noteText || ''}`;
+                                const pm = textToScan.match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
+                                if (pm) {
+                                  cleanPts = `${pm[1]} pts`;
+                                }
+                              }
+
+                              const assignNum = assign.assignmentNumber || (index + 1);
+                              const assignNumLabel = assign.assignmentNumberLabel || `Assignment ${assignNum}`;
+
                               const cleanTitle = (assign.title || '')
                                 .replace(/\b(?:modules?|mod|weeks?|wk)\s*\d{1,2}(?:\s*[-–—]\s*\d{1,2})?\b/gi, '')
                                 .replace(/^(?:module|week|mod|wk)\s*\d+[\s:\-–—]+/i, '')
-                                .replace(/^\d+[\.)]\s*/, '')
+                                .replace(/^(?:assignment\s*)?\d+[\s:\-–—.]+/i, '')
+                                .replace(/\s*\(\s*(?:assignment\s*)?\d+\s*\)/gi, '')
+                                .replace(/-\s*(?:Group Presentation|Individual Paper|Instructor Determined Assignment)\b/i, '')
                                 .replace(/\s*\(\s*\d{1,3}%\s*\)$/, '')
                                 .replace(/\s*[-–—]\s*(?:due|worth|weight).*$/i, '')
                                 .replace(/^[•\-*▪●:–— \t\n]+|[•\-*▪●:–— \t\n]+$/g, '')
                                 .trim() || 'Assignment';
 
+                              const instructionDesc = getAssignmentInstructionSummary(assign, course);
+
                               return (
-                                <TouchableOpacity
-                                  key={assign.id}
-                                  style={styles.assignmentSyllabusRow}
-                                  onPress={() => setSelectedAssignmentForDetail(assign)}
-                                  activeOpacity={0.7}
-                                >
-                                  <Text style={styles.assignmentSyllabusTitle} numberOfLines={2}>
-                                    {cleanTitle}
-                                  </Text>
-                                  {resolvedWeight ? (
-                                    <View
-                                      style={[
-                                        styles.assignmentSyllabusWeightPill,
-                                        { backgroundColor: (course.hexColor || CoursePalTheme.accentBlue) + '18' }
-                                      ]}
-                                    >
-                                      <Text
-                                        style={[
-                                          styles.assignmentSyllabusWeightText,
-                                          { color: course.hexColor || CoursePalTheme.accentBlue }
-                                        ]}
-                                      >
-                                        {resolvedWeight}
+                                <View key={assign.id} style={styles.assignmentSectionBox}>
+                                  {/* Section Header: Gray Pill "Assignment X" on left, Weight/Points on right */}
+                                  <View style={styles.assignmentSectionHeader}>
+                                    <View style={styles.weekTagPill}>
+                                      <Text style={styles.weekTagText}>{assignNumLabel}</Text>
+                                    </View>
+
+                                    <View style={styles.assignmentPillsRow}>
+                                      {resolvedWeight ? (
+                                        <View style={styles.assignmentSyllabusWeightPill}>
+                                          <Text style={styles.assignmentSyllabusWeightText}>
+                                            {resolvedWeight}
+                                          </Text>
+                                        </View>
+                                      ) : null}
+                                      {cleanPts ? (
+                                        <View style={styles.assignmentSyllabusPointsPill}>
+                                          <Text style={styles.assignmentSyllabusPointsText}>
+                                            {cleanPts}
+                                          </Text>
+                                        </View>
+                                      ) : null}
+                                    </View>
+                                  </View>
+
+                                  {/* Underneath the Gray Pill: Instructions / Description */}
+                                  {instructionDesc ? (
+                                    <View style={styles.assignmentThemeHeaderRow}>
+                                      <Text style={styles.assignmentThemeHeaderText} numberOfLines={2}>
+                                        {instructionDesc}
                                       </Text>
                                     </View>
                                   ) : null}
-                                </TouchableOpacity>
+
+                                  {/* Clickable Assignment Card */}
+                                  <TouchableOpacity
+                                    style={styles.itemPillRow}
+                                    onPress={() => setSelectedAssignmentForDetail(assign)}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Text style={styles.itemTitleText}>{cleanTitle}</Text>
+                                    {(() => {
+                                      let resolvedDate = assign.dueDate ? parseSafeDate(assign.dueDate) : null;
+                                      if (!resolvedDate && assign.noteText) {
+                                        const dm = assign.noteText.match(/deadline[:\s]+([A-Za-z]+ \d{1,2}(?:, \d{4})?)/i);
+                                        if (dm) resolvedDate = parseSafeDate(dm[1]);
+                                      }
+                                      if (!resolvedDate) return null;
+                                      return (
+                                        <View style={styles.assignmentDateRow}>
+                                          <CalendarIcon size={12} color="#596B85" />
+                                          <Text style={styles.itemDueText}>
+                                            Due{' '}
+                                            {resolvedDate.toLocaleDateString('en-US', {
+                                              weekday: 'long',
+                                              month: 'short',
+                                              day: 'numeric'
+                                            })}
+                                          </Text>
+                                        </View>
+                                      );
+                                    })()}
+                                  </TouchableOpacity>
+                                </View>
                               );
                             })}
 
@@ -610,7 +657,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                             </>
                           )}
 
-                          {/* Add Reading Action Pill */}
+                          {/* Add Reading Button */}
                           <TouchableOpacity
                             style={styles.addItemActionPill}
                             onPress={() => onOpenAddTaskModal(course.id, 'reading')}
@@ -630,84 +677,105 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         ) : (
           /* Documents List */
           <View style={styles.listContainer}>
-            {vaultDocs.length === 0 ? (
+            {/* MARK: - In-Page Upload Status Pill in Document Section */}
+            {isUploading && (
+              <View style={styles.uploadStatusBanner}>
+                <View style={styles.uploadStatusHeaderRow}>
+                  {uploadStatusText.toLowerCase().includes('success') ? (
+                    <CheckmarkIcon size={16} color="#FFFFFF" strokeWidth={2.6} />
+                  ) : (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  )}
+                  <Text style={styles.uploadStatusTitle} numberOfLines={1}>
+                    {cleanUploadStatusMessage(uploadStatusText)}
+                  </Text>
+                </View>
+                <Text style={styles.uploadStatusEducational}>
+                  {uploadStatusText.toLowerCase().includes('success')
+                    ? 'Your course document and schedule are ready.'
+                    : 'Deep analysis takes 1 to 2 minutes to extract all readings and assignments accurately. You can freely browse other sections or exit the app. Processing will continue in the background.'}
+                </Text>
+              </View>
+            )}
+
+            {vaultDocs.length === 0 && !isUploading ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>No Documents Found</Text>
                 <Text style={styles.emptyDesc}>
-                  There are no syllabus documents uploaded yet.
+                  Documents from uploaded course syllabi will appear here.
                 </Text>
               </View>
             ) : (
               vaultDocs.map(doc => {
-                const docReadings = readings.filter(r =>
-                  !r.isDeleted && (
-                    (r as any).sourceDocumentId === doc.id ||
-                    (r.sourceDocumentName && (
-                      r.sourceDocumentName.toLowerCase() === doc.title.toLowerCase() ||
-                      doc.title.toLowerCase().includes(r.sourceDocumentName.toLowerCase()) ||
-                      r.sourceDocumentName.toLowerCase().includes(doc.title.toLowerCase())
-                    )) ||
-                    (doc.courseId && r.courseId === doc.courseId)
-                  )
-                );
-                const docAssignments = assignments.filter(a =>
-                  !a.isDeleted && (
-                    (a as any).sourceDocumentId === doc.id ||
-                    (a.sourceDocumentName && (
-                      a.sourceDocumentName.toLowerCase() === doc.title.toLowerCase() ||
-                      doc.title.toLowerCase().includes(a.sourceDocumentName.toLowerCase()) ||
-                      a.sourceDocumentName.toLowerCase().includes(doc.title.toLowerCase())
-                    )) ||
-                    (doc.courseId && a.courseId === doc.courseId)
-                  )
-                );
+                  const docReadings = readings.filter(r =>
+                    !r.isDeleted && (
+                      (r as any).sourceDocumentId === doc.id ||
+                      (r.sourceDocumentName && (
+                        r.sourceDocumentName.toLowerCase() === doc.title.toLowerCase() ||
+                        doc.title.toLowerCase().includes(r.sourceDocumentName.toLowerCase()) ||
+                        r.sourceDocumentName.toLowerCase().includes(doc.title.toLowerCase())
+                      )) ||
+                      (doc.courseId && r.courseId === doc.courseId)
+                    )
+                  );
+                  const docAssignments = assignments.filter(a =>
+                    !a.isDeleted && (
+                      (a as any).sourceDocumentId === doc.id ||
+                      (a.sourceDocumentName && (
+                        a.sourceDocumentName.toLowerCase() === doc.title.toLowerCase() ||
+                        doc.title.toLowerCase().includes(a.sourceDocumentName.toLowerCase()) ||
+                        a.sourceDocumentName.toLowerCase().includes(doc.title.toLowerCase())
+                      )) ||
+                      (doc.courseId && a.courseId === doc.courseId)
+                    )
+                  );
 
-                return (
-                  <View key={doc.id} style={styles.docCard}>
-                    <TouchableOpacity
-                      style={styles.docMainClickable}
-                      onPress={() => setPreviewDoc(doc)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.docIconSquare}>
-                        <DocFillIcon size={18} color="#7C3AED" />
-                      </View>
+                  return (
+                    <View key={doc.id} style={styles.docCard}>
+                      <TouchableOpacity
+                        style={styles.docMainClickable}
+                        onPress={() => setPreviewDoc(doc)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.docIconSquare}>
+                          <DocFillIcon size={18} color="#7C3AED" />
+                        </View>
 
-                      <View style={styles.docInfoCol}>
-                        <Text style={styles.docTitle} numberOfLines={1}>
-                          {formatShortDocumentTitle(doc.title)}
-                        </Text>
-                        <Text style={styles.docSubtitle} numberOfLines={1}>
-                          {doc.courseCode || 'Course Syllabus'}
-                        </Text>
-                        <Text style={styles.docStatsSubtitle} numberOfLines={1}>
-                          {docReadings.length} Readings • {docAssignments.length} Assignments
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
+                        <View style={styles.docInfoCol}>
+                          <Text style={styles.docTitle} numberOfLines={1}>
+                            {formatShortDocumentTitle(doc.title)}
+                          </Text>
+                          <Text style={styles.docSubtitle} numberOfLines={1}>
+                            {doc.courseCode || 'Course Syllabus'}
+                          </Text>
+                          <Text style={styles.docStatsSubtitle} numberOfLines={1}>
+                            {docReadings.length} Readings • {docAssignments.length} Assignments
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
 
-                    {/* Eye Preview Button */}
-                    <TouchableOpacity
-                      style={styles.eyePreviewButton}
-                      onPress={() => setPreviewDoc(doc)}
-                      activeOpacity={0.7}
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    >
-                      <EyeFillIcon size={17} color={CoursePalTheme.accentBlue} />
-                    </TouchableOpacity>
+                      {/* Eye Preview Button */}
+                      <TouchableOpacity
+                        style={styles.eyePreviewButton}
+                        onPress={() => setPreviewDoc(doc)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <EyeFillIcon size={17} color={CoursePalTheme.accentBlue} />
+                      </TouchableOpacity>
 
-                    {/* Delete Button */}
-                    <TouchableOpacity
-                      style={styles.deleteDocButton}
-                      onPress={() => confirmDeleteDoc(doc)}
-                      activeOpacity={0.7}
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    >
-                      <TrashIcon size={15} color="#D94033" />
-                    </TouchableOpacity>
-                  </View>
-                );
-              })
+                      {/* Delete Button */}
+                      <TouchableOpacity
+                        style={styles.deleteDocButton}
+                        onPress={() => confirmDeleteDoc(doc)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <TrashIcon size={15} color="#D94033" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
             )}
           </View>
         )}
@@ -922,45 +990,34 @@ const styles = StyleSheet.create({
     color: '#141F38'
   },
   uploadStatusBanner: {
-    backgroundColor: 'rgba(36, 112, 245, 0.08)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(36, 112, 245, 0.20)',
-    padding: 14,
-    gap: 8
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    width: '100%',
+    marginBottom: 6,
+    gap: 6,
+    shadowColor: CoursePalTheme.accentBlue,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4
   },
-  uploadStatusTop: {
+  uploadStatusHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10
+    gap: 8
   },
   uploadStatusTitle: {
-    flex: 1,
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
-    color: CoursePalTheme.accentBlue
-  },
-  uploadStatusPercent: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: CoursePalTheme.accentBlue
-  },
-  uploadProgressBarTrack: {
-    width: '100%',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(36, 112, 245, 0.16)',
-    overflow: 'hidden'
-  },
-  uploadProgressBarFill: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: CoursePalTheme.accentBlue
+    color: '#FFFFFF',
+    flex: 1
   },
   uploadStatusEducational: {
     fontSize: 12,
     fontWeight: '400',
-    color: '#596B85',
+    color: 'rgba(255, 255, 255, 0.92)',
     lineHeight: 17
   },
   listContainer: {
@@ -1151,8 +1208,57 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#596B85'
   },
+  textbooksContainer: {
+    gap: 8
+  },
+  textbookItemCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E3E8F0',
+    padding: 12,
+    gap: 4
+  },
+  textbookTitleText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+    lineHeight: 19
+  },
+  textbookAuthorText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569'
+  },
+  textbookEditionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B'
+  },
   itemsListContainer: {
     gap: 8
+  },
+  assignmentSectionBox: {
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 4
+  },
+  assignmentSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2
+  },
+  assignmentThemeHeaderRow: {
+    paddingHorizontal: 2,
+    marginTop: 1,
+    marginBottom: 2
+  },
+  assignmentThemeHeaderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+    lineHeight: 18
   },
   assignmentSyllabusRow: {
     flexDirection: 'row',
@@ -1174,14 +1280,111 @@ const styles = StyleSheet.create({
     lineHeight: 20
   },
   assignmentSyllabusWeightPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4.5,
-    borderRadius: 8,
+    backgroundColor: '#738094',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center'
   },
   assignmentSyllabusWeightText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  assignmentNumPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 4
+  },
+  assignmentNumPillText: {
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  assignmentPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  assignmentSyllabusPointsPill: {
+    backgroundColor: '#738094',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  assignmentSyllabusPointsText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10
+  },
+  gradingScaleSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 8
+  },
+  gradingScaleCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1
+  },
+  gradingScaleHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 8
+  },
+  gradingScaleColHeader: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3
+  },
+  gradingScaleDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginBottom: 8
+  },
+  gradingScaleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    borderRadius: 8
+  },
+  gradingScaleRowAlt: {
+    backgroundColor: '#F8FAFC'
+  },
+  gradingScaleCell: {
     fontSize: 13,
+    color: '#1E293B'
+  },
+  standardBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6
+  },
+  standardBadgeText: {
+    fontSize: 11.5,
     fontWeight: '700'
   },
   itemPillRow: {
@@ -1232,6 +1435,12 @@ const styles = StyleSheet.create({
   itemDueText: {
     fontSize: 13,
     color: '#596B85'
+  },
+  assignmentDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 3
   },
   itemPointsWeightText: {
     fontSize: 13,

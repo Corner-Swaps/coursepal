@@ -100,9 +100,10 @@ export default {
           });
         }
 
-        // Include PDF or images if provided
+        // Include PDF or images ONLY if raw text is empty/sparse (e.g. scanned image-only PDF)
+        const hasTextContext = Boolean(rawText && typeof rawText === 'string' && rawText.trim().length >= 50);
         let hasInlineDoc = false;
-        if (base64Pdf && typeof base64Pdf === 'string' && base64Pdf.length < 5000000) {
+        if (!hasTextContext && base64Pdf && typeof base64Pdf === 'string' && base64Pdf.length < 5000000) {
           const isPng = base64Pdf.startsWith('iVBOR');
           const isJpg = base64Pdf.startsWith('/9j/');
           const isPdf = base64Pdf.startsWith('JVBER');
@@ -118,8 +119,8 @@ export default {
           }
         }
 
-        // Include rendered page images if provided (e.g. for docx converted pages or multi-page documents)
-        if (!hasInlineDoc && Array.isArray(base64Images) && base64Images.length > 0) {
+        // Include rendered page images if provided and no text context
+        if (!hasTextContext && !hasInlineDoc && Array.isArray(base64Images) && base64Images.length > 0) {
           for (const b64Img of base64Images.slice(0, 10)) {
             if (!b64Img || b64Img.length < 20) continue;
             const isPng = b64Img.startsWith('iVBOR');
@@ -149,8 +150,10 @@ export default {
 
         const modelsToTry = [
           'gemini-3.5-flash-lite',
-          'gemini-3.6-flash',
           'gemini-3.1-flash-lite',
+          'gemini-3.6-flash',
+          'gemini-3-flash-preview',
+          'gemini-3.5-flash',
         ];
 
         let lastError = '';
@@ -177,7 +180,7 @@ export default {
 
           const err = await response.text();
           lastError = `Gemini (${response.status}): ${err.slice(0, 300)}`;
-          if (response.status === 400 || response.status === 401 || response.status === 403) {
+          if (response.status === 400 || response.status === 401 || response.status === 403 || response.status === 429) {
             break;
           }
         }

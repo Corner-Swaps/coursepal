@@ -11,7 +11,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   ViewStyle,
-  StyleProp
+  StyleProp,
+  Animated
 } from 'react-native';
 import { CoursePalTheme } from '../constants/theme';
 import { Typography } from '../constants/typography';
@@ -22,6 +23,7 @@ import {
   PersonFillIcon,
   PlusIcon
 } from './SvgIcons';
+import { ThreeDotsWave } from './ThreeDotsWave';
 
 export type TabKey = 'readings' | 'assignments' | 'syllabus' | 'invite';
 
@@ -29,6 +31,7 @@ export interface MainTabBarProps {
   selectedTab: TabKey;
   onSelectTab: (tab: TabKey) => void;
   onPressCenterPlus?: () => void;
+  isUploading?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -36,6 +39,7 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
   selectedTab,
   onSelectTab,
   onPressCenterPlus,
+  isUploading = false,
   style
 }) => {
   return (
@@ -137,18 +141,28 @@ export const MainTabBar: React.FC<MainTabBarProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Elevated Central Floating (+) Button */}
-      <TouchableOpacity
+      {/* Elevated Central Floating Button - Blue circle stays visible, shows 3 animated dots when loading */}
+      <View
         style={styles.floatingPlusOuterRing}
-        onPress={onPressCenterPlus}
-        activeOpacity={0.8}
-        hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-        testID="tab-center-plus"
+        pointerEvents={isUploading ? 'none' : 'auto'}
       >
-        <View style={styles.floatingPlusInnerCircle}>
-          <PlusIcon size={23.5} color="#FFFFFF" strokeWidth={2.8} />
-        </View>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.floatingPlusTouchable}
+          onPress={onPressCenterPlus}
+          disabled={isUploading}
+          activeOpacity={isUploading ? 1 : 0.8}
+          hitSlop={isUploading ? undefined : { top: 20, bottom: 20, left: 20, right: 20 }}
+          testID="tab-center-plus"
+        >
+          <View style={styles.floatingPlusInnerCircle}>
+            {isUploading ? (
+              <ThreeDotsWave size={6} color="#FFFFFF" dotSpacing={4} waveHeight={5.5} testID="loading-three-dots" />
+            ) : (
+              <PlusIcon size={23.5} color="#FFFFFF" strokeWidth={2.8} />
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -228,6 +242,12 @@ const styles = StyleSheet.create({
     height: 46,
     borderRadius: 23,
     backgroundColor: CoursePalTheme.accentBlue,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  floatingPlusTouchable: {
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center'
   }

@@ -143,7 +143,7 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
                   • CoursePal is an auxiliary study aid designed to assist personal schedule organization.{'\n'}
                   • The official syllabus provided by your institution, official instructor announcements, emails, and your school's Learning Management System (Canvas, Blackboard, Brightspace, Moodle, D2L) remain the sole, final, and authoritative sources for all deadlines, exam schedules, and grading policies.{'\n'}
                   • You are solely, exclusively, and unconditionally responsible for cross-verifying all dates, times, assignment specifications, and milestone schedules generated or imported by CoursePal against your official syllabus.{'\n'}
-                  • Optical Character Recognition (OCR) and Artificial Intelligence (AI) parsing may occasionally misread, misinterpret, omit, or inaccurately extract text due to document scan quality, formatting anomalies, or instructor revisions. CoursePal makes NO warranty of 100% automated parsing precision or completeness.
+                  • Automated document parsing may occasionally misread, misinterpret, omit, or inaccurately extract text due to document scan quality, formatting anomalies, or instructor revisions. CoursePal makes NO warranty of 100% automated parsing precision or completeness.
                 </Text>
               </View>
 
@@ -233,13 +233,13 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
                 </Text>
               </View>
 
-              {/* Section 2: AI Processing */}
+              {/* Section 2: On-Device Processing */}
               <View style={styles.legalCard}>
-                <Text style={styles.cardHeader}>2. AI PROCESSING & ZERO MODEL TRAINING</Text>
+                <Text style={styles.cardHeader}>2. ON-DEVICE DOCUMENT PROCESSING</Text>
                 <Text style={styles.cardBody}>
                   When you parse a syllabus document:{'\n'}
-                  • Transient Processing: Document contents are transmitted securely via encrypted HTTPS (TLS 1.3) solely for real-time extraction into structured schedule items.{'\n'}
-                  • Zero Model Training: Your private course syllabi, assignments, and schedules are NEVER used to train public or foundation AI models.{'\n'}
+                  • 100% On-Device: Text extraction and schedule analysis run entirely locally on your device without transmitting documents to external servers.{'\n'}
+                  • Absolute Privacy: Your private course syllabi, assignments, and schedules remain solely within your local device storage.{'\n'}
                   • Optional: Automated parsing is optional. You may add and manage all courses and tasks manually offline at any time.
                 </Text>
               </View>

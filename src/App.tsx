@@ -59,7 +59,9 @@ function MainAppView() {
     checkAndResumeInterruptedUpload,
     hasAcceptedTerms,
     hasLoadedTerms,
-    acceptTerms
+    acceptTerms,
+    isUploading,
+    uploadStatusText
   } = useCoursePal();
 
   // Modals state
@@ -71,6 +73,15 @@ function MainAppView() {
   const [showFocusModal, setShowFocusModal] = useState<boolean>(false);
   const [selectedCourseForAddTask, setSelectedCourseForAddTask] = useState<string | undefined>(undefined);
   const [selectedCategoryForAddTask, setSelectedCategoryForAddTask] = useState<'assignment' | 'reading'>('assignment');
+
+  // Automatically dismiss add/upload modals when an upload is in progress
+  useEffect(() => {
+    if (isUploading) {
+      setShowAddChoiceModal(false);
+      setShowUploadModal(false);
+      setShowAddCourseModal(false);
+    }
+  }, [isUploading]);
 
   const insets = useSafeAreaInsets();
   const hasRecordedLaunchRef = useRef<boolean>(false);
@@ -109,10 +120,13 @@ function MainAppView() {
       if (nextState === 'background') {
         lastBackgroundTime = Date.now();
       } else if (nextState === 'active') {
-        // Automatically rescue interrupted background uploads upon returning
-        checkAndResumeInterruptedUpload().catch(err => {
-          console.warn('checkAndResumeInterruptedUpload error on active:', err);
-        });
+        // Automatically rescue interrupted background uploads only if app was truly suspended in background
+        // for at least 10 seconds, preventing brief native sheets (e.g. DocumentPicker) from triggering false collisions
+        if (lastBackgroundTime > 0 && Date.now() - lastBackgroundTime > 10000) {
+          checkAndResumeInterruptedUpload().catch(err => {
+            console.warn('checkAndResumeInterruptedUpload error on active:', err);
+          });
+        }
 
         if (lastBackgroundTime > 0) {
           const timeInBackground = Date.now() - lastBackgroundTime;
@@ -204,7 +218,11 @@ function MainAppView() {
           >
             <SyllabusScreen
               onOpenAddTaskModal={handleOpenAddTask}
-              onOpenAddCourseModal={() => setShowAddCourseModal(true)}
+              onOpenAddCourseModal={() => {
+                if (!isUploading) {
+                  setShowAddCourseModal(true);
+                }
+              }}
             />
           </View>
 
@@ -230,7 +248,12 @@ function MainAppView() {
         <MainTabBar
           selectedTab={selectedTab}
           onSelectTab={tab => setSelectedTab(tab)}
-          onPressCenterPlus={() => setShowAddChoiceModal(true)}
+          onPressCenterPlus={() => {
+            if (!isUploading) {
+              setShowAddChoiceModal(true);
+            }
+          }}
+          isUploading={isUploading}
           style={[
             styles.floatingTabBar,
             { bottom: insets.bottom > 0 ? 25 : 17 }

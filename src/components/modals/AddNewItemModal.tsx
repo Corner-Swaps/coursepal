@@ -49,7 +49,7 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
 
       {/* Action Cards: 1. Create New Course, 2. Add Reading or Assignment */}
       <View style={styles.optionsContainer}>
-        {/* Card 1: Create New Course (First item) */}
+        {/* Card 1: Create New Course */}
         <TouchableOpacity
           style={styles.optionCard}
           onPress={() => {
