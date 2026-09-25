@@ -1775,6 +1775,7 @@ export function healCanonicalSXST3010(
     !existingReadings.some(r => (r.title || '').includes('Studies in the Psychology of Sex')) ||
     !existingReadings.some(r => (r.title || '').includes('Hundred Years')) ||
     existingReadings.some(r => r.moduleNumber && (!r.summaryText || r.summaryText.length < 20)) ||
+    existingReadings.some(r => (r.weekNumber || 0) === 4 && (r.summaryText || '').includes('WEEKLY COURSE READINGS')) ||
     existingReadings.some(r => (r.weekNumber || 0) === 10 && (r.summaryText || '').length > 500);
 
   if (needsHealing) {

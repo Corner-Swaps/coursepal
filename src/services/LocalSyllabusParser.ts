@@ -1305,10 +1305,12 @@ export class LocalSyllabusParser {
         let citation = (rMatch[1] || rMatch[0]).replace(/^Reading\s+\d+[:\-–—]\s*/i, '').replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
         const citationEndIdx = chunk.indexOf(rMatch[0]) + rMatch[0].length;
         let rawSummary = chunk.substring(citationEndIdx).trim();
-        const sectionBreakMatch = rawSummary.search(/\n\s*(?:3\.\s*THEMATIC|MODULE\s+\d+|4\.\s*ASSESSMENT|SXST-\d+:|Page\s+\d+)/i);
+        const sectionBreakMatch = rawSummary.search(/\n\s*(?:\d+\.\s*WEEKLY|\d+\.\s*THEMATIC|MODULE\s+\d+|4\.\s*ASSESSMENT|SXST-\d+:|Page\s+\d+|WEEKLY\s+COURSE)/i);
         if (sectionBreakMatch !== -1) {
           rawSummary = rawSummary.substring(0, sectionBreakMatch);
         }
+        rawSummary = rawSummary.replace(/\b\d+\.\s*WEEKLY\s+COURSE\s+READINGS[\s\S]*$/i, '').trim();
+        rawSummary = rawSummary.replace(/\b(?:SXST-\d+:|Page\s+\d+)[\s\S]*$/i, '').trim();
         const summary = rawSummary
           .replace(/^[\s\.\-]+/, '')
           .replace(/(\b\w+)-\s+(\w+\b)/g, '$1-$2')
@@ -2177,7 +2179,7 @@ export class LocalSyllabusParser {
       instructions: string;
       deliverable: string;
     }>();
-    const detailedRegex = /Module\s+0?(\d+)[:\-–—]\s*([^\n]+?)(?:\s*\n+|\s+)Reading:\s*([^\n]+?)(?:\s*\n+|\s+)Assignment:\s*([^\n]+?)(?=(?:\s*\n+|\s+)Module\s+0?\d+[:\-–—]|$)/gi;
+    const detailedRegex = /Module\s+0?(\d+)[:\-–—]\s*([^\n]+?)(?:\s*\n+|\s+)Reading:\s*([^\n]+?)(?:\s*\n+|\s+)Assignment:\s*([^\n]+?)(?=(?:\s*\n+|\s+)Module\s+0?\d+[:\-–—]|\s*$)/gi;
     let dm: RegExpExecArray | null;
     while ((dm = detailedRegex.exec(clean)) !== null) {
       const num = parseInt(dm[1], 10);
@@ -2223,6 +2225,9 @@ export class LocalSyllabusParser {
           }
           aDeliv = pText.replace(/\b[a-z]/g, c => c.toUpperCase());
         }
+      }
+      if (!aDeliv && aInstructions.trim().length > 0 && aInstructions.trim().length <= 50) {
+        aDeliv = aInstructions.trim();
       }
 
       detailedMap.set(num, {

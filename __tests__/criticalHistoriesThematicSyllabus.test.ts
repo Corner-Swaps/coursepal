@@ -60,6 +60,9 @@ describe('Critical Histories Syllabus Ingestion Verification', () => {
     expect(r4?.title).toContain('A Hundred Years of Transgender History');
     expect(r4?.chapterText).toContain('Chapter 2');
     expect(r4?.pagesText).toBe('pp. 45–90');
+    expect(r4?.summaryText).toContain('street resistance');
+    expect(r4?.summaryText).not.toContain('WEEKLY COURSE READINGS');
+    expect(r4?.summaryText).not.toContain('Page 1');
 
     // Week 5: Audre Lorde
     const w5 = dto.weeks?.find(w => w.weekNumber === 5);

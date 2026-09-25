@@ -1096,6 +1096,9 @@ export function formatAuthorAndPagesSubtitle(
     author = authorOrReading.authorName || '';
     pages = authorOrReading.pagesText || pages;
     resource = authorOrReading.resourceTitle || resource;
+    if (!displayTitle && (authorOrReading as any).title) {
+      displayTitle = (authorOrReading as any).title;
+    }
   } else if (typeof authorOrReading === 'string') {
     author = authorOrReading;
   }
