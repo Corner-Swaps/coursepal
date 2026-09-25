@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
+import { AppState } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import { Course, Week, Reading, Assignment, VaultDocument, MediaType, ImportOutcome, DiagnosticImportRecord, CourseDTO } from '../types/models';
 import { MasterCoursePalette } from '../constants/theme';
@@ -116,11 +117,29 @@ interface CoursePalContextType {
   turnOffAllWeeks: () => void;
   checkAndResumeInterruptedUpload: () => Promise<void>;
   cancelUpload: () => Promise<void>;
+  resetAllData: () => Promise<void>;
 }
 
 const CoursePalContext = createContext<CoursePalContextType | undefined>(undefined);
 
 const initialCourses: Course[] = [];
+
+export const isMockSeed = (id?: string | null): boolean => {
+  if (!id) return false;
+  return (
+    id === 'c-cpc527-static-seed' ||
+    id === 'c-seed-mock' ||
+    id === 'c-cpc527' ||
+    id.startsWith('c-seed-') ||
+    id.startsWith('c-mock-') ||
+    id.startsWith('c-sample-') ||
+    id.endsWith('-active') ||
+    id.endsWith('-canonical') ||
+    id.includes('static-seed') ||
+    /^c-cpc-(523|511|512|514|527)-active$/.test(id) ||
+    /^c-psyc-612-active$/.test(id)
+  );
+};
 
 export function sanitizeReading(r: Reading): Reading {
   let preCleanTitle = (r.title || '')
@@ -429,7 +448,7 @@ export function createDefaultCoursesSeed(): {
         isCompleted: false,
         isDeleted: false,
         courseCode: courseCode,
-        moduleMention: `Week ${resolvedWeek}`,
+        moduleMention: a.moduleMention || undefined,
         weightPercentage: a.weightPercentage || null,
         subTypeRaw: a.subType || 'PAPER',
         mediaUrl: a.mediaUrl || null,
@@ -875,8 +894,8 @@ export function healCanonicalCPC512(
         isFavorite: false,
         weekId: `w-${wr.weekNum}`,
         weekNumber: wr.weekNum,
-        moduleNumber: wr.modNum || null,
-        moduleMention: wr.modNum ? `Module ${wr.modNum}` : null
+        moduleNumber: null,
+        moduleMention: null
       });
     });
 
@@ -1021,8 +1040,8 @@ export function healCanonicalCPC512(
       weekNumber: ws.weekNum,
       theme: ws.theme,
       dateRangeStr: ws.dateRange,
-      moduleNumber: ws.modNum,
-      moduleMention: ws.modNum ? `Module ${ws.modNum}` : null,
+      moduleNumber: null,
+      moduleMention: null,
       courseId: cpc512Course.id,
       readings: rawReadings.filter(r => r.weekNumber === ws.weekNum)
     }));
@@ -1294,7 +1313,7 @@ export function healCanonicalCPC527(
         sourceDocumentName: 'CPC527_Group_Counselling_Syllabus.pdf',
         docColorHex: hexColor,
         courseId: cpc527Course.id,
-        moduleMention: a.moduleMention || (resolvedWeek > 0 ? `Week ${resolvedWeek}` : undefined),
+        moduleMention: a.moduleMention || undefined,
         relevantTopics: a.relevantTopics || (resolvedWeek > 0 ? `Week ${resolvedWeek}` : undefined)
       });
     });
@@ -1706,6 +1725,289 @@ To ensure meaningful reflection, group members must convene weekly, either onlin
   return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
 }
 
+export function healCanonicalSXST3010(
+  courses: Course[],
+  readings: Reading[],
+  assignments: Assignment[],
+  vaultDocs: VaultDocument[] = []
+): { courses: Course[]; readings: Reading[]; assignments: Assignment[]; vaultDocs: VaultDocument[] } {
+  const cleanCourses = [...courses];
+  let rawReadings = [...readings];
+  let rawAssignments = [...assignments];
+  const cleanVaultDocs = [...vaultDocs];
+
+  const sxstCourse = cleanCourses.find(c =>
+    (c.courseCode || '').replace(/[\s\-_]+/g, '').toUpperCase() === 'SXST3010' ||
+    (c.courseName || '').toLowerCase().includes('critical histories') ||
+    (c.courseName || '').toLowerCase().includes('perspectives on human sexuality')
+  );
+  if (!sxstCourse) {
+    return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
+  }
+
+  // Normalize course identity
+  sxstCourse.courseCode = 'SXST-3010';
+  if (!sxstCourse.courseName || sxstCourse.courseName.length < 10) {
+    sxstCourse.courseName = 'Critical Histories & Contemporary Perspectives on Human Sexuality';
+  }
+  if (!sxstCourse.instructorName) {
+    sxstCourse.instructorName = 'Dr. Evelyn Vance';
+  }
+
+  const isSxstReading = (r: Reading) => {
+    const code = (r.courseCode || '').replace(/[\s\-_]+/g, '').toUpperCase();
+    return (r.courseId && r.courseId === sxstCourse.id) || code === 'SXST3010';
+  };
+  const isSxstAssignment = (a: Assignment) => {
+    const code = (a.courseCode || '').replace(/[\s\-_]+/g, '').toUpperCase();
+    return (a.courseId && a.courseId === sxstCourse.id) || code === 'SXST3010';
+  };
+
+  const existingReadings = rawReadings.filter(isSxstReading);
+  const existingAssignments = rawAssignments.filter(isSxstAssignment);
+
+  const needsHealing =
+    existingReadings.length < 20 ||
+    existingAssignments.length < 10 ||
+    existingAssignments.some(a => !a.weightPercentage || !a.dueDate) ||
+    existingReadings.some(r => (r.weekNumber || 0) > 0 && (!r.authorName || !r.dueDate)) ||
+    existingReadings.some(r => (r.title || '').includes('Chapters 1 & 4 · The Emergence') || (r.title || '').includes('· The Emergence') || (r.title || '').includes('· The Repressive')) ||
+    !existingReadings.some(r => (r.title || '').includes('Studies in the Psychology of Sex')) ||
+    !existingReadings.some(r => (r.title || '').includes('Hundred Years')) ||
+    existingReadings.some(r => r.moduleNumber && (!r.summaryText || r.summaryText.length < 20)) ||
+    existingReadings.some(r => (r.weekNumber || 0) === 10 && (r.summaryText || '').length > 500);
+
+  if (needsHealing) {
+    const rawSyllabusText = (cityuSyllabi as any).sxst3010;
+    const localDto = LocalSyllabusParser.shared.parseThematicHistoriesCurriculumSyllabus(rawSyllabusText);
+    const normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(localDto, rawSyllabusText);
+
+    const cleanReadingsList = SyllabusImportManager.shared.deduplicateReadings(
+      normalized.candidateReadings,
+      normalized.textbooks,
+      normalized.termYear
+    );
+    const cleanAssignmentsList = SyllabusImportManager.shared.deduplicateAssignments(
+      normalized.candidateAssignments,
+      normalized.termYear,
+      normalized.weekDateMap
+    );
+
+    // Keep completed / favorite state if user marked anything
+    const completedMap = new Map<string, boolean>();
+    const favoriteMap = new Map<string, boolean>();
+    existingReadings.forEach(r => {
+      if (r.isCompleted) completedMap.set(r.title.toLowerCase().trim(), true);
+      if (r.isFavorite) favoriteMap.set(r.title.toLowerCase().trim(), true);
+    });
+    existingAssignments.forEach(a => {
+      if (a.isCompleted) completedMap.set(a.title.toLowerCase().trim(), true);
+      if (a.isFavorite) favoriteMap.set(a.title.toLowerCase().trim(), true);
+    });
+
+    // Remove incomplete items
+    rawReadings = rawReadings.filter(r => !isSxstReading(r));
+    rawAssignments = rawAssignments.filter(a => !isSxstAssignment(a));
+
+    const hexColor = sxstCourse.hexColor || '#DC2626';
+
+    const newReadings: Reading[] = cleanReadingsList.map((r, rIdx) => {
+      const weekNum = r.weekNumber || 0;
+      const matchedWeek = (normalized.weeks as any[])?.find((dw: any) => dw.weekNumber === weekNum);
+      const resolvedDueDate = r.dueDate
+        ? parseSafeDate(r.dueDate)
+        : matchedWeek?.startDate
+        ? parseSafeDate(matchedWeek.startDate)
+        : null;
+
+      const normKey = (r.title || '').toLowerCase().trim();
+      return {
+        ...r,
+        id: `r-sxst3010-${rIdx}`,
+        courseCode: 'SXST-3010',
+        sourceDocumentName: 'Critical_Histories_of_Human_Sexuality_Syllabus.pdf',
+        docColorHex: hexColor,
+        courseId: sxstCourse.id,
+        dueDate: resolvedDueDate,
+        dateRangeStr: r.dateRangeStr || matchedWeek?.dateRangeStr || null,
+        relevantTopics: r.relevantTopics || (matchedWeek?.theme ? matchedWeek.theme : (weekNum > 0 ? `Week ${weekNum}` : null)),
+        isCompleted: completedMap.get(normKey) || false,
+        isFavorite: favoriteMap.get(normKey) || false
+      };
+    });
+
+    const newAssignments: Assignment[] = cleanAssignmentsList.map((a, aIdx) => {
+      const resolvedWeek = a.weekNumber || 0;
+      const normKey = (a.title || '').toLowerCase().trim();
+      return sanitizeAssignment({
+        ...a,
+        id: `a-sxst3010-${aIdx}`,
+        courseCode: 'SXST-3010',
+        sourceDocumentName: 'Critical_Histories_of_Human_Sexuality_Syllabus.pdf',
+        docColorHex: hexColor,
+        courseId: sxstCourse.id,
+        moduleMention: a.moduleMention || undefined,
+        relevantTopics: a.relevantTopics || (resolvedWeek > 0 ? `Week ${resolvedWeek}` : undefined),
+        isCompleted: completedMap.get(normKey) || false,
+        isFavorite: favoriteMap.get(normKey) || false
+      });
+    });
+
+    rawReadings.push(...newReadings);
+    rawAssignments.push(...newAssignments);
+
+    const maxWeek = 10;
+    const courseWeeks: Week[] = [];
+    for (let w = 1; w <= maxWeek; w++) {
+      const weekReadings = newReadings.filter(r => (r.weekNumber || 0) === w);
+      const foundWeek = (normalized.weeks as any[])?.find((dw: any) => dw.weekNumber === w);
+      courseWeeks.push({
+        id: `w-sxst3010-${w}`,
+        weekNumber: w,
+        theme: foundWeek?.theme || `Week ${w}`,
+        startDate: foundWeek?.startDate ? parseSafeDate(foundWeek.startDate) : null,
+        dateRangeStr: foundWeek?.dateRangeStr || null,
+        courseId: sxstCourse.id,
+        readings: weekReadings
+      });
+    }
+    sxstCourse.weeks = courseWeeks;
+    sxstCourse.assignments = newAssignments;
+    sxstCourse.termWeeks = maxWeek;
+    sxstCourse.textbooks = normalized.textbooks || localDto.textbooks || [];
+  }
+
+  // Ensure VaultDocument exists for SXST-3010 in vaultDocs
+  const docIndex = cleanVaultDocs.findIndex(vd =>
+    vd.id === `vd-${sxstCourse.id}-syllabus` ||
+    (vd.courseCode && vd.courseCode.replace(/[\s\-_]+/g, '').toUpperCase() === 'SXST3010') ||
+    (vd as any).courseId === sxstCourse.id
+  );
+  const initialPdfUri = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}syllabi/SXST_3010_Critical_Histories_Syllabus.pdf` : null;
+  if (docIndex >= 0) {
+    cleanVaultDocs[docIndex] = {
+      ...cleanVaultDocs[docIndex],
+      rawFileDataUri: cleanVaultDocs[docIndex].rawFileDataUri || initialPdfUri
+    };
+  } else {
+    cleanVaultDocs.push({
+      id: `vd-${sxstCourse.id}-syllabus`,
+      title: 'SXST-3010 Syllabus',
+      category: 'Syllabi',
+      fileSize: '274 KB',
+      fileType: 'PDF',
+      courseCode: 'SXST-3010',
+      courseId: sxstCourse.id,
+      fileContent: sxstCourse.courseDescription,
+      docColorHex: sxstCourse.hexColor || '#DC2626',
+      rawFileDataUri: initialPdfUri,
+      pageImages: null,
+      uploadedAt: new Date()
+    });
+  }
+
+  return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
+}
+
+export function healCanonicalPRJSEX(
+  courses: Course[],
+  readings: Reading[],
+  assignments: Assignment[],
+  vaultDocs: VaultDocument[] = []
+): { courses: Course[]; readings: Reading[]; assignments: Assignment[]; vaultDocs: VaultDocument[] } {
+  const cleanCourses = [...courses];
+  let rawReadings = [...readings];
+  let rawAssignments = [...assignments];
+  const cleanVaultDocs = [...vaultDocs];
+
+  const prjCourse = cleanCourses.find(c =>
+    (c.courseCode || '').replace(/[\s\-_]+/g, '').toUpperCase().includes('PRJSEX2026') ||
+    (c.courseName || '').toLowerCase().includes('social theory & cultural analysis') ||
+    (c.courseName || '').toLowerCase().includes('human sexuality and social theory')
+  );
+  if (!prjCourse) {
+    return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
+  }
+
+  prjCourse.courseCode = 'PRJ-SEX-2026-X';
+  if (!prjCourse.courseName || prjCourse.courseName.length < 10) {
+    prjCourse.courseName = 'Human Sexuality and Social Theory';
+  }
+
+  const isPrjReading = (r: Reading) => {
+    const code = (r.courseCode || '').replace(/[\s\-_]+/g, '').toUpperCase();
+    return (r.courseId && r.courseId === prjCourse.id) || code.includes('PRJSEX2026');
+  };
+  const isPrjAssignment = (a: Assignment) => {
+    const code = (a.courseCode || '').replace(/[\s\-_]+/g, '').toUpperCase();
+    return (a.courseId && a.courseId === prjCourse.id) || code.includes('PRJSEX2026');
+  };
+
+  const existingReadings = rawReadings.filter(isPrjReading);
+  const existingAssignments = rawAssignments.filter(isPrjAssignment);
+
+  const needsHealing =
+    existingReadings.length < 10 ||
+    existingAssignments.length < 4 ||
+    existingReadings.some(r => (r.title || '').includes('Week 1 – Week 2') || (r.title || '').includes('Foundations of Sexuality'));
+
+  if (needsHealing) {
+    const rawSyllabusText = (cityuSyllabi as any).prjsex2026;
+    const localDto = LocalSyllabusParser.shared.parseCurriculumMatrixSyllabus(rawSyllabusText);
+    const normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(localDto, rawSyllabusText);
+
+    const cleanReadingsList = SyllabusImportManager.shared.deduplicateReadings(
+      normalized.candidateReadings,
+      normalized.textbooks,
+      normalized.termYear
+    );
+    const cleanAssignmentsList = SyllabusImportManager.shared.deduplicateAssignments(
+      normalized.candidateAssignments,
+      normalized.termYear,
+      normalized.weekDateMap
+    );
+
+    rawReadings = rawReadings.filter(r => !isPrjReading(r));
+    rawAssignments = rawAssignments.filter(a => !isPrjAssignment(a));
+
+    const hexColor = prjCourse.hexColor || '#7C3AED';
+
+    const newReadings: Reading[] = cleanReadingsList.map((r, rIdx) => {
+      return {
+        ...r,
+        id: `r-prjsex-${rIdx}`,
+        courseCode: 'PRJ-SEX-2026-X',
+        sourceDocumentName: 'PRJ_SEX_2026_Human_Sexuality_Syllabus.pdf',
+        docColorHex: hexColor,
+        courseId: prjCourse.id,
+        moduleNumber: r.moduleNumber,
+        moduleMention: r.moduleMention || (r.moduleNumber ? `Module ${r.moduleNumber}` : undefined)
+      };
+    });
+
+    const newAssignments: Assignment[] = cleanAssignmentsList.map((a, aIdx) => {
+      return sanitizeAssignment({
+        ...a,
+        id: `a-prjsex-${aIdx}`,
+        courseCode: 'PRJ-SEX-2026-X',
+        sourceDocumentName: 'PRJ_SEX_2026_Human_Sexuality_Syllabus.pdf',
+        docColorHex: hexColor,
+        courseId: prjCourse.id
+      });
+    });
+
+    rawReadings.push(...newReadings);
+    rawAssignments.push(...newAssignments);
+
+    prjCourse.weeks = [];
+    prjCourse.assignments = newAssignments;
+    prjCourse.termWeeks = 0;
+    prjCourse.textbooks = normalized.textbooks || localDto.textbooks || [];
+  }
+
+  return { courses: cleanCourses, readings: rawReadings, assignments: rawAssignments, vaultDocs: cleanVaultDocs };
+}
+
 const initialReadings: Reading[] = [];
 const initialAssignments: Assignment[] = [];
 const initialVaultDocs: VaultDocument[] = [];
@@ -1770,8 +2072,6 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           persistenceManager.saveTermsAccepted();
         }
 
-        const isMockSeed = (id?: string | null) =>
-          id === 'c-cpc527-static-seed' || id === 'c-seed-mock';
 
         const isSyntheticReading = (r: any) => {
           const t = (r.title || '').toLowerCase();
@@ -1800,7 +2100,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             }))
           }));
         let rawReadings = (Array.isArray(backup.readings) ? backup.readings : [])
-          .filter(r => !r.id?.startsWith('r-seed-') && !isMockSeed(r.id) && !isSyntheticReading(r))
+          .filter(r => !r.id?.startsWith('r-seed-') && !r.id?.startsWith('r-mock-') && !isMockSeed(r.courseId) && !isMockSeed(r.id) && !isSyntheticReading(r))
           .map(r => {
             const sanitized = sanitizeReading(r);
             if (isGenericPlaceholderTheme(sanitized.relevantTopics)) {
@@ -1809,19 +2109,15 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             return sanitized;
           });
         let rawAssignments = (Array.isArray(backup.assignments) ? backup.assignments : [])
-          .filter(a => !a.id?.startsWith('a-seed-') && !isMockSeed(a.id) && !isSyntheticAssignment(a))
+          .filter(a => !a.id?.startsWith('a-seed-') && !a.id?.startsWith('a-mock-') && !isMockSeed(a.courseId) && !isMockSeed(a.id) && !isSyntheticAssignment(a))
           .map(a => sanitizeAssignment(a));
         let cleanVaultDocs = (Array.isArray(backup.vaultDocs) ? backup.vaultDocs : [])
-          .filter(vd => vd.id !== 'vd-cpc527-static-seed')
+          .filter(vd => vd.id !== 'vd-cpc527-static-seed' && !vd.id?.startsWith('vd-seed-') && !vd.id?.startsWith('vd-mock-') && !isMockSeed((vd as any).courseId) && !isMockSeed(vd.id))
           .map(vd => ({
             ...vd,
             title: formatShortDocumentTitle(vd.title),
             uploadedAt: parseSafeDate(vd.uploadedAt) || new Date()
           }));
-
-        // If user has old dummy seed courses (cpc-523, cpc-511), filter them out so they don't clutter the view
-        const isLegacyDummySeed = (id: string) => /^c-cpc-(523|511)-active$/.test(id);
-        cleanCourses = cleanCourses.filter(c => !isLegacyDummySeed(c.id));
 
         // Deduplicate courses if user previously imported the same course/syllabus twice
         const deduplicatedCourses: Course[] = [];
@@ -1848,7 +2144,14 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           }
           deduplicatedCourses.push(c);
         }
-        cleanCourses = deduplicatedCourses;
+        // Preserve all genuine user courses; never drop a user course just because it has no readings yet
+        cleanCourses = deduplicatedCourses.filter(c => {
+          if (isMockSeed(c.id)) return false;
+          return Boolean(
+            (c.courseCode && !isGenericToken(c.courseCode)) ||
+            (c.courseName && !isGenericToken(c.courseName))
+          );
+        });
 
         // Deduplicate Vault Documents so the same syllabus is never loaded twice for the same course
         const seenDocs = new Set<string>();
@@ -1860,9 +2163,16 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           return true;
         });
 
-        rawReadings = rawReadings.filter(r => cleanCourses.some(c => isItemForCourse(r, c)));
-        rawAssignments = rawAssignments.filter(a => cleanCourses.some(c => isItemForCourse(a, c)));
-        cleanVaultDocs = cleanVaultDocs.filter(d => cleanCourses.some(c => isItemForCourse(d, c)));
+        // If no courses remain, clean out any orphaned items
+        if (cleanCourses.length === 0) {
+          rawReadings = [];
+          rawAssignments = [];
+          cleanVaultDocs = [];
+        } else {
+          rawReadings = rawReadings.filter(r => cleanCourses.some(c => isItemForCourse(r, c)));
+          rawAssignments = rawAssignments.filter(a => cleanCourses.some(c => isItemForCourse(a, c)));
+          cleanVaultDocs = cleanVaultDocs.filter(d => cleanCourses.some(c => isItemForCourse(d, c)));
+        }
 
         // Re-link items to their active course ID to heal any ID divergences from re-imports or deduplication
         rawReadings = rawReadings.map(r => {
@@ -1921,6 +2231,32 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             rawReadings = cpc527Healed.readings;
             rawAssignments = cpc527Healed.assignments;
             cleanVaultDocs = cpc527Healed.vaultDocs || cleanVaultDocs;
+          }
+
+          const hasSxst3010 = cleanCourses.some(c =>
+            (c.courseCode || '').replace(/[\s\-_]+/g, '').toUpperCase() === 'SXST3010' ||
+            (c.courseName || '').toLowerCase().includes('critical histories') ||
+            (c.courseName || '').toLowerCase().includes('perspectives on human sexuality')
+          );
+          if (hasSxst3010) {
+            const sxstHealed = healCanonicalSXST3010(cleanCourses, rawReadings, rawAssignments, cleanVaultDocs);
+            cleanCourses = sxstHealed.courses;
+            rawReadings = sxstHealed.readings;
+            rawAssignments = sxstHealed.assignments;
+            cleanVaultDocs = sxstHealed.vaultDocs || cleanVaultDocs;
+          }
+
+          const hasPrjSex = cleanCourses.some(c =>
+            (c.courseCode || '').replace(/[\s\-_]+/g, '').toUpperCase().includes('PRJSEX2026') ||
+            (c.courseName || '').toLowerCase().includes('social theory & cultural analysis') ||
+            (c.courseName || '').toLowerCase().includes('human sexuality and social theory')
+          );
+          if (hasPrjSex) {
+            const prjHealed = healCanonicalPRJSEX(cleanCourses, rawReadings, rawAssignments, cleanVaultDocs);
+            cleanCourses = prjHealed.courses;
+            rawReadings = prjHealed.readings;
+            rawAssignments = prjHealed.assignments;
+            cleanVaultDocs = prjHealed.vaultDocs || cleanVaultDocs;
           }
         }
 
@@ -2079,6 +2415,23 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       vaultDocs
     });
   }, [courses, readings, assignments, vaultDocs]);
+
+  // Flush latest state to disk immediately whenever app is backgrounded or becomes inactive
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        persistenceManager.saveImmediate({
+          courses: coursesRef.current,
+          readings: readingsRef.current,
+          assignments: assignmentsRef.current,
+          vaultDocs: vaultDocsRef.current
+        });
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   const triggerConfetti = useCallback((title: string) => {
     setConfettiTitle(title);
@@ -2292,6 +2645,9 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     let nextAssignments = assignmentsRef.current.filter(
       a => (courseToDelete ? !isItemForCourse(a, courseToDelete) : a.courseId !== id)
     );
+    const docsToDelete = vaultDocsRef.current.filter(
+      v => (courseToDelete ? isItemForCourse(v, courseToDelete) : (v.courseId ? v.courseId === id : false))
+    );
     let nextVaultDocs = vaultDocsRef.current.filter(
       v => (courseToDelete ? !isItemForCourse(v, courseToDelete) : (v.courseId ? v.courseId !== id : true))
     );
@@ -2300,6 +2656,17 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       nextReadings = [];
       nextAssignments = [];
       nextVaultDocs = [];
+    }
+
+    // Clean up physical syllabus files from disk for deleted vault docs
+    for (const doc of docsToDelete) {
+      if (doc.rawFileDataUri) {
+        FileSystem.deleteAsync(doc.rawFileDataUri, { idempotent: true }).catch(() => {});
+      }
+    }
+    if (nextCourses.length === 0 && FileSystem.documentDirectory) {
+      const syllabiDir = `${FileSystem.documentDirectory}syllabi/`;
+      FileSystem.deleteAsync(syllabiDir, { idempotent: true }).catch(() => {});
     }
 
     coursesRef.current = nextCourses;
@@ -2607,7 +2974,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           isCompleted: Boolean(a.isCompleted),
           isDeleted: false,
           courseCode: assignedCode,
-          moduleMention: a.moduleMention || `Week ${aWeek}`,
+          moduleMention: a.moduleMention || undefined,
           weightPercentage: a.weightPercentage || null,
           subTypeRaw: 'assignment',
           mediaUrl: a.mediaUrl || null,
@@ -2646,7 +3013,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             isCompleted: false,
             isDeleted: false,
             courseCode: assignedCode,
-            moduleMention: `Week ${aWeek}`,
+            moduleMention: a.moduleMention || undefined,
             weightPercentage: a.percentage || null,
             subTypeRaw: 'assignment',
             mediaUrl: a.mediaUrl || null,
@@ -2948,25 +3315,13 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         rawText = '';
       }
 
-      // Check bundled catalog if rawText is empty or too short, so local parser and prompt always have accurate text
+      // Check bundled catalog ONLY if this is an explicitly bundled sample course (exact filename or ID match)
       if (!rawText || rawText.trim().length < 50) {
         const cleanName = (fileName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         const catalogMatch = BundledSyllabiCatalog.find(item => {
-          const itemCode = (item.courseCode || '').toLowerCase().replace(/[^a-z0-9]/g, '');
           const itemId = (item.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
           const itemFile = (item.fileName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          const itemName = (item.courseName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          return (
-            (itemCode.length >= 4 && cleanName.includes(itemCode)) ||
-            (itemId.length >= 4 && cleanName.includes(itemId)) ||
-            (cleanName.includes('groupcounselling') && itemCode.includes('527')) ||
-            (cleanName.includes('cpc527')) ||
-            (cleanName.includes('research') && (itemCode.includes('514') || itemId.includes('514') || itemName.includes('research'))) ||
-            (cleanName.includes('514') && (itemCode.includes('514') || itemId.includes('514'))) ||
-            cleanName.includes('sexuality') ||
-            cleanName.includes('prjsex') ||
-            cleanName === itemFile
-          );
+          return Boolean(cleanName && (cleanName === itemFile || cleanName === itemId));
         });
         if (catalogMatch && catalogMatch.rawText) {
           rawText = catalogMatch.rawText;
@@ -3117,8 +3472,13 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           : (r.requirementType === 'optional' ? false : true);
         const reqType: 'required' | 'optional' = (r.requirementType === 'optional' || isReq === false) ? 'optional' : 'required';
 
-        const resolvedModuleNumber = r.moduleNumber || (matchedWeek as any)?.moduleNumber || ((matchedWeek as any)?.moduleMention && /\d+/.test((matchedWeek as any).moduleMention) ? parseInt((matchedWeek as any).moduleMention.match(/\d+/)![0], 10) : null);
-        const resolvedModuleMention = r.moduleMention || (matchedWeek as any)?.moduleMention || (resolvedModuleNumber ? `Module ${resolvedModuleNumber}` : null);
+        // Zero Cross-Bleed Rule: If r is a calendar weekly reading (r.weekNumber > 0), do not artificially inject module metadata from weeks unless explicitly set on r
+        const resolvedModuleNumber = (r.weekNumber && r.weekNumber > 0)
+          ? (r.moduleNumber || null)
+          : (r.moduleNumber || (matchedWeek as any)?.moduleNumber || ((matchedWeek as any)?.moduleMention && /\d+/.test((matchedWeek as any).moduleMention) ? parseInt((matchedWeek as any).moduleMention.match(/\d+/)![0], 10) : null));
+        const resolvedModuleMention = (r.weekNumber && r.weekNumber > 0)
+          ? (r.moduleMention || null)
+          : (r.moduleMention || (matchedWeek as any)?.moduleMention || (resolvedModuleNumber ? `Module ${resolvedModuleNumber}` : null));
 
         return {
           ...r,
@@ -3138,11 +3498,56 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         };
       });
 
+      const hasGenuineWeeks = Boolean(
+        (normalized.weeks && normalized.weeks.length > 0) ||
+        newReadings.some(r => typeof r.weekNumber === 'number' && r.weekNumber > 0) ||
+        cleanAssignmentsList.some(a => typeof a.weekNumber === 'number' && a.weekNumber > 0)
+      );
+
+      const courseWeeks: Week[] = [];
+      let finalTermWeeks = 0;
+
+      if (hasGenuineWeeks) {
+        const maxWeek = Math.max(
+          ...newReadings.map(r => r.weekNumber || 0),
+          ...cleanAssignmentsList.map(a => a.weekNumber || 0),
+          ...(normalized.weeks || []).map((w: any) => w.weekNumber || 0),
+          targetCourse?.termWeeks || normalized.termWeeks || 0,
+          1
+        );
+        finalTermWeeks = maxWeek;
+
+        for (let w = 1; w <= maxWeek; w++) {
+          const weekReadings = newReadings.filter(r => (r.weekNumber || 0) === w);
+          const foundWeek = (normalized.weeks as any[])?.find((dw: any) => dw.weekNumber === w);
+          const foundTheme = cleanAcademicWeekTheme(foundWeek?.theme) || `Week ${w}`;
+          const foundDate = foundWeek?.startDate
+            ? parseSafeDate(foundWeek.startDate)
+            : (foundWeek?.date ? parseSafeDate(foundWeek.date) : null);
+          const foundModNum = (foundWeek as any)?.moduleNumber || null;
+          const foundModMention = (foundWeek as any)?.moduleMention || null;
+          courseWeeks.push({
+            id: `w-${w}`,
+            weekNumber: w,
+            theme: foundTheme,
+            startDate: foundDate,
+            dateRangeStr: foundWeek?.dateRangeStr || null,
+            moduleNumber: foundModNum,
+            moduleMention: foundModMention,
+            courseId,
+            readings: weekReadings
+          });
+        }
+      }
+
       // Convert clean assignments into Assignment objects
       const newAssignments: Assignment[] = cleanAssignmentsList
         .filter(a => !isInvalidAssignmentTitle(a.title))
         .map((a, aIdx) => {
           const resolvedWeek = a.weekNumber || 0;
+          const resolvedModMention = (resolvedWeek > 0)
+            ? a.moduleMention
+            : (a.moduleMention || (a.moduleNumber ? `Module ${a.moduleNumber}` : undefined));
           return sanitizeAssignment({
             ...a,
             id: `a-${Date.now()}-${aIdx}`,
@@ -3151,40 +3556,10 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             sourceDocumentId: vaultDocId,
             docColorHex: targetCourse?.hexColor || hexColor,
             courseId: courseId,
-            moduleMention: a.moduleMention || (resolvedWeek > 0 ? `Week ${resolvedWeek}` : undefined),
-            relevantTopics: a.relevantTopics || (resolvedWeek > 0 ? `Week ${resolvedWeek}` : undefined)
+            moduleMention: resolvedModMention,
+            relevantTopics: a.relevantTopics || resolvedModMention
           });
         });
-
-      const maxWeek = Math.max(
-        ...newReadings.map(r => r.weekNumber || 1),
-        ...newAssignments.map(a => a.weekNumber || 1),
-        targetCourse?.termWeeks || normalized.termWeeks || 1,
-        1
-      );
-
-      const courseWeeks: Week[] = [];
-      for (let w = 1; w <= maxWeek; w++) {
-        const weekReadings = newReadings.filter(r => (r.weekNumber || 0) === w);
-        const foundWeek = (normalized.weeks as any[])?.find((dw: any) => dw.weekNumber === w);
-        const foundTheme = cleanAcademicWeekTheme(foundWeek?.theme) || `Week ${w}`;
-        const foundDate = foundWeek?.startDate
-          ? parseSafeDate(foundWeek.startDate)
-          : (foundWeek?.date ? parseSafeDate(foundWeek.date) : null);
-        const foundModNum = (foundWeek as any)?.moduleNumber || (weekReadings.find(r => r.moduleNumber)?.moduleNumber) || null;
-        const foundModMention = (foundWeek as any)?.moduleMention || (foundModNum ? `Module ${foundModNum}` : null);
-        courseWeeks.push({
-          id: `w-${w}`,
-          weekNumber: w,
-          theme: foundTheme,
-          startDate: foundDate,
-          dateRangeStr: foundWeek?.dateRangeStr || null,
-          moduleNumber: foundModNum,
-          moduleMention: foundModMention,
-          courseId,
-          readings: weekReadings
-        });
-      }
 
       const finalCourse: Course = {
         id: courseId,
@@ -3199,7 +3574,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         gradingScale: targetCourse?.gradingScale || normalized.gradingScale || (dto?.gradingScale ?? null),
         gradingScaleRows: targetCourse?.gradingScaleRows || normalized.gradingScaleRows || (dto?.gradingScaleRows ?? null),
         hexColor: targetCourse?.hexColor || hexColor,
-        termWeeks: maxWeek,
+        termWeeks: finalTermWeeks,
         sharingCode: targetCourse?.sharingCode || String(Math.floor(100000 + Math.random() * 900000)),
         isDeleted: false,
         isFavorite: true,
@@ -3251,7 +3626,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         updatedAssignments = reconciled.updatedAssignments;
         updatedVaultDocs = reconciled.updatedVaultDocs;
       } else {
-        updatedCourses = [finalCourse, ...coursesRef.current];
+        const hasExtractedCoursework = (newReadings.length + newAssignments.length) > 0;
+        updatedCourses = hasExtractedCoursework ? [finalCourse, ...coursesRef.current] : [...coursesRef.current];
         updatedReadings = [...newReadings, ...readingsRef.current];
         updatedAssignments = [...newAssignments, ...assignmentsRef.current];
         updatedVaultDocs = [newVaultDoc, ...vaultDocsRef.current];
@@ -3371,10 +3747,16 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           message: outcomeDetails.message || `Added ${newReadings.length} readings & ${newAssignments.length} assignments.`
         });
       } else {
+        await persistenceManager.clearPendingUploadJob();
         setIsUploading(false);
         setUploadProgress(0);
         setUploadStatusText('');
         isImportingRef.current = false;
+        setImportBanner({
+          type: 'warning',
+          title: 'Document Stored in Vault',
+          message: outcomeDetails.message || 'No readings or assignments were detected in this document.'
+        });
       }
 
       // Allow UI layout and course cards to render smoothly before launching confetti
@@ -3512,6 +3894,28 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   }, [importSyllabusDocument, isUploading]);
 
+  const resetAllData = useCallback(async () => {
+    coursesRef.current = [];
+    readingsRef.current = [];
+    assignmentsRef.current = [];
+    vaultDocsRef.current = [];
+
+    setCourses([]);
+    setReadings([]);
+    setAssignments([]);
+    setVaultDocs([]);
+    setSelectedCourseFilter(null);
+    setLatestDiagnosticRecord(null);
+
+    await persistenceManager.resetAllStoredData();
+    await persistenceManager.saveImmediate({
+      courses: [],
+      readings: [],
+      assignments: [],
+      vaultDocs: []
+    });
+  }, []);
+
   return (
     <CoursePalContext.Provider
       value={{
@@ -3559,7 +3963,8 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         dismissConfetti,
         turnOffAllWeeks,
         checkAndResumeInterruptedUpload,
-        cancelUpload
+        cancelUpload,
+        resetAllData
       }}
     >
       {children}

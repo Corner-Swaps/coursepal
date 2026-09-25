@@ -174,7 +174,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
     const resolvedAuth = resolveFullAuthorName(rawAuth) || rawAuth;
     const finalAuthorSub = dispSub.length > 0
       ? dispSub
-      : resolvedAuth;
+      : (resolvedAuth || (reading.moduleNumber && reading.summaryText ? reading.summaryText : ''));
     return (
       <TouchableOpacity
         key={reading.id}
@@ -324,15 +324,23 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                     return d1 - d2;
                   });
 
-                // Group readings: partition into unassigned and week-grouped
+                // Group readings: partition into unassigned, week-grouped, and module-grouped
                 const unassignedCourseReadings: Reading[] = [];
                 const readingsByWeek = new Map<number, Reading[]>();
+                const readingsByModule = new Map<number, Reading[]>();
                 for (const r of courseReadings) {
                   const isWeekOn = r.weekNumber !== undefined && r.weekNumber !== null
                     ? r.weekNumber > 0
                     : Boolean(r.weekId && r.weekId !== 'none' && /\d+/.test(r.weekId));
                   if (!isWeekOn) {
-                    unassignedCourseReadings.push(r);
+                    const mNum = r.moduleNumber || (r.moduleMention && /\d+/.test(r.moduleMention) ? parseInt(r.moduleMention.match(/\d+/)![0], 10) : null);
+                    if (mNum) {
+                      const list = readingsByModule.get(mNum) || [];
+                      list.push(r);
+                      readingsByModule.set(mNum, list);
+                    } else {
+                      unassignedCourseReadings.push(r);
+                    }
                   } else {
                     const m = r.weekNumber && r.weekNumber > 0
                       ? r.weekNumber
@@ -343,6 +351,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                   }
                 }
                 const sortedWeeks = Array.from(readingsByWeek.keys()).sort((a, b) => a - b);
+                const sortedModules = Array.from(readingsByModule.keys()).sort((a, b) => a - b);
 
                 return (
                   <View key={course.id} style={styles.courseCard}>
@@ -360,7 +369,9 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                         activeOpacity={0.7}
                       >
                         <Text style={styles.courseTitleText} numberOfLines={1}>
-                          {course.courseName}
+                          {course.courseCode && !course.courseName.toLowerCase().includes(course.courseCode.toLowerCase())
+                            ? `${course.courseCode}: ${course.courseName}`
+                            : course.courseName}
                         </Text>
                         {course.courseDescription ? (
                           <Text style={styles.courseSubtitleText} numberOfLines={1}>
@@ -420,6 +431,12 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                             onPress={() => setEditingCourse(course)}
                             activeOpacity={0.7}
                           >
+                            {course.courseCode ? (
+                              <View style={styles.detailRow}>
+                                <Text style={styles.detailKey}>Course Code:</Text>
+                                <Text style={styles.detailVal}>{course.courseCode}</Text>
+                              </View>
+                            ) : null}
                             <View style={styles.detailRow}>
                               <Text style={styles.detailKey}>Faculty:</Text>
                               <Text style={styles.detailVal}>
@@ -611,25 +628,14 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                             </View>
                           ) : (
                             <>
-                              {/* Non-week readings (when week toggle is turned off) */}
-                              {unassignedCourseReadings.length > 0 && (
-                                <View style={styles.unassignedReadingsBox}>
-                                  {[...unassignedCourseReadings].sort((a, b) => {
-                                    const chA = getReadingChapterSortKey(a);
-                                    const chB = getReadingChapterSortKey(b);
-                                    if (chA !== chB) return chA - chB;
-                                    const dA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
-                                    const dB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
-                                    if (dA !== dB) return dA - dB;
-                                    return (a.title || '').localeCompare(b.title || '');
-                                  }).map(r => {
-                                    const wObj = (course.weeks || []).find(w => w.weekNumber === r.weekNumber);
-                                    return renderSyllabusReadingRow(r, course.courseName, wObj?.theme);
-                                  })}
+                              {/* Week-grouped readings (when week schedule exists) */}
+                              {sortedWeeks.length > 0 && sortedModules.length > 0 && (
+                                <View style={{ marginTop: 4, marginBottom: 8 }}>
+                                  <Text style={[styles.sectionTitle, { fontSize: 13, color: '#596B85', textTransform: 'uppercase', letterSpacing: 0.5 }]}>
+                                    Weekly Calendar Schedule
+                                  </Text>
                                 </View>
                               )}
-
-                              {/* Week-grouped readings (when week toggle is turned on) */}
                               {sortedWeeks.map(wNum => {
                                 const weekObj = (course.weeks || []).find(w => w.weekNumber === wNum);
                                 const weekReadings = [...(readingsByWeek.get(wNum) || [])].sort((a, b) => {
@@ -654,6 +660,66 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                   </View>
                                 );
                               })}
+
+                              {/* Module-grouped readings (when distinct modules exist) */}
+                              {sortedModules.length > 0 && (
+                                <>
+                                  {sortedWeeks.length > 0 && (
+                                    <View style={{ marginTop: 14, marginBottom: 8 }}>
+                                      <Text style={[styles.sectionTitle, { fontSize: 13, color: '#596B85', textTransform: 'uppercase', letterSpacing: 0.5 }]}>
+                                        Curriculum Theoretical Modules
+                                      </Text>
+                                    </View>
+                                  )}
+                                  {sortedModules.map(mNum => {
+                                    const modReadings = [...(readingsByModule.get(mNum) || [])].sort((a, b) => {
+                                      const chA = getReadingChapterSortKey(a);
+                                      const chB = getReadingChapterSortKey(b);
+                                      if (chA !== chB) return chA - chB;
+                                      const dA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+                                      const dB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+                                      if (dA !== dB) return dA - dB;
+                                      return (a.title || '').localeCompare(b.title || '');
+                                    });
+                                    const modTheme = modReadings.find(r => r.relevantTopics)?.relevantTopics;
+                                    return (
+                                      <View key={`module-${mNum}`} style={styles.weekSectionBox}>
+                                        {/* Module Section Header */}
+                                        <View style={styles.weekSectionHeader}>
+                                          <View style={styles.weekTagPill}>
+                                            <Text style={styles.weekTagText}>Module {mNum}</Text>
+                                          </View>
+                                          {modTheme ? (
+                                            <Text style={[styles.itemDueText, { marginLeft: 8, flex: 1 }]} numberOfLines={1}>
+                                              {modTheme}
+                                            </Text>
+                                          ) : null}
+                                        </View>
+
+                                        {modReadings.map(r => renderSyllabusReadingRow(r, course.courseName, modTheme))}
+                                      </View>
+                                    );
+                                  })}
+                                </>
+                              )}
+
+                              {/* Non-week readings (when week toggle is turned off or unassigned) */}
+                              {unassignedCourseReadings.length > 0 && (
+                                <View style={styles.unassignedReadingsBox}>
+                                  {[...unassignedCourseReadings].sort((a, b) => {
+                                    const chA = getReadingChapterSortKey(a);
+                                    const chB = getReadingChapterSortKey(b);
+                                    if (chA !== chB) return chA - chB;
+                                    const dA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+                                    const dB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+                                    if (dA !== dB) return dA - dB;
+                                    return (a.title || '').localeCompare(b.title || '');
+                                  }).map(r => {
+                                    const wObj = (course.weeks || []).find(w => w.weekNumber === r.weekNumber);
+                                    return renderSyllabusReadingRow(r, course.courseName, wObj?.theme);
+                                  })}
+                                </View>
+                              )}
                             </>
                           )}
 

@@ -62,3 +62,14 @@ The ingestion pipeline is calibrated against four canonical academic document ar
 - **Assignment Overview vs. Detailed Breakdown**: Reconcile overview summary tables (weights: 20%, 20%, 10%, 40%, 10%) with subsequent detailed assignment sections across multiple pages.
 - **Genuine Rubric Point Extraction**: When assignments feature dedicated rubric criteria tables (e.g., 6 criteria totaling 100 points), map every criterion name and exact point value directly to `rubricCriteria`.
 - **External Schedule Recognition**: When syllabi state that weekly schedules are distributed on learning management systems (Brightspace, Canvas, Moodle), recognize the notice and refrain from fabricating phantom readings.
+
+## 8. The Module vs. Week Separation Principle
+- **Pure Module Syllabi (Zero Fabricated Weeks)**:
+  - If a course syllabus organizes curriculum into **Modules** without specifying distinct calendar weeks or session dates (e.g., `GSP 401: Gender, Sexuality, and Power`), never fabricate artificial calendar weeks (`Week 1`, `Week 2`...).
+  - Course structure must remain strictly in modules (`course.weeks: []`, `termWeeks: 0` or `null`).
+  - Readings and deliverables must be stamped with `moduleNumber: 1..N`, `moduleMention: 'Module X'`, and `weekNumber: undefined`.
+  - The UI (`ReadingsScreen`, `AssignmentsScreen`, `SyllabusScreen`) must present deliverables and readings directly grouped by **Module**, hiding the empty `Weeks / Modules` switcher pill.
+- **Differentiated Weeks and Modules**:
+  - Only separate coursework into weeks when the syllabus explicitly specifies weeks and modules differently (e.g. dual module/calendar tables like `CPC 512`, side-by-side timeline columns like `DATA 630`, or weekly session tables like `CPC 524` and `CPC 527`).
+  - In weekly calendar sessions that bundle multiple modules (such as Week 7 covering `Module 7 & 8`, or Week 10 covering `Module 9 & 10` in `CPC 524`), keep the module deliverables together within that designated calendar week—never split bundled modules across multiple separate calendar weeks.
+

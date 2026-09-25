@@ -74,6 +74,7 @@ export interface AssignmentDTO {
   isFavorite?: boolean;
   isCompleted?: boolean;
   weekNumber?: number | null;
+  moduleNumber?: number | null;
   moduleMention?: string | null;
   points?: number | null;
   totalPoints?: number | null;
@@ -114,6 +115,8 @@ export interface ItemDTO {
   rubric?: RubricCriterionDTO[] | null;
   isRequired?: boolean | null;
   requirementType?: 'required' | 'optional' | null;
+  moduleNumber?: number | null;
+  moduleMention?: string | null;
 }
 
 export type ImportOutcome =
@@ -172,6 +175,7 @@ export interface CourseDTO {
   isFavorite?: boolean | null;
   chatHistoryJSON?: string | null;
   externalScheduleNotice?: string | null;
+  termYear?: number | null;
   gradingScale?: string | null;
   gradingScaleRows?: GradingScaleTier[] | null;
 }
@@ -261,6 +265,7 @@ export interface Assignment {
   isDeleted: boolean;
   courseCode?: string | null;
   moduleMention?: string | null;
+  moduleNumber?: number | null;
   weightPercentage?: string | null;
   subTypeRaw?: string | null;
   mediaUrl?: string | null;

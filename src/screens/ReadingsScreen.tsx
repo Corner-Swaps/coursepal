@@ -393,6 +393,19 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     const unReadings: Reading[] = [];
     const readingsByWeek = new Map<number, Reading[]>();
     const allWeeks = new Set<number>();
+    const targetCourses = activeCourse ? [activeCourse] : courses;
+
+    for (const c of targetCourses) {
+      if (Array.isArray(c.weeks)) {
+        for (const wk of c.weeks) {
+          if (typeof wk.weekNumber === 'number' && wk.weekNumber > 0) {
+            if (selectedWeekFilter === null || selectedWeekFilter === wk.weekNumber) {
+              allWeeks.add(wk.weekNumber);
+            }
+          }
+        }
+      }
+    }
 
     for (const r of activeReadings) {
       // Pure module readings belong to 'modules' view, not 'weeks' view!
@@ -479,6 +492,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
 
     // Group readings by moduleNumber, falling back to course week moduleNumber if needed
     const sourceList = groupingViewMode === 'modules' ? scopedReadings : activeReadings;
+    if (sourceList.length === 0) return [];
 
     // Detect which courses have dedicated curriculum module readings (readings with moduleNumber and NO weekNumber)
     const courseDedicatedModules = new Set<string>();
@@ -565,17 +579,21 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             theme = cpcFallbackThemes[m];
           }
         }
+        const sampleReadingWithMention = rList.find(r => r.moduleMention) || rList[0];
+        const moduleLabel = sampleReadingWithMention?.moduleMention || `Module ${m}`;
         return {
           moduleNum: m,
+          moduleLabel,
           theme: theme || undefined,
           readings: rList
         };
-      });
+      })
+      .filter(m => m.readings.length > 0 || Boolean(m.theme));
   }, [activeReadings, scopedReadings, groupingViewMode, courses, activeCourse]);
 
   const hasDistinctModules = useMemo(() => {
     if (courses.length === 0) return false;
-    return groupedModules.length > 0;
+    return groupedModules.some(m => m.readings.length > 0);
   }, [courses.length, groupedModules]);
 
   useEffect(() => {
@@ -668,20 +686,18 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       resolvedAuthor
     );
     // In weekly schedule view, guarantee chapter title never repeats appended session topics or notes
-    if (!isModuleView && displayTitle.includes(' · ')) {
-      const firstPart = displayTitle.split(' · ')[0].trim();
-      const isStructuredTitle = /^(?:chapters?|chs?\.?|ch\b\.?|sections?|sec\.?)\s*[\d\s&,\-–—]+/i.test(firstPart) ||
-        /^[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\s.&'–-]+?\s*\(\s*(?:ch(?:apter)?s?\.?|sec(?:tion)?s?|pp?\.?|\d)/i.test(firstPart) ||
-        /^(?:DSM|ICD|WHO)\b/i.test(firstPart);
-      if (isStructuredTitle) {
-        displayTitle = firstPart;
-      }
-    } else if (hasVisibleWeekHeader && displayTitle.includes(' · ')) {
+    if (displayTitle.includes(' · ')) {
       const parts = displayTitle.split(' · ');
       const suffix = parts[parts.length - 1].trim().toLowerCase().replace(/[^a-z0-9]/g, '');
       const themeClean = (cleanWeekTheme || weekTheme || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (suffix.length >= 4 && (themeClean.includes(suffix) || suffix.includes(themeClean))) {
-        displayTitle = parts.slice(0, -1).join(' · ').trim();
+      if (themeClean.length >= 4 && suffix.length >= 4 && (themeClean.includes(suffix) || suffix.includes(themeClean))) {
+        const remaining = parts.slice(0, -1).join(' · ').trim();
+        const isJustChapterNum = /^(?:chapters?|chs?\.?|ch\b\.?|sections?|sec\.?)\s*[\d\s&,\-–—]+$/i.test(remaining);
+        if (isJustChapterNum && reading.resourceTitle) {
+          displayTitle = `${reading.resourceTitle} (${remaining})`;
+        } else if (remaining) {
+          displayTitle = remaining;
+        }
       }
     }
     const displaySubtitle = formatAuthorAndPagesSubtitle(
@@ -788,6 +804,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                 cleanSub = reading.resourceTitle;
               } else if (!cleanSub && resolvedAuthor) {
                 cleanSub = `By ${resolvedAuthor}`;
+              } else if (!cleanSub && reading.summaryText && reading.moduleNumber && (!reading.weekNumber || reading.weekNumber === 0)) {
+                cleanSub = reading.summaryText;
               }
 
               const cleanDate = suggestedReadingText
@@ -1070,7 +1088,11 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       )}
 
       {/* MARK: - Coursework List (Readings Only) */}
-      {(groupingViewMode === 'modules' ? groupedModules.length === 0 : (groupedWeeks.length === 0 && unassignedReadings.length === 0)) ? (
+      {(
+        courses.length === 0 ||
+        activeReadings.length === 0 ||
+        (groupingViewMode === 'modules' ? groupedModules.length === 0 : (groupedWeeks.length === 0 && unassignedReadings.length === 0))
+      ) ? (
         <View style={styles.emptyStateCard}>
           <Text style={styles.emptyTitle}>
             {selectedWeekFilter !== null
@@ -1132,8 +1154,8 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         </View>
       ) : (
         <View style={styles.readingsListContainer}>
-          {/* Segmented Switcher between Weeks and Modules (when course has modules) */}
-          {hasDistinctModules && (
+          {/* Segmented Switcher between Weeks and Modules (when course has both weeks and modules) */}
+          {hasDistinctModules && groupedWeeks.length > 0 && (
             <View style={styles.viewModeSegmentContainer}>
               <TouchableOpacity
                 style={[
@@ -1263,6 +1285,26 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                     <Text style={styles.weekPillText}>Week {weekNum}</Text>
                   </View>
 
+                  {(() => {
+                    const wkObj = targetCourse?.weeks?.find(w => w.weekNumber === weekNum);
+                    const modBadge = wkObj?.moduleMention;
+                    if (!modBadge) return null;
+                    // Rule: If course already has a dedicated Modules section or distinct modules,
+                    // do NOT show module pills in the Weeks view header!
+                    if (hasDistinctModules || courseDedicatedModules.size > 0 || availableGroupingModes.includes('modules')) {
+                      return null;
+                    }
+                    // Never show redundant module pill if it just repeats the week number (e.g. 'Module 1' on 'Week 1')
+                    if (modBadge.trim().toLowerCase() === `module ${weekNum}` || modBadge.trim().toLowerCase() === `mod ${weekNum}`) {
+                      return null;
+                    }
+                    return (
+                      <View style={[styles.weekPill, { backgroundColor: CoursePalTheme.progressTrack, marginLeft: 6 }]}>
+                        <Text style={[styles.weekPillText, { color: CoursePalTheme.textMuted }]}>{modBadge}</Text>
+                      </View>
+                    );
+                  })()}
+
                   {weekNum === currentAcademicWeek && (
                     <View style={styles.currentWeekHeaderBadge}>
                       <Text style={styles.currentWeekHeaderBadgeText}>Current Week</Text>
@@ -1292,13 +1334,17 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                 {/* Readings for this Week (Incomplete Only) */}
                 {(() => {
                   if (weekReadingsList.length === 0) {
-                    return (
-                      <View style={styles.emptyWeekContainer}>
-                        <Text style={styles.emptyWeekThemeText}>
-                          {cleanWeekTheme || 'No required readings assigned'}
-                        </Text>
-                      </View>
-                    );
+                    const isExplicitBreak = cleanWeekTheme && /reading week|flex week|spring break|fall break|winter break|thanksgiving|recess|holiday/i.test(cleanWeekTheme);
+                    if (isExplicitBreak) {
+                      return (
+                        <View style={styles.emptyWeekContainer}>
+                          <Text style={styles.emptyWeekThemeText}>
+                            {cleanWeekTheme}
+                          </Text>
+                        </View>
+                      );
+                    }
+                    return null;
                   }
 
                   if (incompleteReadings.length === 0) {
@@ -1355,9 +1401,9 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           })}
 
           {/* Module-grouped readings (when in Course Modules view) */}
-          {groupingViewMode === 'modules' && groupedModules.map(({ moduleNum, theme: modTheme, readings: moduleReadingsList }) => {
+          {groupingViewMode === 'modules' && groupedModules.map(({ moduleNum, moduleLabel, theme: modTheme, readings: moduleReadingsList }) => {
             const incompleteMod = moduleReadingsList.filter(r => !r.isCompleted);
-            if (incompleteMod.length === 0 && selectedWeekFilter === null && moduleReadingsList.length > 0) {
+            if (incompleteMod.length === 0 && selectedWeekFilter === null) {
               return null;
             }
 
@@ -1368,12 +1414,12 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                 {/* Module Header Row */}
                 <View style={styles.weekHeaderRow}>
                   <View style={styles.weekPill}>
-                    <Text style={styles.weekPillText}>Module {moduleNum}</Text>
+                    <Text style={styles.weekPillText}>{moduleLabel || `Module ${moduleNum}`}</Text>
                   </View>
                 </View>
 
                 {/* Module Topic / Focus Theme */}
-                {cleanModTheme ? (
+                {cleanModTheme && (moduleReadingsList.length !== 1 || (moduleReadingsList[0]?.title || '').trim().toLowerCase() !== cleanModTheme.trim().toLowerCase()) ? (
                   <View style={styles.weekThemeHeaderRow}>
                     <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
                       {cleanModTheme}

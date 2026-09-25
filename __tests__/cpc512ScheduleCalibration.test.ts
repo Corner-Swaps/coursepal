@@ -232,34 +232,34 @@ Working in groups, students will complete a case conceptualization based on a se
     expect(w1Reading).toBeDefined();
     expect(w1Reading?.title).toMatch(/1[-–]3/);
     expect(w1Reading?.dateRangeStr).toBe('Jul 2 – Jul 3');
-    expect(weeks[0]?.moduleNumber).toBe(1);
+    expect(weeks[0]?.moduleNumber).toBeUndefined();
 
     // Week 2 reading: Gehart Chapter 5 & Articles from Table 2, suggested date: Jul 9 – Jul 10
     const w2Reading = weeks[1]?.readings?.find(r => /chapter 5/i.test(r.chapterText || r.title));
     expect(w2Reading).toBeDefined();
     expect(w2Reading?.dateRangeStr).toBe('Jul 9 – Jul 10');
-    expect(weeks[1]?.moduleNumber).toBe(2);
+    expect(weeks[1]?.moduleNumber).toBeUndefined();
 
     // Week 3 reading: Gehart Chapters 5 & 7 from Table 2, suggested date: Jul 16 – Jul 17
     const w3Reading = weeks[2]?.readings?.[0];
     expect(w3Reading).toBeDefined();
     expect(w3Reading?.title).toMatch(/5\s*&\s*7/);
     expect(w3Reading?.dateRangeStr).toBe('Jul 16 – Jul 17');
-    expect(weeks[2]?.moduleNumber).toBe(3);
+    expect(weeks[2]?.moduleNumber).toBeUndefined();
 
     // Week 4 reading: Gehart Chapter 7 from Table 2, suggested date: Jul 23 – Jul 24
     const w4Reading = weeks[3]?.readings?.[0];
     expect(w4Reading).toBeDefined();
     expect(w4Reading?.title).toMatch(/chapter 7/i);
     expect(w4Reading?.dateRangeStr).toBe('Jul 23 – Jul 24');
-    expect(weeks[3]?.moduleNumber).toBe(4);
+    expect(weeks[3]?.moduleNumber).toBeUndefined();
 
     // Week 5 reading: Gehart Chapters 4–10 from Table 2, suggested date: Jul 30 – Jul 31
     const w5Reading = weeks[4]?.readings?.[0];
     expect(w5Reading).toBeDefined();
     expect(w5Reading?.title).toMatch(/4[-–]10/);
     expect(w5Reading?.dateRangeStr).toBe('Jul 30 – Jul 31');
-    expect(weeks[4]?.moduleNumber).toBe(5);
+    expect(weeks[4]?.moduleNumber).toBeUndefined();
 
     // Week 6: Reading Week (0 readings)
     const w6 = weeks[5];
@@ -271,34 +271,34 @@ Working in groups, students will complete a case conceptualization based on a se
     expect(w7Reading).toBeDefined();
     expect(w7Reading?.title).toMatch(/4[-–]10/);
     expect(w7Reading?.dateRangeStr).toBe('Aug 13 – Aug 14');
-    expect(weeks[6]?.moduleNumber).toBe(6);
+    expect(weeks[6]?.moduleNumber).toBeUndefined();
 
     // Week 8 reading: Gehart Chapters 4–10 from Table 2, suggested date: Aug 20 – Aug 21
     const w8Reading = weeks[7]?.readings?.[0];
     expect(w8Reading).toBeDefined();
     expect(w8Reading?.title).toMatch(/4[-–]10/);
     expect(w8Reading?.dateRangeStr).toBe('Aug 20 – Aug 21');
-    expect(weeks[7]?.moduleNumber).toBe(7);
+    expect(weeks[7]?.moduleNumber).toBeUndefined();
 
     // Week 9 reading: Gehart Chapter 11 from Table 2, suggested date: Aug 27 – Aug 28
     const w9Reading = weeks[8]?.readings?.[0];
     expect(w9Reading).toBeDefined();
     expect(w9Reading?.title).toMatch(/chapter 11/i);
     expect(w9Reading?.dateRangeStr).toBe('Aug 27 – Aug 28');
-    expect(weeks[8]?.moduleNumber).toBe(8);
+    expect(weeks[8]?.moduleNumber).toBeUndefined();
 
     // Week 10 reading: Gehart Chapter 11 from Table 2, suggested date: Sep 3 – Sep 4
     const w10Reading = weeks[9]?.readings?.find(r => /chapter 11/i.test(r.title));
     expect(w10Reading).toBeDefined();
     expect(w10Reading?.dateRangeStr).toBe('Sep 3 – Sep 4');
-    expect(weeks[9]?.moduleNumber).toBe(9);
+    expect(weeks[9]?.moduleNumber).toBeUndefined();
 
     // Week 11 reading: Gehart Chapter 8 from Table 2, suggested date: Sep 10 – Sep 11
     const w11Reading = weeks[10]?.readings?.[0];
     expect(w11Reading).toBeDefined();
     expect(w11Reading?.title).toMatch(/chapters?\s*8/i);
     expect(w11Reading?.dateRangeStr).toBe('Sep 10 – Sep 11');
-    expect(weeks[10]?.moduleNumber).toBe(10);
+    expect(weeks[10]?.moduleNumber).toBeUndefined();
 
     // Week 12: Flex Week (0 readings)
     const w12 = weeks[11];

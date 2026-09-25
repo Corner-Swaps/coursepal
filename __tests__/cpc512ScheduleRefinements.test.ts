@@ -155,33 +155,41 @@ describe('CPC 512 Schedule & Points Refinements Verification', () => {
       expect(week6Readings.length).toBe(0);
     });
 
-    it('heals CPC 512 with all 10 modules intact, including Module 6 for Week 7', () => {
+    it('heals CPC 512 with all 10 modules intact without bleeding modules onto calendar weeks', () => {
       const { courses, readings } = healCanonicalCPC512([mockCpcCourse], [], []);
       const cpcReadings = readings.filter(r =>
         r.courseId ? r.courseId === mockCpcCourse.id : (r.courseCode || '').replace(/\s+/g, '') === 'CPC512'
       );
 
-      // Verify all 10 modules are present in readings
+      // Verify all 10 modules are present in readings (Table 1 pure curriculum modules)
       for (let m = 1; m <= 10; m++) {
         const modReadings = cpcReadings.filter(r => r.moduleNumber === m);
         expect(modReadings.length).toBeGreaterThan(0);
       }
 
-      // Explicitly verify Module 6 is attached to Week 7 reading (Strategic Family Therapy)
+      // Explicitly verify Module 6 is in pure module readings (Strategic Family Therapy / Chapter 4)
+      const module6Reading = cpcReadings.find(r => r.moduleNumber === 6);
+      expect(module6Reading).toBeDefined();
+      expect(module6Reading?.moduleMention).toBe('Module 6');
+      expect(module6Reading?.chapterText).toBe('Chapter 4');
+      expect(module6Reading?.weekNumber).toBeUndefined();
+
+      // Week 7 reading is a weekly calendar reading and does NOT bleed module numbers
       const week7Reading = cpcReadings.find(r => r.weekNumber === 7);
       expect(week7Reading).toBeDefined();
-      expect(week7Reading?.moduleNumber).toBe(6);
-      expect(week7Reading?.moduleMention).toBe('Module 6');
+      expect(week7Reading?.moduleNumber).toBeNull();
+      expect(week7Reading?.moduleMention).toBeNull();
 
-      // Verify course weeks have module numbers mapped
+      // Verify course calendar weeks do not bleed Table 1 modules
       const cpcCourse = courses.find(c => c.id === mockCpcCourse.id);
       expect(cpcCourse).toBeDefined();
       const week7 = cpcCourse?.weeks.find(w => w.weekNumber === 7);
-      expect(week7?.moduleNumber).toBe(6);
-      expect(week7?.moduleMention).toBe('Module 6');
+      expect(week7?.moduleNumber).toBeNull();
+      expect(week7?.moduleMention).toBeNull();
 
       const week11 = cpcCourse?.weeks.find(w => w.weekNumber === 11);
-      expect(week11?.moduleNumber).toBe(10);
+      expect(week11?.moduleNumber).toBeNull();
+      expect(week11?.moduleMention).toBeNull();
     });
   });
 });

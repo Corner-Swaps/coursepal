@@ -373,12 +373,18 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                   ? `Weeks ${Math.min(...assignment.scheduledWeeks!)} to ${Math.max(...assignment.scheduledWeeks!)}`
                   : null;
 
+                if (assignment.moduleMention && (!assignment.weekNumber || assignment.weekNumber === 0 || assignment.moduleMention.trim().toLowerCase() !== `module ${assignment.weekNumber}`)) {
+                  parts.push(assignment.moduleMention);
+                }
+
                 if (weekRangeStr && formattedDate) {
                   parts.push(`${weekRangeStr} • ${formattedDate}`);
                 } else if (formattedDate) {
                   parts.push(formattedDate);
                 } else if (weekRangeStr) {
                   parts.push(`${weekRangeStr} • Presentation Window`);
+                } else if (assignment.noteText && !isContinuous && !/^\s*$/.test(assignment.noteText)) {
+                  parts.push(assignment.noteText.trim());
                 } else if (titleLower.includes('attendance') || titleLower.includes('participation') || isContinuous) {
                   parts.push('Throughout Term');
                 }
@@ -675,44 +681,71 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             </View>
           )}
           {/* Non-week assignments (when week toggle is turned off or course-wide deliverables) */}
-          {unassignedAssignments.length > 0 && (
-            <View style={styles.unassignedGroupSection}>
-              {unassignedAssignments.some(a => a.assignmentNumber != null) ? (
-                unassignedAssignments.map((a, idx) => {
-                  const assignNum = a.assignmentNumber || (idx + 1);
-                  const assignLabel = a.assignmentNumberLabel || `Assignment ${assignNum}`;
-                  const c = matchCourseForItem(a, courses);
-                  const desc = getAssignmentInstructionSummary(a, c);
-                  return (
-                    <View key={a.id} style={{ gap: 6, marginBottom: 4 }}>
+          {unassignedAssignments.length > 0 && (() => {
+            const hasModules = unassignedAssignments.some(a => a.moduleMention || a.moduleNumber);
+            if (hasModules) {
+              const modMap = new Map<string, Assignment[]>();
+              for (const a of unassignedAssignments) {
+                const mLabel = a.moduleMention || (a.moduleNumber ? `Module ${a.moduleNumber}` : 'General');
+                const list = modMap.get(mLabel) || [];
+                list.push(a);
+                modMap.set(mLabel, list);
+              }
+              return (
+                <View style={styles.unassignedGroupSection}>
+                  {Array.from(modMap.entries()).map(([mLabel, mList]) => (
+                    <View key={`mod-group-${mLabel}`} style={{ gap: 6, marginBottom: 8 }}>
                       <View style={styles.weekHeaderRow}>
                         <View style={styles.weekPill}>
-                          <Text style={styles.weekPillText}>{assignLabel}</Text>
+                          <Text style={styles.weekPillText}>{mLabel}</Text>
                         </View>
                       </View>
-                      {desc ? (
-                        <View style={styles.weekThemeHeaderRow}>
-                          <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
-                            {desc}
-                          </Text>
+                      {mList.map(a => renderAssignmentCard(a))}
+                    </View>
+                  ))}
+                </View>
+              );
+            }
+            if (unassignedAssignments.some(a => a.assignmentNumber != null)) {
+              return (
+                <View style={styles.unassignedGroupSection}>
+                  {unassignedAssignments.map((a, idx) => {
+                    const assignNum = a.assignmentNumber || (idx + 1);
+                    const assignLabel = a.assignmentNumberLabel || `Assignment ${assignNum}`;
+                    const c = matchCourseForItem(a, courses);
+                    const desc = getAssignmentInstructionSummary(a, c);
+                    return (
+                      <View key={a.id} style={{ gap: 6, marginBottom: 4 }}>
+                        <View style={styles.weekHeaderRow}>
+                          <View style={styles.weekPill}>
+                            <Text style={styles.weekPillText}>{assignLabel}</Text>
+                          </View>
                         </View>
-                      ) : null}
-                      {renderAssignmentCard(a)}
-                    </View>
-                  );
-                })
-              ) : (
-                <>
-                  <View style={styles.weekHeaderRow}>
-                    <View style={styles.weekPill}>
-                      <Text style={styles.weekPillText}>Assignments</Text>
-                    </View>
+                        {desc ? (
+                          <View style={styles.weekThemeHeaderRow}>
+                            <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
+                              {desc}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {renderAssignmentCard(a)}
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            }
+            return (
+              <View style={styles.unassignedGroupSection}>
+                <View style={styles.weekHeaderRow}>
+                  <View style={styles.weekPill}>
+                    <Text style={styles.weekPillText}>Assignments</Text>
                   </View>
-                  {unassignedAssignments.map(a => renderAssignmentCard(a))}
-                </>
-              )}
-            </View>
-          )}
+                </View>
+                {unassignedAssignments.map(a => renderAssignmentCard(a))}
+              </View>
+            );
+          })()}
 
           {/* Week-grouped assignments (when week toggle is turned on) */}
           {groupedAssignments.map(([weekNum, weekList]) => (
@@ -722,6 +755,22 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 <View style={styles.weekPill}>
                   <Text style={styles.weekPillText}>Week {weekNum}</Text>
                 </View>
+                {(() => {
+                  const firstWithMod = weekList.find(a => a.moduleMention);
+                  const matchedCourse = firstWithMod ? matchCourseForItem(firstWithMod, courses) : (activeCourse || courses[0]);
+                  const wkObj = matchedCourse?.weeks?.find(w => w.weekNumber === weekNum);
+                  const modBadge = firstWithMod?.moduleMention || wkObj?.moduleMention;
+                  if (!modBadge) return null;
+                  // If course already has a dedicated module section or unassigned module deliverables, do not repeat module pills in weeks
+                  const hasModules = assignments.some(a => a.moduleNumber && (!a.weekNumber || a.weekNumber === 0));
+                  if (hasModules) return null;
+                  if (modBadge.trim().toLowerCase() === `module ${weekNum}` || modBadge.trim().toLowerCase() === `mod ${weekNum}`) return null;
+                  return (
+                    <View style={[styles.weekPill, { backgroundColor: '#ECEEF2', marginLeft: 6 }]}>
+                      <Text style={[styles.weekPillText, { color: '#475569' }]}>{modBadge}</Text>
+                    </View>
+                  );
+                })()}
                 {weekNum === currentAcademicWeek && (
                   <View style={styles.currentWeekHeaderBadge}>
                     <Text style={styles.currentWeekHeaderBadgeText}>Current Week</Text>

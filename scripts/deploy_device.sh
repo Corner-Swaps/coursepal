@@ -50,6 +50,12 @@ if [ "$DEVICE_AWAKE" = false ]; then
   exit 1
 fi
 
+if [ "$1" == "--clean" ] || [ "$1" == "--new-user" ] || [ "$2" == "--clean" ] || [ "$2" == "--new-user" ]; then
+  echo "🧹 3b. Uninstalling existing app to guarantee fresh new-user state..."
+  xcrun devicectl device uninstall app --device "$DEVICE_ID" "$BUNDLE_ID" 2>/dev/null || true
+  sleep 1
+fi
+
 if [ "$1" == "--native" ] || [ ! -d "$APP_PATH" ]; then
   echo "🔨 4. Compiling native iOS app in Release mode..."
   xcodebuild -workspace ios/CoursePal.xcworkspace \
@@ -71,6 +77,10 @@ else
   plutil -replace CFBundleDevelopmentRegion -string "en" "$APP_PATH/Info.plist" 2>/dev/null || true
   plutil -replace CFBundlePackageType -string "APPL" "$APP_PATH/Info.plist" 2>/dev/null || true
   plutil -replace CFBundleIconName -string "AppIcon" "$APP_PATH/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundleVersion -string "6" "$APP_PATH/Info.plist" 2>/dev/null || true
+  if [ -f "$APP_PATH/PlugIns/CoursePalWidget.appex/Info.plist" ]; then
+    plutil -replace CFBundleVersion -string "6" "$APP_PATH/PlugIns/CoursePalWidget.appex/Info.plist" 2>/dev/null || true
+  fi
 fi
 
 echo "🔏 5. Extracting entitlements & code-signing app bundle..."

@@ -284,8 +284,11 @@ export class DataPersistenceBackupManager {
       }
 
       const parsed: BackupPayload = JSON.parse(content);
-      if (!parsed || parsed.version < 5) {
+      if (!parsed || typeof parsed !== 'object') {
         return null;
+      }
+      if (!parsed.version || parsed.version < 5) {
+        parsed.version = 5;
       }
       // Revive ISO date strings to Date objects
       const reviveDate = (d: any): Date | null => {
@@ -403,6 +406,51 @@ export class DataPersistenceBackupManager {
       );
       return true;
     } catch (err) {
+      return false;
+    }
+  }
+
+  /**
+   * Resets all stored application data, deleting disk backup files, widget snapshots,
+   * pending upload jobs, and all cached/stored syllabus documents in the sandbox.
+   */
+  public async resetAllStoredData(): Promise<boolean> {
+    try {
+      if (this.backupTimer) {
+        clearTimeout(this.backupTimer);
+        this.backupTimer = null;
+      }
+      if (!FileSystem.documentDirectory) return false;
+
+      const filesToDelete = [
+        this.backupFilePath,
+        this.termsFilePath,
+        this.pendingJobFilePath,
+        `${FileSystem.documentDirectory}CoursePal_WidgetSnapshot.json`,
+        `${FileSystem.documentDirectory}CoursePal_ReviewPromptState.json`
+      ];
+
+      for (const f of filesToDelete) {
+        try {
+          const info = await FileSystem.getInfoAsync(f);
+          if (info.exists) {
+            await FileSystem.deleteAsync(f, { idempotent: true });
+          }
+        } catch {}
+      }
+
+      const syllabiDir = `${FileSystem.documentDirectory}syllabi/`;
+      try {
+        const info = await FileSystem.getInfoAsync(syllabiDir);
+        if (info.exists) {
+          await FileSystem.deleteAsync(syllabiDir, { idempotent: true });
+        }
+      } catch {}
+
+      this.cachedDiagnosticRecord = null;
+      this.termsAcceptedCached = null;
+      return true;
+    } catch {
       return false;
     }
   }

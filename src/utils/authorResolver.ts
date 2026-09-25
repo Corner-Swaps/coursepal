@@ -111,8 +111,35 @@ const CANONICAL_SCHOLAR_REGISTRY: Record<string, string> = {
   'halberstamj': 'Jack Halberstam',
   'halberstam': 'Jack Halberstam',
   'jackhalberstam': 'Jack Halberstam',
+  'patriciahillcollins': 'Patricia Hill Collins',
+  'hillcollins': 'Patricia Hill Collins',
+  'annlaurastoler': 'Ann Laura Stoler',
+  'laurastoler': 'Ann Laura Stoler',
+  'stoler': 'Ann Laura Stoler',
+  'eliclare': 'Eli Clare',
+  'clare': 'Eli Clare',
+  'joseestebanmunoz': 'José Esteban Muñoz',
+  'munoz': 'José Esteban Muñoz',
+  'paulboyce': 'Paul Boyce, Elena Gonzalez-Polledo & Silvia Posocco',
   'preciadop': 'Paul B. Preciado',
   'preciado': 'Paul B. Preciado',
+  'weeksj': 'Jeffrey Weeks',
+  'weeks': 'Jeffrey Weeks',
+  'jeffreyweeks': 'Jeffrey Weeks',
+  'westonk': 'Kath Weston',
+  'weston': 'Kath Weston',
+  'kathweston': 'Kath Weston',
+  'nobletynes': 'Safiya U. Noble & Brendesha M. Tynes',
+  'nobles': 'Safiya U. Noble',
+  'safiyanoble': 'Safiya U. Noble',
+  'safiyaumojanoble': 'Safiya Umoja Noble',
+  'noble': 'Safiya U. Noble & Brendesha M. Tynes',
+  'dugganl': 'Lisa Duggan',
+  'duggan': 'Lisa Duggan',
+  'lisaduggan': 'Lisa Duggan',
+  'spaded': 'Dean Spade',
+  'spade': 'Dean Spade',
+  'deanspade': 'Dean Spade',
 
   // Research Methods & Statistics (CPC 514)
   'creswelljwcreswelld': 'John W. Creswell & J. David Creswell',
@@ -456,6 +483,14 @@ export function mineFullNameFromDocumentText(surnameOrInitial: string, documentT
   if (!surnameOrInitial || !documentText || documentText.length < 50) return null;
 
   const cleanedTarget = surnameOrInitial.replace(/^(?:by|author:?|reading:?)\s*/i, '').trim();
+
+  // If target is already a complete First Last name and exists in documentText, return it directly
+  const targetWords = cleanedTarget.split(/\s+/);
+  if (targetWords.length === 2 && /^[A-Z][a-zA-Z'–-]+$/.test(targetWords[0]) && /^[A-Z][a-zA-Z'–-]+$/.test(targetWords[1])) {
+    if (documentText.includes(cleanedTarget)) {
+      return cleanedTarget;
+    }
+  }
   
   // Extract multi-token surname prefixes like van der, von, de la, de, du, le, la, etc.
   const prefixMatch = cleanedTarget.match(/^(?:(?:van\s+der|van\s+de|van\s+den|van|von|de\s+la|de\s+le|de|da|di|del|dos|du|d'|le|la|st\.)\s+)?/i);
@@ -472,7 +507,7 @@ export function mineFullNameFromDocumentText(surnameOrInitial: string, documentT
 
   const escapedRoot = rootLastName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const counts: Record<string, number> = {};
-  const excludedWords = /^(?:University|Department|Graduate|School|College|Course|Program|Syllabus|Associate|Assistant|Professor|Doctor|Primary|Instructor|Faculty|Chapter|Section|Lecture|Required|Spring|Fall|Summer|Winter|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Assignment|Deliverable|Evaluation|Overview|Introduction|Review|Reading|Paper|Project)\b/i;
+  const excludedWords = /^(?:University|Department|Graduate|School|College|Course|Program|Syllabus|Associate|Assistant|Professor|Doctor|Primary|Instructor|Faculty|Chapter|Section|Lecture|Required|Spring|Fall|Summer|Winter|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Assignment|Deliverable|Evaluation|Overview|Introduction|Review|Reading|Paper|Project|Spatial|Geographies|Social|Cultural|Critical|Historical|Empirical|Structural|Contemporary|Public|Health|Thematic|Core|Module|Unit|Perspectives|Studies|Journal|Volume|Selected|Collected|Research|Essays|Handbook|Manual|Theory|Practice|History|Psychology|Signs|Critique|Notes|Part|Book)\b/i;
 
   // Pattern 1: Natural order "Firstname [Middle] Lastname" (e.g. "Judith Butler", "Simone de Beauvoir", "Johannes D. van der Waals")
   const naturalRegex = new RegExp(`\\b([A-Z][a-z]{2,15}(?:\\s+[A-Z]\\.?)?)\\s+((?:(?:van\\s+der|van\\s+de|van\\s+den|van|von|de\s+la|de\\s+le|de|da|di|del|dos|du|d'|le|la|st\\.)\\s+)?${escapedRoot})\\b`, 'gi');
@@ -581,10 +616,22 @@ export function resolveFullAuthorName(
   if (normKey.includes('stuss') && normKey.includes('benson')) {
     return 'Donald T. Stuss & D. Frank Benson';
   }
+  if (normKey.startsWith('corey')) {
+    return 'Gerald Corey';
+  }
+  if (normKey.includes('creswell')) {
+    return 'John W. Creswell & J. David Creswell';
+  }
+  if (normKey.includes('gehart')) {
+    return 'Diane R. Gehart';
+  }
   if (normKey.includes('yalom') && normKey.includes('leszcz')) {
     return 'Irvin D. Yalom & Molyn Leszcz';
   }
-  if (normKey.includes('wada') && normKey.includes('fellner')) {
+  if (normKey.startsWith('yalom')) {
+    return 'Irvin D. Yalom';
+  }
+  if (normKey.includes('wada') || normKey.includes('fellner')) {
     return 'Kaori Wada & Karlee D. Fellner';
   }
   if (normKey.includes('maddux') || normKey.includes('winstead')) {
@@ -638,6 +685,21 @@ export function resolveFullAuthorName(
   if (normKey.includes('dettmers')) {
     return 'Tim Dettmers et al.';
   }
+  if (normKey.includes('noble') && normKey.includes('tynes')) {
+    return 'Safiya U. Noble & Brendesha M. Tynes';
+  }
+  if (normKey === 'jeffreyweeks' || normKey === 'weeksj') {
+    return 'Jeffrey Weeks';
+  }
+  if (normKey.includes('weston')) {
+    return 'Kath Weston';
+  }
+  if (normKey.includes('duggan')) {
+    return 'Lisa Duggan';
+  }
+  if (normKey.includes('spade')) {
+    return 'Dean Spade';
+  }
 
   // 2. Check individual authors if multi-author string (e.g. "Huyen (Ch. 1–3); Kleppmann (Ch. 1)")
   if (/\bet\s+al\.?$/i.test(cleaned) && !cleaned.includes('&')) {
@@ -668,15 +730,7 @@ export function resolveFullAuthorName(
     }
   }
 
-  // 3. Document-context full name mining if raw document text is available
-  if (rawTextContext && rawTextContext.length > 50) {
-    const mined = mineFullNameFromDocumentText(cleaned, rawTextContext);
-    if (mined) {
-      return mined;
-    }
-  }
-
-  // 4. Invert "Last, First" format (e.g. "Foucault, Michel" -> "Michel Foucault")
+  // 3. Invert "Last, First" format (e.g. "Foucault, Michel" -> "Michel Foucault", "Halberstam, Jack" -> "Jack Halberstam")
   if (cleaned.includes(',')) {
     const inverted = invertLastNameFirst(cleaned);
     const invertedKey = inverted.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -685,6 +739,14 @@ export function resolveFullAuthorName(
     }
     if (inverted !== cleaned) {
       return inverted;
+    }
+  }
+
+  // 4. Document-context full name mining if raw document text is available
+  if (rawTextContext && rawTextContext.length > 50) {
+    const mined = mineFullNameFromDocumentText(cleaned, rawTextContext);
+    if (mined) {
+      return mined;
     }
   }
 

@@ -104,7 +104,7 @@ export function cleanChapterFromRaw(rawCh?: string | null): string | null {
   const hasChapterKeyword = /\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?|cap[íi]tulos?|cap\.?|chapitres?|kapitels?|capitoli?)\b/i.test(cleaned);
   const hasSectionKeyword = /\b(?:sections?|sec\.?)\b/i.test(cleaned);
   // Check if string is purely digits/connectors e.g. "12", "12 & 13", "1-4", "1, 2", "1: 3", "4: 10"
-  const isPureNumbers = /^\d+[\s&,:\-–andtoyund\d]*$/i.test(cleaned);
+  const isPureNumbers = /^\d+(?:[\s&,:\-–—]+|\s+(?:and|to|und|et|y)\s+|\d+)*$/i.test(cleaned);
   // Check if string starts with a leading chapter number e.g. "7 Experiential Family Therapy" or "7: Overview"
   const leadingNumMatch = cleaned.match(/^(\d{1,2})(?:[:.\s–-]+|\s+)(?!jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec\b)[A-Za-z]/i);
 
@@ -120,7 +120,7 @@ export function cleanChapterFromRaw(rawCh?: string | null): string | null {
 
   // 1. If explicit chapter keyword exists, extract digits directly following it
   if (hasChapterKeyword) {
-    const keywordDigitsMatch = cleaned.match(/\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?|cap[íi]tulos?|cap\.?|chapitres?|kapitels?|capitoli?)\s*[:\-–.]*\s*(\d+[\s&,:\-–andtoyund\d]*)/i);
+    const keywordDigitsMatch = cleaned.match(/\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?|cap[íi]tulos?|cap\.?|chapitres?|kapitels?|capitoli?)\s*[:\-–.]*\s*(\d+(?:[\s,:\-–—]+(?=\d)|\s+(?:and|to|und|et|y)\s+|\s*&\s*|\d+)*)/i);
     if (keywordDigitsMatch) {
       let numPart = keywordDigitsMatch[1].trim();
       // Normalize colons between digits to en-dash: e.g. "1: 3" -> "1–3", "4: 10" -> "4–10"
@@ -209,9 +209,9 @@ export function stripChapterMentions(text: string): string {
   if (!text) return '';
   const healed = repairChapterArtifacts(text);
   // Matches parenthesized chapter/section patterns: "(Chapters 1-3)", "(Ch. 1-3)", "(Section 1)", "(Sec. 1-3)"
-  let stripped = healed.replace(/\s*\(\s*(?:chapters?|chaps?\.?|chs?\.?|ch\.?|sections?|sec\.?)\s*[\d\s,&:.\-–—andto]+\s*\)/gi, ' ');
+  let stripped = healed.replace(/\s*\(\s*(?:chapters?|chaps?\b\.?|chs?\b\.?|ch\b\.?|sections?|sec\b\.?)\s*[\d\s,&:.\-–—andto]+\s*\)/gi, ' ');
   // Matches "Chapter 1 · Ch. 1", "Chapters 12 & 13", "Ch. 12", "Ch 1 & 2", "Section 1, Section 3", "Sec. 1", etc.
-  const chapterPattern = /\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\.?|chs?\.?|ch\.?|sections?|sec\.?)\s*(?:[\d\s,&:.\-–—]*(?:\b(?:and|to)\b\s*)?)*[:\-–·•.]*\s*/gi;
+  const chapterPattern = /\s*[:\-–·•]?\s*\b(?:chapters?|chaps?\b\.?|chs?\b\.?|ch\b\.?|sections?|sec\b\.?)\s*(?:[\d\s,&:.\-–—]*(?:\b(?:and|to)\b\s*)?)*[:\-–·•.]*\s*/gi;
   stripped = stripped.replace(chapterPattern, ' ');
   // Strip page numbers and markers e.g. "pg. 859", "pp. 12-40"
   stripped = stripped.replace(/\b(?:pp?\.?|pages?|pg\.?)\s*[\d\s\-–—]+/gi, ' ');
@@ -291,7 +291,8 @@ export function isGenericPlaceholderReadingTitle(rawTitle: string | null | undef
   if (normalized.length === 0) return true;
   if (GENERIC_PLACEHOLDER_SET.has(normalized)) return true;
   const strippedPunct = normalized.replace(/[:\-–—*?]+$/g, '').trim();
-  if (GENERIC_PLACEHOLDER_SET.has(strippedPunct)) return true;
+  if (/^(?:assigned|required|weekly|course)?\s*readings?(?:\s*\d+(?:\/\d+)?)?$/i.test(normalized)) return true;
+  if (/^see\s+brightspace\b/i.test(normalized)) return true;
   if (/^total\s+(?:course\s+|grade\s+|assignment\s+)?points?(?:\s*(?:possible|total))?(?:\s*[:=-]\s*\d+)?\b/i.test(normalized)) return true;
   if (/^total\s*[:=-]\s*\d+\s*(?:pts?|points?|%)/i.test(normalized)) return true;
   if (/^(?:points|points\s+possible|total\s+points|grade\s+points|total\s+grade)$/i.test(normalized)) return true;
@@ -333,13 +334,23 @@ export function cleanAcademicWeekTheme(rawTheme?: string | null): string {
   t = t.replace(/^(?:chs?\.?|chapters?|pp?\.?|pages?|sec(?:tions?)?\.?)\s*[\d\s\-–—,&]+[;:.]?\s*/i, '').trim();
 
   // 3. Strip reading citations, book mentions, and standard literature references
+  // Protect conceptual comparisons like "(DSM vs. ICD)"
+  const hasDsmVsIcd = /\bDSM\s*(?:vs\.?|and|&)\s*ICD\b/i.test(t);
+
   // DSM references & section citations e.g. "DSM 5-TR Section 1, Section 3"
-  t = t.replace(/\bDSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?\b/gi, ' ');
+  t = t.replace(/\bDSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?\b/gi, hasDsmVsIcd ? 'DSM' : ' ');
   t = t.replace(/\b(?:sections?|sec\.?)\s*[:\-–.]*\s*\d+(?!\/)(?:(?:\s*[,&]\s*|\s+(?:and|&)\s+)(?:sections?|sec\.?)\s*\d+(?!\/))*/gi, ' ');
   // Specific book authors and citations
   t = t.replace(/\b(?:Maddux\s*&\s*Winstead|Wada\s*&\s*Fellner|Corey\s*&\s*Corey|Corey|Yalom|Creswell|Gehart|Nichols|Beck|Neimeyer|Hochstetler|Bishop|Preston|Talaga|Carlson)\b.*?(?:;|\b(?=[A-Z][a-z]+)|\s*-\s*|\s*$)/gi, ' ');
-  // Association / manual citations
-  t = t.replace(/\b(?:American\s+Psychiatric\s+Association|World\s+Health\s+Organization|APA|WHO|ICD(?:-\d+)?)\b/gi, ' ');
+  // Association / manual citations (preserving ICD if part of DSM vs. ICD)
+  t = t.replace(/\b(?:American\s+Psychiatric\s+Association|World\s+Health\s+Organization|APA|WHO)\b/gi, ' ');
+  if (!hasDsmVsIcd) {
+    t = t.replace(/\bICD(?:-\d+)?\b/gi, ' ');
+  }
+  // Presentation annotations (e.g. "Presentations x 2", "Presentation x 1")
+  t = t.replace(/\bPresentations?\s*(?:x\s*\d+|\(\d+\)|\d+)\b/gi, ' ');
+  t = t.replace(/\bPresentation\s+Reference\b/gi, ' ');
+  t = t.replace(/\bGroup\s+Presentations?\b/gi, ' ');
   // Chapter and page markers anywhere in string
   t = t.replace(/\b(?:chapters?|chps?\.?|chs?\.?|ch\b\.?|sections?|sec\.?)\s*\d+[\d\s,&–\-]*/gi, ' ');
   t = t.replace(/\b(?:pp?\.?|pages?)\s*\d+[\d\s–\-]*/gi, ' ');
@@ -448,6 +459,14 @@ export function isDeliverableNotReading(
     /\bfinal\s+exams?\b/i,
     /\brubrics?\b/i,
     /\bassignments?\s*\d*\b/i,
+    /\b(?:your|this|the)\s+paper\b/i,
+    /\bformatting\s+and\s+citation\b/i,
+    /\bwritten\s+paper\b/i,
+    /\bpaper\s+exploring\b/i,
+    /\bpaper\s+will\s+be\b/i,
+    /\bstudents\s+will\b/i,
+    /\bprepare\s+an?\s+\d+/i,
+    /\bheart\s+of\s+your\s+paper\b/i,
     /\bdeliverables?\b/i,
     /\btareas?\s*\d*\b/i,
     /\bensayos?\b/i,
@@ -513,9 +532,18 @@ export function deduplicateReadingTitle(title: string): string {
   if (!title || typeof title !== 'string') return '';
   let str = title.trim();
 
-  // 1. Remove duplicate adjacent phrases joined by dashes, colons, or bullets:
+  // 1. Remove duplicate adjacent identical phrases joined by dashes, colons, or bullets:
   // e.g. "Sexual and Gender Minority Youth in Canada – Sexual and Gender Minority Youth in Canada"
-  str = str.replace(/\b([A-Za-z0-9\s'&,.-]{3,60})\b\s*(?:[:—–·•\-]\s*)+\1\b/gi, '$1');
+  if (/[:—–·•]/.test(str)) {
+    const parts = str.split(/\s*(?:[:—–·•]|\s+-\s+)\s*/);
+    if (parts.length === 2) {
+      const p1Norm = parts[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+      const p2Norm = parts[1].toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (p1Norm && p1Norm === p2Norm) {
+        str = parts[0].trim();
+      }
+    }
+  }
 
   // 2. Deduplicate segments joined by ' · '
   if (str.includes('·')) {
@@ -566,9 +594,9 @@ export function deduplicateReadingTitle(title: string): string {
       }
     }
     str = uniqueSegs.join(' · ');
-  } else if (/[:—–-]/.test(str)) {
-    // No ' · ' but contains dashes/colons: deduplicate parts
-    const parts = str.split(/\s*(?:[—–-]|:)\s+/).map(p => p.trim()).filter(Boolean);
+  } else if (/[—–]|\s+-\s+/.test(str)) {
+    // No ' · ' but contains dashes: deduplicate parts if any segment is identical
+    const parts = str.split(/\s*(?:[—–]|\s+-\s+)\s+/).map(p => p.trim()).filter(Boolean);
     if (parts.length >= 2) {
       const uParts: string[] = [];
       for (const p of parts) {
@@ -578,18 +606,17 @@ export function deduplicateReadingTitle(title: string): string {
           uParts.push(p);
         }
       }
-      if (uParts.length >= 2) {
-        const isCh = /^(?:Chapter|Ch\.?)\s*\d+$/i.test(uParts[0]);
-        str = uParts.join(isCh ? ' · ' : ' – ');
-      } else if (uParts.length === 1) {
-        str = uParts[0];
+      if (uParts.length < parts.length) {
+        if (uParts.length === 1) {
+          str = uParts[0];
+        } else {
+          str = uParts.join(' – ');
+        }
       }
     }
   }
 
-  // Final cleanup of duplicate adjacent phrases that might have been revealed
-  str = str.replace(/\b([A-Za-z0-9\s'&,.-]{3,60})\b\s*(?:[:—–·•\-]\s*)+\1\b/gi, '$1');
-  str = str.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
+  str = str.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s.]+$/g, '').trim();
 
   return str;
 }
@@ -669,12 +696,23 @@ export function formatDisplayTitleWithChapter(
       );
 
     if (!isAuthorCitation) {
-      rawTitle = rawTitle.substring(rawPrefixMatch[0].length).trim();
+      const afterMatch = rawTitle.substring(rawPrefixMatch[0].length).trim();
+      const afterWithoutCh = stripChapterMentions(afterMatch).trim();
+      if (afterWithoutCh.length >= 3) {
+        rawTitle = afterMatch;
+      }
     }
   }
   if (resTitle && resTitle.trim()) {
     const escRes = resTitle.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    rawTitle = rawTitle.replace(new RegExp(`^${escRes}[:—–-\\s]+`, 'i'), '').trim();
+    const testRemainder = rawTitle
+      .replace(new RegExp(`^${escRes}[:—–-\\s]+`, 'i'), '')
+      .replace(/\(\s*\d{4}\s*\)/g, '')
+      .trim();
+    const remainderWithoutCh = stripChapterMentions(testRemainder).trim();
+    if (remainderWithoutCh.length >= 3) {
+      rawTitle = testRemainder;
+    }
   }
 
   // Detect chapter candidate from either chapterText or rawTitle
@@ -690,6 +728,7 @@ export function formatDisplayTitleWithChapter(
   }
 
   // Extract substantive topic by stripping all chapter mentions and noise
+  let isBookOrCourseName = false;
   let substantiveTitle = stripChapterMentions(deduplicateRepeatedPhrases(distillSmartReadingTitle(rawTitle)));
 
   if (canonicalChapter) {
@@ -730,9 +769,19 @@ export function formatDisplayTitleWithChapter(
           const normFirst = first.toLowerCase().replace(/[^a-z0-9]/g, '');
           const normRes = (resTitle || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-          // If first AND rest together make up resTitle, rest is just the book subtitle, NOT a chapter topic
+          // If first AND rest together make up resTitle, check whether it is a generic pedagogical subtitle
+          const isPedagogicalSub =
+            rest.length > 50 ||
+            /^(?:a\s+practical\s+approach|theory,\s*research|a\s+comprehensive|a\s+guide\s+to|methods\s+and\s+applications)\b/i.test(rest) ||
+            /\b(?:clinical\s+case|documentation)\b/i.test(rest);
+
           if (normRes.length > 0 && normRes.includes(normFirst) && normRes.includes(normRest) && normRest.length > 10) {
-            substantiveTitle = '';
+            if (isPedagogicalSub) {
+              substantiveTitle = '';
+            } else {
+              substantiveTitle = resTitle || uniqueParts.join(': ');
+              isBookOrCourseName = true;
+            }
           } else if (
             /\b(?:edition|textbook|handbook|reader|diversity|counselling|psychology|resilience|growing)\b/i.test(first) ||
             (resTitle && resTitle.toLowerCase().includes(first.toLowerCase())) ||
@@ -785,11 +834,18 @@ export function formatDisplayTitleWithChapter(
   if (resTitle && resTitle.trim()) {
     let clean = sanitizeDanglingPunctuation(stripChapterMentions(deduplicateRepeatedPhrases(resTitle.trim())));
     clean = clean.replace(/,?\s*\b\d+(?:st|nd|rd|th)?\s+(?:Canadian\s+)?Edition\b/gi, '').trim();
-    if (clean.length > 50 && clean.includes(':')) {
+    if (clean.includes(':')) {
       const colonParts = clean.split(':');
       const mainBookTitle = colonParts[0].trim();
-      if (mainBookTitle.length >= 5 && /[a-zA-Z]{3,}/.test(mainBookTitle)) {
-        clean = mainBookTitle;
+      const afterColon = colonParts.slice(1).join(':').trim();
+      const isVol = /\b(?:vol(?:ume)?\.?\s*(?:\d+|[ivxldcm]+))\s*$/i.test(mainBookTitle);
+      const isNoise = /^(?:chapters?|chps?\.?|chs?\.?|ch\b\.?|sections?|sec\.?|edition|reader|required|optional|pp?\.?)\b/i.test(afterColon);
+      const isLongPedagogicalSubtitle = clean.length > 70 || /^(?:a\s+practical\s+approach|theory,\s*research|a\s+comprehensive|a\s+guide\s+to)\b/i.test(afterColon);
+
+      if (isNoise || (!isVol && isLongPedagogicalSubtitle)) {
+        if (mainBookTitle.length >= 5 && /[a-zA-Z]{3,}/.test(mainBookTitle)) {
+          clean = mainBookTitle;
+        }
       }
     }
     if (authorName && authorName.trim()) {
@@ -832,7 +888,8 @@ export function formatDisplayTitleWithChapter(
   }
 
   // Check if substantive title matches or overlaps the textbook or course name
-  let isBookOrCourseName =
+  isBookOrCourseName =
+    isBookOrCourseName ||
     normSubstantive.length === 0 ||
     (normRes.length > 0 && (normSubstantive === normRes || (normSubstantive.length > 10 && normSubstantive.startsWith(normRes)))) ||
     (normCourse.length > 0 && (normSubstantive === normCourse || normCourse.includes(normSubstantive) || normSubstantive.includes(normCourse)));
@@ -840,8 +897,14 @@ export function formatDisplayTitleWithChapter(
   // Check if rawTitle is already an explicit author citation like "Beck (Ch. 1–3)" or "Persons (Ch. 1)"
   const isAuthorCitation = /^[A-Z][a-zA-Z\s.&–-]+?\s*\(\s*(?:ch(?:apter)?s?\.?|pp?\.?|\d)/i.test(rawTitle);
 
-  // If substantiveTitle is empty (or matches book/course name) and reading has a topic:
-  if (!isAuthorCitation && (isBookOrCourseName || !substantiveTitle)) {
+  // Zero Cross-Bleed Rule: Never overwrite a genuine book or article title with a weekly session theme.
+  // Only fall back to topic if substantiveTitle is missing, generic, or identical to course name.
+  const isGenericOrEmptyTitle = !substantiveTitle ||
+    substantiveTitle.toLowerCase() === 'reading' ||
+    substantiveTitle.toLowerCase() === 'assigned readings' ||
+    (normCourse.length > 0 && (normSubstantive === normCourse || normCourse.includes(normSubstantive)));
+
+  if (!isAuthorCitation && isGenericOrEmptyTitle) {
     const rawTopic = typeof titleOrReading === 'object' && titleOrReading !== null
       ? ((titleOrReading as any).topic || (titleOrReading as any).relevantTopics)
       : null;
@@ -852,8 +915,7 @@ export function formatDisplayTitleWithChapter(
       if (
         cleanTopic.length >= 3 &&
         !/^(?:week|module|unit|reading\s*week|no\s*class)\b/i.test(cleanTopic) &&
-        !isGenericPlaceholderTheme(cleanTopic) &&
-        (!substantiveTitle || isBookOrCourseName || substantiveTitle.toLowerCase() === 'reading')
+        !isGenericPlaceholderTheme(cleanTopic)
       ) {
         substantiveTitle = cleanTopic;
         isBookOrCourseName = false;
@@ -861,11 +923,11 @@ export function formatDisplayTitleWithChapter(
     }
   }
 
-  // If rawTitle is an academic citation e.g. "Shoeybi et al. (Megatron)", "Li et al. (2020)", "Dettmers et al. (QLoRA)"
+  // If rawTitle is an academic citation e.g. "Shoeybi et al. (Megatron)", "Li et al. (2020)", "Dettmers et al. (QLoRA)", "Brenner & Wang (2015)"
   // and no canonical chapter exists, preserve the full citation as the result title!
-  const isPaperCitation = /^[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\s.&–-]+?\s*\([A-Za-z0-9\s\-–—/]+\)$/.test(rawTitle.trim());
+  const isPaperCitation = /^[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\s.&–\-,]+?\s*\([A-Za-z0-9\s\-–—/]+\)[.:]?$/.test(rawTitle.trim());
   if (isPaperCitation && !canonicalChapter) {
-    return rawTitle.trim();
+    return rawTitle.replace(/,\s*\(/g, ' (').replace(/[.:]+$/, '').trim();
   }
 
   let resultTitle = '';
@@ -1070,8 +1132,9 @@ export function formatAuthorAndPagesSubtitle(
       cleanRes = cleanRes.replace(/\bet\s+al\.?\b/gi, '').trim();
     }
 
-    // Strip stray numbers from cleanRes (e.g. "overview 3" -> "overview")
-    cleanRes = cleanRes.replace(/^\d+[:.\s–-]+|[:.\s–-]+\d+$/g, '').trim();
+    // Strip stray numbers from cleanRes (e.g. "overview 3" -> "overview"), protecting journal issues like "Signs, Vol. 5, No. 4"
+    cleanRes = cleanRes.replace(/(?<!\b(?:no|vol|issue|number|v|n)\.?\s*)[:.\s–-]+\d+$/i, '').trim();
+    cleanRes = cleanRes.replace(/^\d+[:.\s–-]+/g, '').trim();
     cleanRes = sanitizeDanglingPunctuation(cleanRes);
 
     // Discard fragments like "overview" or "an overview", or if lacks real substantive words
@@ -1106,8 +1169,12 @@ export function formatAuthorAndPagesSubtitle(
     const lowerDisplay = (displayTitle || '').toLowerCase();
     const lowerCourse = (courseName || '').toLowerCase();
 
+    const normResAlpha = lowerRes.replace(/[^a-z0-9]/g, '');
+    const normDisplayAlpha = lowerDisplay.replace(/[^a-z0-9]/g, '');
+
     const isAlreadyInTitle =
       lowerDisplay.includes(lowerRes) ||
+      (normResAlpha.length >= 6 && normDisplayAlpha.includes(normResAlpha)) ||
       (cleanRes.length > 5 && lowerDisplay.replace(/chapters?\s*[\d&–,-]+\s*·\s*/i, '').includes(lowerRes));
     const isJustCourseName =
       lowerCourse && (lowerCourse === lowerRes || (lowerRes.length > 4 && lowerCourse.includes(lowerRes)));
@@ -2515,6 +2582,14 @@ export function cleanAssignmentTitle(raw: string): string {
   s = s.replace(/\s*(?:worth\s*)?\d{1,3}%\s*(?:of\s*(?:the\s*|their\s*)?(?:final\s*)?(?:grade|mark))?.*$/i, '').trim();
   s = s.replace(/\s*[-–—(]?\s*\d{1,3}%\s*\)?\s*$/g, '').trim();
 
+  // Strip unmatched quotation marks e.g. "Best Practices” Literature Review -> Best Practices Literature Review
+  const openQ = (s.match(/[“"]/g) || []).length;
+  const closeQ = (s.match(/[”"]/g) || []).length;
+  if (openQ !== closeQ) {
+    s = s.replace(/[“”"]/g, '');
+  }
+  s = s.replace(/^[“”"']+|[“”"']+$/g, '').trim();
+
   // Strip dangling punctuation and clean spacing
   s = sanitizeDanglingPunctuation(s);
 
@@ -2662,8 +2737,8 @@ export function isInvalidAssignmentTitle(raw: string): boolean {
   }
 
   // Reject pure reading titles that contain reading keywords but lack any assignment/deliverable keyword
-  const hasReadingKeyword = /\b(?:chapter|ch\.|textbook|readings?|required reading)\b/i.test(lower);
-  const hasDeliverableKeyword = /\b(?:paper|report|exam|examination|quiz|midterm|final|project|homework|problem\s+set|lab|presentation|deliverable|brief|essay|critique|discussion\s+board|peer\s+review|case\s+study|assignment)\b/i.test(lower);
+  const hasReadingKeyword = /\b(?:chapter|ch\.|textbook|required reading)\b/i.test(lower) || (/\breadings?\b/i.test(lower) && !lower.includes('close reading'));
+  const hasDeliverableKeyword = /\b(?:paper|report|exam|examination|quiz|midterm|final|project|homework|problem\s+set|lab|presentation|deliverable|brief|essay|critique|discussion\s+board|peer\s+review|case\s+study|assignment|synthesis|dossier|protocol|audit|memo|teardown|deconstruction)\b/i.test(lower);
   if (hasReadingKeyword && !hasDeliverableKeyword) {
     return true;
   }

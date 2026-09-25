@@ -506,14 +506,35 @@ static NSString *PerformVisionOCROnCGImage(CGImageRef cgImage) {
   VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:^(VNRequest * _Nonnull req, NSError * _Nullable error) {
     if (error || !req.results || req.results.count == 0) return;
 
-    // Sort observations into human natural reading order: top-to-bottom, left-to-right
-    // Vision bounding boxes are normalized in [0, 1] with (0,0) at bottom-left.
+    // Detect two-column layout: count observations strictly on the left (maxX <= 0.52) vs right (minX >= 0.48)
+    NSInteger leftColCount = 0;
+    NSInteger rightColCount = 0;
+    for (id obj in req.results) {
+      if ([obj isKindOfClass:[VNRecognizedTextObservation class]]) {
+        VNRecognizedTextObservation *obs = (VNRecognizedTextObservation *)obj;
+        if (CGRectGetMaxX(obs.boundingBox) <= 0.52) leftColCount++;
+        else if (CGRectGetMinX(obs.boundingBox) >= 0.48) rightColCount++;
+      }
+    }
+    BOOL isTwoColumnPage = (leftColCount >= 4 && rightColCount >= 4);
+
+    // Sort observations into natural reading order:
+    // If two columns: read entire left column top-to-bottom, then right column top-to-bottom.
+    // If single column: read top-to-bottom.
     NSArray *sortedObservations = [req.results sortedArrayUsingComparator:^NSComparisonResult(id obj1, id obj2) {
       if (![obj1 isKindOfClass:[VNRecognizedTextObservation class]] || ![obj2 isKindOfClass:[VNRecognizedTextObservation class]]) {
         return NSOrderedSame;
       }
       VNRecognizedTextObservation *o1 = (VNRecognizedTextObservation *)obj1;
       VNRecognizedTextObservation *o2 = (VNRecognizedTextObservation *)obj2;
+
+      if (isTwoColumnPage) {
+        BOOL o1Left = CGRectGetMidX(o1.boundingBox) < 0.50;
+        BOOL o2Left = CGRectGetMidX(o2.boundingBox) < 0.50;
+        if (o1Left != o2Left) {
+          return o1Left ? NSOrderedAscending : NSOrderedDescending;
+        }
+      }
 
       CGFloat top1 = CGRectGetMaxY(o1.boundingBox);
       CGFloat top2 = CGRectGetMaxY(o2.boundingBox);
@@ -717,40 +738,8 @@ RCT_EXPORT_METHOD(extractText:(NSString *)filePath
           }
 
           if (trimmed.length > 0) {
-            PDFSelection *pageSel = [page selectionForRange:NSMakeRange(0, rawStr.length)];
-            NSArray<PDFSelection *> *lines = [pageSel selectionsByLine];
-            if (lines && lines.count > 0) {
-              NSMutableArray<PDFSelection *> *sortedLines = [lines mutableCopy];
-              [sortedLines sortUsingComparator:^NSComparisonResult(PDFSelection *l1, PDFSelection *l2) {
-                CGRect b1 = [l1 boundsForPage:page];
-                CGRect b2 = [l2 boundsForPage:page];
-                CGFloat midY1 = CGRectGetMidY(b1);
-                CGFloat midY2 = CGRectGetMidY(b2);
-                if (fabs(midY1 - midY2) > 8.0) {
-                  return midY1 > midY2 ? NSOrderedAscending : NSOrderedDescending;
-                }
-                CGFloat minX1 = CGRectGetMinX(b1);
-                CGFloat minX2 = CGRectGetMinX(b2);
-                if (minX1 < minX2) return NSOrderedAscending;
-                if (minX1 > minX2) return NSOrderedDescending;
-                return NSOrderedSame;
-              }];
-
-              for (PDFSelection *line in sortedLines) {
-                NSString *s = line.string;
-                if (s && s.length > 0) {
-                  NSString *t = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                  if (t.length > 0) {
-                    [fullText appendString:t];
-                    [fullText appendString:@"\n"];
-                  }
-                }
-              }
-              [fullText appendString:@"\n"];
-            } else {
-              [fullText appendString:rawStr];
-              [fullText appendString:@"\n"];
-            }
+            [fullText appendString:trimmed];
+            [fullText appendString:@"\n\n"];
           }
         }
 

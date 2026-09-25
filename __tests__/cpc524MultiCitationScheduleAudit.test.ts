@@ -198,5 +198,29 @@ describe('CPC 524 Multi-Citation & Schedule Ingestion Calibration Audit', () => 
       expect(title).toContain('Sections 1 & 3');
       expect(title).not.toContain('The History and Cultural Context');
     });
+
+    test('preserves standalone author-year citations without collapsing to empty title', () => {
+      const citations = [
+        { raw: 'Brenner & Wang (2015)', res: 'Brenner & Wang', auth: 'Brenner & Wang' },
+        { raw: 'Reynolds (2011)', res: 'Reynolds', auth: 'Reynolds' },
+        { raw: 'Reynolds (2012)', res: 'Reynolds', auth: 'Reynolds' },
+        { raw: 'Lund et al., (2011)', res: 'Lund et al., (2011)', auth: 'Lund et al.' },
+        { raw: 'Anda et al., (2006).', res: 'Anda et al., (2006).', auth: 'Anda et al.' },
+        { raw: 'Rodriguez-Seijas (2019)', res: 'Rodriguez-Seijas (2019)', auth: 'Rodriguez-Seijas' }
+      ];
+
+      for (const c of citations) {
+        const title = formatDisplayTitleWithChapter(
+          c.raw,
+          null,
+          c.res,
+          'Psychopathology and Psychopharmacology',
+          c.auth
+        );
+        expect(title.length).toBeGreaterThanOrEqual(4);
+        expect(title).not.toBe('');
+        expect(title).toContain(c.auth.split(' ')[0]);
+      }
+    });
   });
 });

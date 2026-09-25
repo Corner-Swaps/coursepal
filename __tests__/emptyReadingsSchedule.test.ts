@@ -150,4 +150,65 @@ describe('Empty Readings Schedule & No-Reading Document Isolation', () => {
     const { groupedWeeks } = computeGroupedWeeks(activeReadings, 5);
     expect(groupedWeeks.length).toBe(0);
   });
+
+  test('Ghost courses with 0 readings and 0 assignments are purged when loading backup', () => {
+    const rawCourses: Course[] = [
+      {
+        id: 'c-ghost-1',
+        courseCode: 'PRJ-SEX-2026-X',
+        courseName: 'Human Sexuality Studies',
+        termWeeks: 10,
+        weeks: Array.from({ length: 10 }, (_, i) => ({
+          id: `w-${i + 1}`,
+          weekNumber: i + 1,
+          theme: `Week ${i + 1}`,
+          readings: []
+        }))
+      } as any as Course,
+      {
+        id: 'c-valid-1',
+        courseCode: 'CPC 512',
+        courseName: 'Family Systems',
+        termWeeks: 12,
+        weeks: []
+      } as any as Course
+    ];
+
+    const rawReadings: Reading[] = [
+      { id: 'r-1', courseId: 'c-valid-1', title: 'Gehart Ch. 1', isCompleted: false } as any as Reading
+    ];
+    const rawAssignments: any[] = [];
+
+    // Simulate backup pruning logic in loadLatestBackup
+    const isItemForCourse = (item: any, course: Course) => item.courseId === course.id;
+    const cleanCourses = rawCourses.filter(c => {
+      const hasReadings = rawReadings.some(r => isItemForCourse(r, c));
+      const hasAssignments = rawAssignments.some(a => isItemForCourse(a, c));
+      return hasReadings || hasAssignments;
+    });
+
+    // The ghost course with 0 readings & 0 assignments must be purged!
+    expect(cleanCourses.length).toBe(1);
+    expect(cleanCourses[0].id).toBe('c-valid-1');
+    expect(cleanCourses.some(c => c.id === 'c-ghost-1')).toBe(false);
+  });
+
+  test('When zero documents/courses have readings, empty state triggers and no dummy weeks are shown', () => {
+    const courses: Course[] = [];
+    const activeReadings: Reading[] = [];
+    const groupedModules: any[] = [];
+    const groupedWeeks: any[] = [];
+    const unassignedReadings: any[] = [];
+    const groupingViewMode: string = 'weeks';
+
+    const shouldShowEmptyCard = (
+      courses.length === 0 ||
+      activeReadings.length === 0 ||
+      (groupingViewMode === 'modules'
+        ? groupedModules.length === 0
+        : (groupedWeeks.length === 0 && unassignedReadings.length === 0))
+    );
+
+    expect(shouldShowEmptyCard).toBe(true);
+  });
 });

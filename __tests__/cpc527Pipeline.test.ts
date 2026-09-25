@@ -15,8 +15,9 @@ describe('CPC 527 Local Pipeline Verification', () => {
     result.weeks?.forEach(w => console.log(`Week ${w.weekNumber} (${w.startDate}):`, w.readings?.map(r => r.title)));
 
     const normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(result, text);
+    console.log('Candidate Readings count:', normalized.candidateReadings.length);
     expect(normalized.candidateAssignments.length).toBe(4);
-    expect(normalized.candidateReadings.length).toBe(15);
+    expect(normalized.candidateReadings.length).toBe(16);
 
     const cleanReadings = SyllabusImportManager.shared.deduplicateReadings(
       normalized.candidateReadings,

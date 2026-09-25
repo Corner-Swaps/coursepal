@@ -21,19 +21,19 @@ export async function ensureBundledPdfFile(...identifiers: (string | null | unde
     if (lower.includes('psyc612') || (lower.includes('612') && !lower.includes('800')) || lower.includes('thorne') || lower.includes('cbt')) {
       key = 'psyc-612';
       targetFileName = 'PSYC612_Advanced_CBT_Interventions.pdf';
-    } else if (lower.includes('cpc527') || lower.includes('527') || lower.includes('groupcounsel') || lower.includes('murrin')) {
+    } else if (lower.includes('cpc527') || (lower.includes('527') && lower.includes('cpc')) || lower.includes('groupcounsel') || lower.includes('murrin')) {
       key = 'cpc-527';
       targetFileName = 'CPC527_Group_Counselling_Syllabus.pdf';
-    } else if (lower.includes('cpc511') || (lower.includes('511') && !lower.includes('512')) || lower.includes('lossandgrief') || lower.includes('dianamorgan')) {
+    } else if (lower.includes('cpc511') || (lower.includes('511') && !lower.includes('512') && lower.includes('cpc')) || lower.includes('lossandgrief') || lower.includes('dianamorgan')) {
       key = 'cpc-511';
       targetFileName = 'CPC511_Syllabus.pdf';
-    } else if (lower.includes('cpc512') || lower.includes('512') || lower.includes('familysystem') || lower.includes('gehart')) {
+    } else if (lower.includes('cpc512') || (lower.includes('512') && lower.includes('cpc')) || lower.includes('familysystem') || lower.includes('gehart')) {
       key = 'cpc-512';
       targetFileName = 'CPC512_Syllabus.pdf';
-    } else if (lower.includes('cpc514') || lower.includes('514') || lower.includes('researchmethods') || lower.includes('sedghi') || lower.includes('taromi') || (lower.includes('research') && lower.includes('statistics'))) {
+    } else if (lower.includes('cpc514') || (lower.includes('514') && lower.includes('cpc')) || (lower.includes('researchmethods') && lower.includes('statistics')) || lower.includes('sedghi') || lower.includes('taromi')) {
       key = 'cpc-514';
       targetFileName = 'CPC514_Syllabus.pdf';
-    } else if (lower.includes('cpc523') || lower.includes('523') || lower.includes('psychologyofsexuality') || lower.includes('humandevelopment') || lower.includes('mariepier')) {
+    } else if (lower.includes('cpc523') || (lower.includes('523') && lower.includes('cpc')) || lower.includes('psychopathology') || lower.includes('mariepier')) {
       key = 'cpc-523';
       targetFileName = 'CPC523_Syllabus.pdf';
     } else if (lower.includes('cs501') || (lower.includes('501') && !lower.includes('601'))) {
@@ -57,12 +57,15 @@ export async function ensureBundledPdfFile(...identifiers: (string | null | unde
     } else if (lower.includes('art150') || lower.includes('150')) {
       key = 'art-150';
       targetFileName = 'Syllabus_9_ART150.pdf';
-    } else if (lower.includes('psych800') || lower.includes('psyc800') || lower.includes('800')) {
+    } else if (lower.includes('psych800') || lower.includes('psyc800') || (lower.includes('800') && !lower.includes('612'))) {
       key = 'psych-800';
       targetFileName = 'Syllabus_10_PSYCH800.pdf';
-    } else if (lower.includes('prjsex') || lower.includes('humansexuality') || lower.includes('criticalperspectives') || lower.includes('foucault') || lower.includes('2026x')) {
+    } else if (lower.includes('prjsex2026') || lower.includes('prj_sex_2026') || lower.includes('prj-sex-2026')) {
       key = 'prj-sex-2026';
       targetFileName = 'PRJ_SEX_2026_Human_Sexuality_Syllabus.pdf';
+    } else if (lower.includes('sxst3010') || lower.includes('sxst_3010') || lower.includes('sxst-3010') || (lower.includes('criticalhistories') && lower.includes('sexuality'))) {
+      key = 'sxst-3010';
+      targetFileName = 'SXST_3010_Critical_Histories_Syllabus.pdf';
     }
 
     if (!key) return null;
@@ -84,14 +87,21 @@ export async function ensureBundledPdfFile(...identifiers: (string | null | unde
 }
 
 export async function hydrateVaultDocWithRealPdf(doc: any): Promise<any> {
-  let pdfUri = await ensureBundledPdfFile(doc.courseCode, doc.title, doc.id, doc.rawFileDataUri);
-  if (!pdfUri && doc.rawFileDataUri) {
+  let pdfUri: string | null = null;
+
+  // Step 1: ALWAYS prioritize the user's authentic uploaded document file
+  if (doc.rawFileDataUri) {
     try {
       const info = await FileSystem.getInfoAsync(doc.rawFileDataUri);
       if (info.exists) {
         pdfUri = doc.rawFileDataUri;
       }
     } catch {}
+  }
+
+  // Step 2: ONLY if no user-uploaded file exists on disk, check for bundled sample PDF
+  if (!pdfUri) {
+    pdfUri = await ensureBundledPdfFile(doc.courseCode, doc.title, doc.id);
   }
 
   if (pdfUri) {

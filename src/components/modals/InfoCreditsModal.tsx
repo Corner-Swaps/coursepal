@@ -6,9 +6,11 @@ import {
   TouchableOpacity,
   Modal,
   ScrollView,
-  SafeAreaView
+  SafeAreaView,
+  Alert
 } from 'react-native';
 import { CoursePalTheme } from '../../constants/theme';
+import { useCoursePal } from '../../context/CoursePalContext';
 import {
   ShieldCheckmarkIcon,
   ExclamationTriangleFillIcon,
@@ -27,12 +29,31 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
   initialTab = 'terms'
 }) => {
   const [selectedTab, setSelectedTab] = useState<'terms' | 'privacy' | 'about'>(initialTab);
+  const { resetAllData } = useCoursePal();
 
   useEffect(() => {
     if (visible) {
       setSelectedTab(initialTab);
     }
   }, [visible, initialTab]);
+
+  const handleResetAllData = () => {
+    Alert.alert(
+      'Reset All App Data?',
+      'This will permanently remove all stored courses, readings, assignments, and local syllabus documents from this device.\n\nYou will start with a completely fresh slate.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Everything',
+          style: 'destructive',
+          onPress: async () => {
+            await resetAllData();
+            onClose();
+          }
+        }
+      ]
+    );
+  };
 
   if (!visible) return null;
 
@@ -319,6 +340,20 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
                   For feedback, feature suggestions, or institutional partnerships, reach out to us at support@coursepal.app.
                 </Text>
               </View>
+
+              <View style={styles.legalCard}>
+                <Text style={styles.cardHeader}>DATA MANAGEMENT & STORAGE</Text>
+                <Text style={styles.cardBody}>
+                  All course schedules, checklists, and imported syllabi are stored 100% locally on this device. If you wish to wipe all data and start completely fresh:
+                </Text>
+                <TouchableOpacity
+                  style={styles.resetDangerButton}
+                  onPress={handleResetAllData}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.resetDangerButtonText}>Erase All Courses & Start Fresh</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
         </ScrollView>
@@ -503,5 +538,21 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#475569',
     lineHeight: 18
+  },
+  resetDangerButton: {
+    marginTop: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  resetDangerButtonText: {
+    color: '#DC2626',
+    fontSize: 13.5,
+    fontWeight: '700'
   }
 });

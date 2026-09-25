@@ -308,8 +308,8 @@ export class SyllabusImportManager {
     const hasNewlines = rawTitle.includes('\n');
     const hasCommaCitations = /(?<=[)\d]|\b(?:ch(?:apter)?s?\.?\s*[\d\s&–-]+|pp?\.?\s*[\d\s&–-]+|pages?\s*[\d\s&–-]+))\s*,\s*(?=[A-Z][a-zA-Z\s.&'–-]+?(?:\(\s*\d{4}\s*\)|(?:\s*,\s*|\s+)(?:chapters?|chaps?\.?|chs?\.?|ch\b)\s*\d+|(?:\s*,\s*|\s+)\(?\s*\d{4}\s*\)?|\s*,\s*[A-Z]\.|\s*:\s*[A-Z]))/i.test(rawTitle);
 
-    // If candidate has no multi-item delimiters and already has authorName and chapterText, return directly
-    if (!hasSemicolon && !hasRequirementMarkers && !hasNewlines && !hasCommaCitations && candidate.authorName && candidate.chapterText) {
+    // If candidate has no multi-item delimiters and already has authorName and chapter/resource/pages, return directly
+    if (!hasSemicolon && !hasRequirementMarkers && !hasNewlines && !hasCommaCitations && candidate.authorName && (candidate.chapterText || candidate.resourceTitle || candidate.pagesText)) {
       return [candidate];
     }
 
@@ -674,9 +674,20 @@ export class SyllabusImportManager {
     } else if (typeof dto.termYear === 'string' && /^\d{4}$/.test(dto.termYear.trim())) {
       termYear = parseInt(dto.termYear.trim(), 10);
     } else if (rawTextContext) {
-      const yearMatch = rawTextContext.match(/\b(20\d{2})\b/);
-      if (yearMatch) {
+      const termMatch = rawTextContext.match(/\b(?:Fall|Spring|Summer|Winter|Autumn)\s+(?:Term|Semester|Quarter)?\s*(202[4-9]|203[0-5])\b/i);
+      const footerMatch = rawTextContext.match(/\b\d{1,2}\/\d{1,2}\/(2[4-9]|3[0-5])\b/);
+      const yearMatch = rawTextContext.match(/\b(202[4-9]|203[0-5])\b/);
+      if (termMatch) {
+        termYear = parseInt(termMatch[1], 10);
+      } else if (footerMatch) {
+        termYear = 2000 + parseInt(footerMatch[1], 10);
+      } else if (yearMatch) {
         termYear = parseInt(yearMatch[1], 10);
+      } else {
+        const fallbackMatch = rawTextContext.match(/\b(20\d{2})\b/);
+        if (fallbackMatch) {
+          termYear = parseInt(fallbackMatch[1], 10);
+        }
       }
     }
 
@@ -740,7 +751,9 @@ export class SyllabusImportManager {
             candidateAssignments.push({
               ...wa,
               dueDate: wa.dueDate || wa.due_date || wa.date || (wkNum ? weekDateMap.get(wkNum) : null),
-              weekNumber: wa.weekNumber || wa.week_number || wkNum
+              weekNumber: wa.weekNumber || wa.week_number || wkNum,
+              moduleNumber: wa.moduleNumber || (wa as any).module_number || wModNum,
+              moduleMention: wa.moduleMention || (wa as any).module_mention || wModMention
             });
           }
         }
@@ -871,18 +884,18 @@ export class SyllabusImportManager {
               continue;
             }
 
-            // Push weekly reading candidate
+            // Push reading candidate
             candidateReadings.push(cand);
-
-            // Also create pure curriculum module reading (Zero Cross-Bleed Rule)
-            candidateReadings.push({
-              ...cand,
-              weekNumber: undefined,
-              dueDate: null,
-              dateRangeStr: null,
-              summaryText: '',
-              keyTakeawaysText: ''
-            });
+            if (block.modules && block.weeks && assignedMod != null) {
+              candidateReadings.push({
+                ...cand,
+                weekNumber: undefined,
+                dueDate: undefined,
+                dateRangeStr: undefined,
+                moduleNumber: assignedMod,
+                moduleMention: `Module ${assignedMod}`
+              });
+            }
           }
         }
 
@@ -1111,14 +1124,26 @@ export class SyllabusImportManager {
         if (mr && typeof mr === 'object') {
           const modNum = mr.moduleNumber || mr.module_number;
           for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
+            // Strict Rule 3: Zero Fabricated Data
+            // Do NOT fabricate phantom readings out of bare seminar themes/topics that have no reading content.
+            const hasDeliverableContent = Boolean(
+              splitMr.chapterText ||
+              splitMr.pagesText ||
+              splitMr.authorName ||
+              (splitMr.resourceTitle && splitMr.resourceTitle.trim().toLowerCase() !== (splitMr.title || '').trim().toLowerCase()) ||
+              (splitMr.moduleNumber && splitMr.moduleNumber > 0 && splitMr.title)
+            );
+            if (!hasDeliverableContent) {
+              continue;
+            }
             candidateReadings.push({
               ...splitMr,
               weekNumber: undefined,
               moduleNumber: modNum || splitMr.moduleNumber || (splitMr as any).module_number,
               moduleMention: splitMr.moduleMention || (modNum ? `Module ${modNum}` : null),
               relevantTopics: mr.relevantTopics || mr.theme || splitMr.relevantTopics || undefined,
-              summaryText: '',
-              keyTakeawaysText: ''
+              summaryText: splitMr.summaryText || mr.summaryText || '',
+              keyTakeawaysText: splitMr.keyTakeawaysText || mr.keyTakeawaysText || ''
             });
           }
         }
@@ -1441,6 +1466,8 @@ export class SyllabusImportManager {
             if (!wrTitleNorm) continue;
 
             const existingAi = cleanCandidateReadings.find(cr => {
+              // Zero Cross-Bleed Rule: If cr is a pure module reading (moduleNumber set, no weekNumber), do NOT match with weekly reading!
+              if (cr.moduleNumber && (!cr.weekNumber || cr.weekNumber === 0)) return false;
               const crTitleNorm = (cr.title || cr.resourceTitle || '').toLowerCase().replace(/[^a-z0-9]/g, '');
               if (crTitleNorm === wrTitleNorm) return true;
               if (crTitleNorm.length >= 6 && wrTitleNorm.length >= 6 && (crTitleNorm.includes(wrTitleNorm) || wrTitleNorm.includes(crTitleNorm))) return true;
@@ -1485,7 +1512,7 @@ export class SyllabusImportManager {
     // Enrich candidate readings with canonical module readings from localDto if present
     if (Array.isArray(localDto.moduleReadings) && localDto.moduleReadings.length > 0) {
       const isCpc512 = (localDto.courseCode || '').toUpperCase().includes('512') || (localDto.courseName || '').toLowerCase().includes('family systems');
-      const fallbackAuthor = isCpc512 ? 'Diane R. Gehart' : (localDto.instructorName || localDto.courseName || null);
+      const fallbackAuthor = isCpc512 ? 'Diane R. Gehart' : null;
 
       for (const mr of localDto.moduleReadings) {
         const modNum = mr.moduleNumber;
@@ -1507,8 +1534,8 @@ export class SyllabusImportManager {
               dueDate: mr.dueDate || undefined,
               dateRangeStr: mr.dateRangeStr || undefined,
               relevantTopics: mr.relevantTopics,
-              summaryText: '',
-              keyTakeawaysText: ''
+              summaryText: mr.summaryText || '',
+              keyTakeawaysText: mr.keyTakeawaysText || ''
             });
           }
         }
@@ -1746,8 +1773,8 @@ export class SyllabusImportManager {
         isDeleted: false,
         isRequired: isReq,
         requirementType: reqType,
-        summaryText: '',
-        keyTakeawaysText: '',
+        summaryText: r.summaryText || '',
+        keyTakeawaysText: r.keyTakeawaysText || '',
         estimatedTimeText: r.estimatedTimeText || (detectedMediaType === 'video' ? '~20 min watch' : '~45 min read'),
         dueDate: parsedReadingDue || parseSafeDate(r.dateRangeStr, termYear || undefined),
         dateRangeStr: (r.dateRangeStr && isRealDateOrRangeString(r.dateRangeStr))
@@ -1844,20 +1871,35 @@ export class SyllabusImportManager {
 
       // Explicit calendar due date ONLY
       let parsedDue = parseSafeDate(
-        a.dueDate || a.due_date || a.dueDateIso || a.date || a.rawDueDate,
+        a.dueDate || a.due_date || a.dueDateIso || a.date || a.rawDueDate || (a.noteText && /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i.test(a.noteText) ? a.noteText : undefined),
         termYear || undefined
       );
 
-      // Determine week number from explicit property or title mention
+      // Determine week number strictly from week indicators (NEVER fabricate a week from module!)
       let resolvedWeek: number | null = null;
       if (typeof a.weekNumber === 'number' && a.weekNumber > 0) {
         resolvedWeek = a.weekNumber;
       } else if (typeof a.week_number === 'number' && a.week_number > 0) {
         resolvedWeek = a.week_number;
       } else {
-        const m = (rawTitle + ' ' + (a.moduleMention || '')).match(/\b(?:week|wk|module|mod)\s*[:\-–#.]*\s*(\d{1,2})\b/i);
+        const m = rawTitle.match(/\b(?:week|wk)\s*[:\-–#.]*\s*(\d{1,2})\b/i);
         if (m) {
           resolvedWeek = parseInt(m[1], 10);
+        }
+      }
+
+      // If weekNumber is not explicitly set, but parsedDue exists, find matching week in weekDateMap
+      if (!resolvedWeek && parsedDue && weekDateMap && weekDateMap.size > 0) {
+        const dueTime = parsedDue.getTime();
+        for (const [wNum, wDateStr] of weekDateMap.entries()) {
+          const wDate = parseSafeDate(wDateStr, termYear || undefined);
+          if (wDate) {
+            const diffDays = Math.abs((dueTime - wDate.getTime()) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 3) {
+              resolvedWeek = wNum;
+              break;
+            }
+          }
         }
       }
 
@@ -2107,7 +2149,7 @@ export class SyllabusImportManager {
         isCompleted: false,
         isDeleted: false,
         weightPercentage: cleanWeight,
-        moduleMention: a.moduleMention || (resolvedWeek ? `Week ${resolvedWeek}` : undefined),
+        moduleMention: a.moduleMention || undefined,
         subTypeRaw: a.subType || a.subTypeRaw || a.category || 'assignment',
         mediaUrl: assignMediaUrl,
         relevantTopics: resolvedWeek ? `Week ${resolvedWeek}` : undefined,
@@ -2285,31 +2327,49 @@ export class SyllabusImportManager {
       a => targetCourse ? !isItemForCourse(a, targetCourse) : a.courseId !== targetCourseId
     );
 
-    const mergedCourseAssignments: Assignment[] = [...courseExistingAssignments];
+    const mergedCourseAssignments: Assignment[] = [];
+    const matchedExistingAssignIds = new Set<string>();
 
     for (const newA of newAssignments) {
-      const normTitle = newA.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const matchIdx = mergedCourseAssignments.findIndex(existingA => {
-        const exNorm = existingA.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (exNorm !== normTitle) return false;
-        // Same week number check
-        if (newA.weekNumber && existingA.weekNumber && newA.weekNumber !== existingA.weekNumber) return false;
-        return true;
+      const normTitle = (newA.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const matchIdx = courseExistingAssignments.findIndex(existingA => {
+        if (matchedExistingAssignIds.has(existingA.id)) return false;
+
+        // 1. Direct assignmentNumber match (if both defined and > 0)
+        if (newA.assignmentNumber && existingA.assignmentNumber && newA.assignmentNumber === existingA.assignmentNumber) {
+          return true;
+        }
+
+        // 2. Exact normalized title match
+        const exNorm = (existingA.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (exNorm === normTitle) {
+          if (newA.weekNumber && existingA.weekNumber && newA.weekNumber !== existingA.weekNumber) return false;
+          return true;
+        }
+
+        // 3. Single assignment in week match
+        if (newA.weekNumber && existingA.weekNumber && newA.weekNumber === existingA.weekNumber) {
+          const exCount = courseExistingAssignments.filter(a => a.weekNumber === newA.weekNumber).length;
+          const newCount = newAssignments.filter(a => a.weekNumber === newA.weekNumber).length;
+          if (exCount === 1 && newCount === 1) return true;
+        }
+
+        return false;
       });
 
       if (matchIdx >= 0) {
-        // Preserve user state: isCompleted, isDeleted, custom user notes
-        const existingA = mergedCourseAssignments[matchIdx];
+        const existingA = courseExistingAssignments[matchIdx];
+        matchedExistingAssignIds.add(existingA.id);
         const mergedRubric = (newA.rubricCriteria && newA.rubricCriteria.length > 0)
           ? newA.rubricCriteria
           : (existingA.rubricCriteria || []);
-        const mergedPointsPossible = newA.pointsPossible || existingA.pointsPossible;
+        const mergedPointsPossible = newA.pointsPossible !== undefined ? newA.pointsPossible : existingA.pointsPossible;
         const mergedTotalPoints = (newA as any).totalPoints ?? (existingA as any).totalPoints ?? (newA as any).points ?? (existingA as any).points;
         const mergedPoints = (newA as any).points ?? (existingA as any).points ?? mergedTotalPoints;
         const mergedWeightPercentage = newA.weightPercentage || existingA.weightPercentage;
         const mergedInstructions = newA.fullInstructions || existingA.fullInstructions;
 
-        mergedCourseAssignments[matchIdx] = {
+        mergedCourseAssignments.push({
           ...newA,
           id: existingA.id,
           isCompleted: existingA.isCompleted,
@@ -2321,12 +2381,19 @@ export class SyllabusImportManager {
           pointsPossible: mergedPointsPossible,
           weightPercentage: mergedWeightPercentage,
           fullInstructions: mergedInstructions
-        };
+        });
       } else {
         mergedCourseAssignments.push({
           ...newA,
           courseId: targetCourseId
         });
+      }
+    }
+
+    // Preserve any existing completed tasks from user that were not in the new syllabus
+    for (const existingA of courseExistingAssignments) {
+      if (!matchedExistingAssignIds.has(existingA.id) && existingA.isCompleted) {
+        mergedCourseAssignments.push(existingA);
       }
     }
 
@@ -2338,44 +2405,74 @@ export class SyllabusImportManager {
       r => targetCourse ? !isItemForCourse(r, targetCourse) : r.courseId !== targetCourseId
     );
 
-    const mergedCourseReadings: Reading[] = [...courseExistingReadings];
+    const mergedCourseReadings: Reading[] = [];
+    const matchedExistingReadingIds = new Set<string>();
 
     for (const newR of newReadings) {
-      const normTitle = newR.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normTitle = (newR.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const newBook = (newR.resourceTitle || newR.authorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const newCh = (newR.chapterText || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const newAuth = (newR.authorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-      const matchIdx = mergedCourseReadings.findIndex(existingR => {
-        const exBook = (existingR.resourceTitle || existingR.authorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const exCh = (existingR.chapterText || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const exTitle = existingR.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const matchIdx = courseExistingReadings.findIndex(existingR => {
+        if (matchedExistingReadingIds.has(existingR.id)) return false;
 
-        if (newR.weekNumber && existingR.weekNumber && newR.weekNumber !== existingR.weekNumber) {
-          return false;
+        // 1. Module reading match by moduleNumber
+        if (newR.moduleNumber && !newR.weekNumber && existingR.moduleNumber && !existingR.weekNumber) {
+          if (newR.moduleNumber === existingR.moduleNumber) return true;
         }
 
-        if (newBook && exBook && newBook === exBook && newCh && exCh && newCh === exCh) {
-          return true;
+        // 2. Weekly reading match
+        if (newR.weekNumber && existingR.weekNumber) {
+          if (newR.weekNumber !== existingR.weekNumber) {
+            return false;
+          }
+
+          const exTitle = (existingR.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (exTitle === normTitle) return true;
+
+          const exAuth = (existingR.authorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (newAuth && exAuth && (newAuth === exAuth || newAuth.includes(exAuth) || exAuth.includes(newAuth))) {
+            return true;
+          }
+
+          const exBook = (existingR.resourceTitle || existingR.authorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const exCh = (existingR.chapterText || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (newBook && exBook && newBook === exBook && newCh && exCh && newCh === exCh) {
+            return true;
+          }
+
+          const exWeekCount = courseExistingReadings.filter(r => r.weekNumber === newR.weekNumber).length;
+          const newWeekCount = newReadings.filter(r => r.weekNumber === newR.weekNumber).length;
+          if (exWeekCount === 1 && newWeekCount === 1) return true;
         }
 
-        return exTitle === normTitle;
+        return false;
       });
 
       if (matchIdx >= 0) {
-        const existingR = mergedCourseReadings[matchIdx];
-        mergedCourseReadings[matchIdx] = {
+        const existingR = courseExistingReadings[matchIdx];
+        matchedExistingReadingIds.add(existingR.id);
+        mergedCourseReadings.push({
           ...newR,
           id: existingR.id,
           isCompleted: existingR.isCompleted,
           isDeleted: existingR.isDeleted,
           isFavorite: existingR.isFavorite,
           courseId: targetCourseId
-        };
+        });
       } else {
         mergedCourseReadings.push({
           ...newR,
           courseId: targetCourseId
         });
+      }
+    }
+
+    // Preserve any existing completed readings that were not in the new syllabus
+    for (const existingR of courseExistingReadings) {
+      if (!matchedExistingReadingIds.has(existingR.id) && existingR.isCompleted) {
+        mergedCourseReadings.push(existingR);
       }
     }
 

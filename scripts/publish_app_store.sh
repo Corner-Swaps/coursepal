@@ -6,7 +6,7 @@ IOS_DIR="$PROJECT_DIR/ios"
 WORKSPACE="$IOS_DIR/CoursePal.xcworkspace"
 SCHEME="CoursePal"
 DATE_STR=$(date +%Y-%m-%d)
-BUILD_NUM="5"
+BUILD_NUM="6"
 VERSION="1.4.2"
 ARCHIVE_PATH="$HOME/Library/Developer/Xcode/Archives/$DATE_STR/CoursePal ${VERSION} (Build ${BUILD_NUM}).xcarchive"
 EXPORT_DIR="$PROJECT_DIR/build/AppStore"
@@ -22,6 +22,7 @@ cd "$PROJECT_DIR"
 echo "🧹 1. Cleaning build locks and output directories..."
 rm -f /Users/slava/Library/Developer/Xcode/DerivedData/CoursePal-*/Build/Intermediates.noindex/XCBuildData/build.db* 2>/dev/null || true
 rm -rf "$EXPORT_DIR" "$UPLOAD_DIR"
+rm -rf ios/CoursePal/assets
 mkdir -p "$EXPORT_DIR" "$UPLOAD_DIR"
 mkdir -p "$HOME/Library/Developer/Xcode/Archives/$DATE_STR"
 

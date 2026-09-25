@@ -293,3 +293,162 @@ describe('Curriculum Matrix & Modular Research Dossier Syllabus Suite (PRJ-SEX-2
     expect(cleanAssignments[9].noteText).toBe('3,000-word Integrated Research Thesis & Ethics Protocol');
   });
 });
+
+describe('Curriculum Handbook & Modular Syllabus Suite (GSP 401: Gender, Sexuality, and Power: Critical Frameworks)', () => {
+  const pdfPath = path.resolve(__dirname, '../src/assets/syllabi/GSP_401_Gender_Sexuality_Power_Syllabus.pdf');
+  let rawText = '';
+
+  beforeAll(() => {
+    const pyScript = `import pypdf; r=pypdf.PdfReader('${pdfPath}'); print('\\n'.join(p.extract_text() or '' for p in r.pages))`;
+    rawText = execSync(`python3 -c "${pyScript}"`, { encoding: 'utf8' });
+  });
+
+  it('correctly extracts course identity, code GSP 401, and title without administrative noise', () => {
+    const dto = LocalSyllabusParser.shared.parseText(rawText);
+    expect(dto.courseName).toBe('Gender, Sexuality, and Power: Critical Frameworks');
+    expect(dto.courseCode).toBe('GSP 401');
+    expect(dto.termWeeks).toBe(10);
+  });
+
+  it('extracts all 10 distinct weekly readings with resolved canonical authors, resources, and chapters', () => {
+    const dto = LocalSyllabusParser.shared.parseText(rawText);
+    expect(dto.weeks).toBeDefined();
+    expect(dto.weeks!.length).toBe(10);
+
+    const week1Reading = dto.weeks![0].readings![0];
+    expect(week1Reading.authorName).toBe('Jeffrey Weeks');
+    expect(week1Reading.resourceTitle).toContain('Sex, Politics and Society');
+    expect(week1Reading.chapterText).toContain('Chapters 1–3');
+    expect(week1Reading.weekNumber).toBe(1);
+
+    const week2Reading = dto.weeks![1].readings![0];
+    expect(week2Reading.authorName).toBe('Michel Foucault');
+    expect(week2Reading.resourceTitle).toContain('The History of Sexuality');
+    expect(week2Reading.chapterText).toContain('Part Two');
+    expect(week2Reading.weekNumber).toBe(2);
+
+    const week3Reading = dto.weeks![2].readings![0];
+    expect(week3Reading.authorName).toBe('Judith Butler');
+    expect(week3Reading.resourceTitle).toContain('Gender Trouble');
+    expect(week3Reading.weekNumber).toBe(3);
+
+    const week4Reading = dto.weeks![3].readings![0];
+    expect(week4Reading.authorName).toBe('Jack Halberstam');
+    expect(week4Reading.resourceTitle).toContain('In a Queer Time and Place');
+    expect(week4Reading.weekNumber).toBe(4);
+
+    const week5Reading = dto.weeks![4].readings![0];
+    expect(week5Reading.authorName).toBe('Audre Lorde');
+    expect(week5Reading.resourceTitle).toContain('Sister Outsider');
+    expect(week5Reading.weekNumber).toBe(5);
+
+    const week6Reading = dto.weeks![5].readings![0];
+    expect(week6Reading.authorName).toBe('María Lugones');
+    expect(week6Reading.resourceTitle).toContain('Heterosexualism and the Colonial / Modern Gender System');
+    expect(week6Reading.chapterText).toContain('Hypatia, Vol. 22');
+    expect(week6Reading.pagesText).toBe('pp. 186–209');
+    expect(week6Reading.weekNumber).toBe(6);
+
+    const week7Reading = dto.weeks![6].readings![0];
+    expect(week7Reading.authorName).toBe('Kath Weston');
+    expect(week7Reading.resourceTitle).toContain('Families We Choose');
+    expect(week7Reading.weekNumber).toBe(7);
+
+    const week8Reading = dto.weeks![7].readings![0];
+    expect(week8Reading.authorName).toBe('Safiya U. Noble & Brendesha M. Tynes');
+    expect(week8Reading.resourceTitle).toContain('The Intersectional Internet');
+    expect(week8Reading.weekNumber).toBe(8);
+
+    const week9Reading = dto.weeks![8].readings![0];
+    expect(week9Reading.authorName).toBe('Lisa Duggan');
+    expect(week9Reading.resourceTitle).toContain('The Twilight of Equality?');
+    expect(week9Reading.weekNumber).toBe(9);
+
+    const week10Reading = dto.weeks![9].readings![0];
+    expect(week10Reading.authorName).toBe('Dean Spade');
+    expect(week10Reading.resourceTitle).toContain('Normal Life');
+    expect(week10Reading.weekNumber).toBe(10);
+  });
+
+  it('extracts all 10 weekly assignments with honest grade weights, deliverables, and zero fabricated points (Rule 3)', () => {
+    const dto = LocalSyllabusParser.shared.parseText(rawText);
+    expect(dto.assignments).toBeDefined();
+    expect(dto.assignments!.length).toBe(10);
+
+    const expectedAssignments = [
+      { num: 1, title: 'Contextual Archive Dossier', week: 1, weight: '5%', deliv: '800-word analysis' },
+      { num: 2, title: 'Discursive Tracking Memo', week: 2, weight: '5%', deliv: '1,000-word critical evaluation' },
+      { num: 3, title: 'Performativity Field Observation', week: 3, weight: '5%', deliv: '1,000-word critical field diary' },
+      { num: 4, title: 'Cartographic Spatial Analysis', week: 4, weight: '5%', deliv: 'annotated spatial map' },
+      { num: 5, title: 'Textual Synthesis & Close Reading', week: 5, weight: '5%', deliv: '850-word synthesis' },
+      { num: 6, title: 'Decolonial Jurisprudence Case Study', week: 6, weight: '8.75%', deliv: '800-word legislative brief' },
+      { num: 7, title: 'Oral History Interview Design', week: 7, weight: '8.75%', deliv: 'qualitative interview protocol' },
+      { num: 8, title: 'Digital Terms of Service Audit', week: 8, weight: '8.75%', deliv: 'comparative technical matrix' },
+      { num: 9, title: 'Corporate Media Campaign Critique', week: 9, weight: '8.75%', deliv: 'multimodal semiotic deconstruction' },
+      { num: 10, title: 'Capstone Synthesis Essay & Defense', week: 10, weight: '40%', deliv: '2,500-word summative capstone essay' }
+    ];
+
+    expectedAssignments.forEach((exp, idx) => {
+      const a = dto.assignments![idx];
+      expect(a.assignmentNumber).toBe(exp.num);
+      expect(a.title).toBe(exp.title);
+      expect(a.weekNumber).toBe(exp.week);
+      expect(a.weightPercentage).toBe(exp.weight);
+      expect(a.pointsPossible).toBeNull(); // Strict Rule 3 Compliance
+      if (exp.deliv) {
+        expect(a.noteText).toContain(exp.deliv);
+      }
+    });
+  });
+
+  it('extracts curriculum modules from the Page 5 Master Index with Zero Cross-Bleed (Rule 1)', () => {
+    const dto = LocalSyllabusParser.shared.parseText(rawText);
+    expect(dto.moduleReadings).toBeDefined();
+    expect(dto.moduleReadings!.length).toBe(10);
+
+    dto.moduleReadings!.forEach(mr => {
+      expect(mr.moduleNumber).toBeGreaterThanOrEqual(1);
+      expect(mr.moduleNumber).toBeLessThanOrEqual(10);
+      expect(mr.weekNumber).toBeUndefined(); // Pure module reading per Zero Cross-Bleed Rule
+    });
+
+    expect(dto.moduleReadings![0].title).toBe('Erotic Regimes & Constructionism');
+    expect(dto.moduleReadings![0].authorName).toBe('Jeffrey Weeks');
+
+    expect(dto.moduleReadings![1].title).toBe('Discursive Formations & Power');
+    expect(dto.moduleReadings![1].authorName).toBe('Michel Foucault');
+
+    expect(dto.moduleReadings![9].title).toBe('Trans Politics & Abolition');
+    expect(dto.moduleReadings![9].authorName).toBe('Dean Spade');
+  });
+
+  it('normalizes cleanly through SyllabusImportManager with 100% data fidelity', () => {
+    const dto = LocalSyllabusParser.shared.parseText(rawText);
+    const norm = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(dto, rawText);
+
+    expect(norm.candidateAssignments.length).toBe(10);
+    expect(norm.weeks.length).toBe(10);
+    expect(norm.textbooks.length).toBe(10);
+
+    const cleanReadings = SyllabusImportManager.shared.deduplicateReadings(norm.candidateReadings, norm.textbooks, norm.termYear);
+    const cleanAssignments = SyllabusImportManager.shared.deduplicateAssignments(norm.candidateAssignments, norm.termYear, norm.weekDateMap);
+
+    expect(cleanAssignments.length).toBe(10);
+    expect(cleanReadings.length).toBe(20); // 10 weekly + 10 module
+
+    const weekReadings = cleanReadings.filter(r => r.weekNumber != null && r.weekNumber > 0);
+    expect(weekReadings.length).toBe(10);
+
+    const modReadings = cleanReadings.filter(r => r.moduleNumber != null && r.moduleNumber > 0 && (r.weekNumber == null || r.weekNumber === 0));
+    expect(modReadings.length).toBe(10);
+
+    expect(cleanAssignments[0].title).toBe('Contextual Archive Dossier');
+    expect(cleanAssignments[0].weightPercentage).toBe('5%');
+    expect(cleanAssignments[0].pointsPossible).toBeNull();
+
+    expect(cleanAssignments[9].title).toBe('Capstone Synthesis Essay & Defense');
+    expect(cleanAssignments[9].weightPercentage).toBe('40%');
+    expect(cleanAssignments[9].pointsPossible).toBeNull();
+  });
+});
+
