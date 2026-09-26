@@ -15,8 +15,10 @@ import {
   ImportOutcome,
   TextbookResource,
   RubricCriterionDTO,
-  GradingScaleTier
+  GradingScaleTier,
+  ReadingDTO
 } from '../types/models';
+import { FacultyExtractor } from './FacultyExtractor';
 import {
   cleanChapterFromRaw,
   cleanAssignmentTitle,
@@ -71,6 +73,8 @@ export interface RawAssignmentCandidate {
   url?: string | null;
   link?: string | null;
   noteText?: string | null;
+  moduleNumber?: number | null;
+  module_number?: number | null;
   moduleMention?: string | null;
   courseCode?: string | null;
   course_code?: string | null;
@@ -137,6 +141,7 @@ export interface NormalizedSyllabusPayload {
   textbooks: TextbookResource[];
   candidateAssignments: RawAssignmentCandidate[];
   candidateReadings: RawReadingCandidate[];
+  moduleReadings?: ReadingDTO[];
   weekDateMap: Map<number, string>;
   weeks: {
     weekNumber: number;
@@ -228,9 +233,10 @@ export class SyllabusImportManager {
 
   public static enrichPayloadWithLocalExtraction(
     normalized: NormalizedSyllabusPayload,
-    localDto: CourseDTO
+    localDto: CourseDTO,
+    rawTextContext?: string
   ): NormalizedSyllabusPayload {
-    return SyllabusImportManager.shared.enrichPayloadWithLocalExtraction(normalized, localDto);
+    return SyllabusImportManager.shared.enrichPayloadWithLocalExtraction(normalized, localDto, rawTextContext);
   }
 
   /**
@@ -926,9 +932,12 @@ export class SyllabusImportManager {
               aItemPoints = /pts|points/i.test(rawPts.trim()) ? rawPts.trim() : `${rawPts.trim()} Points`;
             }
 
+            const aMod = aItem.moduleNumber || (modNumbers.length > 0 ? modNumbers[Math.min(aIdx, modNumbers.length - 1)] : undefined);
             candidateAssignments.push({
               title: rawTitle,
               weekNumber: aWeek,
+              moduleNumber: aMod,
+              moduleMention: aItem.moduleMention || (aMod ? `Module ${aMod}` : undefined),
               noteText: deliv || undefined,
               fullInstructions: deliv || undefined,
               pointsPossible: aItemPoints,
@@ -1022,9 +1031,13 @@ export class SyllabusImportManager {
             }
             if (!existing.rubricCriteria && a.rubricCriteria) existing.rubricCriteria = a.rubricCriteria;
             if (!existing.scheduledWeeks && a.scheduledWeeks) existing.scheduledWeeks = a.scheduledWeeks;
+            if (!existing.moduleNumber && (a.moduleNumber || (a as any).module_number)) existing.moduleNumber = a.moduleNumber || (a as any).module_number;
+            if (!existing.moduleMention && (a.moduleMention || (a as any).module_mention)) existing.moduleMention = a.moduleMention || (a as any).module_mention;
             // Also backfill onto 'a' in case 'a' had richer overview details
             if (!a.weekNumber && existing.weekNumber) a.weekNumber = existing.weekNumber;
             if (!a.dueDate && existing.dueDate) a.dueDate = existing.dueDate;
+            if (!a.moduleNumber && existing.moduleNumber) a.moduleNumber = existing.moduleNumber;
+            if (!a.moduleMention && existing.moduleMention) a.moduleMention = existing.moduleMention;
           } else {
             candidateAssignments.push(a);
           }
@@ -1187,6 +1200,8 @@ export class SyllabusImportManager {
               weightPercentage: item.percentage || item.weightPercentage,
               dueDate: item.dueDateIso || item.dueDate,
               weekNumber: item.weekNumber,
+              moduleNumber: item.moduleNumber,
+              moduleMention: item.moduleMention || (item.moduleNumber ? `Module ${item.moduleNumber}` : undefined),
               subType: item.subType,
               mediaUrl: item.mediaUrl,
               rubric: item.rubric,
@@ -1210,6 +1225,8 @@ export class SyllabusImportManager {
               pagesText: item.pagesText,
               mediaType: item.subType || item.mediaType,
               weekNumber: item.weekNumber,
+              moduleNumber: item.moduleNumber,
+              moduleMention: item.moduleMention || (item.moduleNumber ? `Module ${item.moduleNumber}` : undefined),
               dueDate: item.dueDateIso || item.dueDate,
               videoUrl: item.mediaUrl || item.videoUrl,
               summaryText: item.summaryText || item.description,
@@ -1298,9 +1315,42 @@ export class SyllabusImportManager {
       courseName: resolvedCourseName,
       courseCode: resolvedCourseCode,
       courseDescription: resolvedCourseDescription,
-      instructorName: typeof dto.instructorName === 'string' ? dto.instructorName.trim() : undefined,
-      instructorEmail: typeof dto.instructorEmail === 'string' ? dto.instructorEmail.trim() : undefined,
-      officeHours: resolvedOfficeHours,
+      instructorName: (() => {
+        let name = typeof dto.instructorName === 'string' ? dto.instructorName.trim() : undefined;
+        if (!name || !FacultyExtractor.isValidFacultyName(name)) {
+          if (rawTextContext) {
+            const extracted = FacultyExtractor.extractFaculty(rawTextContext).name;
+            if (extracted && FacultyExtractor.isValidFacultyName(extracted)) name = extracted;
+          }
+          if (!name || !FacultyExtractor.isValidFacultyName(name)) {
+            const canon = FacultyExtractor.getCanonicalFaculty(
+              `${resolvedCourseCode || ''} ${resolvedCourseName || ''} ${rawTextContext || ''}`
+            );
+            if (canon?.name) name = canon.name;
+          }
+        }
+        return name ? FacultyExtractor.cleanFacultyName(name) : undefined;
+      })(),
+      instructorEmail: (() => {
+        let email = typeof dto.instructorEmail === 'string' ? dto.instructorEmail.trim() : undefined;
+        if (!email && rawTextContext) {
+          email = FacultyExtractor.extractFaculty(rawTextContext).email;
+        }
+        if (!email) {
+          const canon = FacultyExtractor.getCanonicalFaculty(
+            `${resolvedCourseCode || ''} ${resolvedCourseName || ''} ${rawTextContext || ''}`
+          );
+          if (canon?.email) email = canon.email;
+        }
+        return email;
+      })(),
+      officeHours: (() => {
+        let oh = resolvedOfficeHours;
+        if (!oh && rawTextContext) {
+          oh = FacultyExtractor.extractFaculty(rawTextContext).officeHours || null;
+        }
+        return oh;
+      })(),
       termWeeks: resolvedTermWeeks,
       termYear,
       textbooks: enrichAuthorsInTextbooks(textbooks, rawTextContext),
@@ -1324,7 +1374,8 @@ export class SyllabusImportManager {
    */
   public enrichPayloadWithLocalExtraction(
     normalized: NormalizedSyllabusPayload,
-    localDto: CourseDTO
+    localDto: CourseDTO,
+    rawTextContext?: string
   ): NormalizedSyllabusPayload {
     if (!localDto || !localDto.assignments || localDto.assignments.length === 0) {
       return normalized;
@@ -1432,6 +1483,8 @@ export class SyllabusImportManager {
           fullInstructions: la.fullInstructions,
           mediaUrl: la.mediaUrl,
           weekNumber: la.weekNumber,
+          moduleNumber: la.moduleNumber,
+          moduleMention: la.moduleMention,
           rubricCriteria: la.rubricCriteria,
           rubric: la.rubric,
           assignmentNumber: la.assignmentNumber,
@@ -1497,6 +1550,8 @@ export class SyllabusImportManager {
                 pagesText: wr.pagesText,
                 mediaType: wr.mediaType || 'textbook',
                 weekNumber: wkNum,
+                moduleNumber: wr.moduleNumber || (w as any).moduleNumber || undefined,
+                moduleMention: wr.moduleMention || (w as any).moduleMention || undefined,
                 dueDate: wr.dueDate || w.startDate || undefined,
                 dateRangeStr: wr.dateRangeStr || w.dateRangeStr || undefined,
                 relevantTopics: wr.relevantTopics || w.theme,
@@ -1552,10 +1607,29 @@ export class SyllabusImportManager {
       textbooks: resolvedTextbooks,
       candidateAssignments: cleanCandidateAssignments,
       candidateReadings: cleanCandidateReadings,
+      moduleReadings: localDto.moduleReadings || (normalized as any).moduleReadings || undefined,
       weeks: cleanWeeks,
+      instructorName: (() => {
+        if (normalized.instructorName && FacultyExtractor.isValidFacultyName(normalized.instructorName)) {
+          return FacultyExtractor.cleanFacultyName(normalized.instructorName);
+        }
+        if (localDto.instructorName && FacultyExtractor.isValidFacultyName(localDto.instructorName)) {
+          return FacultyExtractor.cleanFacultyName(localDto.instructorName);
+        }
+        if (rawTextContext) {
+          const ext = FacultyExtractor.extractFaculty(rawTextContext).name;
+          if (ext && FacultyExtractor.isValidFacultyName(ext)) return FacultyExtractor.cleanFacultyName(ext);
+        }
+        const canon = FacultyExtractor.getCanonicalFaculty(
+          `${normalized.courseCode || localDto.courseCode || ''} ${normalized.courseName || localDto.courseName || ''} ${rawTextContext || ''}`
+        );
+        const chosen = canon?.name || normalized.instructorName || localDto.instructorName;
+        return chosen || undefined;
+      })(),
+      instructorEmail: (normalized.instructorEmail || localDto.instructorEmail || (rawTextContext ? FacultyExtractor.extractFaculty(rawTextContext).email : undefined) || FacultyExtractor.getCanonicalFaculty(`${normalized.courseCode || localDto.courseCode || ''} ${normalized.courseName || localDto.courseName || ''}`)?.email) || undefined,
       gradingScale: localDto.gradingScale || normalized.gradingScale || null,
       gradingScaleRows: localDto.gradingScaleRows || normalized.gradingScaleRows || null,
-      officeHours: normalized.officeHours || localDto.officeHours || (localDto as any).meetingTimes || null
+      officeHours: localDto.officeHours || normalized.officeHours || (localDto as any).meetingTimes || (rawTextContext ? FacultyExtractor.extractFaculty(rawTextContext).officeHours : null) || FacultyExtractor.getCanonicalFaculty(`${normalized.courseCode || localDto.courseCode || ''} ${normalized.courseName || localDto.courseName || ''}`)?.officeHours || null
     };
   }
 
@@ -1963,6 +2037,7 @@ export class SyllabusImportManager {
         }
       }
 
+
       // Keep assignments that have weight, points, due date, a scheduled week, deliverable keywords, or explicit assignment typing
       const hasDeliverableKeyword = /\b(?:paper|report|exam|examination|quiz|midterm|final|project|homework|problem\s+set|lab|presentation|deliverable|brief|essay|critique|discussion\s+board|peer\s+review|case\s+study|assignment|assessment|test|reflection|proposal|review|synthesis|conceptualization|mapping|genogram|treatment\s+plan|practicum|journal|portfolio|log|simulation|role\s*play|contribution|participation|attendance|evaluation|exercise|milestone|draft)\b/i.test(rawTitle);
       const isExplicitDeliverable = Boolean((a as any).isDeliverable || a.category === 'assignment' || a.category === 'deliverable' || (a.rubricCriteria && a.rubricCriteria.length > 0) || (a.fullInstructions && a.fullInstructions.length > 25));
@@ -2128,6 +2203,13 @@ export class SyllabusImportManager {
         ? a.fullInstructions
         : (a.instructions || a.description || null);
 
+      const resolvedModNum = (typeof a.moduleNumber === 'number' && a.moduleNumber > 0)
+        ? a.moduleNumber
+        : (typeof (a as any).module_number === 'number' && (a as any).module_number > 0
+            ? (a as any).module_number
+            : ((a.moduleMention && /\d+/.test(a.moduleMention)) ? parseInt(a.moduleMention.match(/\d+/)![0], 10) : undefined));
+      const resolvedModMention = a.moduleMention || (resolvedModNum ? `Module ${resolvedModNum}` : undefined);
+
       cleanAssignmentsList.push({
         id: `a-${Date.now()}-${i}`,
         courseCode: a.courseCode || a.course_code || undefined,
@@ -2135,6 +2217,8 @@ export class SyllabusImportManager {
         assignmentNumber: resolvedAssignNum,
         assignmentNumberLabel: resolvedAssignNumLabel,
         weekNumber: resolvedWeek || 0,
+        moduleNumber: resolvedModNum,
+        moduleMention: resolvedModMention,
         scheduledWeeks: (Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.length > 0)
           ? a.scheduledWeeks
           : (Array.isArray((a as any).scheduled_weeks) && (a as any).scheduled_weeks.length > 0)
@@ -2149,10 +2233,9 @@ export class SyllabusImportManager {
         isCompleted: false,
         isDeleted: false,
         weightPercentage: cleanWeight,
-        moduleMention: a.moduleMention || undefined,
         subTypeRaw: a.subType || a.subTypeRaw || a.category || 'assignment',
         mediaUrl: assignMediaUrl,
-        relevantTopics: resolvedWeek ? `Week ${resolvedWeek}` : undefined,
+        relevantTopics: resolvedWeek ? `Week ${resolvedWeek}` : (resolvedModMention || undefined),
         isFavorite: false,
         rubricCriteria: sanitizedCriteria
       });

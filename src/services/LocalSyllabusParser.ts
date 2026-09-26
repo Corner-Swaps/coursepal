@@ -82,7 +82,7 @@ export class LocalSyllabusParser {
 
   private static readonly weekHeaderRegexes: RegExp[] = [
     /^\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(?:module|modu\s*le|m[oó]dulo|modul|week|semana|semaine|woche|settimana|session|sesi[oó]n|s[eé]ance|sitzung|unit|unidad|einheit|class|lecture|lecci[oó]n|le[cç]on|vorlesung|meeting|block|bloque|part|teil|day)\s*(\d{1,2})\b/i,
-    /^\s*(?:week|wk\.?|w|semana|sem\.?|semaine|woche|settimana)\s*0?(\d{1,2})\b/i,
+    /^\s*(?:week|wk\.?|w|module|modu\s*le|mod\.?|m[oó]dulo|modul|semana|sem\.?|semaine|woche|settimana)\s*0?(\d{1,2})\b/i,
     /^\s*(?:session|sesi[oó]n|s[eé]ance|sitzung|unit|unidad|einheit|class|lecture|lecci[oó]n|le[cç]on|vorlesung|meeting|block|bloque|part|teil|day)\s*0?(\d{1,2})\b/i,
     /^\s*(\d{1,2})\s*[-–—]\s*/i,
     /^\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(?:reading\s*week|readi\s*ng\s*week|spring\s*break|fall\s*break|thanksgiving\s*break|finals\s*week|exam\s*week|review\s*week|vacaciones|receso|vacances|rel[aâ]che|ferien)/i,
@@ -197,8 +197,7 @@ export class LocalSyllabusParser {
     // (e.g. Master Extraction Table, Detailed Itemized Breakdown, or Modular Curriculum breakdowns)
     if (
       /Master\s*Extraction\s*Table/i.test(rawText) ||
-      /Detailed\s*Itemized\s*Breakdown/i.test(rawText) ||
-      (/Module\s*0?1[:\-–—]/i.test(rawText) && /Reading:\s*[A-Z]/i.test(rawText) && /Assignment:\s*[A-Z]/i.test(rawText))
+      /Detailed\s*Itemized\s*Breakdown/i.test(rawText)
     ) {
       const masterResult = this.parseMasterExtractionTableSyllabus(rawText, termYear);
       if (
@@ -261,6 +260,8 @@ export class LocalSyllabusParser {
           ...existing,
           title: existing.title.length >= sa.title.length ? existing.title : sa.title,
           weekNumber: mergedWeek,
+          moduleNumber: existing.moduleNumber ?? sa.moduleNumber,
+          moduleMention: existing.moduleMention ?? sa.moduleMention,
           dueDate: mergedDate,
           pointsPossible: mergedPts,
           weightPercentage: mergedWeight,
@@ -287,7 +288,9 @@ export class LocalSyllabusParser {
         description: a.fullInstructions,
         points: a.pointsPossible,
         percentage: a.weightPercentage,
-        weekNumber: undefined,
+        weekNumber: a.weekNumber,
+        moduleNumber: a.moduleNumber,
+        moduleMention: a.moduleMention,
         dueDateIso: a.dueDate,
         mediaUrl: a.noteText,
         rubric: a.rubric,
@@ -304,6 +307,8 @@ export class LocalSyllabusParser {
           subType: r.mediaType ?? 'TEXTBOOK',
           description: r.summaryText,
           weekNumber: w.weekNumber,
+          moduleNumber: r.moduleNumber || w.moduleNumber,
+          moduleMention: r.moduleMention || w.moduleMention,
           dueDateIso: r.dueDate,
           mediaUrl: r.videoUrl,
           relevantTopics: r.relevantTopics ?? w.theme,
@@ -314,6 +319,26 @@ export class LocalSyllabusParser {
           estimatedTime: r.estimatedTimeText
         });
       }
+    }
+    for (const mr of moduleReadings) {
+      synthesizedItems.push({
+        title: mr.title,
+        authorName: mr.authorName,
+        resourceTitle: mr.resourceTitle,
+        category: 'Reading',
+        subType: mr.mediaType ?? 'TEXTBOOK',
+        description: mr.summaryText,
+        weekNumber: undefined,
+        moduleNumber: mr.moduleNumber,
+        moduleMention: mr.moduleMention,
+        dueDateIso: mr.dueDate,
+        relevantTopics: mr.relevantTopics,
+        chapterText: mr.chapterText,
+        pagesText: mr.pagesText,
+        summaryText: mr.summaryText,
+        keyTakeaways: mr.keyTakeawaysText,
+        estimatedTime: mr.estimatedTimeText
+      });
     }
     // Requirement 5: Do NOT convert bibliography required texts into reading tasks.
     // Retain them strictly in the textbooks resource catalog.
@@ -1542,12 +1567,15 @@ export class LocalSyllabusParser {
       });
     });
 
+    const faculty = FacultyExtractor.extractFaculty(rawText);
     return {
       id: `course-${Math.random().toString(36).substring(2, 10)}`,
       creatorId: 'local-user',
       courseName,
       courseCode,
-      instructorName,
+      instructorName: faculty.name || instructorName,
+      instructorEmail: faculty.email,
+      officeHours: faculty.officeHours,
       courseDescription,
       termWeeks: weeks.length > 0 ? weeks.length : 10,
       termYear: effectiveTermYear,
@@ -2123,11 +2151,15 @@ export class LocalSyllabusParser {
       });
     }
 
+    const faculty = FacultyExtractor.extractFaculty(rawText);
     return {
       id: `course-${Math.random().toString(36).substring(2, 10)}`,
       creatorId: 'local-user',
       courseName,
       courseCode,
+      instructorName: faculty.name,
+      instructorEmail: faculty.email,
+      officeHours: faculty.officeHours,
       termWeeks: weeks.length,
       sharingCode: Math.floor(100000 + Math.random() * 900000).toString(),
       weeks,
@@ -2438,23 +2470,25 @@ export class LocalSyllabusParser {
           theme,
           readings: [weekReading]
         });
-      } else {
-        // Pure Module Syllabi per Rule 8 (Zero Fabricated Weeks: weeks: [], moduleReadings: [pureModuleReading])
-        const pureModuleReading: ReadingDTO = {
-          id: `mod-read-${n}`,
-          title: theme,
-          chapterText: `${resourceTitle}${chapterText ? ' (' + chapterText + ')' : ''}`,
-          relevantTopics: theme,
-          moduleNumber: n,
-          moduleMention: `Module ${n}`,
-          authorName: author || undefined,
-          weekNumber: undefined,
-          isCompleted: false,
-          mediaType: 'TEXTBOOK',
-          summaryText: deliverable ? `Deliverable Target: ${deliverable}` : undefined
-        };
-        moduleReadings.push(pureModuleReading);
       }
+
+      // Dedicated Theoretical Curriculum Modules per Rule 1 & Rule 8 (Zero Cross-Bleed: pure module readings with weekNumber: undefined)
+      const pureModuleReading: ReadingDTO = {
+        id: `mod-read-${n}`,
+        title: theme,
+        chapterText: `${resourceTitle}${chapterText ? ' (' + chapterText + ')' : ''}`,
+        relevantTopics: theme,
+        moduleNumber: n,
+        moduleMention: `Module ${n}`,
+        authorName: author || undefined,
+        weekNumber: undefined,
+        dueDate: null,
+        dateRangeStr: null,
+        isCompleted: false,
+        mediaType: 'TEXTBOOK',
+        summaryText: deliverable ? `Deliverable Target: ${deliverable}` : undefined
+      };
+      moduleReadings.push(pureModuleReading);
 
       // Assignment DTO
       const assignDTO: AssignmentDTO = {
@@ -2463,6 +2497,7 @@ export class LocalSyllabusParser {
         assignmentNumber: n,
         assignmentNumberLabel: `Assignment ${n}`,
         weekNumber: hasExplicitWeeks ? n : undefined,
+        moduleNumber: n,
         moduleMention: `Module ${n}`,
         noteText: deliverable || undefined,
         fullInstructions: instructions,
@@ -2484,6 +2519,8 @@ export class LocalSyllabusParser {
         points: null,
         percentage: weight,
         weekNumber: hasExplicitWeeks ? n : undefined,
+        moduleNumber: n,
+        moduleMention: `Module ${n}`,
         rubricCriteria: []
       });
       items.push({
@@ -2493,15 +2530,21 @@ export class LocalSyllabusParser {
         category: 'Reading',
         subType: 'ARTICLE',
         weekNumber: hasExplicitWeeks ? n : undefined,
+        moduleNumber: n,
+        moduleMention: `Module ${n}`,
         isRequired: true
       });
     }
 
+    const faculty = FacultyExtractor.extractFaculty(rawText);
     return {
       id: `course-${Math.random().toString(36).substring(2, 10)}`,
       creatorId: 'local-user',
       courseName,
       courseCode,
+      instructorName: faculty.name,
+      instructorEmail: faculty.email,
+      officeHours: faculty.officeHours,
       termWeeks: hasExplicitWeeks ? weeks.length : null,
       sharingCode: Math.floor(100000 + Math.random() * 900000).toString(),
       weeks: hasExplicitWeeks ? weeks : [],
@@ -2898,6 +2941,8 @@ export class LocalSyllabusParser {
             .replace(/\s*\(?\b\d{1,3}%\)?\s*/gi, '')
             .replace(/\b(?:modules?|mod|weeks?|wk)\s*\d{1,2}(?:\s*[-–—]\s*\d{1,2})?\b/gi, '')
             .replace(/^[•\-*▪●:–—| \t\n]+|[•\-*▪●:–—| \t\n]+$/g, '')
+            .replace(/^[“”"']\s*([^“”"']+?)\s*[“”"']/, '$1')
+            .replace(/["“”'‘’]/g, '')
             .replace(/\s+/g, ' ')
             .trim();
 
@@ -3608,9 +3653,9 @@ export class LocalSyllabusParser {
                 const totalNumMatch = bl.match(/\btotal\s*[\t:]*\s*(\d{1,4})\b/i);
                 if (totalNumMatch) {
                   const ptsNum = parseInt(totalNumMatch[1], 10);
-                  targetAssign.pointsPossible = `${ptsNum} Points`;
                   (targetAssign as any).totalPoints = ptsNum;
                   (targetAssign as any).points = ptsNum;
+                  targetAssign.pointsPossible = `${ptsNum} Points`;
                 }
                 inRubric = false;
                 continue;
@@ -3659,9 +3704,9 @@ export class LocalSyllabusParser {
             targetAssign.rubric = criteria;
             const totalPoints = criteria.reduce((sum, c) => sum + (c.points || 0), 0);
             if (totalPoints > 0) {
-              targetAssign.pointsPossible = `${totalPoints} Points`;
               (targetAssign as any).totalPoints = totalPoints;
               (targetAssign as any).points = totalPoints;
+              targetAssign.pointsPossible = `${totalPoints} Points`;
             }
           }
 
@@ -3677,13 +3722,17 @@ export class LocalSyllabusParser {
               const chosenMatch = totMatch || ptsBeforeMatch || ptsAfterMatch;
               if (chosenMatch && !/grading scale|scale \d|decimal|per day|deduction|penalty|late/i.test(bl)) {
                 const ptsNum = parseInt(chosenMatch[1], 10);
-                targetAssign.pointsPossible = `${ptsNum} Points`;
                 (targetAssign as any).totalPoints = ptsNum;
                 (targetAssign as any).points = ptsNum;
-                break;
+                // Rule 3: Do not fabricate 100 Points on weighted assignments
+                if (!targetAssign.weightPercentage || ptsNum !== 100) {
+                  targetAssign.pointsPossible = `${ptsNum} Points`;
+                  break;
+                }
               }
             }
           }
+
 
           // Scan blockLines for explicit grade weight (e.g. "Weight: 20%", "Worth 20% of final grade", "Grade Weight: 20%")
           if (!targetAssign.weightPercentage) {
@@ -4301,12 +4350,13 @@ export class LocalSyllabusParser {
           dueDate: dateIso,
           pointsPossible: pointsStr,
           weightPercentage: weightStr,
-          fullInstructions: line.trim()
         });
       }
     }
 
     return results;
+
+
   }
 
   // MARK: - PASS 2.5: Canonical Module Curriculum Table Extractor
@@ -4314,18 +4364,69 @@ export class LocalSyllabusParser {
     const map = new Map<number, { modNum: number; theme: string; reading: string }>();
     let currentMod: { modNum: number; theme: string; reading: string } | null = null;
 
-    for (const line of lines) {
+    for (let idx = 0; idx < lines.length; idx++) {
+      const rawLine = lines[idx];
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      // 1. Paired Module Range Table Row, e.g.:
+      // 01 – 02 Discursive Regimes & Pleasure Foucault (Ch. 1-2); Vance (Ch. 1) Discourse Mapping & Policy Review
+      const rangeMatch = line.match(/^0?(\d{1,2})\s*[-–—]\s*0?(\d{1,2})\s+(.+)$/);
+      if (rangeMatch) {
+        const m1 = parseInt(rangeMatch[1], 10);
+        const m2 = parseInt(rangeMatch[2], 10);
+        if (m1 >= 1 && m2 >= m1 && m2 <= 30) {
+          const rest = rangeMatch[3].trim();
+          let theme = '';
+          let reading = '';
+          const parts = rest.split(/\s{2,}|\t/);
+          if (parts.length >= 2) {
+            theme = parts[0].trim();
+            reading = parts[1].trim();
+          } else {
+            const citMatch = rest.match(/([A-Z][a-z]+(?:\s+et\s+al\.?)?\s*\(.*?\)(?:\s*;\s*[A-Z][a-z]+(?:\s+et\s+al\.?)?\s*\(.*?\))*)/);
+            if (citMatch && citMatch.index !== undefined) {
+              theme = rest.slice(0, citMatch.index).trim();
+              reading = citMatch[0].trim();
+            } else {
+              theme = rest;
+            }
+          }
+          const readings = reading ? reading.split(';').map(s => s.trim()) : [];
+          for (let m = m1; m <= m2; m++) {
+            const rIndex = m - m1;
+            const r = readings[rIndex] || readings[0] || '';
+            map.set(m, { modNum: m, theme, reading: r });
+          }
+          continue;
+        }
+      }
+
+      // 2. Unit Header with embedded modules, e.g.:
+      // Unit II: Historical Evolution & Medicalization Modules: 3 & 4
+      const unitMatch = line.match(/^Unit\s+[IVXLCDM\d]+[:\-–—\s]+(.*?)\s+Modules?[:\-–—\s]+0?(\d{1,2})\s*(?:&|and|-|–|—)\s*0?(\d{1,2})/i);
+      if (unitMatch) {
+        const theme = unitMatch[1].trim();
+        const m1 = parseInt(unitMatch[2], 10);
+        const m2 = parseInt(unitMatch[3], 10);
+        for (let m = m1; m <= m2; m++) {
+          if (!map.has(m)) map.set(m, { modNum: m, theme, reading: '' });
+        }
+        continue;
+      }
+
+      // 3. Tabular syntax (pipe table, tab separated, or multi-space separated)
       let cells: string[] = [];
-      if (line.startsWith('|') && line.endsWith('|')) {
-        cells = line.substring(1, line.length - 1).split('|').map(c => c.replace(/<br\s*\/?>/gi, ' ').trim()).filter(Boolean);
-      } else if (line.includes('\t')) {
-        cells = line.split('\t').map(c => c.replace(/<br\s*\/?>/gi, ' ').trim()).filter(Boolean);
-      } else if (/\s{2,}/.test(line)) {
-        cells = line.split(/\s{2,}/).map(c => c.replace(/<br\s*\/?>/gi, ' ').trim()).filter(Boolean);
+      if (rawLine.startsWith('|') && rawLine.endsWith('|')) {
+        cells = rawLine.substring(1, rawLine.length - 1).split('|').map(c => c.replace(/<br\s*\/?>/gi, ' ').trim()).filter(Boolean);
+      } else if (rawLine.includes('\t')) {
+        cells = rawLine.split('\t').map(c => c.replace(/<br\s*\/?>/gi, ' ').trim()).filter(Boolean);
+      } else if (/\s{2,}/.test(rawLine)) {
+        cells = rawLine.split(/\s{2,}/).map(c => c.replace(/<br\s*\/?>/gi, ' ').trim()).filter(Boolean);
       }
 
       if (cells.length >= 2) {
-        const m = cells[0].match(/^Module\s*(\d{1,2})\b/i);
+        const m = cells[0].match(/^(?:Module|Mod|M[oó]dulo|Modul)\s*0?(\d{1,2})\b/i);
         if (m) {
           const modNum = parseInt(m[1], 10);
           let theme = '';
@@ -4354,6 +4455,38 @@ export class LocalSyllabusParser {
         if (/\b(?:chapters?|chs?\.?|ch\.)\b/i.test(cells[0]) || /^[A-Z][a-z]+\s*\(/.test(cells[0])) {
           if (!currentMod.reading) currentMod.reading = cells[0];
         }
+      }
+
+      // 4. Single-line module definition, e.g.:
+      // Module 01: Epistemology & Bio-Power
+      // Module 1 — Systems Theory and the History of Family Therapy
+      const singleMatch = line.match(/^(?:Module|Mod|M[oó]dulo|Modul)\s*0?(\d{1,2})(?:[:\-–—\s]+([^\n]+))?$/i);
+      if (singleMatch) {
+        const modNum = parseInt(singleMatch[1], 10);
+        let theme = singleMatch[2] ? singleMatch[2].trim() : '';
+        if (!theme && idx + 1 < lines.length) {
+          const nextL = lines[idx + 1].trim();
+          if (!/^(?:Module|Mod|Unit|Week|Reading|Assignment|Dates?|Lab)\b/i.test(nextL)) {
+            theme = nextL;
+          }
+        }
+        let reading = '';
+        // Look ahead in subsequent lines for reading or lab
+        for (let off = 1; off <= 4; off++) {
+          if (idx + off >= lines.length) break;
+          const nextL = lines[idx + off].trim();
+          if (/^(?:Module|Mod|Unit|Week|Assignment|Section)\b/i.test(nextL)) break;
+          if (/^(?:Lab|Reading|Text|Book|Readings?|Required|Assigned)[:\-–—]/i.test(nextL)) {
+            reading = nextL.replace(/^(?:Lab|Reading|Text|Book|Readings?|Required|Assigned)[:\-–—]\s*/i, '').trim();
+            break;
+          } else if (LocalSyllabusParser.citationRegex.test(nextL) || LocalSyllabusParser.chapterRegex.test(nextL)) {
+            reading = nextL;
+            break;
+          }
+        }
+        currentMod = { modNum, theme, reading };
+        map.set(modNum, currentMod);
+        continue;
       }
     }
     return map;
@@ -4473,9 +4606,10 @@ export class LocalSyllabusParser {
       }
 
       // Extract module mention and number from chunk
-      const modMatch = chunk.match(/\b(?:modules?|modu\s*les?|modul\s*e|mod)\s*(\d{1,2}(?:\s*(?:&|and)\s*\d{1,2})?)\b/i);
+      const modMatch = chunk.match(/\b(?:modules?|modu\s*les?|modul\s*e|mod)\s*(\d{1,2}(?:\s*(?:&|and|-|–|—)\s*\d{1,2})?)\b/i);
       const rowModuleMention = modMatch ? `Module ${modMatch[1].replace(/\s+/g, ' ').trim()}` : undefined;
-      const rowModuleNumber = modMatch ? parseInt(modMatch[1].match(/\d+/)![0], 10) : undefined;
+      const allModNums = modMatch ? (modMatch[1].match(/\d+/g) || []).map(n => parseInt(n, 10)) : [];
+      const rowModuleNumber = allModNums.length > 0 ? allModNums[0] : undefined;
 
       // Check for reading start
       const readStartMatch = chunk.match(/(?:\b(?:Required|Readings?|Assigned\s+Readings?|Textbooks?|Books?)\s*:?|\b(?:Corey|Yalom)\b)/i) ||
@@ -4499,6 +4633,7 @@ export class LocalSyllabusParser {
               title: delivTitle,
               weekNumber: weekNum,
               dueDate: isoDate,
+              moduleNumber: rowModuleNumber,
               moduleMention: rowModuleMention,
               rubricCriteria: []
             });
@@ -4611,8 +4746,9 @@ export class LocalSyllabusParser {
         dateRangeStr: displayDate,
         moduleNumber: rowModuleNumber,
         moduleMention: rowModuleMention,
+        moduleNumbers: allModNums.length > 1 ? allModNums : undefined,
         readings: weekReadings
-      });
+      } as any);
     }
 
     return { weeks, scheduleAssignments, moduleReadings };
@@ -4738,6 +4874,8 @@ export class LocalSyllabusParser {
                     id: `assign-${Math.random().toString(36).substring(2, 10)}`,
                     title: cleanTitle,
                     weekNumber: wkNum,
+                    moduleNumber: targetWeek.moduleNumber,
+                    moduleMention: targetWeek.moduleMention,
                     dueDate: targetWeek.startDate,
                     weightPercentage: worthM ? (worthM[1].endsWith('%') ? worthM[1] : `${worthM[1]}%`) : undefined,
                     pointsPossible: ptsM ? `${ptsM[1]} Points` : undefined,
@@ -4958,7 +5096,7 @@ export class LocalSyllabusParser {
           lower.includes('calendar & class session') ||
           lower.includes('weekly calendar') ||
           lower.includes('table 2') ||
-          /^\s*(?:week|wk)\s*0?1\b/i.test(line)
+          /^\s*(?:week|wk|module|mod)\s*0?1\b/i.test(line)
         ) {
           inSummaryModuleOverview = false;
         } else {
@@ -5187,11 +5325,15 @@ export class LocalSyllabusParser {
       const videoUrl = this.extractVideoUrl(line);
       const hasValidUrl = !!videoUrl;
 
-      const hasReadingCitations = LocalSyllabusParser.technicalDocRegex.test(line) ||
-        LocalSyllabusParser.citationRegex.test(line) ||
+      const isExplicitDeliverable = /^\s*(?:assignment|deliverable|task|project|quiz|exam|presentation|paper)\b/i.test(line) ||
+        isDeliverableNotReading(line) ||
+        (/\b(?:worth\s*)?\d{1,3}%/i.test(line) && !lower.includes('chapter'));
+
+      const hasReadingCitations = LocalSyllabusParser.citationRegex.test(line) ||
         LocalSyllabusParser.chapterRegex.test(line) ||
         LocalSyllabusParser.pagesRegex.test(line) ||
-        lower.includes('gehart') || lower.includes('corey') || lower.includes('yalom');
+        lower.includes('gehart') || lower.includes('corey') || lower.includes('yalom') ||
+        (!isExplicitDeliverable && LocalSyllabusParser.technicalDocRegex.test(line));
 
       // Cell-level deliverable extraction for multi-column / tabbed tables
       if (line.includes('\t')) {
@@ -5214,6 +5356,8 @@ export class LocalSyllabusParser {
                   id: `assign-${Math.random().toString(36).substring(2, 10)}`,
                   title: candTitle,
                   weekNumber: currentWeekNum,
+                  moduleNumber: currentWeekModNum,
+                  moduleMention: currentWeekModMention,
                   dueDate: currentWeekDateIso,
                   weightPercentage: worthM ? (worthM[1].endsWith('%') ? worthM[1] : `${worthM[1]}%`) : undefined,
                   pointsPossible: ptsM ? `${ptsM[1]} Points` : undefined,
@@ -5225,15 +5369,17 @@ export class LocalSyllabusParser {
         }
       }
 
-      const isDeliverableLine = !hasReadingCitations && (
-        isDeliverableNotReading(line) ||
-        lower.includes('assignment') ||
-        /\b(?:term|final|reflection|position)\s+papers?\b/i.test(lower) ||
-        lower.includes('due date') || lower.includes('due:') ||
-        lower.includes('conceptualization') || lower.includes('family map') ||
-        lower.includes('in-class') || lower.includes('presentation') ||
-        lower.includes('exam') || lower.includes('quiz') || lower.includes('deliverable') ||
-        (lower.includes('%') && !lower.includes('gehart') && !lower.includes('chapter'))
+      const isDeliverableLine = isExplicitDeliverable || (
+        !hasReadingCitations && (
+          isDeliverableNotReading(line) ||
+          lower.includes('assignment') ||
+          /\b(?:term|final|reflection|position)\s+papers?\b/i.test(lower) ||
+          lower.includes('due date') || lower.includes('due:') ||
+          lower.includes('conceptualization') || lower.includes('family map') ||
+          lower.includes('in-class') || lower.includes('presentation') ||
+          lower.includes('exam') || lower.includes('quiz') || lower.includes('deliverable') ||
+          (lower.includes('%') && !lower.includes('gehart') && !lower.includes('chapter'))
+        )
       );
 
       if (isDeliverableLine) {
@@ -5257,6 +5403,8 @@ export class LocalSyllabusParser {
               id: `assign-${Math.random().toString(36).substring(2, 10)}`,
               title: candTitle,
               weekNumber: currentWeekNum,
+              moduleNumber: currentWeekModNum,
+              moduleMention: currentWeekModMention,
               dueDate: currentWeekDateIso,
               weightPercentage: worthM ? (worthM[1].endsWith('%') ? worthM[1] : `${worthM[1]}%`) : undefined,
               pointsPossible: ptsM ? `${ptsM[1]} Points` : undefined,
@@ -5776,6 +5924,7 @@ export class LocalSyllabusParser {
                     dateRangeStr: w.dateRangeStr,
                     mediaType: 'textbook',
                     relevantTopics: mod.theme,
+                    weekNumber: w.weekNumber,
                     isCompleted: false,
                     summaryText: `Study ${chapter || mod.reading} for Module ${mod.modNum}: ${mod.theme}`,
                     keyTakeawaysText: `• Review ${chapter || mod.reading}`

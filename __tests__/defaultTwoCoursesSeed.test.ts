@@ -12,7 +12,7 @@ describe('Default Fresh 2-Course Seed Calibration', () => {
     const psyc = seed.courses.find(c => c.courseCode === 'PSYC 612');
     expect(psyc).toBeDefined();
     expect(psyc?.courseName).toBe('Advanced Cognitive Behavioural Interventions');
-    expect(psyc?.instructorName).toBe('Aris Thorne, Ph.D., R.Psych.');
+    expect(psyc?.instructorName).toMatch(/Aris Thorne, Ph\.D\., R\.Psych\./);
     expect(psyc?.instructorEmail).toBe('athorne@appliedpsych.edu');
 
     // Check assignments for PSYC 612

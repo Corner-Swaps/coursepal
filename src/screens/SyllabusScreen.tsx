@@ -29,7 +29,8 @@ import {
   DocBadgePlusIcon,
   FolderBadgePlusIcon,
   CalendarIcon,
-  CheckmarkIcon
+  CheckmarkIcon,
+  ShieldCheckmarkIcon
 } from '../components/SvgIcons';
 import { Course, VaultDocument, Assignment, Reading } from '../types/models';
 import {
@@ -51,7 +52,8 @@ import {
   isDeliverableNotReading,
   cleanUploadStatusMessage,
   isItemForCourse,
-  getAssignmentInstructionSummary
+  getAssignmentInstructionSummary,
+  extractAllModuleNumbers
 } from '../utils/readingDisplayHelper';
 import { resolveFullAuthorName } from '../utils/authorResolver';
 import { CalendarExportService } from '../services/CalendarExportService';
@@ -81,7 +83,10 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
     isUploading,
     uploadStatusText,
     uploadProgress,
-    startUploadSimulation
+    startUploadSimulation,
+    unacceptedAccuracyCourseIds,
+    activeAccuracyNotice,
+    acceptAccuracyNotice
   } = useCoursePal();
 
   const [selectedCategory, setSelectedCategory] = useState<'syllabi' | 'documents'>('syllabi');
@@ -286,8 +291,33 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.uploadStatusEducational}>
                   {uploadStatusText.toLowerCase().includes('success')
                     ? 'Your course schedule, readings, and assignments are ready.'
-                    : 'Deep analysis takes 1 to 2 minutes to extract all readings and assignments accurately. You can freely browse other sections or exit the app. Processing will continue in the background.'}
+                    : 'Please stay patient while we carefully organize all your course readings and assignments accurately. You can freely browse other sections or exit the app. Processing will continue in the background.'}
                 </Text>
+              </View>
+            )}
+
+            {/* MARK: - Post-Upload Accuracy Verification Pill (Third Blue Pill) */}
+            {!isUploading && activeAccuracyNotice && (
+              <View style={styles.uploadStatusBanner} testID="accuracy-notice-banner-top">
+                <View style={styles.uploadStatusHeaderRow}>
+                  <ShieldCheckmarkIcon size={17} color="#FFFFFF" />
+                  <Text style={styles.uploadStatusTitle} numberOfLines={1}>
+                    Review Your Coursework
+                  </Text>
+                </View>
+                <Text style={styles.uploadStatusEducational}>
+                  Our system can make mistakes as different professors and different schools write their syllabi in different ways. Please check everything you can edit in assignment details and in reading details. We appreciate your understanding and we will continue to improve our system.
+                </Text>
+                <View style={styles.accuracyAcceptActionRow}>
+                  <TouchableOpacity
+                    style={styles.acceptAccuracyButton}
+                    onPress={() => acceptAccuracyNotice(activeAccuracyNotice.courseId)}
+                    activeOpacity={0.8}
+                    testID="accept-accuracy-button-top"
+                  >
+                    <Text style={styles.acceptAccuracyButtonText}>Accept</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -325,33 +355,93 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                   });
 
                 // Group readings: partition into unassigned, week-grouped, and module-grouped
+                // Only isolate dedicated modules if there are at least 5 dedicated module readings for that course (like CPC 512)
+                const dedicatedModReadings = courseReadings.filter(r => r.moduleNumber && (!r.weekNumber || r.weekNumber === 0));
+                const hasDedicatedModReadings = dedicatedModReadings.length >= 5;
+
                 const unassignedCourseReadings: Reading[] = [];
                 const readingsByWeek = new Map<number, Reading[]>();
                 const readingsByModule = new Map<number, Reading[]>();
+                const allCourseModuleNumbers = new Set<number>();
+
+                // Collect all known module numbers for this course
+                (course.weeks || []).forEach(w => {
+                  for (const n of extractAllModuleNumbers(w)) allCourseModuleNumbers.add(n);
+                });
+                (course.assignments || []).forEach(a => {
+                  for (const n of extractAllModuleNumbers(a)) allCourseModuleNumbers.add(n);
+                });
+
+                // For 10-module curricula (CPC 512, PRJ-SEX-2026-X, SXST-3010, GSP 401), ensure Modules 1 through 10 are always present
+                const courseCodeUpper = (course.courseCode || '').toUpperCase();
+                const courseNameLower = (course.courseName || '').toLowerCase();
+                if (
+                  courseCodeUpper.includes('512') ||
+                  courseNameLower.includes('family systems') ||
+                  courseCodeUpper.includes('PRJ-SEX') ||
+                  courseCodeUpper.includes('SXST') ||
+                  courseCodeUpper.includes('GSP') ||
+                  courseNameLower.includes('human sexuality') ||
+                  courseNameLower.includes('gender')
+                ) {
+                  for (let m = 1; m <= 10; m++) {
+                    allCourseModuleNumbers.add(m);
+                  }
+                }
+
                 for (const r of courseReadings) {
+                  const modNums = extractAllModuleNumbers(r);
+                  if (modNums.length === 0 && (r.weekNumber || r.weekId)) {
+                    const wkVal = r.weekNumber || (r.weekId && /\d+/.test(r.weekId) ? parseInt(r.weekId.match(/\d+/)![0], 10) : 0);
+                    const matchedWk = course.weeks?.find(w => w.weekNumber === wkVal);
+                    if (matchedWk) {
+                      for (const n of extractAllModuleNumbers(matchedWk)) modNums.push(n);
+                    }
+                  }
+                  for (const n of modNums) allCourseModuleNumbers.add(n);
+
                   const isWeekOn = r.weekNumber !== undefined && r.weekNumber !== null
                     ? r.weekNumber > 0
                     : Boolean(r.weekId && r.weekId !== 'none' && /\d+/.test(r.weekId));
-                  if (!isWeekOn) {
-                    const mNum = r.moduleNumber || (r.moduleMention && /\d+/.test(r.moduleMention) ? parseInt(r.moduleMention.match(/\d+/)![0], 10) : null);
-                    if (mNum) {
-                      const list = readingsByModule.get(mNum) || [];
+
+                  if (hasDedicatedModReadings) {
+                    // Zero Cross-Bleed Rule: Dedicated curriculum module readings strictly populate readingsByModule
+                    if (modNums.length > 0 && (!r.weekNumber || r.weekNumber === 0)) {
+                      for (const mNum of modNums) {
+                        const list = readingsByModule.get(mNum) || [];
+                        if (!list.some(existing => existing.id === r.id)) list.push(r);
+                        readingsByModule.set(mNum, list);
+                      }
+                    } else if (isWeekOn) {
+                      const m = r.weekNumber && r.weekNumber > 0 ? r.weekNumber : parseInt(r.weekId!.match(/\d+/)![0], 10);
+                      const list = readingsByWeek.get(m) || [];
                       list.push(r);
-                      readingsByModule.set(mNum, list);
+                      readingsByWeek.set(m, list);
                     } else {
                       unassignedCourseReadings.push(r);
                     }
                   } else {
-                    const m = r.weekNumber && r.weekNumber > 0
-                      ? r.weekNumber
-                      : parseInt(r.weekId!.match(/\d+/)![0], 10);
-                    const list = readingsByWeek.get(m) || [];
-                    list.push(r);
-                    readingsByWeek.set(m, list);
+                    // No dedicated module readings: populate both weeks and modules if present
+                    if (isWeekOn) {
+                      const m = r.weekNumber && r.weekNumber > 0 ? r.weekNumber : parseInt(r.weekId!.match(/\d+/)![0], 10);
+                      const list = readingsByWeek.get(m) || [];
+                      list.push(r);
+                      readingsByWeek.set(m, list);
+                    }
+                    if (modNums.length > 0) {
+                      for (const mNum of modNums) {
+                        const list = readingsByModule.get(mNum) || [];
+                        if (!list.some(existing => existing.id === r.id)) list.push(r);
+                        readingsByModule.set(mNum, list);
+                      }
+                    }
+                    if (!isWeekOn && modNums.length === 0) {
+                      unassignedCourseReadings.push(r);
+                    }
                   }
                 }
                 const sortedWeeks = Array.from(readingsByWeek.keys()).sort((a, b) => a - b);
-                const sortedModules = Array.from(readingsByModule.keys()).sort((a, b) => a - b);
+                const sortedModules = Array.from(allCourseModuleNumbers).sort((a, b) => a - b);
 
                 return (
                   <View key={course.id} style={styles.courseCard}>
@@ -476,6 +566,31 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                   ) : null}
                                 </View>
                               ))}
+                            </View>
+                          </View>
+                        )}
+
+                        {/* MARK: - Accuracy & Verification Notice Pill (Precedes Assignments in Course) */}
+                        {unacceptedAccuracyCourseIds.includes(course.id) && (
+                          <View style={styles.courseAccuracyNoticeBanner} testID={`accuracy-notice-course-${course.id}`}>
+                            <View style={styles.uploadStatusHeaderRow}>
+                              <ShieldCheckmarkIcon size={16} color="#FFFFFF" />
+                              <Text style={styles.accuracyNoticeTitle} numberOfLines={1}>
+                                Review Your Coursework
+                              </Text>
+                            </View>
+                            <Text style={styles.accuracyNoticeBody}>
+                              Our system can make mistakes as different professors and different schools write their syllabi in different ways. Please check everything you can edit in assignment details and in reading details. We appreciate your understanding and we will continue to improve our system.
+                            </Text>
+                            <View style={styles.accuracyAcceptActionRow}>
+                              <TouchableOpacity
+                                style={styles.acceptAccuracyButton}
+                                onPress={() => acceptAccuracyNotice(course.id)}
+                                activeOpacity={0.8}
+                                testID={`accept-accuracy-button-${course.id}`}
+                              >
+                                <Text style={styles.acceptAccuracyButtonText}>Accept</Text>
+                              </TouchableOpacity>
                             </View>
                           </View>
                         )}
@@ -681,7 +796,9 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                       if (dA !== dB) return dA - dB;
                                       return (a.title || '').localeCompare(b.title || '');
                                     });
-                                    const modTheme = modReadings.find(r => r.relevantTopics)?.relevantTopics;
+                                    const modTheme = modReadings.find(r => r.relevantTopics)?.relevantTopics
+                                      || (course.weeks || []).find(w => w.moduleNumber === mNum)?.theme
+                                      || (course.assignments || []).find(a => a.moduleNumber === mNum)?.relevantTopics;
                                     return (
                                       <View key={`module-${mNum}`} style={styles.weekSectionBox}>
                                         {/* Module Section Header */}
@@ -696,7 +813,15 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                           ) : null}
                                         </View>
 
-                                        {modReadings.map(r => renderSyllabusReadingRow(r, course.courseName, modTheme))}
+                                        {modReadings.length > 0 ? (
+                                          modReadings.map(r => renderSyllabusReadingRow(r, course.courseName, modTheme))
+                                        ) : (
+                                          <View style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
+                                            <Text style={{ fontSize: 13, color: '#8E9BAE', fontStyle: 'italic' }}>
+                                              {modTheme || 'No required readings assigned'}
+                                            </Text>
+                                          </View>
+                                        )}
                                       </View>
                                     );
                                   })}
@@ -759,7 +884,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.uploadStatusEducational}>
                   {uploadStatusText.toLowerCase().includes('success')
                     ? 'Your course document and schedule are ready.'
-                    : 'Deep analysis takes 1 to 2 minutes to extract all readings and assignments accurately. You can freely browse other sections or exit the app. Processing will continue in the background.'}
+                    : 'Please stay patient while we carefully organize all your course readings and assignments accurately. You can freely browse other sections or exit the app. Processing will continue in the background.'}
                 </Text>
               </View>
             )}
@@ -1085,6 +1210,55 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: 'rgba(255, 255, 255, 0.92)',
     lineHeight: 17
+  },
+  courseAccuracyNoticeBanner: {
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    width: '100%',
+    marginBottom: 10,
+    gap: 6,
+    shadowColor: CoursePalTheme.accentBlue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 3
+  },
+  accuracyNoticeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.2
+  },
+  accuracyNoticeBody: {
+    fontSize: 12.5,
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.94)',
+    lineHeight: 17.5
+  },
+  accuracyAcceptActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginTop: 4
+  },
+  acceptAccuracyButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 11,
+    paddingVertical: 6.5,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1
+  },
+  acceptAccuracyButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: CoursePalTheme.accentBlue
   },
   listContainer: {
     marginHorizontal: 18,

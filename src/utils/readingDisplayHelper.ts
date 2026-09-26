@@ -1703,6 +1703,104 @@ export function extractReadingWeekNumber(reading: {
   return null;
 }
 
+/**
+ * Extracts all numeric module numbers from any reading, week, assignment, or mention string.
+ * Accurately parses ranges ("Modules 1-10", "01 – 02"), lists ("Module 7 & 8", "9 & 10", "3, 4"),
+ * and standalone mentions ("Module 5").
+ */
+export function extractAllModuleNumbers(itemOrStr: any): number[] {
+  if (!itemOrStr) return [];
+  const numbers = new Set<number>();
+
+  if (typeof itemOrStr === 'number' && itemOrStr > 0) {
+    numbers.add(itemOrStr);
+    return [itemOrStr];
+  }
+
+  if (Array.isArray(itemOrStr)) {
+    for (const el of itemOrStr) {
+      for (const n of extractAllModuleNumbers(el)) {
+        numbers.add(n);
+      }
+    }
+    return Array.from(numbers).sort((a, b) => a - b);
+  }
+
+  if (typeof itemOrStr === 'object') {
+    if (Array.isArray(itemOrStr.moduleNumbers)) {
+      for (const n of itemOrStr.moduleNumbers) {
+        if (typeof n === 'number' && n > 0) numbers.add(n);
+      }
+    }
+    if (typeof itemOrStr.moduleNumber === 'number' && itemOrStr.moduleNumber > 0) {
+      numbers.add(itemOrStr.moduleNumber);
+    }
+    if (typeof itemOrStr.module_number === 'number' && itemOrStr.module_number > 0) {
+      numbers.add(itemOrStr.module_number);
+    }
+    if (itemOrStr.moduleMention && typeof itemOrStr.moduleMention === 'string') {
+      for (const n of extractAllModuleNumbers(itemOrStr.moduleMention)) {
+        numbers.add(n);
+      }
+    }
+    if (itemOrStr.relevantTopics && typeof itemOrStr.relevantTopics === 'string' && /module/i.test(itemOrStr.relevantTopics)) {
+      for (const n of extractAllModuleNumbers(itemOrStr.relevantTopics)) {
+        numbers.add(n);
+      }
+    }
+    if (itemOrStr.theme && typeof itemOrStr.theme === 'string' && /module/i.test(itemOrStr.theme)) {
+      for (const n of extractAllModuleNumbers(itemOrStr.theme)) {
+        numbers.add(n);
+      }
+    }
+    if (itemOrStr.title && typeof itemOrStr.title === 'string' && /module/i.test(itemOrStr.title)) {
+      for (const n of extractAllModuleNumbers(itemOrStr.title)) {
+        numbers.add(n);
+      }
+    }
+    return Array.from(numbers).sort((a, b) => a - b);
+  }
+
+  if (typeof itemOrStr === 'string') {
+    const s = itemOrStr;
+    // Check range pattern e.g. "01 – 02", "Modules 1-10", "Modules: 1 to 10", "Modules 3 - 4"
+    const rangeMatches = s.matchAll(/(?:modules?|mod)?\s*0?(\d{1,2})\s*(?:[-–—]|to)\s*0?(\d{1,2})/gi);
+    for (const rm of rangeMatches) {
+      const start = parseInt(rm[1], 10);
+      const end = parseInt(rm[2], 10);
+      if (start > 0 && end >= start && end <= 30) {
+        for (let i = start; i <= end; i++) {
+          numbers.add(i);
+        }
+      }
+    }
+
+    // Check ampersand / comma / 'and' pattern e.g. "Module 7 & 8", "Modules: 3 & 4", "9 & 10", "Module 1, 2, 3"
+    const listMatches = s.matchAll(/(?:modules?|mod)?\s*0?(\d{1,2})\s*(?:&|and|,)\s*0?(\d{1,2})/gi);
+    for (const lm of listMatches) {
+      const n1 = parseInt(lm[1], 10);
+      const n2 = parseInt(lm[2], 10);
+      if (n1 > 0 && n1 <= 30) numbers.add(n1);
+      if (n2 > 0 && n2 <= 30) numbers.add(n2);
+    }
+
+    // Single module mentions e.g. "Module 5", "Mod 6"
+    const singleMatches = s.matchAll(/\b(?:module|mod)\s*0?(\d{1,2})\b/gi);
+    for (const sm of singleMatches) {
+      const num = parseInt(sm[1], 10);
+      if (num > 0 && num <= 30) numbers.add(num);
+    }
+
+    // If still empty and string is digits e.g. "1" or "7"
+    if (numbers.size === 0 && /^\s*0?(\d{1,2})\s*$/.test(s)) {
+      const num = parseInt(s.trim(), 10);
+      if (num > 0 && num <= 30) numbers.add(num);
+    }
+  }
+
+  return Array.from(numbers).sort((a, b) => a - b);
+}
+
 export interface MinimalReadingItem {
   id: string;
   title: string;
@@ -2585,13 +2683,15 @@ export function cleanAssignmentTitle(raw: string): string {
   s = s.replace(/\s*(?:worth\s*)?\d{1,3}%\s*(?:of\s*(?:the\s*|their\s*)?(?:final\s*)?(?:grade|mark))?.*$/i, '').trim();
   s = s.replace(/\s*[-–—(]?\s*\d{1,3}%\s*\)?\s*$/g, '').trim();
 
-  // Strip unmatched quotation marks e.g. "Best Practices” Literature Review -> Best Practices Literature Review
-  const openQ = (s.match(/[“"]/g) || []).length;
-  const closeQ = (s.match(/[”"]/g) || []).length;
-  if (openQ !== closeQ) {
-    s = s.replace(/[“”"]/g, '');
-  }
+  // Strip quotation marks enclosing words or hanging quotes:
+  // e.g. “Best Practices” Literature Review -> Best Practices Literature Review
+  s = s.replace(/^[“”"']\s*([^“”"']+?)\s*[“”"']/, '$1').trim();
   s = s.replace(/^[“”"']+|[“”"']+$/g, '').trim();
+  const openCount = (s.match(/["“]/g) || []).length;
+  const closeCount = (s.match(/["”]/g) || []).length;
+  if (openCount !== closeCount || (s.match(/"/g) || []).length % 2 !== 0) {
+    s = s.replace(/["“”'‘’]/g, '');
+  }
 
   // Strip dangling punctuation and clean spacing
   s = sanitizeDanglingPunctuation(s);

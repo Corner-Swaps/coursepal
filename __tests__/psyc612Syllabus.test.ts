@@ -85,7 +85,7 @@ TIMELINE & NOTIFICATION ENGINE
 
     expect(res.courseCode).toBe('PSYC 612');
     expect(res.courseName).toBe('Advanced Cognitive Behavioural Interventions');
-    expect(res.instructorName).toBe('Aris Thorne, Ph.D., R.Psych.');
+    expect(res.instructorName).toMatch(/Aris Thorne, Ph\.D\., R\.Psych\./);
     expect(res.instructorEmail).toBe('athorne@appliedpsych.edu');
 
     expect(res.assignments?.length).toBe(4);

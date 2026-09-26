@@ -42,7 +42,8 @@ import {
   extractReadingWeekNumber,
   getReadingChapterSortKey,
   isGenericPlaceholderReadingTitle,
-  isDeliverableNotReading
+  isDeliverableNotReading,
+  extractAllModuleNumbers
 } from '../utils/readingDisplayHelper';
 import { resolveFullAuthorName } from '../utils/authorResolver';
 import { calculateAcademicWeek } from '../utils/timeFormatters';
@@ -466,40 +467,58 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     const allMods = new Set<number>();
     const targetCourses = activeCourse ? [activeCourse] : courses;
 
-    // Scan targetCourses for any modules defined in course weeks
+    // Scan scopedReadings for any modules defined in readings
+    for (const r of scopedReadings) {
+      for (const n of extractAllModuleNumbers(r)) allMods.add(n);
+    }
+
+    // Scan targetCourses for any modules defined in course weeks or assignments
     for (const c of targetCourses) {
       if (Array.isArray(c.weeks)) {
         for (const w of c.weeks) {
-          if (typeof w.moduleNumber === 'number' && w.moduleNumber > 0) {
-            allMods.add(w.moduleNumber);
-          } else if (w.moduleMention && /\d+/.test(w.moduleMention)) {
-            allMods.add(parseInt(w.moduleMention.match(/\d+/)![0], 10));
-          }
+          for (const n of extractAllModuleNumbers(w)) allMods.add(n);
+        }
+      }
+      if (Array.isArray(c.assignments)) {
+        for (const a of c.assignments) {
+          for (const n of extractAllModuleNumbers(a)) allMods.add(n);
         }
       }
     }
 
-    // For CPC 512, ensure Modules 1 through 10 are always present
-    const isCpc = targetCourses.some(c =>
-      (c.courseCode || '').toUpperCase().includes('512') ||
-      (c.courseName || '').toLowerCase().includes('family systems')
-    );
-    if (isCpc) {
+    // For 10-module curricula (CPC 512, PRJ-SEX-2026-X, SXST-3010, GSP 401), ensure Modules 1 through 10 are always present
+    const isTenModuleCourse = targetCourses.some(c => {
+      const code = (c.courseCode || '').toUpperCase();
+      const name = (c.courseName || '').toLowerCase();
+      return code.includes('512') || name.includes('family systems') ||
+        code.includes('PRJ-SEX') || code.includes('SXST') || code.includes('GSP') ||
+        name.includes('human sexuality') || name.includes('gender');
+    });
+    if (isTenModuleCourse) {
       for (let m = 1; m <= 10; m++) {
         allMods.add(m);
       }
     }
 
-    // Group readings by moduleNumber, falling back to course week moduleNumber if needed
-    const sourceList = groupingViewMode === 'modules' ? scopedReadings : activeReadings;
-    if (sourceList.length === 0) return [];
+    // Source list must ALWAYS be scopedReadings (never activeReadings or dependent on groupingViewMode)
+    const sourceList = scopedReadings;
+    if (sourceList.length === 0 && allMods.size === 0) return [];
 
     // Detect which courses have dedicated curriculum module readings (readings with moduleNumber and NO weekNumber)
-    const courseDedicatedModules = new Set<string>();
+    // Only isolate dedicated modules if there are at least 5 dedicated module readings for that course (like CPC 512)
+    const dedicatedCountsByCourse = new Map<string, number>();
     for (const r of sourceList) {
       if (r.moduleNumber && (!r.weekNumber || r.weekNumber === 0)) {
         const cKey = r.courseId || (r.courseCode || '').replace(/\s+/g, '').toUpperCase();
-        if (cKey) courseDedicatedModules.add(cKey);
+        if (cKey) {
+          dedicatedCountsByCourse.set(cKey, (dedicatedCountsByCourse.get(cKey) || 0) + 1);
+        }
+      }
+    }
+    const courseDedicatedModules = new Set<string>();
+    for (const [cKey, count] of dedicatedCountsByCourse.entries()) {
+      if (count >= 5) {
+        courseDedicatedModules.add(cKey);
       }
     }
 
@@ -512,25 +531,25 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         continue;
       }
 
-      let mNum = (r.moduleNumber && r.moduleNumber > 0)
-        ? r.moduleNumber
-        : (r.moduleMention && /\d+/.test(r.moduleMention) ? parseInt(r.moduleMention.match(/\d+/)![0], 10) : null);
-
-      if (!mNum && r.weekNumber && r.weekNumber > 0) {
+      const modNums = extractAllModuleNumbers(r);
+      if (modNums.length === 0 && r.weekNumber && r.weekNumber > 0) {
         for (const c of targetCourses) {
           const wk = c.weeks?.find(w => w.weekNumber === r.weekNumber);
-          if (typeof wk?.moduleNumber === 'number' && wk.moduleNumber > 0) {
-            mNum = wk.moduleNumber;
-            break;
+          if (wk) {
+            for (const n of extractAllModuleNumbers(wk)) modNums.push(n);
           }
         }
       }
 
-      if (mNum) {
-        allMods.add(mNum);
-        const list = readingsByMod.get(mNum) || [];
-        list.push(r);
-        readingsByMod.set(mNum, list);
+      if (modNums.length > 0) {
+        for (const mNum of modNums) {
+          allMods.add(mNum);
+          const list = readingsByMod.get(mNum) || [];
+          if (!list.some(existing => existing.id === r.id)) {
+            list.push(r);
+          }
+          readingsByMod.set(mNum, list);
+        }
       }
     }
 
@@ -584,17 +603,38 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
         return {
           moduleNum: m,
           moduleLabel,
-          theme: theme || undefined,
+          theme: theme || `Module ${m}`,
           readings: rList
         };
-      })
-      .filter(m => m.readings.length > 0 || Boolean(m.theme));
-  }, [activeReadings, scopedReadings, groupingViewMode, courses, activeCourse]);
+      });
+  }, [scopedReadings, courses, activeCourse]);
+
+  const totalWeeksCount = useMemo(() => {
+    if (courses.length === 0) return 0;
+    const targetCourses = activeCourse ? [activeCourse] : courses;
+    const weeksSet = new Set<number>();
+    for (const c of targetCourses) {
+      if (Array.isArray(c.weeks)) {
+        for (const wk of c.weeks) {
+          if (typeof wk.weekNumber === 'number' && wk.weekNumber > 0) {
+            weeksSet.add(wk.weekNumber);
+          }
+        }
+      }
+    }
+    for (const r of scopedReadings) {
+      const isPureModule = Boolean(r.moduleNumber && (!r.weekNumber || r.weekNumber === 0));
+      if (isPureModule) continue;
+      const w = getEffectiveReadingWeek(r);
+      if (w && w > 0) weeksSet.add(w);
+    }
+    return weeksSet.size;
+  }, [courses, activeCourse, scopedReadings]);
 
   const hasDistinctModules = useMemo(() => {
     if (courses.length === 0) return false;
-    return groupedModules.some(m => m.readings.length > 0);
-  }, [courses.length, groupedModules]);
+    return groupedModules.length > 0;
+  }, [courses.length, groupedModules.length]);
 
   useEffect(() => {
     if (!hasDistinctModules && groupingViewMode === 'modules') {
@@ -1155,7 +1195,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       ) : (
         <View style={styles.readingsListContainer}>
           {/* Segmented Switcher between Weeks and Modules (when course has both weeks and modules) */}
-          {hasDistinctModules && groupedWeeks.length > 0 && (
+          {hasDistinctModules && (totalWeeksCount > 0 || groupedWeeks.length > 0) && (
             <View style={styles.viewModeSegmentContainer}>
               <TouchableOpacity
                 style={[
@@ -1171,7 +1211,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                     groupingViewMode === 'weeks' && styles.viewModeSegmentTextActive
                   ]}
                 >
-                  Weeks ({groupedWeeks.length})
+                  Weeks ({totalWeeksCount > 0 ? totalWeeksCount : groupedWeeks.length})
                 </Text>
               </TouchableOpacity>
 
@@ -1291,7 +1331,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                     if (!modBadge) return null;
                     // Rule: If course already has a dedicated Modules section or distinct modules,
                     // do NOT show module pills in the Weeks view header!
-                    if (hasDistinctModules || courseDedicatedModules.size > 0 || availableGroupingModes.includes('modules')) {
+                    if (hasDistinctModules) {
                       return null;
                     }
                     // Never show redundant module pill if it just repeats the week number (e.g. 'Module 1' on 'Week 1')
@@ -1403,7 +1443,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
           {/* Module-grouped readings (when in Course Modules view) */}
           {groupingViewMode === 'modules' && groupedModules.map(({ moduleNum, moduleLabel, theme: modTheme, readings: moduleReadingsList }) => {
             const incompleteMod = moduleReadingsList.filter(r => !r.isCompleted);
-            if (incompleteMod.length === 0 && selectedWeekFilter === null) {
+            if (moduleReadingsList.length > 0 && incompleteMod.length === 0 && selectedWeekFilter === null) {
               return null;
             }
 

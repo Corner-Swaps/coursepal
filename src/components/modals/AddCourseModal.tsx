@@ -451,7 +451,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
               <View style={styles.noticeTextCol}>
                 <Text style={styles.noticeTitle}>Upload One Course at a Time</Text>
                 <Text style={styles.noticeDesc}>
-                  Document processing takes 1 to 2 minutes. You can safely exit or minimize the app while it runs in the background.
+                  Please stay patient while we organize your course schedule. You can safely exit or minimize the app while it runs in the background.
                 </Text>
               </View>
             </View>
@@ -462,7 +462,7 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
                 <CheckmarkShieldFillIcon size={14} color="#E07314" />
               </View>
               <View style={styles.noticeTextCol}>
-                <Text style={styles.noticeTitle}>Double-Check Your Syllabus</Text>
+                <Text style={styles.noticeTitle}>Double Check Your Syllabus</Text>
                 <Text style={styles.noticeDesc}>
                   Please check your original PDF to verify all dates, readings, and assignments imported accurately.
                 </Text>

@@ -9,6 +9,7 @@ import { LocalSyllabusParser } from '../services/LocalSyllabusParser';
 import { BundledSyllabiCatalog } from '../utils/syllabusCatalog';
 import cityuSyllabi from '../utils/cityu_syllabi_texts.json';
 import { SyllabusImportManager } from '../services/SyllabusImportManager';
+import { FacultyExtractor } from '../services/FacultyExtractor';
 import {
   cleanChapterFromRaw,
   formatDisplayTitleWithChapter,
@@ -21,7 +22,8 @@ import {
   isInvalidAssignmentTitle,
   isGenericPlaceholderTheme,
   cleanAcademicWeekTheme,
-  isItemForCourse
+  isItemForCourse,
+  extractAllModuleNumbers
 } from '../utils/readingDisplayHelper';
 import { weekNumberForDate } from '../utils/timeFormatters';
 import { extractTextFromPDF, extractTextFromPDFContent, renderPDFPages, extractTextFromDocxBase64 } from '../services/PDFTextExtractor';
@@ -67,9 +69,12 @@ interface CoursePalContextType {
   confettiTitle: string;
   latestDiagnosticRecord: DiagnosticImportRecord | null;
   importBanner: ImportBannerState | null;
+  unacceptedAccuracyCourseIds: string[];
+  activeAccuracyNotice: { courseId: string; courseName: string } | null;
 
   // Actions
   dismissImportBanner: () => void;
+  acceptAccuracyNotice: (courseId?: string) => void;
   setSelectedTab: (tab: TabKey) => void;
   setSelectedCourseFilter: (course: Course | null) => void;
   toggleReading: (id: string) => void;
@@ -2029,10 +2034,31 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [confettiTitle, setConfettiTitle] = useState<string>('');
   const [latestDiagnosticRecord, setLatestDiagnosticRecord] = useState<DiagnosticImportRecord | null>(null);
   const [importBanner, setImportBanner] = useState<ImportBannerState | null>(null);
+  const [acceptedAccuracyCourseIds, setAcceptedAccuracyCourseIds] = useState<string[]>([]);
+  const [unacceptedAccuracyCourseIds, setUnacceptedAccuracyCourseIds] = useState<string[]>([]);
+  const [activeAccuracyNotice, setActiveAccuracyNotice] = useState<{
+    courseId: string;
+    courseName: string;
+  } | null>(null);
 
   const dismissImportBanner = useCallback(() => {
     setImportBanner(null);
   }, []);
+
+  const acceptAccuracyNotice = useCallback((courseId?: string) => {
+    setUnacceptedAccuracyCourseIds(prev => {
+      const next = courseId ? prev.filter(id => id !== courseId) : [];
+      return next;
+    });
+    setAcceptedAccuracyCourseIds(prev => {
+      const next = courseId ? Array.from(new Set([...prev, courseId])) : [...prev, ...unacceptedAccuracyCourseIds];
+      persistenceManager.saveAccuracyAccepted(next);
+      return next;
+    });
+    if (!courseId || activeAccuracyNotice?.courseId === courseId) {
+      setActiveAccuracyNotice(null);
+    }
+  }, [activeAccuracyNotice, unacceptedAccuracyCourseIds]);
 
   const coursesRef = useRef<Course[]>(courses);
   coursesRef.current = courses;
@@ -2056,6 +2082,13 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         setHasAcceptedTerms(true);
       }
       setHasLoadedTerms(true);
+    });
+
+    persistenceManager.loadAccuracyAccepted().then(acceptedIds => {
+      if (!isMounted) return;
+      if (Array.isArray(acceptedIds)) {
+        setAcceptedAccuracyCourseIds(acceptedIds);
+      }
     });
 
     persistenceManager.loadLatestBackup().then(backup => {
@@ -3473,11 +3506,16 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           : (r.requirementType === 'optional' ? false : true);
         const reqType: 'required' | 'optional' = (r.requirementType === 'optional' || isReq === false) ? 'optional' : 'required';
 
-        // Zero Cross-Bleed Rule: If r is a calendar weekly reading (r.weekNumber > 0), do not artificially inject module metadata from weeks unless explicitly set on r
-        const resolvedModuleNumber = (r.weekNumber && r.weekNumber > 0)
+        // Zero Cross-Bleed Rule: If r is a calendar weekly reading (r.weekNumber > 0) in a course with dedicated Table 1 module readings (e.g. CPC 512), do not artificially inject module metadata from weeks unless explicitly set on r
+        const hasDedicatedTable1 = Boolean(
+          ((normalized as any).moduleReadings && (normalized as any).moduleReadings.length >= 5) ||
+          cleanReadingsList.filter(cr => cr.moduleNumber && (!cr.weekNumber || cr.weekNumber === 0)).length >= 5
+        );
+        const rModNums = extractAllModuleNumbers(r);
+        const resolvedModuleNumber = (r.weekNumber && r.weekNumber > 0 && hasDedicatedTable1)
           ? (r.moduleNumber || null)
-          : (r.moduleNumber || (matchedWeek as any)?.moduleNumber || ((matchedWeek as any)?.moduleMention && /\d+/.test((matchedWeek as any).moduleMention) ? parseInt((matchedWeek as any).moduleMention.match(/\d+/)![0], 10) : null));
-        const resolvedModuleMention = (r.weekNumber && r.weekNumber > 0)
+          : (r.moduleNumber || (matchedWeek as any)?.moduleNumber || (rModNums[0] ?? null));
+        const resolvedModuleMention = (r.weekNumber && r.weekNumber > 0 && hasDedicatedTable1)
           ? (r.moduleMention || null)
           : (r.moduleMention || (matchedWeek as any)?.moduleMention || (resolvedModuleNumber ? `Module ${resolvedModuleNumber}` : null));
 
@@ -3509,46 +3547,53 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       let finalTermWeeks = 0;
 
       if (hasGenuineWeeks) {
-        const maxWeek = Math.max(
+        const weekNumbers = [
           ...newReadings.map(r => r.weekNumber || 0),
           ...cleanAssignmentsList.map(a => a.weekNumber || 0),
           ...(normalized.weeks || []).map((w: any) => w.weekNumber || 0),
-          targetCourse?.termWeeks || normalized.termWeeks || 0,
-          1
-        );
-        finalTermWeeks = maxWeek;
+          targetCourse?.termWeeks || normalized.termWeeks || 0
+        ].filter(n => n > 0);
 
-        for (let w = 1; w <= maxWeek; w++) {
-          const weekReadings = newReadings.filter(r => (r.weekNumber || 0) === w);
-          const foundWeek = (normalized.weeks as any[])?.find((dw: any) => dw.weekNumber === w);
-          const foundTheme = cleanAcademicWeekTheme(foundWeek?.theme) || `Week ${w}`;
-          const foundDate = foundWeek?.startDate
-            ? parseSafeDate(foundWeek.startDate)
-            : (foundWeek?.date ? parseSafeDate(foundWeek.date) : null);
-          const foundModNum = (foundWeek as any)?.moduleNumber || null;
-          const foundModMention = (foundWeek as any)?.moduleMention || null;
-          courseWeeks.push({
-            id: `w-${w}`,
-            weekNumber: w,
-            theme: foundTheme,
-            startDate: foundDate,
-            dateRangeStr: foundWeek?.dateRangeStr || null,
-            moduleNumber: foundModNum,
-            moduleMention: foundModMention,
-            courseId,
-            readings: weekReadings
-          });
+        if (weekNumbers.length > 0) {
+          const maxWeek = Math.max(...weekNumbers);
+          finalTermWeeks = maxWeek;
+
+          for (let w = 1; w <= maxWeek; w++) {
+            const weekReadings = newReadings.filter(r => (r.weekNumber || 0) === w);
+            const foundWeek = (normalized.weeks as any[])?.find((dw: any) => dw.weekNumber === w);
+            const foundTheme = cleanAcademicWeekTheme(foundWeek?.theme) || `Week ${w}`;
+            const foundDate = foundWeek?.startDate
+              ? parseSafeDate(foundWeek.startDate)
+              : (foundWeek?.date ? parseSafeDate(foundWeek.date) : null);
+            const wModNums = extractAllModuleNumbers(foundWeek);
+            const foundModNum = (foundWeek as any)?.moduleNumber || (wModNums[0] ?? null);
+            const foundModMention = (foundWeek as any)?.moduleMention || (foundModNum ? `Module ${foundModNum}` : null);
+            courseWeeks.push({
+              id: `w-${w}`,
+              weekNumber: w,
+              theme: foundTheme,
+              startDate: foundDate,
+              dateRangeStr: foundWeek?.dateRangeStr || null,
+              moduleNumber: foundModNum,
+              moduleMention: foundModMention,
+              courseId,
+              readings: weekReadings
+            });
+          }
         }
       }
+
 
       // Convert clean assignments into Assignment objects
       const newAssignments: Assignment[] = cleanAssignmentsList
         .filter(a => !isInvalidAssignmentTitle(a.title))
         .map((a, aIdx) => {
           const resolvedWeek = a.weekNumber || 0;
-          const resolvedModMention = (resolvedWeek > 0)
-            ? a.moduleMention
-            : (a.moduleMention || (a.moduleNumber ? `Module ${a.moduleNumber}` : undefined));
+          const aModNums = extractAllModuleNumbers(a);
+          const resolvedModNum = (typeof a.moduleNumber === 'number' && a.moduleNumber > 0)
+            ? a.moduleNumber
+            : (aModNums[0] ?? undefined);
+          const resolvedModMention = a.moduleMention || (resolvedModNum ? `Module ${resolvedModNum}` : undefined);
           return sanitizeAssignment({
             ...a,
             id: `a-${Date.now()}-${aIdx}`,
@@ -3557,6 +3602,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
             sourceDocumentId: vaultDocId,
             docColorHex: targetCourse?.hexColor || hexColor,
             courseId: courseId,
+            moduleNumber: resolvedModNum,
             moduleMention: resolvedModMention,
             relevantTopics: a.relevantTopics || resolvedModMention
           });
@@ -3568,9 +3614,9 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         courseName: effectiveCourseName,
         courseCode: effectiveCourseCode,
         courseDescription: targetCourse?.courseDescription || normalized.courseDescription || `Imported from ${fileName}.`,
-        instructorName: targetCourse?.instructorName || normalized.instructorName || null,
-        instructorEmail: targetCourse?.instructorEmail || normalized.instructorEmail || null,
-        officeHours: targetCourse?.officeHours || normalized.officeHours || dto?.officeHours || null,
+        instructorName: targetCourse?.instructorName || normalized.instructorName || dto?.instructorName || (rawText ? FacultyExtractor.extractFaculty(rawText).name : null) || null,
+        instructorEmail: targetCourse?.instructorEmail || normalized.instructorEmail || dto?.instructorEmail || (rawText ? FacultyExtractor.extractFaculty(rawText).email : null) || null,
+        officeHours: targetCourse?.officeHours || normalized.officeHours || dto?.officeHours || (rawText ? FacultyExtractor.extractFaculty(rawText).officeHours : null) || null,
         externalScheduleNotice: targetCourse?.externalScheduleNotice || normalized.externalScheduleNotice || (dto?.externalScheduleNotice ?? null),
         gradingScale: targetCourse?.gradingScale || normalized.gradingScale || (dto?.gradingScale ?? null),
         gradingScaleRows: targetCourse?.gradingScaleRows || normalized.gradingScaleRows || (dto?.gradingScaleRows ?? null),
@@ -3741,6 +3787,13 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         setAssignments(updatedAssignments);
         setVaultDocs(updatedVaultDocs);
         setSelectedCourseFilter(finalCourse);
+
+        // Mark course as requiring accuracy verification review
+        setUnacceptedAccuracyCourseIds(prev => Array.from(new Set([...prev, finalCourse.id])));
+        setActiveAccuracyNotice({
+          courseId: finalCourse.id,
+          courseName: finalCourse.courseCode || finalCourse.courseName
+        });
 
         setImportBanner({
           type: isFallbackUsed || normalized.isPartial ? 'warning' : 'success',
@@ -3936,6 +3989,9 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         latestDiagnosticRecord,
         importBanner,
         dismissImportBanner,
+        unacceptedAccuracyCourseIds,
+        activeAccuracyNotice,
+        acceptAccuracyNotice,
         setSelectedTab,
         setSelectedCourseFilter,
         toggleReading,

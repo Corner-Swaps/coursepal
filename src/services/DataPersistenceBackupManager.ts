@@ -35,8 +35,10 @@ export class DataPersistenceBackupManager {
   private static instance: DataPersistenceBackupManager;
   private backupFileName = 'CoursePal_AutoBackup.json';
   private termsFileName = 'CoursePal_TermsAccepted.json';
+  private accuracyNoticeFileName = 'CoursePal_AccuracyAccepted.json';
   private pendingJobFileName = 'CoursePal_PendingUploadJob.json';
   private termsAcceptedCached: boolean | null = null;
+  private accuracyAcceptedCached: string[] | null = null;
   private cachedDiagnosticRecord: DiagnosticImportRecord | null = null;
   private backupTimer: NodeJS.Timeout | null = null;
 
@@ -65,6 +67,11 @@ export class DataPersistenceBackupManager {
   private get termsFilePath(): string {
     const dir = FileSystem.documentDirectory || '';
     return `${dir}${this.termsFileName}`;
+  }
+
+  private get accuracyNoticeFilePath(): string {
+    const dir = FileSystem.documentDirectory || '';
+    return `${dir}${this.accuracyNoticeFileName}`;
   }
 
   private get pendingJobFilePath(): string {
@@ -411,6 +418,48 @@ export class DataPersistenceBackupManager {
   }
 
   /**
+   * Persists the list of course IDs where the user has reviewed & accepted the accuracy notice
+   */
+  public async saveAccuracyAccepted(courseIds: string[]): Promise<boolean> {
+    this.accuracyAcceptedCached = courseIds;
+    try {
+      if (!FileSystem.documentDirectory) return false;
+      await FileSystem.writeAsStringAsync(
+        this.accuracyNoticeFilePath,
+        JSON.stringify(courseIds),
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Loads the list of course IDs where the user has reviewed & accepted the accuracy notice
+   */
+  public async loadAccuracyAccepted(): Promise<string[]> {
+    if (this.accuracyAcceptedCached !== null) {
+      return this.accuracyAcceptedCached;
+    }
+    try {
+      if (!FileSystem.documentDirectory) return [];
+      const info = await FileSystem.getInfoAsync(this.accuracyNoticeFilePath);
+      if (!info.exists) return [];
+      const content = await FileSystem.readAsStringAsync(this.accuracyNoticeFilePath, {
+        encoding: FileSystem.EncodingType.UTF8
+      });
+      if (!content || content.trim().length === 0) return [];
+      const parsed = JSON.parse(content);
+      const res = Array.isArray(parsed) ? parsed : [];
+      this.accuracyAcceptedCached = res;
+      return res;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Resets all stored application data, deleting disk backup files, widget snapshots,
    * pending upload jobs, and all cached/stored syllabus documents in the sandbox.
    */
@@ -425,6 +474,7 @@ export class DataPersistenceBackupManager {
       const filesToDelete = [
         this.backupFilePath,
         this.termsFilePath,
+        this.accuracyNoticeFilePath,
         this.pendingJobFilePath,
         `${FileSystem.documentDirectory}CoursePal_WidgetSnapshot.json`,
         `${FileSystem.documentDirectory}CoursePal_ReviewPromptState.json`
@@ -448,6 +498,7 @@ export class DataPersistenceBackupManager {
       } catch {}
 
       this.cachedDiagnosticRecord = null;
+      this.accuracyAcceptedCached = null;
       this.termsAcceptedCached = null;
       return true;
     } catch {
