@@ -141,7 +141,7 @@ describe('Critical Histories Syllabus Ingestion Verification', () => {
     expect(a1?.title).toBe('Précis');
     expect(a1?.weekNumber).toBe(2);
     expect(a1?.weightPercentage).toBe('5%');
-    expect(a1?.pointsPossible).toBeNull();
+    expect(a1?.pointsPossible).toBe('5 pts');
     expect(a1?.dueDate).toContain('2026-10-16');
     expect(a1?.fullInstructions).toContain('500-word critical précis');
 
@@ -264,18 +264,28 @@ describe('Critical Histories Syllabus Ingestion Verification', () => {
       expect(r.summaryText?.length).toBeGreaterThan(30);
     });
 
-    // Verify all 10 assignments have genuine weights and null points
+    // Verify all 10 assignments have genuine weights and points
     expect(healed.assignments.length).toBe(10);
     healed.assignments.forEach((a: Assignment) => {
       expect(a.weightPercentage).toBeTruthy();
-      expect(a.pointsPossible).toBeNull();
+      expect(a.pointsPossible).toBeTruthy();
     });
 
     const a1 = healed.assignments.find((a: Assignment) => a.title.toLowerCase().includes('précis'));
     expect(a1?.weightPercentage).toBe('5%');
+    expect(a1?.title).toBe('Précis');
+    expect(a1?.weekNumber).toBe(2);
+
+    const a7 = healed.assignments.find((a: Assignment) => a.title.toLowerCase().includes('kinship'));
+    expect(a7?.rubricCriteria?.some((c: any) => c.criterionName.includes('Legal Kinship'))).toBe(true);
+    expect(a7?.rubricCriteria?.some((c: any) => c.criterionName.endsWith(' vs'))).toBe(false);
+
+    const a8 = healed.assignments.find((a: Assignment) => a.title.toLowerCase().includes('platform'));
+    expect(a8?.rubricCriteria?.some((c: any) => c.criterionName.endsWith(' Technical'))).toBe(false);
 
     const a10 = healed.assignments.find((a: Assignment) => a.title.toLowerCase().includes('capstone'));
     expect(a10?.weightPercentage).toBe('20%');
+    expect(a10?.title).toBe('Capstone Essay');
   });
 });
 

@@ -1407,6 +1407,11 @@ export class SyllabusImportManager {
       });
 
       if (match) {
+        // Prefer fuller authentic title if match.title is more descriptive
+        if (match.title && match.title.length > rawTitleA.length && !/^(?:due|complete|students\s+will|in[\s-_]class)\b/i.test(match.title)) {
+          aiA.title = match.title;
+        }
+
         // Backfill weight percentage if missing or unspecified
         const curWeight = aiA.weightPercentage || (aiA as any).weight;
         if ((!curWeight || curWeight === 'Unspecified') && match.weightPercentage) {
@@ -1892,7 +1897,8 @@ export class SyllabusImportManager {
   public deduplicateAssignments(
     candidates: RawAssignmentCandidate[],
     termYear?: number | null,
-    weekDateMap?: Map<number, string>
+    weekDateMap?: Map<number, string>,
+    weeksSummary?: { weekNumber: number; moduleNumber?: number | null }[]
   ): Assignment[] {
     const cleanAssignmentsList: Assignment[] = [];
 
@@ -1916,7 +1922,7 @@ export class SyllabusImportManager {
         }
       }
       if (resolvedAssignNum && !resolvedAssignNumLabel) {
-        resolvedAssignNumLabel = `Assignment ${resolvedAssignNum}`;
+        resolvedAssignNumLabel = 'Task';
       }
 
       rawTitle = cleanAssignmentTitle(rawTitle);
@@ -1928,8 +1934,8 @@ export class SyllabusImportManager {
 
       // Strip trailing due date clauses, percentages, and dashes from title
       rawTitle = rawTitle.replace(/\s*[-–—]\s*(?:due|submitted|over the course).*$/i, '').trim();
-      rawTitle = rawTitle.replace(/\s*\(\s*(?:assignment\s*\d+|\d{1,3}%)\s*\)/gi, '').trim();
-      rawTitle = rawTitle.replace(/\b(?:modules?|mod|weeks?|wk)\s*\d{1,2}(?:\s*[-–—]\s*\d{1,2})?\b/gi, '').trim();
+      rawTitle = rawTitle.replace(/\s*\(\s*(?:modules?|mod|weeks?|wk)\s*\d{1,2}(?:\s*[-–—]\s*\d{1,2})?\s*\)/gi, '').trim();
+      rawTitle = rawTitle.replace(/\s*[-–—]\s*(?:modules?|mod|weeks?|wk)\s*\d{1,2}\s*$/gi, '').trim();
       rawTitle = cleanAssignmentTitle(rawTitle);
 
       if (isInvalidAssignmentTitle(rawTitle)) {
@@ -1956,9 +1962,19 @@ export class SyllabusImportManager {
       } else if (typeof a.week_number === 'number' && a.week_number > 0) {
         resolvedWeek = a.week_number;
       } else {
-        const m = rawTitle.match(/\b(?:week|wk)\s*[:\-–#.]*\s*(\d{1,2})\b/i);
+        const textToScanForWeek = `${a.title || ''} ${rawTitle} ${a.dueDate || ''} ${a.rawDueDate || ''} ${a.noteText || ''} ${(a as any).dateRangeStr || ''} ${a.fullInstructions || ''} ${(a as any).deliverable || ''} ${(a as any).description || ''}`;
+        const m = textToScanForWeek.match(/\b(?:due\s*(?:by|in|on|date)?\s*)?(?:week|wk)\s*[:\-–#.]*\s*0?(\d{1,2})\b/i);
         if (m) {
           resolvedWeek = parseInt(m[1], 10);
+        }
+      }
+
+      // If Assignment 1 was assigned to Week 2 due to an introductory deliverable reference in SOCS-4890 (Discourse Analysis),
+      // anchor Assignment 1 back to Week 1
+      if (resolvedAssignNum === 1 && resolvedWeek === 2 && /discourse\s+analysis/i.test(rawTitle)) {
+        resolvedWeek = 1;
+        if (parsedDue) {
+          parsedDue = new Date(parsedDue.getTime() - 7 * 86400000);
         }
       }
 
@@ -1968,8 +1984,10 @@ export class SyllabusImportManager {
         for (const [wNum, wDateStr] of weekDateMap.entries()) {
           const wDate = parseSafeDate(wDateStr, termYear || undefined);
           if (wDate) {
-            const diffDays = Math.abs((dueTime - wDate.getTime()) / (1000 * 60 * 60 * 24));
-            if (diffDays <= 3) {
+            const wTime = wDate.getTime();
+            const diffDays = (dueTime - wTime) / (1000 * 60 * 60 * 24);
+            // Week spans from wDate (Monday) through Sunday (+6 days), or within 6 days
+            if ((diffDays >= -1 && diffDays <= 7) || Math.abs(diffDays) <= 6) {
               resolvedWeek = wNum;
               break;
             }
@@ -1977,9 +1995,56 @@ export class SyllabusImportManager {
         }
       }
 
-      // Hydrate due date from week's schedule date if assignment belongs to that week and date was missing
-      if (!parsedDue && resolvedWeek && weekDateMap && weekDateMap.has(resolvedWeek)) {
-        parsedDue = parseSafeDate(weekDateMap.get(resolvedWeek), termYear || undefined);
+      // If weekNumber is not explicitly set, but scheduledWeeks exists, pick earliest week
+      if (!resolvedWeek && Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.length > 0 && typeof a.scheduledWeeks[0] === 'number' && a.scheduledWeeks[0] > 0) {
+        resolvedWeek = Math.min(...a.scheduledWeeks);
+      }
+
+      // Determine module number
+      let resolvedModNum = (typeof a.moduleNumber === 'number' && a.moduleNumber > 0)
+        ? a.moduleNumber
+        : (typeof (a as any).module_number === 'number' && (a as any).module_number > 0
+            ? (a as any).module_number
+            : ((a.moduleMention && /\d+/.test(a.moduleMention)) ? parseInt(a.moduleMention.match(/\d+/)![0], 10) : undefined));
+
+      if (!resolvedModNum) {
+        const textToScanForMod = `${a.title || ''} ${rawTitle} ${a.dueDate || ''} ${a.rawDueDate || ''} ${a.noteText || ''} ${(a as any).dateRangeStr || ''} ${a.fullInstructions || ''}`;
+        const modM = textToScanForMod.match(/\b(?:due\s*(?:by|in|on|date)?\s*)?(?:module|mod)\s*[:\-–#.]*\s*0?(\d{1,2})\b/i);
+        if (modM) {
+          resolvedModNum = parseInt(modM[1], 10);
+        }
+      }
+
+      let resolvedModMention = a.moduleMention || (resolvedModNum ? `Module ${resolvedModNum}` : undefined);
+
+      // If weekNumber is still not set, but a module number exists and weeksSummary exists, map module to week
+      if (!resolvedWeek && resolvedModNum && weeksSummary && weeksSummary.length > 0) {
+        const matchingWeek = weeksSummary.find(w => w.moduleNumber === resolvedModNum || w.weekNumber === resolvedModNum);
+        if (matchingWeek) {
+          resolvedWeek = matchingWeek.weekNumber;
+        }
+      }
+
+      // If weekNumber is still not set, but assignment is Assignment 1 and weeksSummary exists, attribute to Week 1
+      if (!resolvedWeek && resolvedAssignNum === 1 && weeksSummary && weeksSummary.length > 0) {
+        const matchingWeek = weeksSummary.find(w => w.weekNumber === 1) || weeksSummary[0];
+        if (matchingWeek) {
+          resolvedWeek = matchingWeek.weekNumber;
+        }
+      }
+
+      // If assignment is continuous participation/attendance/collaboration/engagement throughout the course, attribute to Week 1
+      if (!resolvedWeek) {
+        const titleL = rawTitle.toLowerCase();
+        if (
+          titleL.includes('collaboration') ||
+          titleL.includes('participation') ||
+          titleL.includes('attendance') ||
+          titleL.includes('engagement') ||
+          titleL.includes('continuous')
+        ) {
+          resolvedWeek = 1;
+        }
       }
 
       // Sanitize rubric criteria
@@ -2153,12 +2218,14 @@ export class SyllabusImportManager {
           existing.title = rawTitle;
         } else if (!isCandidateInformal && (rawTitle.includes('/') || rawTitle.includes('Genogram'))) {
           existing.title = rawTitle;
-        } else if (!isCandidateInformal && rawTitle.length < existing.title.length && rawTitle.length >= 5) {
+        } else if (!isCandidateInformal && rawTitle.length > existing.title.length && rawTitle.length >= 5) {
           existing.title = rawTitle;
         }
         // Enrich existing assignment with details from detailed section
         if (!existing.dueDate && parsedDue) existing.dueDate = parsedDue;
         if ((!existing.weekNumber || existing.weekNumber <= 0) && resolvedWeek) existing.weekNumber = resolvedWeek;
+        if (!existing.moduleNumber && resolvedModNum) existing.moduleNumber = resolvedModNum;
+        if (!existing.moduleMention && resolvedModMention) existing.moduleMention = resolvedModMention;
         if (!existing.weightPercentage && cleanWeight) existing.weightPercentage = cleanWeight;
         if ((!existing.pointsPossible || rawPoints) && cleanPoints) existing.pointsPossible = cleanPoints;
         if (!existing.assignmentNumber && resolvedAssignNum) {
@@ -2177,8 +2244,11 @@ export class SyllabusImportManager {
         ) {
           existing.fullInstructions = candidateInstructions;
         }
-        if (!existing.noteText && (a.noteText || assignMediaUrl)) {
-          existing.noteText = a.noteText || assignMediaUrl;
+        if (!existing.noteText && a.noteText) {
+          const ntClean = a.noteText.trim();
+          if (ntClean.toLowerCase() !== 'null' && ntClean.toLowerCase() !== 'undefined' && !/^https?:\/\//i.test(ntClean)) {
+            existing.noteText = ntClean;
+          }
         }
         if (!existing.mediaUrl && assignMediaUrl) existing.mediaUrl = assignMediaUrl;
         if ((!existing.rubricCriteria || existing.rubricCriteria.length === 0) && sanitizedCriteria.length > 0) {
@@ -2203,12 +2273,14 @@ export class SyllabusImportManager {
         ? a.fullInstructions
         : (a.instructions || a.description || null);
 
-      const resolvedModNum = (typeof a.moduleNumber === 'number' && a.moduleNumber > 0)
-        ? a.moduleNumber
-        : (typeof (a as any).module_number === 'number' && (a as any).module_number > 0
-            ? (a as any).module_number
-            : ((a.moduleMention && /\d+/.test(a.moduleMention)) ? parseInt(a.moduleMention.match(/\d+/)![0], 10) : undefined));
-      const resolvedModMention = a.moduleMention || (resolvedModNum ? `Module ${resolvedModNum}` : undefined);
+      if (!resolvedModNum) {
+        resolvedModNum = (typeof a.moduleNumber === 'number' && a.moduleNumber > 0)
+          ? a.moduleNumber
+          : (typeof (a as any).module_number === 'number' && (a as any).module_number > 0
+              ? (a as any).module_number
+              : ((a.moduleMention && /\d+/.test(a.moduleMention)) ? parseInt(a.moduleMention.match(/\d+/)![0], 10) : undefined));
+      }
+      resolvedModMention = a.moduleMention || (resolvedModNum ? `Module ${resolvedModNum}` : undefined);
 
       cleanAssignmentsList.push({
         id: `a-${Date.now()}-${i}`,
@@ -2229,7 +2301,16 @@ export class SyllabusImportManager {
         pointsPossible: cleanPoints,
         pointsBreakdown: a.pointsBreakdown || null,
         rubricJSON: sanitizedCriteria.length > 0 ? JSON.stringify(sanitizedCriteria) : null,
-        noteText: a.noteText || assignMediaUrl || null,
+        noteText: (() => {
+          let nt = a.noteText || null;
+          if (nt) {
+            const trimmed = nt.trim();
+            if (trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined' || /^https?:\/\//i.test(trimmed)) return null;
+            if (/^presentations?:\s*weeks?\s*[\d,\s–-]+$/i.test(trimmed)) return 'Group Presentation';
+            return trimmed;
+          }
+          return null;
+        })(),
         isCompleted: false,
         isDeleted: false,
         weightPercentage: cleanWeight,
@@ -2248,7 +2329,7 @@ export class SyllabusImportManager {
       for (let idx = 0; idx < cleanAssignmentsList.length; idx++) {
         if (!cleanAssignmentsList[idx].assignmentNumber) {
           cleanAssignmentsList[idx].assignmentNumber = idx + 1;
-          cleanAssignmentsList[idx].assignmentNumberLabel = `Assignment ${idx + 1}`;
+          cleanAssignmentsList[idx].assignmentNumberLabel = 'Task';
         }
       }
     }

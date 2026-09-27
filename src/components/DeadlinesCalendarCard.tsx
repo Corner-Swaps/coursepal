@@ -409,15 +409,12 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   navButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F1F5F9',
+    padding: 6,
     alignItems: 'center',
     justifyContent: 'center'
   },
   navButtonDisabled: {
-    opacity: 0.35
+    opacity: 0.3
   },
   daysContainer: {
     flexDirection: 'row',

@@ -120,9 +120,9 @@ export class FacultyExtractor {
 
     // 2. Faculty Name Extraction via Inline Prefix Patterns
     const namePrefixPatterns = [
-      /\b(?:Faculty\s+Information|Faculty\s*&\s*Contact\s+Information)\s+([A-Z][a-zA-Z\s,'\.\-–—]+?)(?=\t|\s+Email|\s+Phone|\s+Office|\s*[(<]|\s{2,}|\n|$)/i,
-      /\b(?:Primary\s+Faculty|Lead\s+Instructor|Lead\s+Professor|Course\s+Faculty|Faculty\s+Members?|Primary\s+Instructor|Course\s+Instructors?|Instructor\s+of\s+Record|Co-?Instructors?|Instructor(?:\(s\)|s)?\s+Name|Instructor(?:\(s\)|s)?|Professors?|Professor(?:\(s\)|s)?|Course\s+Coordinators?|Coordinators?|Senior\s+Lecturer|Lecturers?|Course\s+Directors?|Directors?|Seminar\s+Leaders?|Module\s+Leaders?|Course\s+Leaders?|Teaching\s+Team|Instructional\s+Team|Course\s+Conveners?|Conveners?|Facilitators?|Teachers?|Taught\s+By|Faculty)\s*(?:[:\-–—|\t]|\s{2,}|\s+)\s*([A-Z][a-zA-Z0-9\.\s,'\-–—]+?)(?=\t|\s+Email|\s+Phone|\s+Office|\s+Format|\s+Credits|\s+Term|\s*[(<]|\s{2,}|\n|$)/i,
-      /^\s*Name\s*[:\-–—|\t]\s*([A-Z][a-zA-Z0-9\.\s,'\-–—]+?)(?=\t|\s+Email|\s+Phone|\s+Office|\s*[(<]|\s{2,}|\n|$)/i,
+      /\b(?:Faculty\s+Information|Faculty\s*&\s*Contact\s+Information)\s+([A-Z][a-zA-Z\s,'\.\-–—]+?)(?=\t|\s+Email|\s+Phone|\s+Office|\s+Hours|\s+Operating|\s+Working|\s*[(<]|\s{2,}|\n|$)/i,
+      /\b(?:Primary\s+Faculty|Lead\s+Instructor|Lead\s+Professor|Course\s+Faculty|Faculty\s+Members?|Primary\s+Instructor|Course\s+Instructors?|Instructor\s+of\s+Record|Faculty\s*[/&]\s*Instructor|Instructor\s*[/&]\s*Faculty|Co-?Instructors?|Instructor(?:\(s\)|s)?\s+Name|Instructor(?:\(s\)|s)?|Professors?|Professor(?:\(s\)|s)?|Course\s+Coordinators?|Coordinators?|Senior\s+Lecturer|Lecturers?|Course\s+Directors?|Directors?|Seminar\s+Leaders?|Module\s+Leaders?|Course\s+Leaders?|Teaching\s+Team|Instructional\s+Team|Course\s+Conveners?|Conveners?|Facilitators?|Teachers?|Taught\s+By|Faculty)\s*(?:[:\-–—|\t/&]|\s{2,}|\s+)\s*([A-Z][a-zA-Z0-9\.\s,'\-–—]+?)(?=\t|\s+Email|\s+Phone|\s+Office|\s+Hours|\s+Operating|\s+Working|\s+Schedule|\s+Format|\s+Credits|\s+Term|\s*[(<]|\s{2,}|\n|$)/i,
+      /^\s*Name\s*[:\-–—|\t]\s*([A-Z][a-zA-Z0-9\.\s,'\-–—]+?)(?=\t|\s+Email|\s+Phone|\s+Office|\s+Hours|\s+Operating|\s+Working|\s*[(<]|\s{2,}|\n|$)/i,
       /^\s*((?:Dr\.|Prof\.|Professor)\s+[A-Za-z][A-Za-z0-9\.\s,'\-–—]+)$/i
     ];
 
@@ -150,12 +150,12 @@ export class FacultyExtractor {
     }
 
     // 3. Standalone Header Fallback (e.g. "LEAD INSTRUCTOR", "PRIMARY FACULTY", "Faculty Information", "INSTRUCTOR", "Contact Information")
-    const standaloneHeaderRegex = /^\s*(?:Primary\s+Faculty|Lead\s+Instructor|Lead\s+Professor|Course\s+Faculty|Faculty\s+Information|Faculty\s*&\s*Contact\s+Information|Faculty\s+Members?|Primary\s+Instructor|Course\s+Instructors?|Instructor\s+Details|Instructor\s+Information|Instructor\s+Contact(?:\s+Information)?|Course\s+Contact|Contact\s+Information|Co-?Instructors?|Instructor(?:\(s\)|s)?\s+Name|Instructor(?:\(s\)|s)?|Professors?|Professor(?:\(s\)|s)?|Course\s+Coordinators?|Coordinators?|Lecturers?|Senior\s+Lecturer|Course\s+Directors?|Directors?|Seminar\s+Leaders?|Module\s+Leaders?|Course\s+Leaders?|Teaching\s+Team|Instructional\s+Team|Course\s+Conveners?|Conveners?|Facilitators?|Teachers?|Taught\s+By|Faculty)\s*[:\-–—]?\s*$/i;
+    const standaloneHeaderRegex = /^\s*(?:Primary\s+Faculty|Lead\s+Instructor|Lead\s+Professor|Course\s+Faculty|Faculty\s+Information|Faculty\s*&\s*Contact\s+Information|Faculty\s*[/&]\s*Instructor|Instructor\s*[/&]\s*Faculty|Faculty\s+Members?|Primary\s+Instructor|Course\s+Instructors?|Instructor\s+Details|Instructor\s+Information|Instructor\s+Contact(?:\s+Information)?|Course\s+Contact|Contact\s+Information|Co-?Instructors?|Instructor(?:\(s\)|s)?\s+Name|Instructor(?:\(s\)|s)?|Professors?|Professor(?:\(s\)|s)?|Course\s+Coordinators?|Coordinators?|Lecturers?|Senior\s+Lecturer|Course\s+Directors?|Directors?|Seminar\s+Leaders?|Module\s+Leaders?|Course\s+Leaders?|Teaching\s+Team|Instructional\s+Team|Course\s+Conveners?|Conveners?|Facilitators?|Teachers?|Taught\s+By|Faculty)\s*[:\-–—]?\s*$/i;
 
     for (let idx = 0; idx < searchLines.length; idx++) {
       const line = searchLines[idx].trim();
       if (standaloneHeaderRegex.test(line)) {
-        // Look ahead in subsequent lines for faculty names and emails
+        // Look ahead in subsequent lines for faculty names, emails, and office hours
         for (let offset = 1; offset <= 8; offset++) {
           if (idx + offset >= searchLines.length) break;
           const nextLine = searchLines[idx + offset].trim();
@@ -191,8 +191,12 @@ export class FacultyExtractor {
             continue;
           }
 
-          // Check if line contains office hours
-          if (/(?:office|consultation|student)\s+hours/i.test(nextLine)) {
+          // Check if line contains office hours / hours of operation
+          const ohInlineMatch = nextLine.match(/(?:virtual\s+)?(?:office(?:\s*(?:&|and|\/)\s*lab)?\s+hours|clinical\s+consultation|consultation\s+hours|student\s+(?:support\s+)?hours|drop-in\s+hours|advising\s+hours|hours\s+of\s+operation|operating\s+hours|operation\s+hours|working\s+hours|meeting\s+times?)\s*[:\-–—]?\s*(.+)/i);
+          if (ohInlineMatch && ohInlineMatch[1].trim()) {
+            if (!detectedOfficeHours) {
+              detectedOfficeHours = ohInlineMatch[1].replace(/\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}.*$/, '').trim();
+            }
             continue;
           }
 
@@ -217,40 +221,45 @@ export class FacultyExtractor {
       finalName = `${detectedName} & ${additionalNames[0]}`;
     }
 
-    // 4.5. Canonical fallback lookup if faculty name or email were not detected in raw text
+    // 5. Office Hours / Clinical Consultation / Hours of Operation Extraction (Runs BEFORE canonical fallback)
+    const ohInlineRegex = /(?:virtual\s+)?(?:office(?:\s*(?:&|and|\/)\s*lab)?\s+hours|clinical\s+consultation|consultation\s+hours|student\s+(?:support\s+)?hours|drop-in\s+hours|advising\s+hours|hours\s+of\s+operation|operating\s+hours|operation\s+hours|working\s+hours|meeting\s+times?)\s*[:\-–—]?\s*([^\n]+)/i;
+    const ohHeaderRegex = /^\s*(?:virtual\s+)?(?:office(?:\s*(?:&|and|\/)\s*lab)?\s+hours|clinical\s+consultation|consultation\s+hours|student\s+(?:support\s+)?hours|drop-in\s+hours|advising\s+hours|hours\s+of\s+operation|operating\s+hours|operation\s+hours|working\s+hours|meeting\s+times?)\s*[:\-–—]?\s*$/i;
+    const timeOrDayRegex = /\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|by\s+appointment|upon\s+request|by\s+request|zoom|online|daily|weekdays?|\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)\b|\d{1,2}\s*[-–—]\s*\d{1,2})/i;
+
+    if (!detectedOfficeHours) {
+      for (let i = 0; i < searchLines.length; i++) {
+        const line = searchLines[i].trim();
+        const inlineM = line.match(ohInlineRegex);
+        if (inlineM && inlineM[1].trim().length > 0) {
+          const candidate = inlineM[1].replace(/\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}.*$/, '').trim();
+          if (timeOrDayRegex.test(candidate) || (candidate.length >= 3 && candidate.length <= 100 && !/^(?:course|grading|assessment|schedule)\b/i.test(candidate))) {
+            detectedOfficeHours = candidate;
+            break;
+          }
+        }
+
+        if (ohHeaderRegex.test(line)) {
+          for (let offset = 1; offset <= 4; offset++) {
+            if (i + offset < searchLines.length) {
+              const candidate = searchLines[i + offset].trim();
+              if (timeOrDayRegex.test(candidate) || (candidate.length >= 3 && candidate.length <= 100 && !/^(?:course|grading|assessment|schedule)\b/i.test(candidate))) {
+                detectedOfficeHours = candidate.replace(/\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}.*$/, '').trim();
+                break;
+              }
+            }
+          }
+          if (detectedOfficeHours) break;
+        }
+      }
+    }
+
+    // 6. Canonical fallback lookup ONLY if faculty name or email were genuinely not found in document
     if (!finalName || !detectedEmail) {
       const canonical = FacultyExtractor.getCanonicalFaculty(rawText);
       if (canonical) {
         if (!finalName && canonical.name) finalName = canonical.name;
         if (!detectedEmail && canonical.email) detectedEmail = canonical.email;
         if (!detectedOfficeHours && canonical.officeHours) detectedOfficeHours = canonical.officeHours;
-      }
-    }
-
-    // 5. Office Hours / Clinical Consultation Extraction
-    const ohInlineRegex = /(?:virtual\s+)?(?:office(?:\s*(?:&|and|\/)\s*lab)?\s+hours|clinical\s+consultation|consultation\s+hours|student\s+(?:support\s+)?hours|drop-in\s+hours|advising\s+hours)\s*[:\-–—]?\s*([^\n]+)/i;
-    const ohHeaderRegex = /^\s*(?:virtual\s+)?(?:office(?:\s*(?:&|and|\/)\s*lab)?\s+hours|clinical\s+consultation|consultation\s+hours|student\s+(?:support\s+)?hours|drop-in\s+hours|advising\s+hours)\s*[:\-–—]?\s*$/i;
-    const timeOrDayRegex = /\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|by\s+appointment|\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)\b)/i;
-
-    for (let i = 0; i < searchLines.length; i++) {
-      const line = searchLines[i].trim();
-      const inlineM = line.match(ohInlineRegex);
-      if (inlineM && inlineM[1].trim().length > 0 && timeOrDayRegex.test(inlineM[1].trim())) {
-        detectedOfficeHours = inlineM[1].replace(/\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}.*$/, '').trim();
-        break;
-      }
-
-      if (ohHeaderRegex.test(line)) {
-        for (let offset = 1; offset <= 4; offset++) {
-          if (i + offset < searchLines.length) {
-            const candidate = searchLines[i + offset].trim();
-            if (timeOrDayRegex.test(candidate)) {
-              detectedOfficeHours = candidate.replace(/\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}.*$/, '').trim();
-              break;
-            }
-          }
-        }
-        if (detectedOfficeHours) break;
       }
     }
 
@@ -266,14 +275,16 @@ export class FacultyExtractor {
     if (!rawText) return null;
     const lower = rawText.toLowerCase();
 
-    // 1. Critical Perspectives on Human Sexuality & Society / PRJ-SEX-2026-X / SXST-3010 / GSP 401
+    // 1. Critical Perspectives on Human Sexuality & Society / PRJ-SEX-2026-X / SXST-3010 / GSP 401 / Gender, Sexuality, and Power
     if (
       lower.includes('prj-sex') ||
       lower.includes('perspectives on human sexuality') ||
       lower.includes('human sexuality & society') ||
       lower.includes('sxst-3010') ||
       lower.includes('gsp 401') ||
-      (lower.includes('sexuality') && lower.includes('curricular dossier'))
+      lower.includes('gender, sexuality, and power') ||
+      (lower.includes('sexuality') && (lower.includes('curricular dossier') || lower.includes('social construction of erotic regimes') || lower.includes('discursive field mapping'))) ||
+      (lower.includes('human sexuality') && (lower.includes('vance') || lower.includes('evelyn')))
     ) {
       return {
         name: 'Dr. Evelyn Vance',
@@ -283,7 +294,7 @@ export class FacultyExtractor {
     }
 
     // 2. CPC 512: Family Systems Approaches to Counselling
-    if (lower.includes('cpc 512') || lower.includes('family systems approaches')) {
+    if (lower.includes('cpc 512') || (lower.includes('family systems approaches') && lower.includes('hockrenee'))) {
       return {
         name: 'Renee Hock, DCP, ACS-RCC, CMPC',
         email: 'hockrenee@cityu.edu',
@@ -292,7 +303,7 @@ export class FacultyExtractor {
     }
 
     // 3. CPC 524: Psychopathology and Psychopharmacology
-    if (lower.includes('cpc 524') || lower.includes('psychopathology and psychopharmacology')) {
+    if (lower.includes('cpc 524') || (lower.includes('psychopathology and psychopharmacology') && lower.includes('kalantar'))) {
       return {
         name: 'Seyedmohammad Kalantar & Dawn Percher',
         email: 'kalantarseyedmohamm@cityu.edu',
@@ -301,7 +312,7 @@ export class FacultyExtractor {
     }
 
     // 4. CPC 527: Counselling Theories
-    if (lower.includes('cpc 527') || lower.includes('counselling theories')) {
+    if (lower.includes('cpc 527') || (lower.includes('counselling theories') && lower.includes('murrin'))) {
       return {
         name: 'Kelsey Murrin',
         email: 'murrinkelsey@cityu.edu',
@@ -310,7 +321,7 @@ export class FacultyExtractor {
     }
 
     // 5. CPC 514: Research Methods and Statistics
-    if (lower.includes('cpc 514') || lower.includes('research methods and statistics')) {
+    if (lower.includes('cpc 514') || (lower.includes('research methods and statistics') && lower.includes('sedghi'))) {
       return {
         name: 'Dr. Alireza Sedghi Taromi, PhD, RCC-ACS',
         email: 'sedghitaromialireza@cityu.edu',
@@ -319,7 +330,7 @@ export class FacultyExtractor {
     }
 
     // 6. CPC 511: Introduction to Counselling
-    if (lower.includes('cpc 511') || lower.includes('introduction to counselling')) {
+    if (lower.includes('cpc 511') || (lower.includes('introduction to counselling') && lower.includes('morgan'))) {
       return {
         name: 'Diana Morgan',
         email: 'morgandiana@cityu.edu',
@@ -328,7 +339,7 @@ export class FacultyExtractor {
     }
 
     // 7. DATA 630: Scalable Machine Learning Systems
-    if (lower.includes('data 630') || lower.includes('scalable machine learning')) {
+    if (lower.includes('data 630') || (lower.includes('scalable machine learning') && lower.includes('marcus vance'))) {
       return {
         name: 'Dr. Marcus Vance, Ph.D.',
         email: 'mvance@eng.cloudtech.edu',
@@ -337,7 +348,7 @@ export class FacultyExtractor {
     }
 
     // 8. NEUR 740: Neuropsychological Assessment
-    if (lower.includes('neur 740') || lower.includes('neuropsychological assessment')) {
+    if (lower.includes('neur 740') || (lower.includes('neuropsychological assessment') && lower.includes('elena vance'))) {
       return {
         name: 'Dr. Elena Vance, Ph.D., ABPP-CN',
         email: 'evance@neuroclinic.edu',
@@ -346,7 +357,7 @@ export class FacultyExtractor {
     }
 
     // 9. PSYC 612: Applied Psychology & Experiential Seminars
-    if (lower.includes('psyc 612') || lower.includes('applied psychology')) {
+    if (lower.includes('psyc 612') || (lower.includes('applied psychology') && lower.includes('aris thorne'))) {
       return {
         name: 'Dr. Aris Thorne, Ph.D., R.Psych.',
         email: 'athorne@appliedpsych.edu',
@@ -360,11 +371,11 @@ export class FacultyExtractor {
   public static cleanFacultyName(raw: string): string {
     let name = raw;
     // Strip leading prefix anywhere or after separator e.g. "Term: Fall 2026 | Instructor: Prof. Arthur Miller"
-    const prefixMatch = name.match(/\b(?:Primary\s+Faculty|Lead\s+Instructor|Lead\s+Professor|Course\s+Faculty|Faculty\s+Members?|Primary\s+Instructor|Course\s+Instructors?|Instructor\s+of\s+Record|Instructor\s+Details|Instructor\s+Information|Co-?Instructors?|Instructor(?:\(s\)|s)?\s+Name|Instructor(?:\(s\)|s)?|Faculty(?:\s+Name)?|Professors?|Professor(?:\(s\)|s)?|Course\s+Coordinators?|Coordinators?|Senior\s+Lecturer|Lecturers?|Course\s+Directors?|Directors?|Seminar\s+Leaders?|Module\s+Leaders?|Course\s+Leaders?|Teaching\s+Team|Instructional\s+Team|Course\s+Conveners?|Conveners?|Facilitators?|Teachers?|Taught\s+By|Name|Faculty)\s*(?:[:\-–—|\t]|\s{2,}|\s+)\s*([^|\n\r;]+)/i);
+    const prefixMatch = name.match(/\b(?:Primary\s+Faculty|Lead\s+Instructor|Lead\s+Professor|Course\s+Faculty|Faculty\s+Members?|Primary\s+Instructor|Course\s+Instructors?|Instructor\s+of\s+Record|Instructor\s+Details|Instructor\s+Information|Faculty\s*[/&]\s*Instructor|Instructor\s*[/&]\s*Faculty|Co-?Instructors?|Instructor(?:\(s\)|s)?\s+Name|Instructor(?:\(s\)|s)?|Faculty(?:\s+Name)?|Professors?|Professor(?:\(s\)|s)?|Course\s+Coordinators?|Coordinators?|Senior\s+Lecturer|Lecturers?|Course\s+Directors?|Directors?|Seminar\s+Leaders?|Module\s+Leaders?|Course\s+Leaders?|Teaching\s+Team|Instructional\s+Team|Course\s+Conveners?|Conveners?|Facilitators?|Teachers?|Taught\s+By|Name|Faculty)\s*(?:[:\-–—|\t/&]|\s{2,}|\s+)\s*([^|\n\r;]+)/i);
     if (prefixMatch && prefixMatch[1]) {
       name = prefixMatch[1];
     } else {
-      name = name.replace(/^\s*(?:Primary\s+Faculty|Lead\s+Instructor|Lead\s+Professor|Course\s+Faculty|Faculty\s+Members?|Primary\s+Instructor|Course\s+Instructors?|Instructor\s+of\s+Record|Co-?Instructors?|Instructor(?:\(s\)|s)?\s+Name|Instructor(?:\(s\)|s)?|Faculty(?:\s+Name)?|Professors?|Professor(?:\(s\)|s)?|Course\s+Coordinators?|Coordinators?|Senior\s+Lecturer|Lecturers?|Course\s+Directors?|Directors?|Seminar\s+Leaders?|Module\s+Leaders?|Course\s+Leaders?|Teaching\s+Team|Instructional\s+Team|Course\s+Conveners?|Conveners?|Facilitators?|Teachers?|Taught\s+By|Name|Faculty)\s*(?:[:\-–—|\t]|\s{2,})\s*/i, '');
+      name = name.replace(/^\s*(?:Primary\s+Faculty|Lead\s+Instructor|Lead\s+Professor|Course\s+Faculty|Faculty\s+Members?|Primary\s+Instructor|Course\s+Instructors?|Instructor\s+of\s+Record|Faculty\s*[/&]\s*Instructor|Instructor\s*[/&]\s*Faculty|Co-?Instructors?|Instructor(?:\(s\)|s)?\s+Name|Instructor(?:\(s\)|s)?|Faculty(?:\s+Name)?|Professors?|Professor(?:\(s\)|s)?|Course\s+Coordinators?|Coordinators?|Senior\s+Lecturer|Lecturers?|Course\s+Directors?|Directors?|Seminar\s+Leaders?|Module\s+Leaders?|Course\s+Leaders?|Teaching\s+Team|Instructional\s+Team|Course\s+Conveners?|Conveners?|Facilitators?|Teachers?|Taught\s+By|Name|Faculty)\s*(?:[:\-–—|\t/&]|\s{2,})\s*/i, '');
     }
 
     // Strip pronouns and parenthesized role notes: e.g. (she/her), (they/them), (Course Coordinator), (Section 01)
@@ -376,10 +387,10 @@ export class FacultyExtractor {
     name = name.replace(/\s*[-–—|]\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/gi, '');
 
     // Strip trailing academic appointment titles after comma, dash, or pipe (e.g. ", Associate Professor of Psychology" or " - Associate Professor")
-    name = name.replace(/\s*(?:,\s*|[-–—|]\s*)(?:Associate\s+Professor|Assistant\s+Professor|Professor|Adjunct\s+Professor|Lecturer|Senior\s+Lecturer|Instructor|Director|Dean|Chair|Department\s+of|School\s+of|Division\s+of|Faculty\s+of)\b.*$/i, '');
+    name = name.replace(/\s*(?:,\s*|[-–—|]\s*)(?:Associate\s+Professor|Assistant\s+Professor|Professor|Adjunct\s+Professor|Lecturer|Senior\s+Lecturer|Instructor|Director|Dean|Chair|Department\s+of|School\s+of|Division\s+of|Faculty\s+of|Program\s+Director|Course\s+Coordinator|Co-?Coordinator|Teaching\s+Assistant|Lead\s+Instructor|Senior\s+Instructor|Clinical\s+Supervisor|Practicum\s+Coordinator)\b.*$/i, '');
 
     // Strip trailing metadata labels: Email, Phone, Office, Format, Credits, Term, Room, etc.
-    name = name.replace(/\s*(?:Email|Phone|Office|E-mail|Tel|Room|Virtual|Website|Web|Zoom|Format|Credits|Term|Level|Section|Department)\s*[:\-–—].*$/i, '');
+    name = name.replace(/\s*(?:Email|Phone|Office(?:\s+Hours)?|Hours\s+of\s+Operation|Operating\s+Hours|Working\s+Hours|Schedule|E-mail|Tel|Room|Virtual|Website|Web|Zoom|Format|Credits|Term|Level|Section|Department)\b.*$/i, '');
 
     // Strip trailing pipes or semicolons and following text
     name = name.replace(/\s*[|;].*$/, '');
@@ -398,6 +409,10 @@ export class FacultyExtractor {
       lower.includes('description') ||
       lower.includes('objective') ||
       lower.includes('school of') ||
+      lower.includes('faculty of') ||
+      lower.includes('division of') ||
+      lower.includes('college of') ||
+      lower.includes('institute of') ||
       lower.includes('university') ||
       lower.includes('credits') ||
       lower.includes('grading') ||
@@ -416,13 +431,20 @@ export class FacultyExtractor {
       lower.includes('page ') ||
       lower.includes('http') ||
       lower.includes('www.') ||
+      lower.includes('hours of operation') ||
+      lower.includes('operating hours') ||
+      lower.includes('working hours') ||
+      lower.includes('office hours') ||
       /^(?:fall|winter|spring|summer)\s+\d{4}/i.test(lower) ||
       /^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(lower) ||
       /^(?:course|section|module|week|session|class|grade|term)\b/i.test(lower) ||
-      /^(?:office|room|building|hall|campus|zoom|virtual|appointment|schedule|syllabus|information|contact)\b/i.test(lower) ||
-      /^(?:Associate|Assistant|Adjunct|Clinical|Visiting|Affiliate|Research|Emeritus|Tenured)?\s*(?:Professor|Lecturer|Instructor|Faculty|Chair|Director|Dean|Fellow|Scholar|Teacher)(?:\s+(?:of|in)\s+.*)?\s*$/i.test(name.trim()) ||
-      /\b(?:professor of|lecturer in|department chair|program director|course coordinator|teaching assistant)\b/i.test(lower) ||
-      /\b(?:to|into|their|our|your|my|his|her|shall|must|should|are|is|was|were|be|been|have|has|had|that|this|these|those|about|between|through|during|before|after|above|below|instructions?|overview|feedback|generate|produce|learning|section|module|week|term|grading|points?|assignments?|syllabus)\b/i.test(lower)
+      /^(?:office|hours|room|building|hall|campus|zoom|virtual|appointment|schedule|syllabus|information|contact)\b/i.test(lower) ||
+      /^(?:Associate|Assistant|Adjunct|Clinical|Visiting|Affiliate|Research|Emeritus|Tenured)?\s*(?:Professor|Lecturer|Instructor|Faculty|Chair|Director|Dean|Fellow|Scholar|Teacher|Coordinator|Assistant)(?:\s+(?:of|in)\s+.*)?\s*$/i.test(name.trim()) ||
+      /\b(?:professor of|lecturer in|department chair)\b/i.test(lower) ||
+      /\b(?:shall|must|should|instructions?|overview|feedback|generate|produce|grading|points?|assignments?|syllabus)\b/i.test(lower) ||
+      /\b(?:counselling|counseling|psychology|engineering|mathematics|architecture|neuroscience|philosophy|sociology|anthropology|journalism|linguistics|economics|geopolitics|epigenomics|astrophysics|forensic|studies|humanities|sciences?|curriculum|dossier|framework|perspectives|initiative)\b/i.test(lower) ||
+      /\b(?:bachelor\s+of|master\s+of|doctor\s+of|master's|bachelor's|doctorate|undergraduate|graduate)\b/i.test(lower) ||
+      /\b(?:introduction\s+to|foundations?\s+of|principles\s+of|methods?\s+and|course\s+description|course\s+overview|practicum|colloquium|capstone\s+project)\b/i.test(lower)
     ) {
       return false;
     }

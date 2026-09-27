@@ -5,7 +5,7 @@
  * faculty contact details, direct inline assignments/readings, and full CRUD.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -29,8 +29,10 @@ import {
   DocBadgePlusIcon,
   FolderBadgePlusIcon,
   CalendarIcon,
+  ClockIcon,
   CheckmarkIcon,
-  ShieldCheckmarkIcon
+  ShieldCheckmarkIcon,
+  GoogleCalendarIcon
 } from '../components/SvgIcons';
 import { Course, VaultDocument, Assignment, Reading } from '../types/models';
 import {
@@ -39,12 +41,16 @@ import {
   EditAssignmentModal,
   AssignmentDetailModal,
   ReadingDetailModal,
-  UploadDocumentModal
+  UploadDocumentModal,
+  ModuleDetailModal
 } from '../components/modals';
+import { GoogleCalendarService } from '../services/GoogleCalendarService';
+
 import {
   formatShortDocumentTitle,
   formatDisplayTitleWithChapter,
   formatAuthorAndPagesSubtitle,
+  formatSuggestedReadingCardText,
   parseSafeDate,
   getReadingChapterSortKey,
   isInvalidAssignmentTitle,
@@ -52,8 +58,10 @@ import {
   isDeliverableNotReading,
   cleanUploadStatusMessage,
   isItemForCourse,
-  getAssignmentInstructionSummary,
-  extractAllModuleNumbers
+  extractAllModuleNumbers,
+  isRealDateOrRangeString,
+  cleanDateRangeDisplay,
+  cleanAssignmentTitle
 } from '../utils/readingDisplayHelper';
 import { resolveFullAuthorName } from '../utils/authorResolver';
 import { CalendarExportService } from '../services/CalendarExportService';
@@ -100,6 +108,17 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
   const [selectedAssignmentForDetail, setSelectedAssignmentForDetail] = useState<Assignment | null>(null);
   const [editingReading, setEditingReading] = useState<Reading | null>(null);
   const [previewDoc, setPreviewDoc] = useState<VaultDocument | null>(null);
+  const [selectedModuleForDetail, setSelectedModuleForDetail] = useState<{
+    moduleNum: number;
+    moduleLabel?: string | null;
+    theme?: string | null;
+    readings: Reading[];
+    assignments?: Assignment[];
+    dateRangeStr?: string | null;
+    course?: Course | null;
+  } | null>(null);
+
+
 
   const handleOpenUpload = (targetCourseId?: string) => {
     setUploadTargetCourseId(targetCourseId);
@@ -157,7 +176,14 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
     );
   };
 
-  const renderSyllabusReadingRow = (reading: Reading, courseName?: string | null, weekTheme?: string | null) => {
+  const renderSyllabusReadingRow = (
+    reading: Reading,
+    courseName?: string | null,
+    weekTheme?: string | null,
+    fallbackDateStr?: string | null
+  ) => {
+    const rawAuth = reading.authorName?.trim() || '';
+    const resolvedAuth = resolveFullAuthorName(rawAuth) || rawAuth;
     const readingWithTopic = {
       ...reading,
       relevantTopics: reading.relevantTopics || weekTheme || undefined
@@ -166,20 +192,32 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
       readingWithTopic,
       reading.chapterText,
       reading.resourceTitle,
-      courseName
+      courseName,
+      resolvedAuth
     );
-    const dispSub = formatAuthorAndPagesSubtitle(
-      readingWithTopic,
-      reading.pagesText,
-      reading.resourceTitle,
-      dispTitle,
-      courseName
-    );
-    const rawAuth = reading.authorName?.trim() || '';
-    const resolvedAuth = resolveFullAuthorName(rawAuth) || rawAuth;
-    const finalAuthorSub = dispSub.length > 0
-      ? dispSub
-      : (resolvedAuth || (reading.moduleNumber && reading.summaryText ? reading.summaryText : ''));
+
+    let cleanAuthorPart: string | null = null;
+    if (resolvedAuth && resolvedAuth.trim()) {
+      let auth = resolvedAuth.trim().replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '');
+      auth = auth.replace(/\s*\(\s*\d{4}\s*\)/g, '').replace(/;\s*/g, ', ').trim();
+      if (auth.length > 0) {
+        cleanAuthorPart = auth.toLowerCase().startsWith('author:') ? auth : `Author: ${auth}`;
+      }
+    }
+
+    const cleanDate = (reading.dateRangeStr || reading.dueDate || fallbackDateStr)
+      ? formatSuggestedReadingCardText(reading.dueDate, reading.dateRangeStr, fallbackDateStr)
+      : null;
+
+    const parts: string[] = [];
+    if (cleanAuthorPart) parts.push(cleanAuthorPart);
+    if (cleanDate) {
+      const dStr = cleanDate.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
+      if (dStr) parts.push(dStr);
+    }
+
+    const finalAuthorSub = parts.join(' · ');
+
     return (
       <TouchableOpacity
         key={reading.id}
@@ -189,20 +227,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
       >
         <Text style={styles.itemTitleText}>{dispTitle}</Text>
         {finalAuthorSub.length > 0 && <Text style={styles.itemAuthorText}>{finalAuthorSub}</Text>}
-        {reading.dueDate && (() => {
-          const d = parseSafeDate(reading.dueDate);
-          if (!d) return null;
-          return (
-            <Text style={styles.itemDueText}>
-              Due{' '}
-              {d.toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </Text>
-          );
-        })()}
       </TouchableOpacity>
     );
   };
@@ -458,19 +482,40 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                         onPress={() => toggleCourseExpand(course.id)}
                         activeOpacity={0.7}
                       >
-                        <Text style={styles.courseTitleText} numberOfLines={1}>
+                        <Text style={styles.courseTitleText} numberOfLines={2}>
                           {course.courseCode && !course.courseName.toLowerCase().includes(course.courseCode.toLowerCase())
                             ? `${course.courseCode}: ${course.courseName}`
                             : course.courseName}
                         </Text>
-                        {course.courseDescription ? (
-                          <Text style={styles.courseSubtitleText} numberOfLines={1}>
+                        {course.courseDescription && !/imported from|faculty:|hours of operation|operating hours|office hours/i.test(course.courseDescription) ? (
+                          <Text style={styles.courseSubtitleText} numberOfLines={2}>
                             {course.courseDescription}
                           </Text>
                         ) : null}
-                        <Text style={styles.courseStatsSubtitle} numberOfLines={1}>
-                          {courseReadings.length} Readings • {courseAssignments.length} Assignments
-                        </Text>
+                        <View style={styles.courseHeaderPillsRow}>
+                          {(() => {
+                            const dedicatedModReadings = courseReadings.filter(r => r.moduleNumber && (!r.weekNumber || r.weekNumber === 0));
+                            const moduleCount = allCourseModuleNumbers.size > 0 ? allCourseModuleNumbers.size : dedicatedModReadings.length;
+                            const calendarReadingCount = moduleCount > 0 ? Math.max(0, courseReadings.length - dedicatedModReadings.length) : courseReadings.length;
+                            return (
+                              <>
+                                {moduleCount > 0 && (
+                                  <View style={styles.courseStatsPill}>
+                                    <Text style={styles.courseStatsPillText}>{moduleCount} Modules</Text>
+                                  </View>
+                                )}
+                                {(calendarReadingCount > 0 || moduleCount === 0) && (
+                                  <View style={styles.courseStatsPill}>
+                                    <Text style={styles.courseStatsPillText}>{calendarReadingCount} Readings</Text>
+                                  </View>
+                                )}
+                                <View style={styles.courseStatsPill}>
+                                  <Text style={styles.courseStatsPillText}>{courseAssignments.length} Assignments</Text>
+                                </View>
+                              </>
+                            );
+                          })()}
+                        </View>
                       </TouchableOpacity>
 
                       {/* Action Buttons: Trash, Chevron */}
@@ -541,10 +586,8 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                             </View>
                             {course.officeHours ? (
                               <View style={styles.detailRow}>
-                                <Text style={styles.detailKey}>Schedule / Office Hours:</Text>
-                                <Text style={styles.detailVal} numberOfLines={2}>
-                                  {course.officeHours}
-                                </Text>
+                                <Text style={styles.detailKey}>Hours of Operation:</Text>
+                                <Text style={styles.detailVal}>{course.officeHours}</Text>
                               </View>
                             ) : null}
                           </TouchableOpacity>
@@ -597,11 +640,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
 
                         {/* Assignments Section */}
                         <View style={styles.sectionContainer}>
-                          <Text style={styles.sectionTitle}>
-                            {courseAssignments.some(a => a.assignmentNumber != null)
-                              ? `Assignments (1 to ${courseAssignments.length})`
-                              : 'Assignments'}
-                          </Text>
+                          <Text style={styles.sectionTitle}>Assignments</Text>
                           <View style={styles.itemsListContainer}>
                             {courseAssignments.map((assign, index) => {
                               let resolvedWeight = assign.weightPercentage;
@@ -633,27 +672,27 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                               }
 
                               const assignNum = assign.assignmentNumber || (index + 1);
-                              const assignNumLabel = assign.assignmentNumberLabel || `Assignment ${assignNum}`;
+                              const isContinuous = /continuous/i.test(assign.title || '') || /continuous/i.test(assign.noteText || '') || assign.subTypeRaw === 'continuous';
+                              const isMultiWeek = Array.isArray(assign.scheduledWeeks) && assign.scheduledWeeks.length > 1;
+                              const weekTagLabel = isContinuous
+                                ? 'Continuous'
+                                : isMultiWeek
+                                ? `Weeks ${Math.min(...assign.scheduledWeeks!)}–${Math.max(...assign.scheduledWeeks!)}`
+                                : assign.weekNumber && assign.weekNumber > 0
+                                ? `Week ${assign.weekNumber}`
+                                : assign.moduleNumber && assign.moduleNumber > 0
+                                ? `Module ${assign.moduleNumber}`
+                                : (assign.assignmentNumber ? `Week ${assign.assignmentNumber}` : 'Task');
 
-                              const cleanTitle = (assign.title || '')
-                                .replace(/\b(?:modules?|mod|weeks?|wk)\s*\d{1,2}(?:\s*[-–—]\s*\d{1,2})?\b/gi, '')
-                                .replace(/^(?:module|week|mod|wk)\s*\d+[\s:\-–—]+/i, '')
-                                .replace(/^(?:assignment\s*)?\d+[\s:\-–—.]+/i, '')
-                                .replace(/\s*\(\s*(?:assignment\s*)?\d+\s*\)/gi, '')
-                                .replace(/-\s*(?:Group Presentation|Individual Paper|Instructor Determined Assignment)\b/i, '')
-                                .replace(/\s*\(\s*\d{1,3}%\s*\)$/, '')
-                                .replace(/\s*[-–—]\s*(?:due|worth|weight).*$/i, '')
-                                .replace(/^[•\-*▪●:–— \t\n]+|[•\-*▪●:–— \t\n]+$/g, '')
-                                .trim() || 'Assignment';
-
-                              const instructionDesc = getAssignmentInstructionSummary(assign, course);
+                              const rawAssignTitle = assign.title || 'Assignment';
+                              const cleanTitle = cleanAssignmentTitle(rawAssignTitle) || rawAssignTitle;
 
                               return (
                                 <View key={assign.id} style={styles.assignmentSectionBox}>
                                   {/* Section Header: Gray Pill "Assignment X" on left, Weight/Points on right */}
                                   <View style={styles.assignmentSectionHeader}>
                                     <View style={styles.weekTagPill}>
-                                      <Text style={styles.weekTagText}>{assignNumLabel}</Text>
+                                      <Text style={styles.weekTagText}>{weekTagLabel}</Text>
                                     </View>
 
                                     <View style={styles.assignmentPillsRow}>
@@ -673,15 +712,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                       ) : null}
                                     </View>
                                   </View>
-
-                                  {/* Underneath the Gray Pill: Instructions / Description */}
-                                  {instructionDesc ? (
-                                    <View style={styles.assignmentThemeHeaderRow}>
-                                      <Text style={styles.assignmentThemeHeaderText} numberOfLines={2}>
-                                        {instructionDesc}
-                                      </Text>
-                                    </View>
-                                  ) : null}
 
                                   {/* Clickable Assignment Card */}
                                   <TouchableOpacity
@@ -769,9 +799,12 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                       <View style={styles.weekTagPill}>
                                         <Text style={styles.weekTagText}>Week {wNum}</Text>
                                       </View>
+                                      {weekObj?.dateRangeStr && isRealDateOrRangeString(weekObj.dateRangeStr) ? (
+                                        <Text style={styles.itemDueText}>{cleanDateRangeDisplay(weekObj.dateRangeStr)}</Text>
+                                      ) : null}
                                     </View>
 
-                                    {weekReadings.map(r => renderSyllabusReadingRow(r, course.courseName, weekObj?.theme))}
+                                    {weekReadings.map(r => renderSyllabusReadingRow(r, course.courseName, weekObj?.theme, weekObj?.dateRangeStr))}
                                   </View>
                                 );
                               })}
@@ -796,25 +829,83 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                       if (dA !== dB) return dA - dB;
                                       return (a.title || '').localeCompare(b.title || '');
                                     });
+                                    const matchingWeekForMod = (course.weeks || []).find(w => w.moduleNumber === mNum);
+                                    const modDateStr = matchingWeekForMod?.dateRangeStr
+                                      || modReadings.find(r => r.dateRangeStr)?.dateRangeStr
+                                      || (modReadings.find(r => r.dueDate)?.dueDate ? String(modReadings.find(r => r.dueDate)?.dueDate) : null);
                                     const modTheme = modReadings.find(r => r.relevantTopics)?.relevantTopics
-                                      || (course.weeks || []).find(w => w.moduleNumber === mNum)?.theme
+                                      || matchingWeekForMod?.theme
                                       || (course.assignments || []).find(a => a.moduleNumber === mNum)?.relevantTopics;
                                     return (
                                       <View key={`module-${mNum}`} style={styles.weekSectionBox}>
                                         {/* Module Section Header */}
                                         <View style={styles.weekSectionHeader}>
-                                          <View style={styles.weekTagPill}>
+                                          <TouchableOpacity
+                                            style={styles.weekTagPill}
+                                            onPress={() => setSelectedModuleForDetail({
+                                              moduleNum: mNum,
+                                              moduleLabel: `Module ${mNum}`,
+                                              theme: modTheme,
+                                              readings: modReadings,
+                                              assignments: (course.assignments || []).filter(a => a.moduleNumber === mNum),
+                                              dateRangeStr: modDateStr,
+                                              course
+                                            })}
+                                            activeOpacity={0.7}
+                                          >
                                             <Text style={styles.weekTagText}>Module {mNum}</Text>
+                                          </TouchableOpacity>
+
+                                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                            {modDateStr && isRealDateOrRangeString(modDateStr) ? (
+                                              <Text style={styles.itemDueText}>{cleanDateRangeDisplay(modDateStr)}</Text>
+                                            ) : null}
+
+                                            {/* Quick Google Calendar Sync Button */}
+                                            <TouchableOpacity
+                                              style={styles.moduleQuickSyncBtn}
+                                              onPress={() => {
+                                                GoogleCalendarService.syncModule({
+                                                  moduleNumber: mNum,
+                                                  moduleLabel: `Module ${mNum}`,
+                                                  theme: modTheme,
+                                                  readings: modReadings,
+                                                  assignments: (course.assignments || []).filter(a => a.moduleNumber === mNum),
+                                                  dateRangeStr: modDateStr,
+                                                  course
+                                                });
+                                              }}
+                                              activeOpacity={0.7}
+                                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                              accessibilityLabel="Sync module to Google Calendar"
+                                            >
+                                              <GoogleCalendarIcon size={13} />
+                                              <Text style={styles.moduleQuickSyncText}>Sync</Text>
+                                            </TouchableOpacity>
                                           </View>
-                                          {modTheme ? (
-                                            <Text style={[styles.itemDueText, { marginLeft: 8, flex: 1 }]} numberOfLines={1}>
+                                        </View>
+                                        {modTheme ? (
+                                          <TouchableOpacity
+                                            style={styles.assignmentThemeHeaderRow}
+                                            onPress={() => setSelectedModuleForDetail({
+                                              moduleNum: mNum,
+                                              moduleLabel: `Module ${mNum}`,
+                                              theme: modTheme,
+                                              readings: modReadings,
+                                              assignments: (course.assignments || []).filter(a => a.moduleNumber === mNum),
+                                              dateRangeStr: modDateStr,
+                                              course
+                                            })}
+                                            activeOpacity={0.7}
+                                          >
+                                            <Text style={styles.assignmentThemeHeaderText} numberOfLines={2}>
                                               {modTheme}
                                             </Text>
-                                          ) : null}
-                                        </View>
+                                          </TouchableOpacity>
+                                        ) : null}
 
                                         {modReadings.length > 0 ? (
-                                          modReadings.map(r => renderSyllabusReadingRow(r, course.courseName, modTheme))
+                                          modReadings.map(r => renderSyllabusReadingRow(r, course.courseName, modTheme, modDateStr))
                                         ) : (
                                           <View style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
                                             <Text style={{ fontSize: 13, color: '#8E9BAE', fontStyle: 'italic' }}>
@@ -940,7 +1031,15 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                             {doc.courseCode || 'Course Syllabus'}
                           </Text>
                           <Text style={styles.docStatsSubtitle} numberOfLines={1}>
-                            {docReadings.length} Readings • {docAssignments.length} Assignments
+                            {(() => {
+                              const docModCount = new Set(docReadings.filter(r => r.moduleNumber).map(r => r.moduleNumber)).size;
+                              const docCalReadings = docModCount > 0 ? Math.max(0, docReadings.length - docModCount) : docReadings.length;
+                              const parts: string[] = [];
+                              if (docModCount > 0) parts.push(`${docModCount} Modules`);
+                              if (docCalReadings > 0 || docModCount === 0) parts.push(`${docCalReadings} Readings`);
+                              parts.push(`${docAssignments.length} Assignments`);
+                              return parts.join(' • ');
+                            })()}
                           </Text>
                         </View>
                       </TouchableOpacity>
@@ -1069,7 +1168,39 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
           setUploadTargetCourseId(undefined);
         }}
       />
+
+      {/* Module Detail Modal */}
+      {selectedModuleForDetail && (
+        <ModuleDetailModal
+          visible={true}
+          course={selectedModuleForDetail.course || null}
+          moduleNumber={selectedModuleForDetail.moduleNum}
+          moduleLabel={selectedModuleForDetail.moduleLabel}
+          theme={selectedModuleForDetail.theme}
+          readings={selectedModuleForDetail.readings}
+          assignments={selectedModuleForDetail.assignments || []}
+          dateRangeStr={selectedModuleForDetail.dateRangeStr}
+          onClose={() => setSelectedModuleForDetail(null)}
+          onSelectReading={r => {
+            setSelectedModuleForDetail(null);
+            setTimeout(() => setEditingReading(r), 200);
+          }}
+          onSelectAssignment={a => {
+            setSelectedModuleForDetail(null);
+            setTimeout(() => setSelectedAssignmentForDetail(a), 200);
+          }}
+          onToggleCompleteReading={id => {
+            const r = readings.find(x => x.id === id);
+            if (r) updateReading({ ...r, isCompleted: !r.isCompleted });
+          }}
+          onToggleCompleteAssignment={id => {
+            const a = assignments.find(x => x.id === id);
+            if (a) updateAssignment({ ...a, isCompleted: !a.isCompleted });
+          }}
+        />
+      )}
     </View>
+
   );
 };
 
@@ -1448,6 +1579,74 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#596B85'
   },
+  courseHeaderPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6
+  },
+  courseStatsPill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  courseStatsPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569'
+  },
+  officeHoursHeaderPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    flexShrink: 1
+  },
+  officeHoursHeaderPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#007AFF',
+    flexShrink: 1
+  },
+  officeHoursDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4
+  },
+  officeHoursPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    flexShrink: 1,
+    alignSelf: 'flex-start'
+  },
+  officeHoursPillLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1D4ED8'
+  },
+  officeHoursPillText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#007AFF',
+    flexShrink: 1,
+    lineHeight: 18
+  },
   textbooksContainer: {
     gap: 8
   },
@@ -1661,26 +1860,45 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700'
   },
+  moduleQuickSyncBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE'
+  },
+  moduleQuickSyncText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1D4ED8'
+  },
+
   itemTitleText: {
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#384761',
+    color: '#141F38',
     lineHeight: 19
   },
   itemAuthorText: {
     fontSize: 13,
-    fontWeight: '400',
-    color: '#596B85'
+    fontWeight: '500',
+    color: '#596B85',
+    lineHeight: 18
   },
   itemDueText: {
     fontSize: 13,
-    color: '#596B85'
+    fontWeight: '500',
+    color: '#596B85',
+    lineHeight: 18
   },
   assignmentDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginTop: 3
+    gap: 5
   },
   itemPointsWeightText: {
     fontSize: 13,

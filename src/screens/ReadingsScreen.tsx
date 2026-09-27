@@ -18,11 +18,15 @@ import {
   CheckmarkCircleFillIcon,
   TrashIcon,
   CalendarIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  GoogleCalendarIcon,
+  PlusIcon
 } from '../components/SvgIcons';
 import { Course, Reading } from '../types/models';
-import { ReadingDetailModal } from '../components/modals';
+import { ReadingDetailModal, ModuleDetailModal } from '../components/modals';
+import { GoogleCalendarService } from '../services/GoogleCalendarService';
 import { PulsingColorDot } from '../components/PulsingColorDot';
+
 import {
   formatDisplayTitleWithChapter,
   formatAuthorAndPagesSubtitle,
@@ -50,9 +54,13 @@ import { calculateAcademicWeek } from '../utils/timeFormatters';
 
 interface ReadingsScreenProps {
   onOpenFilterModal: () => void;
+  onOpenAddTaskModal?: (courseId?: string, category?: 'assignment' | 'reading', initialDueDate?: Date | null) => void;
 }
 
-export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModal }) => {
+export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({
+  onOpenFilterModal,
+  onOpenAddTaskModal
+}) => {
   const {
     courses,
     readings,
@@ -73,6 +81,15 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
   const [sortMode, setSortMode] = useState<'readings' | 'completed' | 'trash'>('readings');
   const [groupingViewMode, setGroupingViewMode] = useState<'weeks' | 'modules'>('weeks');
   const [selectedReadingForDetail, setSelectedReadingForDetail] = useState<Reading | null>(null);
+  const [selectedModuleForDetail, setSelectedModuleForDetail] = useState<{
+    moduleNum: number;
+    moduleLabel?: string;
+    theme?: string;
+    readings: Reading[];
+    dateRangeStr?: string | null;
+    course?: Course | null;
+  } | null>(null);
+
 
   // Deduplicate raw readings list to eliminate duplicate chapters & multi-week clone noise
   const deduplicatedRawReadings = useMemo(() => {
@@ -637,12 +654,13 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
   }, [courses.length, groupedModules.length]);
 
   useEffect(() => {
+    if (courses.length === 0) return;
     if (!hasDistinctModules && groupingViewMode === 'modules') {
       setGroupingViewMode('weeks');
     } else if (hasDistinctModules && groupedWeeks.length === 0 && groupingViewMode === 'weeks') {
       setGroupingViewMode('modules');
     }
-  }, [hasDistinctModules, groupedWeeks.length, groupingViewMode]);
+  }, [courses.length, hasDistinctModules, groupedWeeks.length, groupingViewMode]);
 
   const renderReadingCard = (
     reading: Reading,
@@ -660,13 +678,25 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       weekDateStr ||
       (matchedWeek?.dateRangeStr && isRealDateOrRangeString(matchedWeek.dateRangeStr) ? matchedWeek.dateRangeStr : null) ||
       (matchedWeek?.startDate ? (matchedWeek.startDate instanceof Date ? matchedWeek.startDate.toISOString().split('T')[0] : String(matchedWeek.startDate)) : null);
-    const suggestedReadingText = isModuleView
-      ? null
-      : formatSuggestedReadingCardText(
-          reading.dueDate,
-          reading.dateRangeStr,
-          effectiveWeekDate
-        );
+    let candidateDueDate: Date | string | null | undefined = reading.dueDate;
+    let candidateRangeStr: string | null | undefined = reading.dateRangeStr;
+    let fallbackDate = effectiveWeekDate;
+
+    if (!isModuleView && !candidateRangeStr && !candidateDueDate && reading.moduleNumber && matchedCourse) {
+      // Find week that matches this moduleNumber
+      const matchingWeek = (matchedCourse.weeks || []).find(w => w.moduleNumber === reading.moduleNumber);
+      if (matchingWeek?.dateRangeStr && isRealDateOrRangeString(matchingWeek.dateRangeStr)) {
+        fallbackDate = matchingWeek.dateRangeStr;
+      } else if (matchingWeek?.startDate) {
+        candidateDueDate = matchingWeek.startDate instanceof Date ? matchingWeek.startDate.toISOString().split('T')[0] : String(matchingWeek.startDate);
+      }
+    }
+
+    const suggestedReadingText = formatSuggestedReadingCardText(
+      candidateDueDate,
+      candidateRangeStr,
+      fallbackDate
+    );
     const rawAuthor = reading.authorName || (() => {
       if ((reading.title || '').toLowerCase().includes('groth-marnat') || /\bMarnat\b/i.test(reading.title || '')) {
         return 'Groth-Marnat';
@@ -698,9 +728,6 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
     const weekTheme = isModuleView ? undefined : (matchedWeek?.theme || reading.relevantTopics);
     let cleanWeekTheme = cleanAcademicWeekTheme(weekTheme);
     let baseTitle = reading.title || '';
-    if (isModuleView && baseTitle.includes(' · ')) {
-      baseTitle = baseTitle.split(' · ')[0].trim();
-    }
     // In weekly schedule view, never repeat session themes, topics, or parenthetical notes in chapter titles!
     if (!isModuleView && baseTitle.includes(' · ')) {
       const firstPart = baseTitle.split(' · ')[0].trim();
@@ -767,7 +794,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
             {/* Top Line: Course Title Pill & Media Type Badge */}
             <View style={styles.pillRow}>
               <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
-                <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
+                <Text style={styles.coursePillText} numberOfLines={1} ellipsizeMode="tail">{pillTitle.toUpperCase()}</Text>
               </View>
               {(reading.isRequired === false || reading.requirementType === 'optional') && (
                 <View style={styles.optionalPill}>
@@ -833,31 +860,39 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
               {displayTitle}
             </Text>
 
-            {/* Subtitle & Suggested Reading: Author · Pages · Suggested Date */}
+            {/* Subtitle & Suggested Reading: Author · Suggested Date */}
             {(() => {
-              let cleanSub = (displaySubtitle || '').replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
-
-              // Fallback to resolvedAuthor or resourceTitle if subtitle was suppressed or empty
-              if (!cleanSub && resolvedAuthor && !displayTitle.toLowerCase().includes(resolvedAuthor.toLowerCase())) {
-                cleanSub = resolvedAuthor;
-              } else if (!cleanSub && reading.resourceTitle && !displayTitle.toLowerCase().includes(reading.resourceTitle.toLowerCase())) {
-                cleanSub = reading.resourceTitle;
-              } else if (!cleanSub && resolvedAuthor) {
-                cleanSub = `By ${resolvedAuthor}`;
-              } else if (!cleanSub && reading.summaryText && reading.moduleNumber && (!reading.weekNumber || reading.weekNumber === 0)) {
-                cleanSub = reading.summaryText;
+              // 1. Author: prefix with 'Author: ' consistently across sections
+              let authorPart: string | null = null;
+              if (resolvedAuthor && resolvedAuthor.trim()) {
+                let cleanAuth = resolvedAuthor.trim().replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '');
+                cleanAuth = cleanAuth.replace(/\s*\(\s*\d{4}\s*\)/g, '').replace(/;\s*/g, ', ').trim();
+                const authLower = cleanAuth.toLowerCase();
+                if (cleanAuth.length > 0 && authLower !== 'n/a' && authLower !== 'none' && !authLower.startsWith('author: n/a')) {
+                  authorPart = authLower.startsWith('author:') ? cleanAuth : `Author: ${cleanAuth}`;
+                }
               }
 
-              const cleanDate = suggestedReadingText
-                ? suggestedReadingText.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim()
-                : '';
+              // 2. Suggested Date: formatSuggestedReadingCardText
+              let datePart: string | null = null;
+              if (suggestedReadingText) {
+                const cleanDate = suggestedReadingText.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
+                if (cleanDate && !/\bmin(?:utes?)?\b/i.test(cleanDate)) {
+                  datePart = cleanDate;
+                }
+              }
 
-              const bottomText = cleanSub && cleanDate
-                ? `${cleanSub} · ${cleanDate}`
-                : (cleanSub || cleanDate);
+              // Assemble subtitle items with dots: strictly Author and Suggested Date (eliminating redundant estimated minutes)
+              const parts: string[] = [];
+              if (authorPart) parts.push(authorPart);
+              if (datePart) parts.push(datePart);
+
+              const bottomText = parts.join(' · ');
+
               if (!bottomText) return null;
+
               return (
-                <Text style={styles.readingAuthor} numberOfLines={2}>
+                <Text style={styles.readingAuthor} numberOfLines={1}>
                   {bottomText}
                 </Text>
               );
@@ -1104,7 +1139,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       )}
 
       {/* Active Calendar Date Highlight Banner / Section */}
-      {isDateFilterActive && dateFilteredReadings.length > 0 && (
+      {isDateFilterActive && (
         <View style={styles.dateFilterSection}>
           <View style={styles.dateFilterHeader}>
             <View style={styles.dateFilterTitleRow}>
@@ -1113,17 +1148,68 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
                 Scheduled for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.clearDateFilterBtn}
-              onPress={() => setIsDateFilterActive(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.clearDateFilterBtnText}>Show All</Text>
-            </TouchableOpacity>
+            <View style={styles.dateFilterHeaderActions}>
+              <TouchableOpacity
+                style={styles.openGoogleCalHeaderBtn}
+                onPress={() => GoogleCalendarService.openDateInGoogleCalendar(selectedDate)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <GoogleCalendarIcon size={15} />
+                <Text style={styles.openGoogleCalHeaderBtnText}>Google Cal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.clearDateFilterBtn}
+                onPress={() => setIsDateFilterActive(false)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.clearDateFilterBtnText}>Show All</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.dateFilterCardsList}>
-            {dateFilteredReadings.map(r => renderReadingCard(r, null))}
-          </View>
+
+          {dateFilteredReadings.length > 0 ? (
+            <View style={styles.dateFilterCardsList}>
+              {dateFilteredReadings.map(r => renderReadingCard(r, null))}
+              <TouchableOpacity
+                style={styles.addDateItemBtn}
+                onPress={() => onOpenAddTaskModal?.(selectedCourseFilter?.id, 'reading', selectedDate)}
+                activeOpacity={0.7}
+              >
+                <PlusIcon size={14} color={CoursePalTheme.accentBlue} />
+                <Text style={styles.addDateItemBtnText}>
+                  Add Reading for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.dateFilterEmptyCard}>
+              <Text style={styles.dateFilterEmptyTitle}>No Readings Scheduled</Text>
+              <Text style={styles.dateFilterEmptySubtitle}>
+                Nothing is scheduled for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}.
+              </Text>
+              <View style={styles.dateFilterEmptyActionsRow}>
+                <TouchableOpacity
+                  style={styles.dateFilterAddBtn}
+                  onPress={() => onOpenAddTaskModal?.(selectedCourseFilter?.id, 'reading', selectedDate)}
+                  activeOpacity={0.8}
+                >
+                  <PlusIcon size={14} color="#FFFFFF" />
+                  <Text style={styles.dateFilterAddBtnText}>Add Reading</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.dateFilterGoogleBtn}
+                  onPress={() => GoogleCalendarService.openDateInGoogleCalendar(selectedDate)}
+                  activeOpacity={0.8}
+                >
+                  <GoogleCalendarIcon size={15} />
+                  <Text style={styles.dateFilterGoogleBtnText}>Open Date in Calendar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -1453,19 +1539,67 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
               <View key={`module-${moduleNum}`} style={styles.weekGroupSection}>
                 {/* Module Header Row */}
                 <View style={styles.weekHeaderRow}>
-                  <View style={styles.weekPill}>
+                  <TouchableOpacity
+                    style={styles.weekPill}
+                    onPress={() => {
+                      const targetCourse = selectedCourseFilter || (moduleReadingsList[0] ? matchCourseForItem(moduleReadingsList[0], courses) : undefined) || courses[0];
+                      setSelectedModuleForDetail({
+                        moduleNum,
+                        moduleLabel: moduleLabel || `Module ${moduleNum}`,
+                        theme: cleanModTheme || modTheme,
+                        readings: moduleReadingsList,
+                        course: targetCourse
+                      });
+                    }}
+                    activeOpacity={0.7}
+                  >
                     <Text style={styles.weekPillText}>{moduleLabel || `Module ${moduleNum}`}</Text>
-                  </View>
+                  </TouchableOpacity>
+
+                  {/* Quick Google Calendar Sync Button */}
+                  <TouchableOpacity
+                    style={styles.moduleQuickSyncBtn}
+                    onPress={() => {
+                      const targetCourse = selectedCourseFilter || (moduleReadingsList[0] ? matchCourseForItem(moduleReadingsList[0], courses) : undefined) || courses[0];
+                      GoogleCalendarService.syncModule({
+                        moduleNumber: moduleNum,
+                        moduleLabel: moduleLabel || `Module ${moduleNum}`,
+                        theme: cleanModTheme || modTheme,
+                        readings: moduleReadingsList,
+                        course: targetCourse
+                      });
+                    }}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Sync module to Google Calendar"
+                  >
+                    <GoogleCalendarIcon size={14} />
+                    <Text style={styles.moduleQuickSyncText}>Sync</Text>
+                  </TouchableOpacity>
                 </View>
 
                 {/* Module Topic / Focus Theme */}
-                {cleanModTheme && (moduleReadingsList.length !== 1 || (moduleReadingsList[0]?.title || '').trim().toLowerCase() !== cleanModTheme.trim().toLowerCase()) ? (
-                  <View style={styles.weekThemeHeaderRow}>
+                {cleanModTheme ? (
+                  <TouchableOpacity
+                    style={styles.weekThemeHeaderRow}
+                    onPress={() => {
+                      const targetCourse = selectedCourseFilter || (moduleReadingsList[0] ? matchCourseForItem(moduleReadingsList[0], courses) : undefined) || courses[0];
+                      setSelectedModuleForDetail({
+                        moduleNum,
+                        moduleLabel: moduleLabel || `Module ${moduleNum}`,
+                        theme: cleanModTheme,
+                        readings: moduleReadingsList,
+                        course: targetCourse
+                      });
+                    }}
+                    activeOpacity={0.7}
+                  >
                     <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
                       {cleanModTheme}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 ) : null}
+
 
                 {/* Readings for this Module */}
                 {(() => {
@@ -1577,7 +1711,28 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({ onOpenFilterModa
       onToggleComplete={id => handleToggleReading(id)}
       onDeleteReading={id => deleteReading(id)}
     />
+
+    {/* Module Detail Modal */}
+    {selectedModuleForDetail && (
+      <ModuleDetailModal
+        visible={true}
+        course={selectedModuleForDetail.course || null}
+        moduleNumber={selectedModuleForDetail.moduleNum}
+        moduleLabel={selectedModuleForDetail.moduleLabel}
+        theme={selectedModuleForDetail.theme}
+        readings={selectedModuleForDetail.readings}
+        assignments={selectedModuleForDetail.course?.assignments || []}
+        dateRangeStr={selectedModuleForDetail.dateRangeStr}
+        onClose={() => setSelectedModuleForDetail(null)}
+        onSelectReading={r => {
+          setSelectedModuleForDetail(null);
+          setTimeout(() => setSelectedReadingForDetail(r), 200);
+        }}
+        onToggleCompleteReading={id => handleToggleReading(id)}
+      />
+    )}
   </View>
+
   );
 };
 
@@ -1835,11 +1990,28 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 12
   },
+  moduleQuickSyncBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE'
+  },
+  moduleQuickSyncText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1D4ED8'
+  },
   weekPillText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#FFFFFF'
   },
+
   weekDateHeaderText: {
     fontSize: 12.5,
     fontWeight: '600',
@@ -1916,11 +2088,12 @@ const styles = StyleSheet.create({
   },
   cardMainContent: {
     flex: 1,
-    gap: 3
+    gap: 4
   },
   pillRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6
   },
   coursePill: {
@@ -1929,7 +2102,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     minHeight: 24,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    flexShrink: 1,
+    maxWidth: '85%'
   },
   coursePillText: {
     fontSize: 11.5,
@@ -2146,7 +2321,18 @@ const styles = StyleSheet.create({
   readingAuthor: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#596B85'
+    color: '#596B85',
+    lineHeight: 18
+  },
+  moduleScopeContainer: {
+    marginTop: 4
+  },
+  moduleScopeText: {
+    fontSize: 12.5,
+    color: '#64748B',
+    lineHeight: 17,
+    marginTop: 4,
+    fontWeight: '400'
   },
   readingDateRow: {
     flexDirection: 'row',
@@ -2391,11 +2577,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: CoursePalTheme.accentBlue
   },
+  dateFilterHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  openGoogleCalHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 5
+  },
+  openGoogleCalHeaderBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0F172A'
+  },
   clearDateFilterBtn: {
     backgroundColor: CoursePalTheme.accentBlue,
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 4
+    paddingVertical: 5
   },
   clearDateFilterBtnText: {
     fontSize: 11,
@@ -2405,15 +2612,82 @@ const styles = StyleSheet.create({
   dateFilterCardsList: {
     gap: 8
   },
-  dateFilterEmptyCard: {
-    paddingVertical: 12,
-    alignItems: 'center'
+  addDateItemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D4E4FC',
+    paddingVertical: 10,
+    marginTop: 4
   },
-  dateFilterEmptyText: {
+  addDateItemBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: CoursePalTheme.accentBlue
+  },
+  dateFilterEmptyCard: {
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  dateFilterEmptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 4
+  },
+  dateFilterEmptySubtitle: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#718096',
-    textAlign: 'center'
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 14,
+    paddingHorizontal: 12
+  },
+  dateFilterEmptyActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'center'
+  },
+  dateFilterAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  dateFilterAddBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  dateFilterGoogleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  dateFilterGoogleBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F172A'
   },
   allSectionHeader: {
     flexDirection: 'row',

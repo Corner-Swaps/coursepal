@@ -13,4 +13,7 @@ export { CourseDetailModal } from './CourseDetailModal';
 export { UploadDocumentModal } from './UploadDocumentModal';
 export { FocusStudyModal } from './FocusStudyModal';
 export { WidgetGuideModal } from './WidgetGuideModal';
+export { ModuleDetailModal } from './ModuleDetailModal';
+
+
 

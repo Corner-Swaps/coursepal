@@ -15,7 +15,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Linking
+  Linking,
+  Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Reading, Course, MediaType } from '../../types/models';
@@ -25,7 +26,8 @@ import {
   PlusCircleFillIcon,
   ArrowUpRightIcon,
   BookFillIcon,
-  CalendarIcon
+  CalendarIcon,
+  GoogleCalendarIcon
 } from '../SvgIcons';
 import {
   cleanChapterFromRaw,
@@ -39,6 +41,8 @@ import {
 } from '../../utils/readingDisplayHelper';
 import { resolveFullAuthorName } from '../../utils/authorResolver';
 import { InlineCalendarPicker } from '../InlineCalendarPicker';
+import { GoogleCalendarService } from '../../services/GoogleCalendarService';
+
 
 export interface ReadingDetailModalProps {
   visible: boolean;
@@ -350,6 +354,74 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
     currentReadingIdRef.current = null;
     onClose();
   };
+
+  const handleSyncGoogleCalendar = async () => {
+    if (!reading) return;
+    const cleanedChapter = cleanChapterFromRaw(chapterInput.trim()) || chapterInput.trim() || undefined;
+    const cleanPages = pagesInput.trim() || undefined;
+    const cleanTopics = topicInputs
+      .filter(t => t.trim().length > 0)
+      .filter(t => weekNumber > 0 || !/^week\s*\d+$/i.test(t.trim()))
+      .join(', ');
+    const cleanNotes = noteInputs.filter(n => n.trim().length > 0).join('\n');
+
+    let resolvedDate = suggestedDate;
+    if (!resolvedDate && weekNumber > 0 && matchedCourse?.weeks) {
+      const w = matchedCourse.weeks.find(wk => wk.weekNumber === weekNumber);
+      if (w?.startDate) resolvedDate = parseSafeDate(w.startDate);
+      else if (w?.dateRangeStr) resolvedDate = parseSafeDate(w.dateRangeStr);
+    }
+    if (!resolvedDate && moduleNumber > 0 && matchedCourse?.weeks) {
+      const w = matchedCourse.weeks.find(wk => wk.moduleNumber === moduleNumber);
+      if (w?.startDate) resolvedDate = parseSafeDate(w.startDate);
+      else if (w?.dateRangeStr) resolvedDate = parseSafeDate(w.dateRangeStr);
+    }
+    if (!resolvedDate && reading.dateRangeStr) {
+      resolvedDate = parseSafeDate(reading.dateRangeStr);
+    }
+
+    const currentReading: Reading = {
+      ...reading,
+      title: titleText.trim() || reading.title,
+      chapterText: cleanedChapter,
+      pagesText: cleanPages,
+      authorName: authorInput.trim() || undefined,
+      relevantTopics: cleanTopics || undefined,
+      dueDate: resolvedDate,
+      dateRangeStr: reading.dateRangeStr,
+      mediaType: mediaType,
+      mediaTypeRaw: mediaType,
+      videoUrl: videoUrlInput.trim() || undefined,
+      weekNumber: weekNumber > 0 ? weekNumber : 0,
+      moduleNumber: moduleNumber > 0 ? moduleNumber : null,
+      moduleMention: moduleNumber > 0 ? `Module ${moduleNumber}` : null,
+      summaryText: cleanNotes,
+      isRequired: isRequired,
+      requirementType: requirementType
+    };
+
+    if (!resolvedDate) {
+      Alert.alert(
+        'No Target Date Set',
+        'This reading does not have a scheduled date yet. Would you like to open Google Calendar for today, or pick a date first?',
+        [
+          { text: 'Pick Date', style: 'cancel' },
+          {
+            text: 'Open for Today',
+            onPress: async () => {
+              const today = new Date();
+              currentReading.dueDate = today;
+              await GoogleCalendarService.syncReading(currentReading, matchedCourse, today);
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    await GoogleCalendarService.syncReading(currentReading, matchedCourse, resolvedDate);
+  };
+
 
   const handleWeekStep = (delta: number) => {
     const next = Math.max(0, Math.min(52, weekNumber + delta));
@@ -679,7 +751,21 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
                 }}
                 accentColor={CoursePalTheme.accentBlue}
               />
+
+              {/* Open Date in Calendar Action Button */}
+              <TouchableOpacity
+                style={styles.googleCalendarActionBtn}
+                onPress={handleSyncGoogleCalendar}
+                activeOpacity={0.7}
+              >
+                <View style={styles.googleCalendarActionBtnLeft}>
+                  <GoogleCalendarIcon size={18} />
+                  <Text style={styles.googleCalendarActionBtnText}>Open Date in Calendar</Text>
+                </View>
+                <ArrowUpRightIcon size={13} color="#64748B" />
+              </TouchableOpacity>
             </View>
+
 
             {/* MARK: - Section: Reading Requirement */}
             <Text style={styles.sectionHeaderTitle}>Reading Requirement</Text>
@@ -1127,6 +1213,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
     marginVertical: 10
   },
+  googleCalendarActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  googleCalendarActionBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  googleCalendarActionBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+    letterSpacing: -0.2
+  },
+
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',

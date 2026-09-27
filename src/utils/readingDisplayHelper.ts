@@ -1625,7 +1625,8 @@ export function resolveReadingMediaType(reading?: {
  */
 export function getSanitizedCoursePill(
   readingCourseCode?: string | null,
-  matchedCourse?: { courseCode?: string | null; courseName?: string | null } | null
+  matchedCourse?: { courseCode?: string | null; courseName?: string | null } | null,
+  itemType: 'reading' | 'assignment' = 'reading'
 ): string {
   const isGeneric = (code?: string | null): boolean => {
     if (!code || !code.trim()) return true;
@@ -1659,9 +1660,13 @@ export function getSanitizedCoursePill(
     return readingCourseCode!.trim();
   }
   if (matchedCourse && matchedCourse.courseName && matchedCourse.courseName.trim()) {
-    return matchedCourse.courseName.trim();
+    const name = matchedCourse.courseName.trim();
+    const codeMatch = name.match(/\b([A-Z]{2,6}[-\s]?\d{3,4}[A-Za-z]?)\b/) || name.match(/\b(PRJ-[A-Z0-9\-]+)\b/i);
+    if (codeMatch) return codeMatch[1].replace(/\s+/g, '-').toUpperCase();
+    if (name.length > 40) return name.substring(0, 39).trim() + '…';
+    return name;
   }
-  return 'Reading';
+  return itemType === 'assignment' ? 'TASK' : 'Reading';
 }
 
 /**
@@ -2589,8 +2594,9 @@ export function cleanRubricCriterionName(rawName?: string | null): string {
   // 4. Strip known leaked assignment title prefixes/suffixes
   name = name.replace(/\b(?:Group\s+Facilitation\s+Presentation\/Project|Article\s+Analysis\s+Assignment|Peer-Review\s+Group\s+Report|Group\s+Therapy\s+Reflection\s+Paper|Research\s+Paper|Unique\s+Topics\s+in\s+Grief\s+Group\s+Presentation|Personal\s+Grief\s+Reflection\s+Assignment|Group\s+Sexuality\s+Research\s+Paper|Professionalism,\s*Collaboration,\s*and\s*Engagement)\b/gi, ' ');
 
-  // 5. Clean leading and trailing punctuation, numbers, bullets, colons, dashes, pipes (preserve valid parens)
-  name = name.replace(/^[\s•\-\*▪●:–—\d\.\)\(|~_§·]+|[\s•\-\*▪●:–—\d\.|~_§·]+$/g, '').trim();
+  // 5. Clean leading and trailing punctuation, bullets, colons, dashes, pipes (preserve valid parens and hyphenated words like 1-Page)
+  name = name.replace(/^[\s•\-\*▪●:–—|~_§·]+|[\s•\-\*▪●:–—|~_§·]+$/g, '').trim();
+  name = name.replace(/^(?:\(?\d{1,2}\)?[\.:\)]\s*|[A-Za-z][\.:\)]\s+)/, '').trim();
   if (name.endsWith(')') && !name.includes('(')) {
     name = name.slice(0, -1).trim();
   }
@@ -2613,21 +2619,21 @@ export function cleanRubricCriterionName(rawName?: string | null): string {
     name = 'Case Conceptualization / Treatment Plan';
   }
 
-  // 8. Length & sentence safeguard: criterion titles in rubrics are concise (e.g. 2-6 words)
-  // If an entire sentence or instruction paragraph leaked into the name, distill it
-  if (name.length > 55) {
-    const sepMatch = name.match(/^([^:–—\n.]{3,45})[:–—\n.]/);
-    if (sepMatch) {
+  // 8. Length & sentence safeguard: criterion titles in rubrics are concise (e.g. 2-8 words)
+  // Only distill if an entire runaway sentence or instruction paragraph leaked into the name (>54 chars)
+  if (name.length > 54) {
+    const sepMatch = name.match(/^([^:–—\n]{3,50})(?:[:–—]|\.\s+[A-Z])/);
+    if (sepMatch && !/\b(?:vs|e\.g|i\.e)\b/i.test(sepMatch[1])) {
       name = sepMatch[1].trim();
     } else {
       const words = name.split(/\s+/);
-      if (words.length > 5) {
-        name = words.slice(0, 5).join(' ');
+      if (words.length > 6) {
+        name = words.slice(0, 6).join(' ');
       }
     }
   }
 
-  name = name.replace(/^[\s•\-\*▪●:–—\d\.\)\(|~_§·]+|[\s•\-\*▪●:–—\d\.|~_§·]+$/g, '').trim();
+  name = name.replace(/^[\s•\-\*▪●:–—|~_§·]+|[\s•\-\*▪●:–—|~_§·]+$/g, '').trim();
   if (name.endsWith(')') && !name.includes('(')) {
     name = name.slice(0, -1).trim();
   }
@@ -2653,8 +2659,15 @@ export function cleanAssignmentTitle(raw: string): string {
   // Strip markdown formatting if any
   s = s.replace(/^[*_~`]+|[*_~`]+$/g, '').trim();
 
-  // Strip leading "Due:", "Due by:", "Due by 11:59 PM:", "Assignment 1:", "Deliverable #2:", "Task 1:"
-  s = s.replace(/^(?:due(?:\s+by|\s+date|\s+on)?(?:\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?\s*[:\-–—]\s*|assignment(?:\s*#?\d+)?\s*[:\-–—]\s*|deliverable(?:\s*#?\d+)?\s*[:\-–—]\s*|task(?:\s*#?\d+)?\s*[:\-–—]\s*)/i, '').trim();
+  // Strip leading "Due:", "Due by:", "Due by 11:59 PM:", "Course Assignments Details:"
+  s = s.replace(/^(?:due(?:\s+by|\s+date|\s+on)?(?:\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?\s*[:\-–—]\s*|course\s+assignments?(?:\s+details)?\s*[:\-–—]?\s*|assignment\s+details\s*[:\-–—]?\s*|overview\s+of\s+(?:required\s+)?assignments?\s*[:\-–—]?\s*|detailed\s+assignments?\s*[:\-–—]?\s*)/i, '').trim();
+
+  // Strip leading "Assignment 1:", "Assignment 01:", "Task 1:", "Deliverable #2:" etc. to extract pure main title
+  // e.g. "Assignment 1: Précis" -> "Précis", "Assignment 4: Midterm Essay" -> "Midterm Essay"
+  const titleWithoutNum = s.replace(/^(?:assignment|task|deliverable|project\s+assignment)(?:\s*#?\s*(?:\d+|0\d+|[a-z]+))?\s*[:\-–—.]*\s*/i, '').trim();
+  if (titleWithoutNum.length >= 2) {
+    s = titleWithoutNum;
+  }
 
   // Strip any remaining leading time e.g. "11:59 PM: " or "11:59pm - "
   s = s.replace(/^(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}\/\d{1,2})\s*[:\-–—]\s*/i, '').trim();
@@ -2679,9 +2692,19 @@ export function cleanAssignmentTitle(raw: string): string {
   // Strip leading "in-class ", "in class ", "in_class "
   s = s.replace(/^(?:in[\s-_]class\s+)/i, '').trim();
 
+  // Clean hyphenated deliverable modalities e.g. "Analysis-Group Presentation" -> "Analysis - Group Presentation"
+  s = s.replace(/([a-zA-Z])\s*[-–—]\s*(Group|Individual|Instructor|Paper|Presentation|Project|Report|Activity)\b/gi, '$1 - $2');
+
+  // Strip trailing assignment numbers e.g. "(1)", "(2)", "(assignment 1)", "(assignment one)"
+  s = s.replace(/\s*\(\s*(?:assignment\s*)?(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\s*\)\s*$/gi, '').trim();
+
   // Strip trailing percentage weight clauses e.g. "(25%)", "- 25%", or "worth 20% of their final mark"
   s = s.replace(/\s*(?:worth\s*)?\d{1,3}%\s*(?:of\s*(?:the\s*|their\s*)?(?:final\s*)?(?:grade|mark))?.*$/i, '').trim();
   s = s.replace(/\s*[-–—(]?\s*\d{1,3}%\s*\)?\s*$/g, '').trim();
+
+  // Strip trailing points mentions e.g. "100 Pts", "100 Points", "(100 Pts)", "- 150 Pts"
+  s = s.replace(/\s*[-–—(]?\s*\d{1,4}\s*(?:pts|points?)\b\s*\)?\s*$/gi, '').trim();
+  s = s.replace(/\s*\(?\s*\d{1,4}\s*(?:pts|points?)\s*\)?\s*$/gi, '').trim();
 
   // Strip quotation marks enclosing words or hanging quotes:
   // e.g. “Best Practices” Literature Review -> Best Practices Literature Review
@@ -2695,6 +2718,10 @@ export function cleanAssignmentTitle(raw: string): string {
 
   // Strip dangling punctuation and clean spacing
   s = sanitizeDanglingPunctuation(s);
+
+  if (!s || s.length < 2) {
+    s = raw.trim().replace(/^[*_~`]+|[*_~`]+$/g, '').trim();
+  }
 
   // Ensure first character is capitalized
   if (s.length > 0 && /^[a-z]/.test(s)) {
@@ -2810,6 +2837,7 @@ export function isInvalidAssignmentTitle(raw: string): boolean {
     /^(?:description|details|overview|format|target\s+due|target\s+format|deliverable\s+format)$/i.test(lower) ||
     /^description\s+weight\b/i.test(lower) ||
     /^(?:modules?|mod|weeks?|wk|unit|session)\s*\d+$/i.test(lower) ||
+    /^(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,\s*\d{4})?$/i.test(t) ||
     lower.includes('total 100%') ||
     lower.includes('overview of required') ||
     lower.includes('course assignment details') ||
@@ -3209,19 +3237,26 @@ export function getAssignmentInstructionSummary(
     .replace(/^[\s·•\-–—:,]+|[\s·•\-–—:,]+$/g, '')
     .trim();
 
-  // 5. If rawNote is empty, provide a clean deliverable summary that does NOT repeat title terms
+  // If rawNote is just a day-of-week or date fragment (e.g. "(Fri)", "(Sun)", "Fri", "Wed"), clear it so full instructions are used
+  if (/^\s*\(?\s*(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\s*\)?\s*$/i.test(rawNote) || rawNote.length <= 4) {
+    rawNote = '';
+  }
+
+  // 5. If rawNote is empty, check genuine instructions text (never fabricate arbitrary summaries)
   if (!rawNote) {
-    if (titleHasPresentation || (assign.subTypeRaw || '').toLowerCase().includes('presentation')) {
-      rawNote = 'In small groups · Slide deck with presenter notes';
-    } else if (titleHasDiscussion) {
-      rawNote = 'Weekly peer feedback posts · Word document submissions';
-    } else if (titleHasVideo || assign.mediaUrl) {
-      rawNote = 'Video demonstration and one-page summary';
-    } else if (titleHasPaper) {
-      rawNote = 'Double-spaced empirical literature review with citations';
-    } else if (assign.fullInstructions) {
+    if (assign.fullInstructions) {
       const firstLine = assign.fullInstructions.split(/\n|\.\s+/)[0].trim();
-      if (firstLine.length > 5 && firstLine.length < 90 && !/parsed from|due|worth/i.test(firstLine)) {
+      if (firstLine.length > 5 && firstLine.length < 180 && !/parsed from|due|worth/i.test(firstLine)) {
+        rawNote = firstLine;
+      }
+    } else if ((assign as any).instructions) {
+      const firstLine = (assign as any).instructions.split(/\n|\.\s+/)[0].trim();
+      if (firstLine.length > 5 && firstLine.length < 180 && !/parsed from|due|worth/i.test(firstLine)) {
+        rawNote = firstLine;
+      }
+    } else if ((assign as any).description) {
+      const firstLine = (assign as any).description.split(/\n|\.\s+/)[0].trim();
+      if (firstLine.length > 5 && firstLine.length < 180 && !/parsed from|due|worth/i.test(firstLine)) {
         rawNote = firstLine;
       }
     }

@@ -24,6 +24,17 @@ describe('Citation, Assignment Title, and Widget Integrity Suite', () => {
       expect(cleanAssignmentTitle('Midterm Exam (25%)')).toBe('Midterm Exam');
       expect(cleanAssignmentTitle('Case Study - 20%')).toBe('Case Study');
     });
+
+    it('extracts authentic pure main titles without "Assignment X:" prefix while stripping trailing points and due dates', () => {
+      expect(cleanAssignmentTitle('Assignment 01: Discourse Analysis 100 Pts')).toBe('Discourse Analysis');
+      expect(cleanAssignmentTitle('Assignment 02: Performativity Case Study 100 Pts')).toBe('Performativity Case Study');
+      expect(cleanAssignmentTitle('Assignment 05: Intersectional Archive Audit 150 Pts')).toBe('Intersectional Archive Audit');
+      expect(cleanAssignmentTitle('Assignment 07: Crip/Queer Accessibility Audit 100 Pts')).toBe('Crip/Queer Accessibility Audit');
+      expect(cleanAssignmentTitle('Assignment 10: Capstone Futurities Project 300 Pts')).toBe('Capstone Futurities Project');
+      expect(cleanAssignmentTitle('Assignment 1: Précis')).toBe('Précis');
+      expect(cleanAssignmentTitle('Assignment 2: Archival Analysis')).toBe('Archival Analysis');
+      expect(cleanAssignmentTitle('Assignment 4: Midterm Essay')).toBe('Midterm Essay');
+    });
   });
 
   describe('splitMultiCitationCandidate and Author Recognition', () => {

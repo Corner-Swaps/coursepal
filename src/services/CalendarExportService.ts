@@ -260,4 +260,47 @@ export class CalendarExportService {
       return false;
     }
   }
+
+  /**
+   * Generates .ics file content for a Module
+   */
+  public static createModuleICS(params: {
+    moduleNumber: number;
+    moduleLabel?: string | null;
+    theme?: string | null;
+    readings: Reading[];
+    assignments?: Assignment[];
+    course?: Course | null;
+    dateRangeStr?: string | null;
+    startDate?: Date | string | null;
+  }): string {
+    const courseCode = params.course?.courseCode || params.course?.courseName || 'Course';
+    const modLabel = params.moduleLabel || `Module ${params.moduleNumber}`;
+    const cleanTheme = params.theme ? `: ${params.theme}` : '';
+    const rawDate = (params.startDate ? parseSafeDate(params.startDate) : null) || new Date();
+
+    const readingLines = params.readings.map(r => `• ${r.title} ${r.chapterText || ''}`).join('\\n');
+    const assignLines = (params.assignments || []).map(a => `• ${a.title} (${a.pointsPossible || a.weightPercentage || 'Deliverable'})`).join('\\n');
+
+    const details = [
+      `Course: ${params.course?.courseName || courseCode}`,
+      params.theme ? `Focus Theme: ${params.theme}` : null,
+      params.dateRangeStr ? `Dates: ${params.dateRangeStr}` : null,
+      params.readings.length > 0 ? `Readings (${params.readings.length}):\\n${readingLines}` : null,
+      (params.assignments && params.assignments.length > 0) ? `Deliverables (${params.assignments.length}):\\n${assignLines}` : null
+    ]
+      .filter(Boolean)
+      .join('\\n\\n');
+
+    const vevent = this.generateVEvent({
+      uid: `module-${params.moduleNumber}-${courseCode}`,
+      title: `${modLabel}${cleanTheme}`,
+      courseCode,
+      dueDate: rawDate,
+      description: details
+    });
+
+    return this.wrapVCalendar([vevent]);
+  }
 }
+

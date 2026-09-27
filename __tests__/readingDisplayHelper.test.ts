@@ -1888,10 +1888,11 @@ if let doc = PDFDocument(url: url), let str = doc.string {
     it('strips deadlines and due dates so they are kept strictly down below on the card', () => {
       const assign = {
         title: 'Research Article Analysis-Group Presentation',
-        noteText: 'Presentations: Weeks 4–8 · Deadline: July 8',
+        noteText: 'Presentations: Weeks 4–8 · Slide deck with speaker notes · Deadline: July 8',
         subTypeRaw: 'presentation'
       };
       const summary = getAssignmentInstructionSummary(assign, courseNoWeeks);
+      expect(summary).toBe('Slide deck with speaker notes');
       expect(summary).not.toMatch(/deadline/i);
       expect(summary).not.toMatch(/july 8/i);
     });
@@ -1899,23 +1900,34 @@ if let doc = PDFDocument(url: url), let str = doc.string {
     it('suppresses week references when the course has no weeks', () => {
       const assign = {
         title: 'Research Article Analysis-Group Presentation',
-        noteText: 'Presentations: Weeks 4–8 · Deadline: July 8',
+        noteText: 'Presentations: Weeks 4–8 · Slide deck with speaker notes · Deadline: July 8',
         subTypeRaw: 'presentation'
       };
       const summary = getAssignmentInstructionSummary(assign, courseNoWeeks);
       expect(summary).not.toMatch(/\bweeks?\b/i);
       expect(summary).not.toMatch(/4[–-]8/);
-      expect(summary).toBe('In small groups · Slide deck with presenter notes');
+      expect(summary).toBe('Slide deck with speaker notes');
     });
 
     it('never repeats presentation up top when assignment title already indicates presentation', () => {
+      const assign = {
+        title: 'Research Article Analysis-Group Presentation',
+        noteText: 'Presentations: Weeks 4–8 · Slide deck with speaker notes · Deadline: July 8',
+        subTypeRaw: 'presentation'
+      };
+      const summary = getAssignmentInstructionSummary(assign, courseNoWeeks);
+      expect(summary).not.toMatch(/presentation/i);
+      expect(summary).toBe('Slide deck with speaker notes');
+    });
+
+    it('returns null when assignment note contains only deadlines or weeks without deliverable content', () => {
       const assign = {
         title: 'Research Article Analysis-Group Presentation',
         noteText: 'Presentations: Weeks 4–8 · Deadline: July 8',
         subTypeRaw: 'presentation'
       };
       const summary = getAssignmentInstructionSummary(assign, courseNoWeeks);
-      expect(summary).not.toMatch(/presentation/i);
+      expect(summary).toBeNull();
     });
 
     it('never repeats week up top in assignment instruction summary', () => {

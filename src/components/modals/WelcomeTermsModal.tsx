@@ -13,6 +13,7 @@ import { AppIconLogo } from '../AppIconLogo';
 import {
   DocTextViewfinderIcon,
   ShieldLockIcon,
+  ShieldCheckmarkIcon,
   ExclamationTriangleFillIcon,
   DocFillIcon,
   ChevronRightIcon,
@@ -63,8 +64,8 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
             <View style={styles.pillarsContainer}>
               {/* Pillar 1: 100% On-Device Privacy */}
               <View style={styles.pillarRow}>
-                <View style={[styles.pillarIconBox, { backgroundColor: '#ECFDF5' }]}>
-                  <ShieldLockIcon size={20} color="#059669" />
+                <View style={[styles.pillarIconBox, { backgroundColor: '#10B981' }]}>
+                  <ShieldCheckmarkIcon size={20} color="#FFFFFF" innerColor="#10B981" />
                 </View>
                 <View style={styles.pillarTextCol}>
                   <Text style={styles.pillarTitle}>100% On-Device Privacy</Text>
@@ -76,8 +77,8 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
 
               {/* Pillar 2: Intelligent Ingestion */}
               <View style={styles.pillarRow}>
-                <View style={[styles.pillarIconBox, { backgroundColor: '#EFF6FF' }]}>
-                  <DocTextViewfinderIcon size={20} color="#2470F5" />
+                <View style={[styles.pillarIconBox, { backgroundColor: '#2563EB' }]}>
+                  <DocTextViewfinderIcon size={20} color="#FFFFFF" />
                 </View>
                 <View style={styles.pillarTextCol}>
                   <Text style={styles.pillarTitle}>Smart Syllabus Ingestion</Text>
@@ -89,8 +90,8 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
 
               {/* Pillar 3: Academic Diligence */}
               <View style={styles.pillarRow}>
-                <View style={[styles.pillarIconBox, { backgroundColor: '#FFFBEB' }]}>
-                  <ExclamationTriangleFillIcon size={20} color="#D97706" />
+                <View style={[styles.pillarIconBox, { backgroundColor: '#F59E0B' }]}>
+                  <ExclamationTriangleFillIcon size={20} color="#FFFFFF" />
                 </View>
                 <View style={styles.pillarTextCol}>
                   <Text style={styles.pillarTitle}>Academic Due Diligence</Text>
@@ -106,8 +107,8 @@ export const WelcomeTermsModal: React.FC<WelcomeTermsModalProps> = ({ visible, o
                 onPress={() => handleOpenLegal('privacy')}
                 activeOpacity={0.7}
               >
-                <View style={[styles.pillarIconBox, { backgroundColor: '#F5F3FF' }]}>
-                  <DocFillIcon size={20} color="#7C3AED" />
+                <View style={[styles.pillarIconBox, { backgroundColor: '#8B5CF6' }]}>
+                  <DocFillIcon size={20} color="#FFFFFF" />
                 </View>
                 <View style={styles.pillarTextCol}>
                   <View style={styles.pillarTitleWithChevron}>

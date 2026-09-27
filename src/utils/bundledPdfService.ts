@@ -63,6 +63,9 @@ export async function ensureBundledPdfFile(...identifiers: (string | null | unde
     } else if (lower.includes('prjsex2026') || lower.includes('prj_sex_2026') || lower.includes('prj-sex-2026')) {
       key = 'prj-sex-2026';
       targetFileName = 'PRJ_SEX_2026_Human_Sexuality_Syllabus.pdf';
+    } else if (lower.includes('socs4890') || lower.includes('socs_4890') || lower.includes('socs-4890') || lower.includes('gs802') || (lower.includes('humansexuality') && (lower.includes('socialtheory') || lower.includes('foundations')))) {
+      key = 'socs-4890';
+      targetFileName = 'SOCS_4890_Human_Sexuality_Syllabus.pdf';
     } else if (lower.includes('sxst3010') || lower.includes('sxst_3010') || lower.includes('sxst-3010') || (lower.includes('criticalhistories') && lower.includes('sexuality'))) {
       key = 'sxst-3010';
       targetFileName = 'SXST_3010_Critical_Histories_Syllabus.pdf';

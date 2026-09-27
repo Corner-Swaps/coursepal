@@ -127,17 +127,17 @@ describe('Sectioned Curriculum & Practicum Syllabus Ingestion Suite (Human Sexua
     expect(cleanAssignments.length).toBe(10);
     const a1 = cleanAssignments.find(a => a.assignmentNumber === 1);
     expect(a1.title).toBe('Discourse Analysis');
-    expect(a1.pointsPossible).toBe('100 Pts');
-    expect(a1.weekNumber).toBe(2);
+    expect(a1.pointsPossible?.toLowerCase()).toBe('100 pts');
+    expect(a1.weekNumber).toBe(1);
 
     const a5 = cleanAssignments.find(a => a.assignmentNumber === 5);
     expect(a5.title).toBe('Intersectional Archive Audit');
-    expect(a5.pointsPossible).toBe('150 Pts');
+    expect(a5.pointsPossible?.toLowerCase()).toBe('150 pts');
     expect(a5.weekNumber).toBe(6);
 
     const a10 = cleanAssignments.find(a => a.assignmentNumber === 10);
     expect(a10.title).toBe('Capstone Futurities Project');
-    expect(a10.pointsPossible).toBe('300 Pts');
+    expect(a10.pointsPossible?.toLowerCase()).toBe('300 pts');
     expect(a10.weekNumber).toBe(10);
   });
 

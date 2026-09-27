@@ -8,7 +8,7 @@ describe('Inspect User Uploaded Files Parsing', () => {
     { name: 'CPC 527', file: '/tmp/media_1790272219847.pdf.txt' },
     { name: 'CPC 524', file: '/tmp/media_1790272219842.pdf.txt' },
     { name: 'CPC 511', file: '/tmp/media_1790272219828.pdf.txt' },
-    { name: 'Human Sexuality', file: '/tmp/media_1790269463501.pdf.txt' },
+    { name: 'Human Sexuality', file: '/tmp/media_1790289747188.pdf.txt' },
     { name: 'CPC 514', file: '/tmp/media_1790267826623.pdf.txt' }
   ];
 
@@ -46,7 +46,7 @@ describe('Inspect User Uploaded Files Parsing', () => {
       });
       console.log(`Assignments list:`);
       assignments.forEach((a, idx) => {
-        console.log(`  [A${idx + 1}] Title: "${a.title}" | Due: ${a.dueDate || 'N/A'} | Weight: ${a.weightPercentage || 'N/A'} | Points: ${a.pointsPossible || 'N/A'}`);
+        console.log(`  [A${idx + 1}] Title: "${a.title}" | Wk: ${a.weekNumber} | SchedWks: ${JSON.stringify(a.scheduledWeeks)} | Num: ${a.assignmentNumber} | Note: "${a.noteText}" | Due: ${a.dueDate || 'N/A'} | Weight: ${a.weightPercentage || 'N/A'} | Points: ${a.pointsPossible || 'N/A'}`);
       });
     });
   });

@@ -73,6 +73,7 @@ function MainAppView() {
   const [showFocusModal, setShowFocusModal] = useState<boolean>(false);
   const [selectedCourseForAddTask, setSelectedCourseForAddTask] = useState<string | undefined>(undefined);
   const [selectedCategoryForAddTask, setSelectedCategoryForAddTask] = useState<'assignment' | 'reading'>('assignment');
+  const [selectedDueDateForAddTask, setSelectedDueDateForAddTask] = useState<Date | null | undefined>(undefined);
 
   // Automatically dismiss add/upload modals when an upload is in progress
   useEffect(() => {
@@ -175,9 +176,14 @@ function MainAppView() {
   }, [hasAcceptedTerms, setSelectedTab, checkAndResumeInterruptedUpload]);
 
 
-  const handleOpenAddTask = (courseId?: string, category: 'assignment' | 'reading' = 'assignment') => {
+  const handleOpenAddTask = (
+    courseId?: string,
+    category: 'assignment' | 'reading' = 'assignment',
+    initialDueDate?: Date | null
+  ) => {
     setSelectedCourseForAddTask(courseId);
     setSelectedCategoryForAddTask(category);
+    setSelectedDueDateForAddTask(initialDueDate);
     setShowAddTaskModal(true);
   };
 
@@ -194,7 +200,10 @@ function MainAppView() {
             ]}
             pointerEvents={selectedTab === 'readings' ? 'auto' : 'none'}
           >
-            <ReadingsScreen onOpenFilterModal={() => setShowFilterModal(true)} />
+            <ReadingsScreen
+              onOpenFilterModal={() => setShowFilterModal(true)}
+              onOpenAddTaskModal={handleOpenAddTask}
+            />
           </View>
 
           {/* Tab 2: Assignments */}
@@ -205,7 +214,10 @@ function MainAppView() {
             ]}
             pointerEvents={selectedTab === 'assignments' ? 'auto' : 'none'}
           >
-            <AssignmentsScreen onOpenFilterModal={() => setShowFilterModal(true)} />
+            <AssignmentsScreen
+              onOpenFilterModal={() => setShowFilterModal(true)}
+              onOpenAddTaskModal={handleOpenAddTask}
+            />
           </View>
 
           {/* Tab 3: Syllabus */}
@@ -267,6 +279,7 @@ function MainAppView() {
           onCreateCourse={() => setShowAddCourseModal(true)}
           onAddReadingOrAssignment={() => {
             setSelectedCategoryForAddTask(selectedTab === 'readings' ? 'reading' : 'assignment');
+            setSelectedDueDateForAddTask(null);
             setShowAddTaskModal(true);
           }}
         />
@@ -275,10 +288,12 @@ function MainAppView() {
           visible={showAddTaskModal}
           initialCourseId={selectedCourseForAddTask}
           initialCategory={selectedCategoryForAddTask}
+          initialDueDate={selectedDueDateForAddTask}
           onClose={() => {
             setShowAddTaskModal(false);
             setSelectedCourseForAddTask(undefined);
             setSelectedCategoryForAddTask('assignment');
+            setSelectedDueDateForAddTask(undefined);
           }}
         />
 

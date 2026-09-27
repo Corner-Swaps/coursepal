@@ -17,7 +17,9 @@ import {
   CheckmarkCircleFillIcon,
   TrashIcon,
   CalendarIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  GoogleCalendarIcon,
+  PlusIcon
 } from '../components/SvgIcons';
 import { Assignment } from '../types/models';
 import { AssignmentDetailModal, EditAssignmentModal } from '../components/modals';
@@ -29,15 +31,20 @@ import {
   isInvalidAssignmentTitle,
   isItemForCourse,
   matchCourseForItem,
-  getAssignmentInstructionSummary
+  cleanAssignmentTitle
 } from '../utils/readingDisplayHelper';
 import { calculateAcademicWeek } from '../utils/timeFormatters';
+import { GoogleCalendarService } from '../services/GoogleCalendarService';
 
 interface AssignmentsScreenProps {
   onOpenFilterModal: () => void;
+  onOpenAddTaskModal?: (courseId?: string, category?: 'assignment' | 'reading', initialDueDate?: Date | null) => void;
 }
 
-export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilterModal }) => {
+export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({
+  onOpenFilterModal,
+  onOpenAddTaskModal
+}) => {
   const {
     courses,
     assignments,
@@ -236,12 +243,14 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
     const unassigned: Assignment[] = [];
     const map = new Map<number, Assignment[]>();
     for (const a of activeAssignments) {
-      const isWeekOn = typeof a.weekNumber === 'number' && a.weekNumber > 0;
-      const primaryWeek = isWeekOn
-        ? a.weekNumber!
-        : (Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.length > 0 && typeof a.scheduledWeeks[0] === 'number' && a.scheduledWeeks[0] > 0
-            ? a.scheduledWeeks[0]
-            : null);
+      let primaryWeek: number | null = null;
+      if (typeof a.weekNumber === 'number' && a.weekNumber > 0) {
+        primaryWeek = a.weekNumber;
+      } else if (Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.length > 0 && typeof a.scheduledWeeks[0] === 'number' && a.scheduledWeeks[0] > 0) {
+        primaryWeek = a.scheduledWeeks[0];
+      } else if (typeof a.assignmentNumber === 'number' && a.assignmentNumber > 0 && (activeCourse?.weeks && activeCourse.weeks.length > 0)) {
+        primaryWeek = a.assignmentNumber;
+      }
 
       if (primaryWeek === null) {
         unassigned.push(a);
@@ -253,17 +262,31 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
         map.set(primaryWeek, list);
       }
     }
+    const hasWeeks = map.size > 0 || Boolean(activeCourse?.weeks && activeCourse.weeks.length > 0 && activeCourse.weeks.some(w => w.weekNumber && w.weekNumber > 0));
+    if (hasWeeks && unassigned.length > 0) {
+      // Attribute unassigned deliverables with an explicit target week when not already mapped
+      for (let i = unassigned.length - 1; i >= 0; i--) {
+        const a = unassigned[i];
+        if (a.assignmentNumber && a.assignmentNumber > 0 && !map.has(a.assignmentNumber)) {
+          unassigned.splice(i, 1);
+          map.set(a.assignmentNumber, [a]);
+        }
+      }
+    }
+
     return {
       unassignedAssignments: unassigned,
-      groupedAssignments: Array.from(map.entries()).sort(([w1], [w2]) => w1 - w2)
+      groupedAssignments: Array.from(map.entries())
+        .filter(([_, list]) => list.length > 0)
+        .sort(([w1], [w2]) => w1 - w2)
     };
-  }, [activeAssignments]);
+  }, [activeAssignments, activeCourse]);
 
   // Grade weight metrics
   const renderAssignmentCard = (assignment: Assignment, weekContext?: number) => {
     const matchedCourse = matchCourseForItem(assignment, courses);
     const courseColor = matchedCourse?.hexColor || assignment.docColorHex || CoursePalTheme.accentBlue;
-    const pillTitle = getSanitizedCoursePill(assignment.courseCode, matchedCourse);
+    const pillTitle = getSanitizedCoursePill(assignment.courseCode, matchedCourse, 'assignment');
 
     const isPresentation =
       (assignment.noteText && assignment.noteText.toLowerCase().includes('presentation')) ||
@@ -304,7 +327,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
             {/* Top Line: Course Title Pill */}
             <View style={styles.pillRow}>
               <View style={[styles.coursePill, { backgroundColor: courseColor }]}>
-                <Text style={styles.coursePillText}>{pillTitle.toUpperCase()}</Text>
+                <Text style={styles.coursePillText} numberOfLines={1} ellipsizeMode="tail">{pillTitle.toUpperCase()}</Text>
               </View>
             </View>
 
@@ -314,83 +337,22 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 styles.assignmentTitle,
                 assignment.isCompleted && styles.assignmentTitleCompleted
               ]}
-              numberOfLines={2}
+              numberOfLines={3}
             >
-              {(() => {
-                return (assignment.title || '')
-                  .replace(/\s*\((?:assignment\s*)?\d+\)\s*$/i, '')
-                  .replace(/-\s*(?:Group Presentation|Individual Paper|Instructor Determined Assignment)\b/i, '')
-                  .replace(/^(?:assignment\s*)?\d+[\s:\-–—]+/i, '')
-                  .trim();
-              })()}
+              {cleanAssignmentTitle(assignment.title || '') || assignment.title?.trim() || (assignment.noteText ? assignment.noteText.split('\n')[0].replace(/^•\s*/, '') : '') || 'Deliverable'}
             </Text>
 
             {/* Subtitle / Metadata in Gray Text (mirroring Readings screen) */}
             {(() => {
-              const parts: string[] = [];
-
-              // 1. Modality / Deliverable format in gray text
-              const titleLower = (assignment.title || '').toLowerCase();
-              const noteLower = (assignment.noteText || '').toLowerCase();
-
-              const c = matchCourseForItem(assignment, courses);
-              const courseHasWeeks = Boolean(
-                c?.weeks && c.weeks.length > 0 && c.weeks.some(w => w.weekNumber && w.weekNumber > 0)
-              );
-
-              if (isGroupPresentation || titleLower.includes('group presentation')) {
-                parts.push('Group Presentation');
-              } else if (isPresentation || titleLower.includes('presentation')) {
-                parts.push('Presentation');
-              } else if (titleLower.includes('discussion') || noteLower.includes('discussion') || noteLower.includes('peer feedback')) {
-                parts.push('Discussion Board Activity');
-              } else if (titleLower.includes('video') || noteLower.includes('video') || (assignment.mediaUrl && /youtube|youtu\.be|vimeo/i.test(assignment.mediaUrl))) {
-                parts.push('Video & Summary');
-              } else if (titleLower.includes('paper') || noteLower.includes('paper') || titleLower.includes('study design')) {
-                parts.push('Individual Paper');
-              } else if (isContinuous || titleLower.includes('attendance') || titleLower.includes('participation')) {
-                parts.push('Continuous Evaluation');
+              // 1. Genuine Due Date (ONLY if explicitly stated on the assignment, never fabricated)
+              let resolvedDate: Date | string | null | undefined = assignment.dueDate;
+              if (!resolvedDate && assignment.noteText) {
+                const dm = assignment.noteText.match(/deadline[:\s]+([A-Za-z]+ \d{1,2}(?:, \d{4})?)/i);
+                if (dm) resolvedDate = parseSafeDate(dm[1]);
               }
+              const formattedDate = resolvedDate ? formatAssignmentDueDate(resolvedDate) : null;
 
-              // 2. Schedule / Due Date
-              if ((titleLower.includes('discussion') || noteLower.includes('discussion')) && noteLower.includes('weekly')) {
-                parts.push('Weekly Submission');
-              } else {
-                const targetWk = weekContext !== undefined && weekContext > 0 ? weekContext : assignment.weekNumber;
-                let resolvedDate: Date | string | null | undefined = assignment.dueDate;
-                if ((!resolvedDate || (weekContext !== undefined && weekContext !== assignment.weekNumber)) && targetWk && targetWk > 0) {
-                  const w = c?.weeks?.find(wk => wk.weekNumber === targetWk);
-                  if (w?.startDate) resolvedDate = w.startDate;
-                  else if (w?.dateRangeStr) resolvedDate = w.dateRangeStr;
-                }
-                if (!resolvedDate && assignment.noteText) {
-                  const dm = assignment.noteText.match(/deadline[:\s]+([A-Za-z]+ \d{1,2}(?:, \d{4})?)/i);
-                  if (dm) resolvedDate = parseSafeDate(dm[1]);
-                }
-                const formattedDate = resolvedDate ? formatAssignmentDueDate(resolvedDate) : null;
-                const isMultiWeek = courseHasWeeks && Array.isArray(assignment.scheduledWeeks) && assignment.scheduledWeeks.length > 1;
-                const weekRangeStr = isMultiWeek
-                  ? `Weeks ${Math.min(...assignment.scheduledWeeks!)} to ${Math.max(...assignment.scheduledWeeks!)}`
-                  : null;
-
-                if (assignment.moduleMention && (!assignment.weekNumber || assignment.weekNumber === 0 || assignment.moduleMention.trim().toLowerCase() !== `module ${assignment.weekNumber}`)) {
-                  parts.push(assignment.moduleMention);
-                }
-
-                if (weekRangeStr && formattedDate) {
-                  parts.push(`${weekRangeStr} • ${formattedDate}`);
-                } else if (formattedDate) {
-                  parts.push(formattedDate);
-                } else if (weekRangeStr) {
-                  parts.push(`${weekRangeStr} • Presentation Window`);
-                } else if (assignment.noteText && !isContinuous && !/^\s*$/.test(assignment.noteText)) {
-                  parts.push(assignment.noteText.trim());
-                } else if (titleLower.includes('attendance') || titleLower.includes('participation') || isContinuous) {
-                  parts.push('Throughout Term');
-                }
-              }
-
-              // 3. Weight Percentage (clean, e.g. 20%, 10%, 40%)
+              // 2. Weight Percentage (clean, e.g. 20%, 10%, 40%)
               let weight = assignment.weightPercentage;
               if (!weight) {
                 const textToScan = `${assignment.title || ''} ${assignment.fullInstructions || ''} ${assignment.noteText || ''} ${assignment.relevantTopics || ''}`;
@@ -399,11 +361,8 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               } else if (!weight.endsWith('%')) {
                 weight = `${weight}%`;
               }
-              if (weight) {
-                parts.push(weight);
-              }
 
-              // 4. Points Possible
+              // 3. Points Possible (must never be missing: if not explicitly provided, derive from weight e.g. 15% -> 15 pts)
               let points = assignment.pointsPossible;
               if (!points && assignment.rubricCriteria && assignment.rubricCriteria.length > 0) {
                 const sumPts = assignment.rubricCriteria.reduce((sum, c) => sum + (Number(c.points) || 0), 0);
@@ -414,18 +373,30 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 const pm = textToScan.match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
                 if (pm) points = `${pm[1]} pts`;
               }
-              if (points && !points.includes('%')) {
-                const cleanP = points.replace(/Points/i, 'pts').trim();
-                if (cleanP !== weight) {
-                  parts.push(cleanP);
+              if (!points && weight) {
+                const wm = weight.match(/(\d{1,3})/);
+                if (wm) points = `${wm[1]} pts`;
+              }
+              if (points) {
+                let cleanP = points.replace(/Points/i, 'pts').replace(/\s+/g, ' ').trim();
+                if (!cleanP.toLowerCase().includes('pt')) {
+                  cleanP = `${cleanP} pts`;
                 }
+                points = cleanP;
               }
 
-              const bottomText = parts.join(' · ');
+              // Assemble strictly single-line subtext: Due Date · Weight% · Points
+              // Strictly omit cleanNote / deliverable descriptions from the card subtitle; all details live inside the section
+              const subtextParts: string[] = [];
+              if (formattedDate) subtextParts.push(formattedDate);
+              if (weight) subtextParts.push(weight);
+              if (points) subtextParts.push(points);
+
+              const bottomText = subtextParts.join(' · ');
               if (!bottomText) return null;
 
               return (
-                <Text style={styles.assignmentSubtitle} numberOfLines={2}>
+                <Text style={styles.assignmentSubtitleLine} numberOfLines={1}>
                   {bottomText}
                 </Text>
               );
@@ -642,7 +613,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
       )}
 
       {/* Active Calendar Date Highlight Banner / Section */}
-      {isDateFilterActive && dateFilteredAssignments.length > 0 && (
+      {isDateFilterActive && (
         <View style={styles.dateFilterSection}>
           <View style={styles.dateFilterHeader}>
             <View style={styles.dateFilterTitleRow}>
@@ -651,17 +622,68 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                 Due on {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.clearDateFilterBtn}
-              onPress={() => setIsDateFilterActive(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.clearDateFilterBtnText}>Show All</Text>
-            </TouchableOpacity>
+            <View style={styles.dateFilterHeaderActions}>
+              <TouchableOpacity
+                style={styles.openGoogleCalHeaderBtn}
+                onPress={() => GoogleCalendarService.openDateInGoogleCalendar(selectedDate)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <GoogleCalendarIcon size={15} />
+                <Text style={styles.openGoogleCalHeaderBtnText}>Google Cal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.clearDateFilterBtn}
+                onPress={() => setIsDateFilterActive(false)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.clearDateFilterBtnText}>Show All</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.dateFilterCardsList}>
-            {dateFilteredAssignments.map(renderAssignmentCard)}
-          </View>
+
+          {dateFilteredAssignments.length > 0 ? (
+            <View style={styles.dateFilterCardsList}>
+              {dateFilteredAssignments.map(a => renderAssignmentCard(a))}
+              <TouchableOpacity
+                style={styles.addDateItemBtn}
+                onPress={() => onOpenAddTaskModal?.(selectedCourseFilter?.id, 'assignment', selectedDate)}
+                activeOpacity={0.7}
+              >
+                <PlusIcon size={14} color={CoursePalTheme.accentBlue} />
+                <Text style={styles.addDateItemBtnText}>
+                  Add Assignment for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.dateFilterEmptyCard}>
+              <Text style={styles.dateFilterEmptyTitle}>No Assignments Due</Text>
+              <Text style={styles.dateFilterEmptySubtitle}>
+                Nothing is scheduled for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}.
+              </Text>
+              <View style={styles.dateFilterEmptyActionsRow}>
+                <TouchableOpacity
+                  style={styles.dateFilterAddBtn}
+                  onPress={() => onOpenAddTaskModal?.(selectedCourseFilter?.id, 'assignment', selectedDate)}
+                  activeOpacity={0.8}
+                >
+                  <PlusIcon size={14} color="#FFFFFF" />
+                  <Text style={styles.dateFilterAddBtnText}>Add Assignment</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.dateFilterGoogleBtn}
+                  onPress={() => GoogleCalendarService.openDateInGoogleCalendar(selectedDate)}
+                  activeOpacity={0.8}
+                >
+                  <GoogleCalendarIcon size={15} />
+                  <Text style={styles.dateFilterGoogleBtnText}>Open Date in Calendar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -693,45 +715,42 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
               }
               return (
                 <View style={styles.unassignedGroupSection}>
-                  {Array.from(modMap.entries()).map(([mLabel, mList]) => (
-                    <View key={`mod-group-${mLabel}`} style={{ gap: 6, marginBottom: 8 }}>
-                      <View style={styles.weekHeaderRow}>
-                        <View style={styles.weekPill}>
-                          <Text style={styles.weekPillText}>{mLabel}</Text>
+                  {Array.from(modMap.entries()).map(([mLabel, mList]) => {
+                    const sampleA = mList[0];
+                    const matchedC = sampleA ? matchCourseForItem(sampleA, courses) : null;
+                    const modNum = sampleA?.moduleNumber;
+                    const modTheme = sampleA?.relevantTopics ||
+                      (modNum ? matchedC?.weeks?.find(w => w.moduleNumber === modNum)?.theme : undefined);
+                    return (
+                      <View key={`mod-group-${mLabel}`} style={{ gap: 6, marginBottom: 8 }}>
+                        <View style={styles.weekHeaderRow}>
+                          <View style={styles.weekPill}>
+                            <Text style={styles.weekPillText}>{mLabel}</Text>
+                          </View>
                         </View>
+                        {modTheme ? (
+                          <View style={styles.weekThemeHeaderRow}>
+                            <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
+                              {modTheme}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {mList.map(a => renderAssignmentCard(a))}
                       </View>
-                      {mList.map(a => renderAssignmentCard(a))}
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               );
             }
             if (unassignedAssignments.some(a => a.assignmentNumber != null)) {
               return (
                 <View style={styles.unassignedGroupSection}>
-                  {unassignedAssignments.map((a, idx) => {
-                    const assignNum = a.assignmentNumber || (idx + 1);
-                    const assignLabel = a.assignmentNumberLabel || `Assignment ${assignNum}`;
-                    const c = matchCourseForItem(a, courses);
-                    const desc = getAssignmentInstructionSummary(a, c);
-                    return (
-                      <View key={a.id} style={{ gap: 6, marginBottom: 4 }}>
-                        <View style={styles.weekHeaderRow}>
-                          <View style={styles.weekPill}>
-                            <Text style={styles.weekPillText}>{assignLabel}</Text>
-                          </View>
-                        </View>
-                        {desc ? (
-                          <View style={styles.weekThemeHeaderRow}>
-                            <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
-                              {desc}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {renderAssignmentCard(a)}
-                      </View>
-                    );
-                  })}
+                  <View style={styles.weekHeaderRow}>
+                    <View style={styles.weekPill}>
+                      <Text style={styles.weekPillText}>Deliverables</Text>
+                    </View>
+                  </View>
+                  {unassignedAssignments.map(a => renderAssignmentCard(a))}
                 </View>
               );
             }
@@ -764,7 +783,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({ onOpenFilt
                   // If course already has a dedicated module section or unassigned module deliverables, do not repeat module pills in weeks
                   const hasModules = assignments.some(a => a.moduleNumber && (!a.weekNumber || a.weekNumber === 0));
                   if (hasModules) return null;
-                  if (modBadge.trim().toLowerCase() === `module ${weekNum}` || modBadge.trim().toLowerCase() === `mod ${weekNum}`) return null;
+                  if (/^weeks?\b/i.test(modBadge.trim()) || modBadge.trim().toLowerCase() === `module ${weekNum}` || modBadge.trim().toLowerCase() === `mod ${weekNum}`) return null;
                   return (
                     <View style={[styles.weekPill, { backgroundColor: '#ECEEF2', marginLeft: 6 }]}>
                       <Text style={[styles.weekPillText, { color: '#475569' }]}>{modBadge}</Text>
@@ -1120,7 +1139,7 @@ const styles = StyleSheet.create({
   },
   cardMainContent: {
     flex: 1,
-    gap: 3
+    gap: 4
   },
   pillRow: {
     flexDirection: 'row',
@@ -1134,7 +1153,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     minHeight: 24,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    flexShrink: 1,
+    maxWidth: '85%'
   },
   coursePillText: {
     fontSize: 11.5,
@@ -1240,7 +1261,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: '#596B85',
-    marginTop: 4,
+    marginTop: 0,
+    lineHeight: 18
+  },
+  assignmentSubtitleContainer: {
+    gap: 2,
+    marginTop: 0
+  },
+  assignmentSubtitleLine: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#596B85',
     lineHeight: 18
   },
   assignmentDateRow: {
@@ -1384,11 +1415,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: CoursePalTheme.accentBlue
   },
+  dateFilterHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  openGoogleCalHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 5
+  },
+  openGoogleCalHeaderBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0F172A'
+  },
   clearDateFilterBtn: {
     backgroundColor: CoursePalTheme.accentBlue,
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 4
+    paddingVertical: 5
   },
   clearDateFilterBtnText: {
     fontSize: 11,
@@ -1398,15 +1450,82 @@ const styles = StyleSheet.create({
   dateFilterCardsList: {
     gap: 8
   },
-  dateFilterEmptyCard: {
-    paddingVertical: 12,
-    alignItems: 'center'
+  addDateItemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D4E4FC',
+    paddingVertical: 10,
+    marginTop: 4
   },
-  dateFilterEmptyText: {
+  addDateItemBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: CoursePalTheme.accentBlue
+  },
+  dateFilterEmptyCard: {
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  dateFilterEmptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 4
+  },
+  dateFilterEmptySubtitle: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#718096',
-    textAlign: 'center'
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 14,
+    paddingHorizontal: 12
+  },
+  dateFilterEmptyActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'center'
+  },
+  dateFilterAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: CoursePalTheme.accentBlue,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  dateFilterAddBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  dateFilterGoogleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  dateFilterGoogleBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F172A'
   },
   allSectionHeader: {
     flexDirection: 'row',

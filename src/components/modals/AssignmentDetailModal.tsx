@@ -29,15 +29,18 @@ import {
   PlusIcon,
   TrashIcon,
   ArrowUpRightIcon,
-  CalendarIcon
+  CalendarIcon,
+  GoogleCalendarIcon
 } from '../SvgIcons';
 import {
   parseSafeDate,
   cleanRubricCriterionName,
   splitInstructionsIntoParagraphs,
-  getSanitizedCoursePill
+  getSanitizedCoursePill,
+  cleanAssignmentTitle
 } from '../../utils/readingDisplayHelper';
 import { InlineCalendarPicker } from '../InlineCalendarPicker';
+import { GoogleCalendarService } from '../../services/GoogleCalendarService';
 
 export interface AssignmentDetailModalProps {
   visible: boolean;
@@ -69,7 +72,7 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
   );
 
   const courseColor = matchedCourse ? matchedCourse.hexColor : CoursePalTheme.accentBlue;
-  const pillTitle = getSanitizedCoursePill(assignment.courseCode, matchedCourse);
+  const pillTitle = getSanitizedCoursePill(assignment.courseCode, matchedCourse, 'assignment');
 
   // Validate course code to exclude generic labels like "New", "New Assignments", "CRS"
   const isInvalidCourseCode = (code?: string | null) =>
@@ -83,8 +86,10 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
 
   const sanitizeTitle = (t?: string | null) => {
     if (!t) return '';
-    const trimmed = t.trim();
-    return /^\d+$/.test(trimmed) ? '' : trimmed;
+    const cleaned = cleanAssignmentTitle(t);
+    const trimmed = cleaned || t.trim();
+    if (/^\d+$/.test(trimmed)) return '';
+    return trimmed;
   };
 
   // In-place editable state
@@ -103,6 +108,11 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
     const combined = `${assign.title || ''} ${assign.fullInstructions || ''} ${assign.noteText || ''}`;
     const match = combined.match(/\b(\d{1,4})\s*(?:points|pts|pt)\b/i);
     if (match) return `${match[1]} Points`;
+    // Fallback: derive points from weight percentage so points are never missing
+    if (assign.weightPercentage) {
+      const num = parseInt(assign.weightPercentage.replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(num) && num > 0) return `${num} Points`;
+    }
     return '';
   };
 
@@ -549,6 +559,63 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
     saveAllChanges({ noteText: text });
   };
 
+  const handleSyncGoogleCalendar = async () => {
+    const currentAssign: Assignment = {
+      ...assignment,
+      title: titleText,
+      dueDate: dueDate,
+      weekNumber: isWeekEnabled ? weekNumber : 0,
+      fullInstructions: instructionsText,
+      pointsPossible: pointsPossibleText,
+      weightPercentage: gradeWeightPercent !== null ? `${gradeWeightPercent}%` : null,
+      noteText: noteTextState,
+      rubricCriteria: rubricItems,
+      mediaUrl: mediaUrlText
+    };
+
+    let resolvedDate = dueDate;
+    if (!resolvedDate && assignment.dueDate) {
+      resolvedDate = parseSafeDate(assignment.dueDate);
+    }
+    if (!resolvedDate && (assignment as any).dateRangeStr) {
+      resolvedDate = parseSafeDate((assignment as any).dateRangeStr);
+    }
+    if (!resolvedDate && isWeekEnabled && weekNumber > 0 && matchedCourse?.weeks) {
+      const w = matchedCourse.weeks.find(wk => wk.weekNumber === weekNumber);
+      if (w?.startDate) resolvedDate = parseSafeDate(w.startDate);
+      else if (w?.dateRangeStr) resolvedDate = parseSafeDate(w.dateRangeStr);
+    }
+    if (!resolvedDate && matchedCourse?.weeks) {
+      const targetMod = (assignment as any).moduleNumber || (assignment.moduleMention?.match(/\d+/) ? parseInt(assignment.moduleMention.match(/\d+/)![0], 10) : 0);
+      if (targetMod > 0) {
+        const w = matchedCourse.weeks.find(wk => wk.moduleNumber === targetMod);
+        if (w?.startDate) resolvedDate = parseSafeDate(w.startDate);
+        else if (w?.dateRangeStr) resolvedDate = parseSafeDate(w.dateRangeStr);
+      }
+    }
+
+    if (!resolvedDate) {
+      Alert.alert(
+        'No Due Date Set',
+        'This assignment does not have a due date yet. Would you like to open Google Calendar for today, or pick a date first?',
+        [
+          { text: 'Pick Date', style: 'cancel' },
+          {
+            text: 'Open for Today',
+            onPress: async () => {
+              const today = new Date();
+              await GoogleCalendarService.syncAssignment(currentAssign, matchedCourse, today);
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    await GoogleCalendarService.syncAssignment(currentAssign, matchedCourse, resolvedDate);
+  };
+
+
   const formattedDueDateStr = useMemo(() => {
     let resolvedDate = dueDate;
     if (!resolvedDate && isWeekEnabled && weekNumber > 0 && matchedCourse?.weeks) {
@@ -557,6 +624,17 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
         resolvedDate = parseSafeDate(w.startDate);
       } else if (w?.dateRangeStr) {
         resolvedDate = parseSafeDate(w.dateRangeStr);
+      }
+    }
+    if (!resolvedDate && matchedCourse?.weeks) {
+      const targetMod = (assignment as any).moduleNumber || (assignment.moduleMention?.match(/\d+/) ? parseInt(assignment.moduleMention.match(/\d+/)![0], 10) : 0);
+      if (targetMod > 0) {
+        const w = matchedCourse.weeks.find(wk => wk.moduleNumber === targetMod);
+        if (w?.startDate) {
+          resolvedDate = parseSafeDate(w.startDate);
+        } else if (w?.dateRangeStr) {
+          resolvedDate = parseSafeDate(w.dateRangeStr);
+        }
       }
     }
 
@@ -699,7 +777,21 @@ export const AssignmentDetailModal: React.FC<AssignmentDetailModalProps> = ({
                 }}
                 accentColor={CoursePalTheme.accentBlue}
               />
+
+              {/* Open Date in Calendar Action Button */}
+              <TouchableOpacity
+                style={styles.googleCalendarActionBtn}
+                onPress={handleSyncGoogleCalendar}
+                activeOpacity={0.7}
+              >
+                <View style={styles.googleCalendarActionBtnLeft}>
+                  <GoogleCalendarIcon size={18} />
+                  <Text style={styles.googleCalendarActionBtnText}>Open Date in Calendar</Text>
+                </View>
+                <ArrowUpRightIcon size={13} color="#64748B" />
+              </TouchableOpacity>
             </View>
+
 
             {/* MARK: - Section 2: Instructions & Description */}
             <Text style={styles.sectionHeaderTitle}>Instructions & Description</Text>
@@ -1267,6 +1359,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
     marginVertical: 10
   },
+  googleCalendarActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  googleCalendarActionBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  googleCalendarActionBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+    letterSpacing: -0.2
+  },
+
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',

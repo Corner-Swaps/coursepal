@@ -75,6 +75,14 @@ export const CalendarIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5'
   </Svg>
 );
 
+export const ClockIcon: React.FC<IconProps> = ({ size = 20, color = '#2470F5' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth="2" />
+    <Line x1="12" y1="7" x2="12" y2="12" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    <Line x1="12" y1="12" x2="16" y2="14" stroke={color} strokeWidth="2" strokeLinecap="round" />
+  </Svg>
+);
+
 export const FolderFillIcon: React.FC<IconProps> = ({ size = 22, color = '#2470F5' }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path
@@ -115,6 +123,12 @@ export const CheckmarkCircleFillIcon: React.FC<IconProps> = ({ size = 18, color 
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Circle cx="12" cy="12" r="10.5" fill={color} />
     <Path d="M7.5 12.5l3 3 6-6" stroke="#FFFFFF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+export const CircleIcon: React.FC<IconProps> = ({ size = 20, color = '#CBD5E1' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={2} />
   </Svg>
 );
 
@@ -524,4 +538,31 @@ export const ArrowRightIcon: React.FC<IconProps> = ({ size = 14, color = '#FFFFF
     />
   </Svg>
 );
+
+export const CalendarBadgePlusIcon: React.FC<IconProps> = ({ size = 20, color = '#2563EB' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect x="3" y="4" width="18" height="18" rx="4" stroke={color} strokeWidth="1.8" />
+    <Line x1="16" y1="2" x2="16" y2="6" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    <Line x1="8" y1="2" x2="8" y2="6" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    <Line x1="3" y1="10" x2="21" y2="10" stroke={color} strokeWidth="1.8" />
+    <Circle cx="16" cy="16" r="4.5" fill={color} />
+    <Line x1="16" y1="13.5" x2="16" y2="18.5" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" />
+    <Line x1="13.5" y1="16" x2="18.5" y2="16" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" />
+  </Svg>
+);
+
+export const GoogleCalendarIcon: React.FC<IconProps> = ({ size = 20 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect x="3" y="4" width="18" height="17" rx="3.5" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="1.2" />
+    <Path d="M3 7.5C3 5.567 4.567 4 6.5 4h11C19.433 4 21 5.567 21 7.5V9H3V7.5z" fill="#4285F4" />
+    <Rect x="7" y="2" width="2" height="4" rx="1" fill="#1A73E8" />
+    <Rect x="15" y="2" width="2" height="4" rx="1" fill="#1A73E8" />
+    <Rect x="6" y="11.5" width="3" height="3" rx="0.8" fill="#4285F4" />
+    <Rect x="10.5" y="11.5" width="3" height="3" rx="0.8" fill="#EA4335" />
+    <Rect x="15" y="11.5" width="3" height="3" rx="0.8" fill="#FBBC05" />
+    <Rect x="6" y="15.5" width="3" height="3" rx="0.8" fill="#34A853" />
+    <Rect x="10.5" y="15.5" width="7.5" height="3" rx="0.8" fill="#4285F4" />
+  </Svg>
+);
+
 

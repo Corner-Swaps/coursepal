@@ -231,10 +231,7 @@ const styles = StyleSheet.create({
     color: '#121C33'
   },
   navArrowButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F1F5F9',
+    padding: 6,
     alignItems: 'center',
     justifyContent: 'center'
   },
