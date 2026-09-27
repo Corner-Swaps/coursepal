@@ -24,7 +24,11 @@ import {
 import { renderPDFPages, openNativeDocumentViewer } from '../../services/PDFTextExtractor';
 import { ensureBundledPdfFile } from '../../utils/bundledPdfService';
 import { useCoursePal } from '../../context/CoursePalContext';
-import { formatShortDocumentTitle } from '../../utils/readingDisplayHelper';
+import {
+  formatShortDocumentTitle,
+  cleanDocumentTitle,
+  isItemForDocument
+} from '../../utils/readingDisplayHelper';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -54,7 +58,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   document,
   onClose
 }) => {
-  const { courses, readings, assignments } = useCoursePal();
+  const { courses, readings, assignments, vaultDocs } = useCoursePal();
   const [pages, setPages] = useState<string[]>([]);
   const [isLoadingPages, setIsLoadingPages] = useState<boolean>(false);
   const [hasFailedImages, setHasFailedImages] = useState<boolean>(false);
@@ -174,30 +178,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     (c.id === (document as any).courseId) ||
     (c.courseCode && document.courseCode && c.courseCode.toUpperCase() === document.courseCode.toUpperCase())
   );
-  const matchedReadings = readings.filter(r => {
-    if (!r || r.isDeleted) return false;
-    if ((r as any).sourceDocumentId && (r as any).sourceDocumentId === document.id) return true;
-    if (r.sourceDocumentName && (
-      r.sourceDocumentName.toLowerCase() === document.title.toLowerCase() ||
-      document.title.toLowerCase().includes(r.sourceDocumentName.toLowerCase()) ||
-      r.sourceDocumentName.toLowerCase().includes(document.title.toLowerCase())
-    )) return true;
-    if (document.courseId && r.courseId === document.courseId) return true;
-    if (matchedCourse && r.courseId === matchedCourse.id) return true;
-    return false;
-  });
-  const matchedAssignments = assignments.filter(a => {
-    if (!a || a.isDeleted) return false;
-    if ((a as any).sourceDocumentId && (a as any).sourceDocumentId === document.id) return true;
-    if (a.sourceDocumentName && (
-      a.sourceDocumentName.toLowerCase() === document.title.toLowerCase() ||
-      document.title.toLowerCase().includes(a.sourceDocumentName.toLowerCase()) ||
-      a.sourceDocumentName.toLowerCase().includes(document.title.toLowerCase())
-    )) return true;
-    if (document.courseId && a.courseId === document.courseId) return true;
-    if (matchedCourse && a.courseId === matchedCourse.id) return true;
-    return false;
-  });
+  const courseDocs = vaultDocs.filter(d => (document.courseId && d.courseId === document.courseId) || (matchedCourse && d.courseId === matchedCourse.id));
+  const matchedReadings = readings.filter(r => !r.isDeleted && isItemForDocument(r, document, courseDocs));
+  const matchedAssignments = assignments.filter(a => !a.isDeleted && isItemForDocument(a, document, courseDocs));
 
   const handleImageError = () => {
     // If an image fails to load and raw file is present, trigger a fresh render
@@ -242,7 +225,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           </TouchableOpacity>
           <View style={styles.navTitleContainer}>
             <Text style={styles.navTitle} numberOfLines={1}>
-              {formatShortDocumentTitle(document.title)}
+              {cleanDocumentTitle(document.title)}
             </Text>
           </View>
           <TouchableOpacity
@@ -268,7 +251,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             <View style={styles.docIconCircle}>
               <DocFillIcon size={32} color={document.docColorHex || CoursePalTheme.accentBlue} />
             </View>
-            <Text style={styles.docTitle}>{formatShortDocumentTitle(document.title)}</Text>
+            <Text style={styles.docTitle}>{cleanDocumentTitle(document.title)}</Text>
             <Text style={styles.docMeta}>
               {document.courseCode || 'Course Syllabus'}{pages.length > 0 ? ` • ${pages.length} Pages` : ''}
             </Text>

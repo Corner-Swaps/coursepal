@@ -2160,6 +2160,20 @@ export function formatShortDocumentTitle(rawTitle?: string | null, maxWords: num
 }
 
 /**
+ * Cleans a filename into a legible document title by removing file extensions,
+ * bracketed numbers like (1), and cleaning underscores/dashes into spaces,
+ * while preserving the full distinguishing name (e.g. "Reading Schedule", "Syllabus").
+ */
+export function cleanDocumentTitle(rawTitle?: string | null): string {
+  if (!rawTitle) return 'Course Document';
+  let clean = rawTitle.replace(/\.[a-zA-Z0-9]{2,5}$/, '');
+  clean = clean.replace(/^\d{10,14}[_-]/, '');
+  clean = clean.replace(/[-_]+/g, ' ');
+  clean = clean.replace(/\[[^\]]*\]|\(\d+\)/g, ' ');
+  return clean.replace(/\s{2,}/g, ' ').trim() || 'Course Document';
+}
+
+/**
  * Extracts an explicit week number from free text (e.g. "Week 3", "W-3", "Module 4").
  */
 export function extractWeekFromText(text?: string | null): number | null {
@@ -3284,4 +3298,49 @@ export function getAssignmentInstructionSummary(
   }
 
   return rawNote || null;
+}
+
+/**
+ * Zero Cross-Bleed Rule: Determines if a reading or assignment deliverable strictly
+ * belongs to a specific VaultDocument, preventing multiple documents for the same course
+ * or different courses from cross-bleeding their deliverables.
+ */
+export function isItemForDocument(
+  item: { sourceDocumentId?: string | null; sourceDocumentName?: string | null; courseId?: string },
+  doc: { id: string; title: string; courseId?: string },
+  allDocsForCourse?: { id: string }[]
+): boolean {
+  if (!item || !doc) return false;
+
+  // 1. Direct ID match (highest fidelity)
+  if (item.sourceDocumentId && doc.id) {
+    return item.sourceDocumentId === doc.id;
+  }
+
+  // 2. Direct filename / document title match
+  if (item.sourceDocumentName && doc.title) {
+    const normItemName = item.sourceDocumentName.toLowerCase().replace(/[-_.]+/g, ' ').trim();
+    const normDocTitle = doc.title.toLowerCase().replace(/[-_.]+/g, ' ').trim();
+    if (normItemName === normDocTitle) return true;
+
+    const cleanItemName = normItemName.replace(/\b(?:pdf|docx|txt|doc)\b/g, '').trim();
+    const cleanDocTitle = normDocTitle.replace(/\b(?:pdf|docx|txt|doc)\b/g, '').trim();
+    if (cleanItemName === cleanDocTitle) return true;
+
+    if (cleanItemName.length >= 8 && cleanDocTitle.length >= 8) {
+      if (cleanItemName.includes(cleanDocTitle) || cleanDocTitle.includes(cleanItemName)) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Fallback ONLY if item has NO sourceDocumentId and NO sourceDocumentName:
+  // In that case, associate with the course's sole/first document
+  if (!item.sourceDocumentId && !item.sourceDocumentName && item.courseId && doc.courseId && item.courseId === doc.courseId) {
+    if (!allDocsForCourse || allDocsForCourse.length <= 1 || allDocsForCourse[0]?.id === doc.id) {
+      return true;
+    }
+  }
+
+  return false;
 }

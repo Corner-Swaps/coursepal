@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import {
   GraduationCapFillIcon,
   ChevronRightIcon,
-  ClearBookIcon
+  ClearBookIcon,
+  DocBadgePlusIcon
 } from '../SvgIcons';
 import { SlideUpModal } from '../SlideUpModal';
 
@@ -14,6 +15,7 @@ interface AddNewItemModalProps {
   onAddAssignment?: () => void;
   onAddReadingOrAssignment?: () => void;
   onCreateCourse: () => void;
+  onUploadDocument?: () => void;
 }
 
 export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
@@ -22,7 +24,8 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
   onAddReading,
   onAddAssignment,
   onAddReadingOrAssignment,
-  onCreateCourse
+  onCreateCourse,
+  onUploadDocument
 }) => {
   const handleAddReadingOrAssignment = () => {
     onClose();
@@ -47,7 +50,7 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
         <Text style={styles.subtitle}>Select what you would like to add</Text>
       </View>
 
-      {/* Action Cards: 1. Create New Course, 2. Add Reading or Assignment */}
+      {/* Action Cards: 1. Create New Course, 2. Upload Document or Syllabus, 3. Add Reading or Assignment */}
       <View style={styles.optionsContainer}>
         {/* Card 1: Create New Course */}
         <TouchableOpacity
@@ -73,7 +76,33 @@ export const AddNewItemModal: React.FC<AddNewItemModalProps> = ({
           <ChevronRightIcon size={13} color="#73859E" />
         </TouchableOpacity>
 
-        {/* Card 2: Add Reading or Assignment (Unified Single Pill) */}
+        {/* Card 2: Upload Document or Syllabus */}
+        {onUploadDocument && (
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() => {
+              onClose();
+              onUploadDocument();
+            }}
+            activeOpacity={0.8}
+            testID="modal-choice-upload-document"
+          >
+            <View style={styles.tealIconSquare}>
+              <DocBadgePlusIcon size={20} color="#FFFFFF" />
+            </View>
+
+            <View style={styles.optionTextCol}>
+              <Text style={styles.optionTitle}>Upload Document or Syllabus</Text>
+              <Text style={styles.optionDesc}>
+                Import syllabus, reading schedule, or course outline
+              </Text>
+            </View>
+
+            <ChevronRightIcon size={13} color="#73859E" />
+          </TouchableOpacity>
+        )}
+
+        {/* Card 3: Add Reading or Assignment (Unified Single Pill) */}
         <TouchableOpacity
           style={styles.optionCard}
           onPress={handleAddReadingOrAssignment}
@@ -154,6 +183,15 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 12,
     backgroundColor: '#8C45F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14
+  },
+  tealIconSquare: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#0D9488',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14

@@ -44,6 +44,106 @@ function extractTextFromSnippet(xmlSnippet: string, delimiter: string = ' '): st
 }
 
 /**
+ * Parses paragraphs in Column 0 to identify individual sessions or break markers.
+ */
+function parseCol0Sessions(paras: string[]): string[] {
+  const months = /^(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/i;
+  const isBreak = (t: string) => /reading\s*break|break|recess/i.test(t) || /^[A-Za-z]+\s+\d{1,2}\s*[-–—]\s*\d{1,2}$/i.test(t);
+  const isDigit = (t: string) => /^\d{1,2}$/.test(t.trim());
+
+  interface SessionAcc {
+    isBreak?: boolean;
+    text?: string;
+    parts?: string[];
+  }
+
+  const sessions: SessionAcc[] = [];
+  let curSession: SessionAcc | null = null;
+
+  for (let i = 0; i < paras.length; i++) {
+    const p = paras[i].trim();
+    if (!p) continue;
+    const prevP = i > 0 ? paras[i - 1].trim() : '';
+    const isPrevMonth = months.test(prevP);
+
+    if (isBreak(p)) {
+      if (curSession) sessions.push(curSession);
+      curSession = { text: p, isBreak: true };
+      sessions.push(curSession);
+      curSession = null;
+    } else if (isDigit(p) && !isPrevMonth) {
+      if (curSession) sessions.push(curSession);
+      curSession = { parts: [p] };
+    } else {
+      if (curSession) {
+        if (!curSession.parts) curSession.parts = [];
+        curSession.parts.push(p);
+      } else {
+        curSession = { parts: [p] };
+      }
+    }
+  }
+  if (curSession) sessions.push(curSession);
+
+  return sessions.map(s => {
+    if (s.isBreak) return s.text || '';
+    return s.parts ? s.parts.join(' ') : '';
+  }).filter(s => s.length > 0);
+}
+
+/**
+ * Partitions content paragraphs in non-date columns across detected sessions.
+ */
+function partitionParas(paras: string[], numSessions: number, col0Sessions: string[]): string[] {
+  if (paras.length === 0) return Array(numSessions).fill('');
+  if (paras.length === numSessions) return paras;
+
+  if (paras.length < numSessions) {
+    const res = Array(numSessions).fill('');
+    for (let i = 0; i < paras.length; i++) res[i] = paras[i];
+    return res;
+  }
+
+  const isBreakSession = col0Sessions.map(s => /reading\s*break|break|recess|[-–—]/i.test(s) && !/^\d+\s+[A-Za-z]/i.test(s));
+
+  // Merge trailing continuation lines (ending in punctuation like ; or ,)
+  const mergedParas: string[] = [];
+  for (let i = 0; i < paras.length; i++) {
+    const p = paras[i];
+    if (mergedParas.length > 0 && /[,;–—&]\s*$/i.test(mergedParas[mergedParas.length - 1])) {
+      mergedParas[mergedParas.length - 1] += ' ' + p;
+    } else {
+      mergedParas.push(p);
+    }
+  }
+
+  if (mergedParas.length === numSessions) {
+    return mergedParas;
+  }
+
+  // If 2 sessions and session 2 is a break, assign last paragraph to break
+  if (numSessions === 2 && isBreakSession[1]) {
+    return [
+      mergedParas.slice(0, mergedParas.length - 1).join('<br>'),
+      mergedParas[mergedParas.length - 1]
+    ];
+  }
+
+  // Sequential distribution with lookahead
+  const res: string[][] = Array.from({ length: numSessions }, () => []);
+  let curBucket = 0;
+  for (let i = 0; i < mergedParas.length; i++) {
+    res[curBucket].push(mergedParas[i]);
+    const remainingParas = mergedParas.length - 1 - i;
+    const remainingBuckets = numSessions - 1 - curBucket;
+    if (remainingBuckets > 0 && remainingParas >= remainingBuckets) {
+      curBucket++;
+    }
+  }
+  return res.map(b => b.join('<br>'));
+}
+
+/**
  * Parses word/document.xml content into structured Markdown (tables + paragraphs)
  */
 export function parseDocxXmlToMarkdown(documentXml: string): string {
@@ -70,18 +170,53 @@ export function parseDocxXmlToMarkdown(documentXml: string): string {
         const rowContent = rowMatch[1];
         const cellRegex = /<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/gi;
         let cellMatch: RegExpExecArray | null;
-        const cells: string[] = [];
+        const rawCellsParas: string[][] = [];
 
         while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
-          const cellText = extractTextFromSnippet(cellMatch[1], '<br>').replace(/\s+/g, ' ').trim();
-          cells.push(cellText);
+          const pRegex = /<w:p\b[^>]*>([\s\S]*?)<\/w:p>/gi;
+          let pMatch: RegExpExecArray | null;
+          const paras: string[] = [];
+          while ((pMatch = pRegex.exec(cellMatch[1])) !== null) {
+            const tMatches = pMatch[1].match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || [];
+            const text = tMatches.map(m => m.replace(/<[^>]+>/g, '')).join('').trim();
+            if (text.length > 0) {
+              paras.push(decodeXmlEntities(text));
+            }
+          }
+          rawCellsParas.push(paras);
         }
 
-        if (cells.length > 0) {
-          lines.push(`| ${cells.join(' | ')} |`);
-          if (isFirstRow) {
-            lines.push(`| ${cells.map(() => '---').join(' | ')} |`);
-            isFirstRow = false;
+        if (rawCellsParas.length === 0) continue;
+
+        const col0Paras = rawCellsParas[0] || [];
+        const col0Sessions = parseCol0Sessions(col0Paras);
+
+        if (col0Sessions.length > 1 && !isFirstRow) {
+          // Multi-session row: split into separate table rows
+          const numSessions = col0Sessions.length;
+          const colPartitions = rawCellsParas.map((cParas, cIdx) => {
+            if (cIdx === 0) return col0Sessions;
+            return partitionParas(cParas, numSessions, col0Sessions);
+          });
+
+          for (let sIdx = 0; sIdx < numSessions; sIdx++) {
+            const sCells = colPartitions.map(col => (col[sIdx] || '').replace(/\s+/g, ' ').trim());
+            lines.push(`| ${sCells.join(' | ')} |`);
+          }
+        } else {
+          const cells = rawCellsParas.map((paras, ci) => {
+            if (ci === 0 && col0Sessions.length === 1) {
+              return col0Sessions[0].replace(/\s+/g, ' ').trim();
+            }
+            return paras.join('<br>').replace(/\s+/g, ' ').trim();
+          });
+
+          if (cells.length > 0) {
+            lines.push(`| ${cells.join(' | ')} |`);
+            if (isFirstRow) {
+              lines.push(`| ${cells.map(() => '---').join(' | ')} |`);
+              isFirstRow = false;
+            }
           }
         }
       }

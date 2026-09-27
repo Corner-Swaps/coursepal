@@ -24,7 +24,8 @@ import {
   cleanAcademicWeekTheme,
   isItemForCourse,
   extractAllModuleNumbers,
-  cleanAssignmentTitle
+  cleanAssignmentTitle,
+  cleanDocumentTitle
 } from '../utils/readingDisplayHelper';
 import { weekNumberForDate } from '../utils/timeFormatters';
 import { extractTextFromPDF, extractTextFromPDFContent, renderPDFPages, extractTextFromDocxBase64 } from '../services/PDFTextExtractor';
@@ -4119,7 +4120,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (!targetCourse && !params.isNewCourse) {
         const candidateCode = (courseCode || '').replace(/\s+/g, '').toUpperCase();
         const candidateName = (courseName || '').trim().toLowerCase();
-        const cleanDocTitle = formatShortDocumentTitle(fileName).toLowerCase();
+        const cleanDocTitle = cleanDocumentTitle(fileName).toLowerCase();
         const baseFileName = fileName.toLowerCase().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim();
 
         targetCourse = coursesRef.current.find(c => {
@@ -4148,13 +4149,20 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       const effectiveCourseCode = safePreserveCode || safeDtoCode || safeFallbackDtoCode || targetCourse?.courseCode || courseCode;
       const effectiveCourseName = cleanCustomTitle || normalized.courseName || dto?.courseName || (!isStubOrFileName(targetCourse?.courseName) ? targetCourse?.courseName : undefined) || params.preserveCourseTitle || courseName;
 
+      const cleanDocTitle = cleanDocumentTitle(fileName).toLowerCase();
+      const baseFileName = fileName.toLowerCase().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim();
       const existingVaultDoc = targetCourse
-        ? vaultDocsRef.current.find(vd =>
-            (vd as any).courseId === targetCourse!.id ||
-            (vd.courseCode && targetCourse!.courseCode && vd.courseCode.toUpperCase() === targetCourse!.courseCode.toUpperCase()) ||
-            vd.title?.toLowerCase() === formatShortDocumentTitle(fileName).toLowerCase() ||
-            vd.title?.toLowerCase() === fileName.toLowerCase()
-          )
+        ? vaultDocsRef.current.find(vd => {
+            if ((vd as any).courseId !== targetCourse!.id) return false;
+            const vdTitle = (vd.title || '').toLowerCase().trim();
+            const vdBase = vdTitle.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim();
+            return (
+              vdTitle === fileName.toLowerCase() ||
+              vdTitle === cleanDocTitle ||
+              vdBase === baseFileName ||
+              (vd.rawFileDataUri && vd.rawFileDataUri.endsWith(fileName))
+            );
+          })
         : undefined;
       const vaultDocId = existingVaultDoc ? existingVaultDoc.id : `vd-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
@@ -4318,9 +4326,10 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       };
 
       // Add VaultDocument with visual page images & real file URI
+      const fullCleanDocTitle = cleanDocumentTitle(fileName);
       const newVaultDoc: VaultDocument = {
         id: vaultDocId,
-        title: formatShortDocumentTitle(fileName),
+        title: fullCleanDocTitle || formatShortDocumentTitle(fileName),
         category: 'Syllabi',
         fileSize: fileSize || '1.4 MB',
         fileType: fileName.split('.').pop()?.toUpperCase() || 'PDF',
@@ -4356,11 +4365,11 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         updatedAssignments = reconciled.updatedAssignments;
         updatedVaultDocs = reconciled.updatedVaultDocs;
       } else {
-        const hasExtractedCoursework = (newReadings.length + newAssignments.length) > 0;
-        updatedCourses = hasExtractedCoursework ? [finalCourse, ...coursesRef.current] : [...coursesRef.current];
+        // ALWAYS retain finalCourse and newVaultDoc so uploaded documents and courses are always loaded
+        updatedCourses = [finalCourse, ...coursesRef.current.filter(c => c.id !== finalCourse.id)];
         updatedReadings = [...newReadings, ...readingsRef.current];
         updatedAssignments = [...newAssignments, ...assignmentsRef.current];
-        updatedVaultDocs = [newVaultDoc, ...vaultDocsRef.current];
+        updatedVaultDocs = [newVaultDoc, ...vaultDocsRef.current.filter(d => d.id !== newVaultDoc.id)];
       }
 
       // Construct and persist DiagnosticImportRecord
@@ -4445,16 +4454,16 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
       clearInterval(progressTimer);
       setUploadProgress(1.0);
 
-      if (outcomeDetails.success) {
-        // Step 1: The course is actually fully loaded. Display the Success state in the blue pill first
-        setUploadStatusText('Success! Course ready');
+      if (outcomeDetails.success || hasReadablePayload) {
+        const isTasklessDoc = newReadings.length === 0 && newAssignments.length === 0;
+        // Step 1: The course and document are loaded. Display the state in the blue pill first
+        setUploadStatusText(isTasklessDoc ? 'Document Stored in Vault' : 'Success! Course ready');
         await new Promise(r => setTimeout(r, 1200));
 
         // Step 2: Clear upload job before state commit so no async pause interrupts rendering
         await persistenceManager.clearPendingUploadJob();
 
-        // Step 3: Now that the course is fully loaded and the blue pill has said success,
-        // atomically transition out of uploading state AND put the course up in state together in one batched frame!
+        // Step 3: Atomically transition out of uploading state AND put the course and docs up in state together!
         coursesRef.current = updatedCourses;
         readingsRef.current = updatedReadings;
         assignmentsRef.current = updatedAssignments;
@@ -4469,26 +4478,37 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         setReadings(updatedReadings);
         setAssignments(updatedAssignments);
         setVaultDocs(updatedVaultDocs);
-        setSelectedCourseFilter(finalCourse);
+        // If there is only 1 course, focus on it; if multiple courses exist, clear filter so all are visible!
+        setSelectedCourseFilter(updatedCourses.length === 1 ? finalCourse : null);
 
-        // Mark course as requiring accuracy verification review
-        setUnacceptedAccuracyCourseIds(prev => Array.from(new Set([...prev, finalCourse.id])));
-        setActiveAccuracyNotice({
-          courseId: finalCourse.id,
-          courseName: finalCourse.courseCode || finalCourse.courseName
-        });
+        if (!isTasklessDoc) {
+          // Mark course as requiring accuracy verification review
+          setUnacceptedAccuracyCourseIds(prev => Array.from(new Set([...prev, finalCourse.id])));
+          setActiveAccuracyNotice({
+            courseId: finalCourse.id,
+            courseName: finalCourse.courseCode || finalCourse.courseName
+          });
+        }
 
         setImportBanner({
-          type: isFallbackUsed || normalized.isPartial ? 'warning' : 'success',
-          title: isFallbackUsed ? 'Extracted (Offline / Fast Fallback)' : `Imported ${finalCourse.courseCode || finalCourse.courseName}`,
-          message: outcomeDetails.message || `Added ${newReadings.length} readings & ${newAssignments.length} assignments.`
+          type: isTasklessDoc ? 'info' : (isFallbackUsed || normalized.isPartial ? 'warning' : 'success'),
+          title: isTasklessDoc ? 'Document Stored in Vault' : (isFallbackUsed ? 'Extracted (Offline / Fast Fallback)' : `Imported ${finalCourse.courseCode || finalCourse.courseName}`),
+          message: outcomeDetails.message || (isTasklessDoc ? `Stored ${fileName} in Vault.` : `Added ${newReadings.length} readings & ${newAssignments.length} assignments.`)
         });
       } else {
         await persistenceManager.clearPendingUploadJob();
+
+        coursesRef.current = updatedCourses;
+        vaultDocsRef.current = updatedVaultDocs;
         setIsUploading(false);
         setUploadProgress(0);
         setUploadStatusText('');
         isImportingRef.current = false;
+
+        setCourses(updatedCourses);
+        setVaultDocs(updatedVaultDocs);
+        setSelectedCourseFilter(updatedCourses.length === 1 ? finalCourse : null);
+
         setImportBanner({
           type: 'warning',
           title: 'Document Stored in Vault',

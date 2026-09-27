@@ -48,6 +48,8 @@ import { GoogleCalendarService } from '../services/GoogleCalendarService';
 
 import {
   formatShortDocumentTitle,
+  cleanDocumentTitle,
+  isItemForDocument,
   formatDisplayTitleWithChapter,
   formatAuthorAndPagesSubtitle,
   formatSuggestedReadingCardText,
@@ -351,6 +353,13 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.emptyDesc}>
                   Add your courses to keep track of readings and assignments.
                 </Text>
+                <TouchableOpacity
+                  style={styles.addCourseButton}
+                  onPress={() => setShowUploadModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.addCourseButtonText}>Upload Syllabus</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               activeCourses.map(course => {
@@ -986,31 +995,40 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.emptyDesc}>
                   Documents from uploaded course syllabi will appear here.
                 </Text>
+                <TouchableOpacity
+                  style={styles.addCourseButton}
+                  onPress={() => setShowUploadModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.addCourseButtonText}>Upload Document</Text>
+                </TouchableOpacity>
               </View>
             ) : (
-              vaultDocs.map(doc => {
-                  const docReadings = readings.filter(r =>
-                    !r.isDeleted && (
-                      (r as any).sourceDocumentId === doc.id ||
-                      (r.sourceDocumentName && (
-                        r.sourceDocumentName.toLowerCase() === doc.title.toLowerCase() ||
-                        doc.title.toLowerCase().includes(r.sourceDocumentName.toLowerCase()) ||
-                        r.sourceDocumentName.toLowerCase().includes(doc.title.toLowerCase())
-                      )) ||
-                      (doc.courseId && r.courseId === doc.courseId)
-                    )
-                  );
-                  const docAssignments = assignments.filter(a =>
-                    !a.isDeleted && (
-                      (a as any).sourceDocumentId === doc.id ||
-                      (a.sourceDocumentName && (
-                        a.sourceDocumentName.toLowerCase() === doc.title.toLowerCase() ||
-                        doc.title.toLowerCase().includes(a.sourceDocumentName.toLowerCase()) ||
-                        a.sourceDocumentName.toLowerCase().includes(doc.title.toLowerCase())
-                      )) ||
-                      (doc.courseId && a.courseId === doc.courseId)
-                    )
-                  );
+              <>
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12 }}>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1,
+                      borderColor: '#E3E8F0',
+                      borderRadius: 14,
+                      paddingHorizontal: 12,
+                      paddingVertical: 7,
+                      gap: 6
+                    }}
+                    onPress={() => setShowUploadModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <DocBadgePlusIcon size={14} color="#7C3AED" />
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#7C3AED' }}>Upload Document</Text>
+                  </TouchableOpacity>
+                </View>
+                {vaultDocs.map(doc => {
+                  const courseDocs = vaultDocs.filter(d => d.courseId === doc.courseId);
+                  const docReadings = readings.filter(r => !r.isDeleted && isItemForDocument(r, doc, courseDocs));
+                  const docAssignments = assignments.filter(a => !a.isDeleted && isItemForDocument(a, doc, courseDocs));
 
                   return (
                     <View key={doc.id} style={styles.docCard}>
@@ -1025,7 +1043,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
 
                         <View style={styles.docInfoCol}>
                           <Text style={styles.docTitle} numberOfLines={1}>
-                            {formatShortDocumentTitle(doc.title)}
+                            {cleanDocumentTitle(doc.title)}
                           </Text>
                           <Text style={styles.docSubtitle} numberOfLines={1}>
                             {doc.courseCode || 'Course Syllabus'}
@@ -1065,7 +1083,8 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                       </TouchableOpacity>
                     </View>
                   );
-                })
+                })}
+              </>
             )}
           </View>
         )}

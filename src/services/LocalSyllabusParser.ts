@@ -982,7 +982,7 @@ export class LocalSyllabusParser {
     let inTextSection = false;
     let currentBookBuffer: string[] = [];
 
-    const startMarkers = ['required texts:', 'required text:', 'course resources', 'required materials', 'textbooks:', 'textbook:', 'recommended texts', 'bibliography'];
+    const startMarkers = ['required textbooks', 'required texts', 'required text', 'course resources', 'required materials', 'textbooks:', 'textbook:', 'textbooks', 'recommended texts', 'bibliography'];
     const stopMarkers = ['program outcomes', 'learning outcomes', 'course outcomes', 'grading scale', 'course assignments', 'course description', 'vision, mission', 'course policies', 'late assignments', 'university policies', 'overview of required', 'attendance', 'course schedule', 'course assignment details', '--- page 3', 'page 3'];
 
     for (const line of lines) {
@@ -4393,6 +4393,7 @@ export class LocalSyllabusParser {
         }
       }
       if (this.isBoilerplatePolicyLine(lower)) continue;
+      if (line.includes('\t') && !inRubricSection) continue;
 
       if (results.length > 0 && !inRubricSection && !line.includes('\t')) {
         const lineLow = line.trim().toLowerCase();
@@ -4810,9 +4811,11 @@ export class LocalSyllabusParser {
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        if (line.includes('\t')) continue;
         const lower = line.trim().toLowerCase();
         if (lower.length < 4) continue;
         if (this.isBoilerplatePolicyLine(lower)) continue;
+        if (/\b(?:discussion\s+(?:of|about)|review\s+(?:of|and))\b/i.test(lower)) continue;
 
         // Skip obvious boilerplate headers and weekly/module headers
         if (/^(?:course\s+description|course\s+assignments?|table\s+of\s+contents|grading\s+policy|academic\s+integrity|vision|mission)\b/i.test(lower)) continue;
@@ -5329,7 +5332,7 @@ export class LocalSyllabusParser {
       'university policies', 'non-discrimination',
       'religious accommodations', 'academic integrity', 'ai use policy', 'support services',
       'disability services', 'sensitive content notice', 'master of counselling\'s professional code',
-      'professional code (2.0)', 'hallmarks of maturity', 'course resources', 'required texts:', 'required text:'
+      'professional code (2.0)', 'hallmarks of maturity', 'course resources', 'required textbooks', 'required texts', 'required text', 'textbooks:'
     ];
 
     // 0a. Horizontal 2D Grid Matrix Schedule Parser
@@ -5755,15 +5758,28 @@ export class LocalSyllabusParser {
         let rawTheme = line;
         if (line.includes('\t')) {
           const cells = line.split('\t').map(c => c.trim()).filter(Boolean);
-          const themeCell = cells.find(c => {
+          const themeCell = cells.find((c, cIdx) => {
+            if (cIdx === 0) return false;
             if (/^\s*(?:week|wk|module|mod|unit|session|semana|semaine|woche)\s*\d+/i.test(c)) return false;
             if (this.extractAllDates(c, termYear).length > 0 && c.length <= 25) return false;
             if (LocalSyllabusParser.citationRegex.test(c) || LocalSyllabusParser.chapterRegex.test(c)) return false;
-            if (isDeliverableNotReading(c)) return false;
+            if (/\b(?:no\s+readings?|no\s+assigned\s+readings?)\b/i.test(c)) return false;
+            if (isDeliverableNotReading(c) && !/\b(?:presentations?|discussions?|workshops?|reviews?|wrap[\s-]ups?)\b/i.test(c)) return false;
             return c.length >= 3;
           });
           if (themeCell) {
             rawTheme = themeCell;
+          } else if (cells.length >= 2 && !/\b(?:no\s+readings?|no\s+assigned\s+readings?)\b/i.test(cells[1])) {
+            rawTheme = cells[1];
+          }
+        }
+        if (rawTheme.includes('<br>') || rawTheme.includes('\n')) {
+          rawTheme = rawTheme.split(/<br\s*\/?>|\n/i)[0].trim();
+        }
+        if (/\bdue\b/i.test(rawTheme)) {
+          const dueSplit = rawTheme.split(/\b(?:paper|assignment|deliverable|project)?\s*due\b/i);
+          if (dueSplit[0].trim().length >= 3) {
+            rawTheme = dueSplit[0].trim();
           }
         }
         rawTheme = rawTheme
@@ -5813,7 +5829,15 @@ export class LocalSyllabusParser {
 
         currentWeekDateRange = undefined;
         currentWeekDateIso = undefined;
-        const dates = this.extractAllDates(line, termYear);
+        let dateLine = line.replace(/^\s*\d{1,2}\s+(?=[A-Za-z]+\s+\d{1,2}\b)/, '');
+        if (line.includes('\t')) {
+          const firstCell = line.split('\t')[0].trim().replace(/^\s*\d{1,2}\s+(?=[A-Za-z]+\s+\d{1,2}\b)/, '');
+          const cellDates = this.extractAllDates(firstCell, termYear);
+          if (cellDates.length > 0) {
+            dateLine = firstCell;
+          }
+        }
+        const dates = this.extractAllDates(dateLine, termYear);
         let headerDates = dates.length === 0 && idx + 1 < lines.length ? this.extractAllDates(lines[idx + 1], termYear) : dates;
         if (headerDates.length === 0 && idx > 0) {
           headerDates = this.extractAllDates(lines[idx - 1], termYear);
@@ -5830,6 +5854,11 @@ export class LocalSyllabusParser {
         } else if (headerDates.length === 1) {
           currentWeekDateIso = headerDates[0].isoString;
           currentWeekDateRange = headerDates[0].displayString;
+        }
+
+        if (cleanTheme === cleanTheme.toUpperCase() && cleanTheme.length > 3) {
+          cleanTheme = cleanTheme.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).replace(/\b(Of|And|The|In|For|To|A|An|With)\b/g, m => m.toLowerCase());
+          cleanTheme = cleanTheme.charAt(0).toUpperCase() + cleanTheme.slice(1);
         }
 
         if (isReadingWeekLine) {
@@ -5884,32 +5913,53 @@ export class LocalSyllabusParser {
           if (/\b(?:clinical\s+dossier|dossier\s+packets?|ctrs\s+manual|protocol\s+sheets?)\b/i.test(cLower)) {
             continue;
           }
-          const isDelivCell = isDeliverableNotReading(cell) ||
-            /\b(?:assignments?\s*\d*|homework|hw\s*\d+|projects?|papers?|essays?|midterms?|finals?|exams?|tests?|quizzes|quiz\b|discussions?|forums?|db\b|reflections?|assessments?|surveys?|questionnaires?|proposals?|exercises?|activities?|activity|milestones?|briefs?|reports?|critiques?|reviews?|presentations?|lab\s+reports?|case\s+stud(?:y|ies)|tareas?\s*\d*|ensayos?|proyectos?|ex[aá]menes?|ex[aá]men|pruebas?|presentaci[oó]n|informes?|devoirs?\s*\d*|dissertations?|m[eé]moires?|aufgab(?:e|en)\s*\d*|hausarbeit(?:en)?|klausur(?:en)?|pr[uü]fung(?:en)?|vortrag|berichte?|compit[oi]|relazion[ei]|esami|esame|trabalhos?)\b/i.test(cLower) ||
-            /\b(?:due|due\s+date|submit(?:ted)?|deadline|entrega|abgabe|rendre|scadenza|prazo)\b/i.test(cLower);
-          const hasCit = LocalSyllabusParser.citationRegex.test(cell) || LocalSyllabusParser.chapterRegex.test(cell);
-          if (isDelivCell && !hasCit) {
-            let candTitle = cell.replace(/^[*•\-–\s]+/, '').trim();
-            candTitle = candTitle.replace(/\b(?:gehart|corey|yalom|creswell|chapter|ch\.)\b.*$/i, '').trim();
-            candTitle = this.buildStrict3To5WordTitle(candTitle, true, true);
-            const assignNumM = candTitle.match(/\b(?:assignment|deliverable|project|paper|quiz|exam|discussion)\s*(\d+)\b/i);
-            const assignNum = assignNumM ? parseInt(assignNumM[1], 10) : undefined;
-            if (candTitle.length >= 3 && !isInvalidAssignmentTitle(candTitle)) {
-              if (!scheduleAssignments.some(sa => sa.title.toLowerCase() === candTitle.toLowerCase())) {
-                const worthM = cell.match(/(?:worth\s*)?(\d{1,3}%)/i);
-                const ptsM = cell.match(/\b(\d{1,4})\s*(?:points|pts|pt|puntos|punkte)\b/i);
-                scheduleAssignments.push({
-                  id: `assign-${Math.random().toString(36).substring(2, 10)}`,
-                  title: candTitle,
-                  weekNumber: currentWeekNum,
-                  assignmentNumber: assignNum,
-                  moduleNumber: currentWeekModNum,
-                  moduleMention: currentWeekModMention,
-                  dueDate: currentWeekDateIso,
-                  weightPercentage: worthM ? (worthM[1].endsWith('%') ? worthM[1] : `${worthM[1]}%`) : undefined,
-                  pointsPossible: ptsM ? `${ptsM[1]} Points` : undefined,
-                  rubricCriteria: []
-                });
+          // Split multi-line cell content by <br> or newlines to inspect individual segments
+          const segments = cell.split(/<br\s*\/?>|\n/gi).map(s => s.trim()).filter(s => s.length > 0);
+          for (const segment of segments) {
+            const segLower = segment.toLowerCase();
+            // Discard topics, classroom discussions, feedback sessions, and reading citations
+            if (/\b(?:discussion\s+(?:of|about)|review\s+(?:of|and)|and\s+diagnostic\s+issues|assessment\s+and\s+diagnostic|group\s+presentations?\s+and\s+peer\s+group\s+reviews)\b/i.test(segLower)) {
+              continue;
+            }
+            const hasCit = LocalSyllabusParser.citationRegex.test(segment) || LocalSyllabusParser.chapterRegex.test(segment);
+            if (hasCit) continue;
+
+            const dueM = segment.match(/\bdue\s*(?:by|on|at|before|date)?\s*[:\-–—]?\s*(.+)/i);
+            const worthM = segment.match(/(?:worth\s*)?(\d{1,3}%)/i);
+            const ptsM = segment.match(/\b(\d{1,4})\s*(?:points|pts|pt|puntos|punkte)\b/i);
+            const isExplicitHeading = /^\s*(?:assignment|deliverable|project|paper|quiz|exam)\s*\d*\b/i.test(segment);
+
+            if (dueM || worthM || ptsM || (isExplicitHeading && isDeliverableNotReading(segment))) {
+              let candTitle = segment;
+              let segDueDate = currentWeekDateIso;
+              if (dueM) {
+                candTitle = segment.substring(0, dueM.index).trim();
+                const dueText = dueM[1].trim();
+                const dueDates = this.extractAllDates(dueText, termYear);
+                if (dueDates.length > 0) {
+                  segDueDate = dueDates[0].isoString;
+                }
+              }
+              candTitle = candTitle.replace(/^[*•\-–\s]+/, '').trim();
+              candTitle = candTitle.replace(/\b(?:gehart|corey|yalom|creswell|chapter|ch\.)\b.*$/i, '').trim();
+              candTitle = this.buildStrict3To5WordTitle(candTitle, true, true);
+              const assignNumM = candTitle.match(/\b(?:assignment|deliverable|project|paper|quiz|exam)\s*(\d+)\b/i);
+              const assignNum = assignNumM ? parseInt(assignNumM[1], 10) : undefined;
+              if (candTitle.length >= 3 && !isInvalidAssignmentTitle(candTitle)) {
+                if (!scheduleAssignments.some(sa => sa.title.toLowerCase() === candTitle.toLowerCase())) {
+                  scheduleAssignments.push({
+                    id: `assign-${Math.random().toString(36).substring(2, 10)}`,
+                    title: candTitle,
+                    weekNumber: currentWeekNum,
+                    assignmentNumber: assignNum,
+                    moduleNumber: currentWeekModNum,
+                    moduleMention: currentWeekModMention,
+                    dueDate: segDueDate,
+                    weightPercentage: worthM ? (worthM[1].endsWith('%') ? worthM[1] : `${worthM[1]}%`) : undefined,
+                    pointsPossible: ptsM ? `${ptsM[1]} Points` : undefined,
+                    rubricCriteria: []
+                  });
+                }
               }
             }
           }
@@ -6641,6 +6691,7 @@ export class LocalSyllabusParser {
 
     if (removeDates) {
       clean = clean.replace(/\s*[\-\–]?\s*(?:due|submitted\s+by|entrega|abgabe|rendre|scadenza|prazo)\s+.*$/i, '');
+      clean = clean.replace(/^\s*\d{1,2}\s+(?=[A-Za-z]+\s+\d{1,2}\b)/, '');
       const leadingDateRegex = /^\s*(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|ene(?:ro)?|febr?(?:ero)?|marzo|abr(?:il)?|mayo|junio|julio|ago(?:sto)?|sep(?:tiembre)?|set(?:iembre)?|octubre|noviembre|dic(?:iembre)?|janv(?:ier)?|f[eé]vr(?:ier)?|mars|avr(?:il)?|mai|juin|juil(?:let)?|ao[uû]t|d[eé]c(?:embre)?|januar|j[aä]nner|märz|maerz|oktober|dez(?:ember)?)\s+\d{1,2}(?:\s*[\/\-&]\s*\d{1,2})?(?:\s*,\s*\d{4})?|\d{1,2}\.?\s+(?:de\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|ene|abr|ago|set|dic|fev|mai|okt|dez)[a-z]*(?:\s+(?:de\s+)?\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|(?:mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s*,\s*)?)\s*[:\-–]?\s*/i;
       clean = clean.replace(leadingDateRegex, '');
     }
@@ -7268,10 +7319,16 @@ export class LocalSyllabusParser {
       if (matchWithTitle) {
         const rawCode = normalizeCode(matchWithTitle[1]);
         const rawName = matchWithTitle[2].trim();
-        let cleanName = rawName.replace(/^\s*(syllabus|course|class|outline|fall|spring|summer|winter|202[0-9])\s*/i, '').trim();
+        let cleanName = rawName
+          .replace(/^(?:(?:syllabus|course|class|outline|schedule|term\s*\d*|fall|spring|summer|winter|\d{4})\s*[:\-–—]?\s*)+/i, '')
+          .trim();
         const stopMatch = cleanName.match(/\s+(?:[•·|–—]\s*)?(?:vanwdy|school of|department of|division of|college of|faculty of|faculty\b|primary faculty\b|credits\b|\d+\s*credits\b|effective\b|course dates\b|email\b|building\b|room\b|term\b|fall\b|spring\b|summer\b|winter\b)|[•·|]/i);
         if (stopMatch && stopMatch.index !== undefined) {
           cleanName = cleanName.substring(0, stopMatch.index).trim();
+        }
+        if (cleanName === cleanName.toUpperCase() && cleanName.length > 3) {
+          cleanName = cleanName.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).replace(/\b(Of|And|The|In|For|To|A|An|With)\b/g, m => m.toLowerCase());
+          cleanName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
         }
         if (rawCode.length > 0 && cleanName.length > 0 && cleanName.toLowerCase() !== 'syllabus') {
           if (idx + 1 < cleanLines.length) {
@@ -7299,8 +7356,14 @@ export class LocalSyllabusParser {
           foundCode = normalizeCode(matchStandalone[1]);
           if (idx + 1 < cleanLines.length) {
             const nextLine = cleanLines[idx + 1];
-            const cleanNext = nextLine.replace(/^\s*(syllabus|course|class|outline|fall|spring|summer|winter|202[0-9])\s*/i, '').trim();
+            let cleanNext = nextLine
+              .replace(/^(?:(?:syllabus|course|class|outline|schedule|term\s*\d*|fall|spring|summer|winter|\d{4})\s*[:\-–—]?\s*)+/i, '')
+              .trim();
             if (cleanNext.length >= 3 && !cleanNext.includes('School') && !cleanNext.includes('Credits')) {
+              if (cleanNext === cleanNext.toUpperCase() && cleanNext.length > 3) {
+                cleanNext = cleanNext.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).replace(/\b(Of|And|The|In|For|To|A|An|With)\b/g, m => m.toLowerCase());
+                cleanNext = cleanNext.charAt(0).toUpperCase() + cleanNext.slice(1);
+              }
               foundName = this.buildStrict3To5WordTitle(cleanNext, true, true);
             }
           }

@@ -277,6 +277,7 @@ function MainAppView() {
           visible={showAddChoiceModal}
           onClose={() => setShowAddChoiceModal(false)}
           onCreateCourse={() => setShowAddCourseModal(true)}
+          onUploadDocument={() => setShowUploadModal(true)}
           onAddReadingOrAssignment={() => {
             setSelectedCategoryForAddTask(selectedTab === 'readings' ? 'reading' : 'assignment');
             setSelectedDueDateForAddTask(null);

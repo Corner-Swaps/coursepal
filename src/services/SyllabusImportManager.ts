@@ -2554,10 +2554,15 @@ export class SyllabusImportManager {
       }
     }
 
-    // Preserve any existing completed tasks from user that were not in the new syllabus
+    // Preserve existing tasks: if completed OR if originating from another document in this course
     for (const existingA of courseExistingAssignments) {
-      if (!matchedExistingAssignIds.has(existingA.id) && existingA.isCompleted) {
-        mergedCourseAssignments.push(existingA);
+      if (!matchedExistingAssignIds.has(existingA.id)) {
+        const isFromOtherDocument = Boolean(
+          newVaultDoc?.id && existingA.sourceDocumentId && existingA.sourceDocumentId !== newVaultDoc.id
+        );
+        if (existingA.isCompleted || isFromOtherDocument) {
+          mergedCourseAssignments.push(existingA);
+        }
       }
     }
 
@@ -2633,22 +2638,39 @@ export class SyllabusImportManager {
       }
     }
 
-    // Preserve any existing completed readings that were not in the new syllabus
+    // Preserve existing readings: if completed OR if originating from another document in this course
     for (const existingR of courseExistingReadings) {
-      if (!matchedExistingReadingIds.has(existingR.id) && existingR.isCompleted) {
-        mergedCourseReadings.push(existingR);
+      if (!matchedExistingReadingIds.has(existingR.id)) {
+        const isFromOtherDocument = Boolean(
+          newVaultDoc?.id && existingR.sourceDocumentId && existingR.sourceDocumentId !== newVaultDoc.id
+        );
+        if (existingR.isCompleted || isFromOtherDocument) {
+          mergedCourseReadings.push(existingR);
+        }
       }
     }
 
-    // Reconcile course metadata
+    // Reconcile course metadata and term weeks
+    const allWeekNumbers = [
+      ...mergedCourseReadings.map(r => r.weekNumber || 0),
+      ...mergedCourseAssignments.map(a => a.weekNumber || 0),
+      ...(newCourseData.weeks || []).map((w: any) => w.weekNumber || 0),
+      targetCourse?.termWeeks || 0,
+      newCourseData.termWeeks || 0
+    ].filter(n => n > 0);
+    const resolvedTermWeeks = allWeekNumbers.length > 0 ? Math.max(...allWeekNumbers) : (targetCourse?.termWeeks || newCourseData.termWeeks || 0);
+
     const updatedCourses = existingCourses.map(c => {
       if (c.id !== targetCourseId) return c;
       return {
         ...c,
         ...newCourseData,
         id: c.id,
+        termWeeks: resolvedTermWeeks,
         assignments: mergedCourseAssignments,
-        textbooks: newCourseData.textbooks || c.textbooks
+        textbooks: (newCourseData.textbooks && newCourseData.textbooks.length > 0)
+          ? newCourseData.textbooks
+          : c.textbooks
       };
     });
 
