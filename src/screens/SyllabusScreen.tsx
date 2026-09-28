@@ -326,7 +326,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
             )}
 
             {/* MARK: - Post-Upload Accuracy Verification Pill (Third Blue Pill) */}
-            {!isUploading && activeAccuracyNotice && (
+            {!isUploading && (activeAccuracyNotice || unacceptedAccuracyCourseIds.length > 0) && (
               <View style={styles.uploadStatusBanner} testID="accuracy-notice-banner-top">
                 <View style={styles.uploadStatusHeaderRow}>
                   <ShieldCheckmarkIcon size={17} color="#FFFFFF" />
@@ -340,7 +340,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <View style={styles.accuracyAcceptActionRow}>
                   <TouchableOpacity
                     style={styles.acceptAccuracyButton}
-                    onPress={() => acceptAccuracyNotice(activeAccuracyNotice.courseId)}
+                    onPress={() => acceptAccuracyNotice(activeAccuracyNotice?.courseId || unacceptedAccuracyCourseIds[0])}
                     activeOpacity={0.8}
                     testID="accept-accuracy-button-top"
                   >
@@ -579,6 +579,32 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           </Text>
                         </View>
 
+                        {/* Course Name Section */}
+                        <View style={styles.sectionContainer}>
+                          <Text style={styles.sectionTitle}>Course Name</Text>
+                          <TouchableOpacity
+                            style={styles.facultyDetailsCard}
+                            onPress={() => setEditingCourse(course)}
+                            activeOpacity={0.7}
+                            testID={`course-name-card-${course.id}`}
+                          >
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailKey}>Name:</Text>
+                              <Text style={[styles.detailVal, { fontWeight: '600', color: '#1E293B', flex: 1 }]} numberOfLines={2}>
+                                {course.courseName}
+                              </Text>
+                            </View>
+                            {course.courseCode ? (
+                              <View style={styles.detailRow}>
+                                <Text style={styles.detailKey}>Course Code:</Text>
+                                <Text style={[styles.detailVal, { fontWeight: '600', color: course.hexColor || CoursePalTheme.accentBlue }]}>
+                                  {course.courseCode}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </TouchableOpacity>
+                        </View>
+
                         {/* Course & Faculty Details */}
                         <View style={styles.sectionContainer}>
                           <Text style={styles.sectionTitle}>Course & Faculty Details</Text>
@@ -587,12 +613,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                             onPress={() => setEditingCourse(course)}
                             activeOpacity={0.7}
                           >
-                            {course.courseCode ? (
-                              <View style={styles.detailRow}>
-                                <Text style={styles.detailKey}>Course Code:</Text>
-                                <Text style={styles.detailVal}>{course.courseCode}</Text>
-                              </View>
-                            ) : null}
                             <View style={styles.detailRow}>
                               <Text style={styles.detailKey}>Faculty:</Text>
                               <Text style={styles.detailVal}>
@@ -630,31 +650,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                   ) : null}
                                 </View>
                               ))}
-                            </View>
-                          </View>
-                        )}
-
-                        {/* MARK: - Accuracy & Verification Notice Pill (Precedes Assignments in Course) */}
-                        {unacceptedAccuracyCourseIds.includes(course.id) && (
-                          <View style={styles.courseAccuracyNoticeBanner} testID={`accuracy-notice-course-${course.id}`}>
-                            <View style={styles.uploadStatusHeaderRow}>
-                              <ShieldCheckmarkIcon size={16} color="#FFFFFF" />
-                              <Text style={styles.accuracyNoticeTitle} numberOfLines={1}>
-                                Review Your Coursework
-                              </Text>
-                            </View>
-                            <Text style={styles.accuracyNoticeBody}>
-                              Our system can make mistakes as different professors and different schools write their syllabi in different ways. Please check everything you can edit in assignment details and in reading details. We appreciate your understanding and we will continue to improve our system.
-                            </Text>
-                            <View style={styles.accuracyAcceptActionRow}>
-                              <TouchableOpacity
-                                style={styles.acceptAccuracyButton}
-                                onPress={() => acceptAccuracyNotice(course.id)}
-                                activeOpacity={0.8}
-                                testID={`accept-accuracy-button-${course.id}`}
-                              >
-                                <Text style={styles.acceptAccuracyButtonText}>Accept</Text>
-                              </TouchableOpacity>
                             </View>
                           </View>
                         )}

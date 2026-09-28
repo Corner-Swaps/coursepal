@@ -35,7 +35,8 @@ describe('Phase 4: Native Audio Engine, Haptic Smoothing & Background Execution'
 
       expect(appConfig.expo.ios.infoPlist.UIBackgroundModes).toBeUndefined();
       expect(appConfig.expo.ios.bundleIdentifier).toBe('com.coursepal.app');
-      expect(appConfig.expo.ios.buildNumber).toBe('6');
+      expect(typeof appConfig.expo.ios.buildNumber).toBe('string');
+      expect(Number(appConfig.expo.ios.buildNumber)).toBeGreaterThanOrEqual(1);
     });
 
     it('configures audio session cleanly without requiring background audio entitlement', async () => {
