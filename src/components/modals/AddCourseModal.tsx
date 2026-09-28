@@ -73,9 +73,8 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   if (!visible) return null;
 
   const hasSyllabusSource = !!(attachedFileName && attachedFileName.length > 0) || selectedVaultDocIds.length > 0;
-  const canSave = hasSyllabusSource || (courseName.trim().length > 0 && courseDescription.trim().length > 0);
-  const isNameMissing = showValidationHighlight && !hasSyllabusSource && !courseName.trim();
-  const isDescMissing = showValidationHighlight && !hasSyllabusSource && !courseDescription.trim();
+  const canSave = hasSyllabusSource;
+  const isDocMissing = showValidationHighlight && !hasSyllabusSource;
 
   const handleAttachRealDoc = async () => {
     if (isUploading) {
@@ -144,11 +143,11 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   const handleSave = () => {
     if (!canSave) {
       setShowValidationHighlight(true);
-      if (!hasSyllabusSource) {
-        if (!courseName.trim()) {
-          scrollRef.current?.scrollTo({ y: 0, animated: true });
-        }
-      }
+      scrollRef.current?.scrollToEnd({ animated: true });
+      Alert.alert(
+        'Class Material Required',
+        'Please upload or select a syllabus document before saving.'
+      );
       return;
     }
 
@@ -161,34 +160,25 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       ? ''
       : (trimmedName.length <= 8 && /^[A-Za-z0-9\s-]+$/.test(trimmedName) ? trimmedName.toUpperCase() : '');
 
-    if (hasSyllabusSource) {
-      const chosenDoc = vaultDocs.find(d => selectedVaultDocIds.includes(d.id));
-      const fileToImport = attachedFileName || chosenDoc?.title || 'Syllabus';
-      importSyllabusDocument({
-        fileName: fileToImport,
-        fileUri: attachedFileUri || chosenDoc?.rawFileDataUri || undefined,
-        rawText: chosenDoc?.fileContent || undefined,
-        fileSize: attachedFileSize || chosenDoc?.fileSize,
-        preferredHexColor: selectedColorHex,
-        preserveCourseTitle: isGenericCourseName || !trimmedName ? undefined : trimmedName,
-        preserveCourseSubtitle: courseDescription.trim() || undefined,
-        preserveCourseCode: derivedCode || undefined,
-        isNewCourse: true
-      }).then(res => {
-        if (res && !res.success) {
-          Alert.alert('Import Notice', res.message || 'Could not parse syllabus document.');
-        }
-      }).catch(err => {
-        Alert.alert('Import Failed', err?.message || 'Error processing syllabus document.');
-      });
-    } else {
-      addCourse({
-        courseName: trimmedName,
-        courseCode: derivedCode || undefined,
-        courseDescription: courseDescription.trim(),
-        hexColor: selectedColorHex
-      });
-    }
+    const chosenDoc = vaultDocs.find(d => selectedVaultDocIds.includes(d.id));
+    const fileToImport = attachedFileName || chosenDoc?.title || 'Syllabus';
+    importSyllabusDocument({
+      fileName: fileToImport,
+      fileUri: attachedFileUri || chosenDoc?.rawFileDataUri || undefined,
+      rawText: chosenDoc?.fileContent || undefined,
+      fileSize: attachedFileSize || chosenDoc?.fileSize,
+      preferredHexColor: selectedColorHex,
+      preserveCourseTitle: isGenericCourseName || !trimmedName ? undefined : trimmedName,
+      preserveCourseSubtitle: courseDescription.trim() || undefined,
+      preserveCourseCode: derivedCode || undefined,
+      isNewCourse: true
+    }).then(res => {
+      if (res && !res.success) {
+        Alert.alert('Import Notice', res.message || 'Could not parse syllabus document.');
+      }
+    }).catch(err => {
+      Alert.alert('Import Failed', err?.message || 'Error processing syllabus document.');
+    });
 
     setCourseName('');
     setCourseDescription('');
@@ -270,27 +260,14 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           {/* Section 1: Course Name */}
           <View style={[styles.sectionHeaderRow, { marginTop: 8 }]}>
             <Text style={styles.sectionHeader}>Course Name</Text>
-            {isNameMissing && (
-              <View style={styles.requiredBadge}>
-                <Text style={styles.requiredBadgeText}>Required</Text>
-              </View>
-            )}
           </View>
-          <View
-            style={[
-              styles.inputCapsule,
-              isNameMissing && styles.inputCapsuleError
-            ]}
-          >
+          <View style={styles.inputCapsule}>
             <TextInput
               style={styles.textInput}
               placeholder="Course Name (e.g., CPC 527)"
               placeholderTextColor="#8E9BAE"
               value={courseName}
-              onChangeText={text => {
-                setCourseName(text);
-                if (text.trim()) setShowValidationHighlight(false);
-              }}
+              onChangeText={setCourseName}
               returnKeyType="done"
             />
             {courseName.length > 0 && (
@@ -303,27 +280,14 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           {/* Section 2: Course Description */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>Course Description</Text>
-            {isDescMissing && (
-              <View style={styles.requiredBadge}>
-                <Text style={styles.requiredBadgeText}>Required</Text>
-              </View>
-            )}
           </View>
-          <View
-            style={[
-              styles.inputCapsule,
-              isDescMissing && styles.inputCapsuleError
-            ]}
-          >
+          <View style={styles.inputCapsule}>
             <TextInput
               style={styles.textInput}
               placeholder="Course Description (e.g., Intro to Cognitive Psychology)"
               placeholderTextColor="#8E9BAE"
               value={courseDescription}
-              onChangeText={text => {
-                setCourseDescription(text);
-                if (text.trim()) setShowValidationHighlight(false);
-              }}
+              onChangeText={setCourseDescription}
               returnKeyType="done"
             />
             {courseDescription.length > 0 && (
@@ -366,14 +330,18 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           {/* Section 4: Upload Class Material */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>Upload Class Material</Text>
-            {hasSyllabusSource && (
+            {hasSyllabusSource ? (
               <View style={styles.attachedBadge}>
                 <Text style={styles.badgeTextWhite}>ATTACHED</Text>
               </View>
-            )}
+            ) : isDocMissing ? (
+              <View style={styles.requiredBadge}>
+                <Text style={styles.requiredBadgeText}>Required</Text>
+              </View>
+            ) : null}
           </View>
 
-          <View style={styles.uploadCard}>
+          <View style={[styles.uploadCard, isDocMissing && styles.uploadCardError]}>
             <TouchableOpacity
               style={styles.uploadMainButton}
               onPress={handleAttachRealDoc}
@@ -806,6 +774,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.02,
     shadowRadius: 4,
     elevation: 2
+  },
+  uploadCardError: {
+    borderColor: '#EC4545',
+    backgroundColor: 'rgba(236, 69, 69, 0.04)',
+    borderWidth: 1.5
   },
   uploadMainButton: {
     flex: 1,

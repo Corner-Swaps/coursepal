@@ -11,43 +11,34 @@ describe('AddCourseModal Validation & HIG Cleanliness Suite', () => {
 
   describe('Pure Validation Predicate Logic', () => {
     const computeCanSave = (
-      courseName: string,
-      courseDescription: string,
       attachedFileName: string | null,
       selectedVaultDocIds: string[]
     ) => {
       const hasSyllabusSource = !!(attachedFileName && attachedFileName.length > 0) || selectedVaultDocIds.length > 0;
-      return hasSyllabusSource || (courseName.trim().length > 0 && courseDescription.trim().length > 0);
+      return hasSyllabusSource;
     };
 
-    it('disallows save when no fields are filled', () => {
-      expect(computeCanSave('', '', null, [])).toBe(false);
+    it('disallows save when no document is attached or selected from vault', () => {
+      expect(computeCanSave(null, [])).toBe(false);
+      expect(computeCanSave('', [])).toBe(false);
     });
 
-    it('disallows save when ONLY course name is filled without class material or description', () => {
-      expect(computeCanSave('CPC 527', '', null, [])).toBe(false);
-      expect(computeCanSave('   Biology 101   ', '', null, [])).toBe(false);
+    it('disallows save even if course name and description are typed without uploading class material', () => {
+      // Regardless of user typing name or description, uploading class material is required
+      expect(computeCanSave(null, [])).toBe(false);
     });
 
-    it('disallows save when ONLY course description is filled without name or class material', () => {
-      expect(computeCanSave('', 'Introduction to Counselling', null, [])).toBe(false);
+    it('allows save when class material is uploaded via file picker', () => {
+      expect(computeCanSave('CPC527_Syllabus.pdf', [])).toBe(true);
     });
 
-    it('allows save when class material is uploaded by itself without name or description', () => {
-      expect(computeCanSave('', '', 'CPC527_Syllabus.pdf', [])).toBe(true);
+    it('allows save when document is selected from vault', () => {
+      expect(computeCanSave(null, ['vault-doc-1'])).toBe(true);
+      expect(computeCanSave('', ['vault-doc-1'])).toBe(true);
     });
 
-    it('allows save when document is selected from vault by itself without name or description', () => {
-      expect(computeCanSave('', '', null, ['vault-doc-1'])).toBe(true);
-    });
-
-    it('allows save when course name AND class material are provided', () => {
-      expect(computeCanSave('CPC 527', '', 'CPC527_Syllabus.pdf', [])).toBe(true);
-      expect(computeCanSave('CPC 527', '', null, ['vault-doc-1'])).toBe(true);
-    });
-
-    it('allows save for manual courses when BOTH course name AND description are filled', () => {
-      expect(computeCanSave('CPC 527', 'Group Counselling Psychology', null, [])).toBe(true);
+    it('allows save when both file name and vault selection are active', () => {
+      expect(computeCanSave('Research_Methods.docx', ['vault-doc-2'])).toBe(true);
     });
   });
 
@@ -66,6 +57,10 @@ describe('AddCourseModal Validation & HIG Cleanliness Suite', () => {
     it('labels Section 5 header cleanly as "Choose Vault Document" without count in parentheses', () => {
       expect(modalSource).toContain('<Text style={styles.sectionHeader}>Choose Vault Document</Text>');
       expect(modalSource).not.toContain('Choose Vault Document (');
+    });
+
+    it('strictly assigns canSave to hasSyllabusSource requiring an uploaded document before clicking Save', () => {
+      expect(modalSource).toContain('const canSave = hasSyllabusSource;');
     });
 
     it('binds disabled={!canSave} to the Save button TouchableOpacity', () => {
