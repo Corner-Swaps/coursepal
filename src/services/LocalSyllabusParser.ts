@@ -476,6 +476,135 @@ export class LocalSyllabusParser {
     };
   }
 
+  /**
+   * Unpacks multi-session table rows where multiple calendar sessions or reading breaks
+   * are collapsed into a single table row (common in OCR, PDF text extraction, or pasted tables).
+   */
+  public unpackMultiSessionTableRows(lines: string[]): string[] {
+    const result: string[] = [];
+    const col0SessionRegex = /(?:^|\s+)(?:(\d{1,2})\s+)?((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–—]\s*\d{1,2})?|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[a-z]*\s+\d{1,2}\s*[-–—]\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)?[a-z]*\s*\d{1,2}|\breading\s*break\b|\bbreak\b)/gi;
+
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
+      if (!line.startsWith('|') || !line.endsWith('|')) {
+        result.push(line);
+        continue;
+      }
+      const inner = line.substring(1, line.length - 1);
+      const cells = inner.split('|').map(c => c.trim());
+      if (cells.length < 3 || cells.every(c => /^[:\-\s]+$/.test(c))) {
+        result.push(line);
+        continue;
+      }
+
+      const col0 = cells[0];
+      const col0Matches: { wk?: string; date: string; isBreak?: boolean }[] = [];
+      let m: RegExpExecArray | null;
+      col0SessionRegex.lastIndex = 0;
+      while ((m = col0SessionRegex.exec(col0)) !== null) {
+        const text = m[0].trim();
+        const isBreak = /break|recess|[-–—]\s*\d{1,2}/i.test(text) && !/^\d+\s+[A-Za-z]/i.test(text);
+        col0Matches.push({ wk: m[1], date: m[2], isBreak });
+      }
+
+      if (col0Matches.length <= 1) {
+        result.push(line);
+        continue;
+      }
+
+      const numSessions = col0Matches.length;
+      const col0Parts = col0Matches.map(s => {
+        if (s.wk) {
+          return `${s.wk} ${s.date.replace(/\s+/g, ' ').trim()}`;
+        }
+        return s.date.replace(/\s+/g, ' ').trim();
+      });
+
+      // Partition Col 1 (Topics & Deliverables)
+      const col1 = cells[1];
+      let col1Parts: string[] = [];
+
+      const breakMatch = col1.match(/\b(?:reading\s+break|fall\s+break|spring\s+break|study\s+break|recess)\b|(?<!reading\s+)\bbreak\b/i);
+      if (numSessions === 2 && col0Matches.some(s => s.isBreak) && breakMatch && breakMatch.index !== undefined) {
+        let p1 = col1.substring(0, breakMatch.index).trim();
+        let p2 = col1.substring(breakMatch.index).trim();
+        if (/\bdue\b/i.test(p1) && /\s{2,}/.test(p1)) {
+          const splitTopicDue = p1.split(/\s{2,}/).map(s => s.trim()).filter(Boolean);
+          if (splitTopicDue.length >= 2) {
+            p1 = `${splitTopicDue[0]}<br>${splitTopicDue.slice(1).join(' ')}`;
+          }
+        }
+        col1Parts = [p1, p2];
+      } else {
+        const spaceSplits = col1.split(/\s{2,}/).map(s => s.trim()).filter(Boolean);
+        if (spaceSplits.length === numSessions) {
+          col1Parts = spaceSplits;
+        } else if (spaceSplits.length > numSessions) {
+          col1Parts = spaceSplits.slice(0, numSessions - 1);
+          col1Parts.push(spaceSplits.slice(numSessions - 1).join(' '));
+        } else {
+          col1Parts = spaceSplits;
+          while (col1Parts.length < numSessions) col1Parts.push(col1Parts[col1Parts.length - 1] || '');
+        }
+      }
+
+      // Partition Col 2 (Readings)
+      const col2 = cells[2];
+      let col2Parts: string[] = [];
+
+      if (numSessions === 2 && col0Matches.some(s => s.isBreak)) {
+        const noReadMatch = col2.match(/\bno\s+readings?\b/i);
+        if (noReadMatch && noReadMatch.index !== undefined) {
+          col2Parts = [
+            col2.substring(0, noReadMatch.index).trim(),
+            col2.substring(noReadMatch.index).trim()
+          ];
+        } else {
+          col2Parts = [col2, 'No Readings!'];
+        }
+      } else {
+        const noReadMatches: { index: number; length: number }[] = [];
+        const nrRegex = /\bno\s+readings?!?\b/gi;
+        let nrm: RegExpExecArray | null;
+        while ((nrm = nrRegex.exec(col2)) !== null) {
+          noReadMatches.push({ index: nrm.index, length: nrm[0].length });
+        }
+
+        if (noReadMatches.length >= 2 && numSessions >= 3) {
+          const prefixParts = noReadMatches.map(() => 'No Readings!');
+          const lastNrEnd = noReadMatches[noReadMatches.length - 1].index + noReadMatches[noReadMatches.length - 1].length;
+          const remainingCol2 = col2.substring(lastNrEnd).replace(/^[:!.\s]+/, '').trim();
+          const remainingSessions = numSessions - prefixParts.length;
+
+          if (remainingSessions === 2) {
+            const bookSplit = remainingCol2.match(/(?=\b(?:Courtois|Ford|Tedeschi|Linklater|Briere)\b(?:\s+and\s+[A-Za-z]+)?\s+(?:book|textbook|manual)?\s*(?:chapters?|chs?\.?|pp?\.?))/i) ||
+              remainingCol2.match(/(?<=\bet\s+al\.?\s*)\s+(?=[A-Z][a-z]+)/);
+            if (bookSplit && bookSplit.index !== undefined) {
+              const remPart1 = remainingCol2.substring(0, bookSplit.index).replace(/^[:!.\s]+|[;:.\s]+$/g, '').trim();
+              const remPart2 = remainingCol2.substring(bookSplit.index).replace(/^[:!.\s]+|[;:.\s]+$/g, '').trim();
+              col2Parts = [...prefixParts, remPart1, remPart2];
+            } else {
+              col2Parts = [...prefixParts, remainingCol2, ''];
+            }
+          } else {
+            col2Parts = [...prefixParts, remainingCol2];
+          }
+        } else {
+          col2Parts = Array(numSessions).fill(col2);
+        }
+      }
+
+      for (let s = 0; s < numSessions; s++) {
+        const s0 = col0Parts[s] || '';
+        const s1 = col1Parts[s] || '';
+        const s2 = col2Parts[s] || '';
+        result.push(`| ${s0} | ${s1} | ${s2} |`);
+      }
+    }
+
+    return result;
+  }
+
   // MARK: - PASS 0: Lexer & Line Reconstitution
   public lexerReconstituteLines(rawText: string): string[] {
     const rawLinesPre = (rawText || '')
@@ -483,7 +612,10 @@ export class LocalSyllabusParser {
       .replace(/\r/g, '\n')
       .split('\n')
       .map(l => l.trim())
-      .filter(l => l.length > 0)
+      .filter(l => l.length > 0);
+
+    const unpackedLines = this.unpackMultiSessionTableRows(rawLinesPre);
+    const convertedLines = unpackedLines
       .map(line => {
         if (line.startsWith('|') && line.endsWith('|')) {
           const inner = line.substring(1, line.length - 1);
@@ -496,7 +628,7 @@ export class LocalSyllabusParser {
         return line;
       })
       .filter(l => l.length > 0);
-    const deinterleavedPre = this.deinterleaveScheduleLines(rawLinesPre);
+    const deinterleavedPre = this.deinterleaveScheduleLines(convertedLines);
     const normalizedInput = deinterleavedPre.join('\n');
 
     let cleanInput = normalizedInput
