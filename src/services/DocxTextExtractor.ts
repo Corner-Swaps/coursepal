@@ -44,6 +44,71 @@ function extractTextFromSnippet(xmlSnippet: string, delimiter: string = ' '): st
 }
 
 /**
+ * Fast, pure JavaScript UTF-8 decoder that works in Hermes and browser runtimes
+ * without requiring the global TextDecoder object.
+ */
+function uint8ArrayToUtf8(bytes: Uint8Array): string {
+  if (typeof TextDecoder !== 'undefined') {
+    try {
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch {}
+  }
+  let i = 0;
+  const len = bytes.length;
+  const chunkLimit = 8192;
+  const chunks: string[] = [];
+  let chunk = '';
+  while (i < len) {
+    const c = bytes[i++];
+    if (c < 128) {
+      chunk += String.fromCharCode(c);
+    } else if (c > 191 && c < 224) {
+      chunk += String.fromCharCode(((c & 31) << 6) | (bytes[i++] & 63));
+    } else if (c > 223 && c < 240) {
+      chunk += String.fromCharCode(((c & 15) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63));
+    } else {
+      const c2 = ((c & 7) << 18) | ((bytes[i++] & 63) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63);
+      chunk += String.fromCharCode(0xd800 + ((c2 - 0x10000) >> 10));
+      chunk += String.fromCharCode(0xdc00 + ((c2 - 0x10000) & 1023));
+    }
+    if (chunk.length >= chunkLimit) {
+      chunks.push(chunk);
+      chunk = '';
+    }
+  }
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks.join('');
+}
+
+const b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const b64lookup = new Uint8Array(256);
+for (let bIdx = 0; bIdx < b64chars.length; bIdx++) b64lookup[b64chars.charCodeAt(bIdx)] = bIdx;
+
+/**
+ * Pure TypeScript Base64 to Uint8Array decoder (runs anywhere: Hermes, iOS, Android, Node).
+ */
+function base64ToUint8Array(base64: string): Uint8Array {
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(base64, 'base64'));
+  }
+  const cleanB64 = base64.replace(/[^A-Za-z0-9+/]/g, '');
+  const len = cleanB64.length;
+  const byteLen = Math.floor((len * 3) / 4);
+  const bytes = new Uint8Array(byteLen);
+  let p = 0;
+  for (let i = 0; i < len; i += 4) {
+    const enc1 = b64lookup[cleanB64.charCodeAt(i)];
+    const enc2 = b64lookup[cleanB64.charCodeAt(i + 1)];
+    const enc3 = b64lookup[cleanB64.charCodeAt(i + 2)];
+    const enc4 = b64lookup[cleanB64.charCodeAt(i + 3)];
+    bytes[p++] = (enc1 << 2) | (enc2 >> 4);
+    if (i + 2 < len && cleanB64[i + 2] !== '=') bytes[p++] = ((enc2 & 15) << 4) | (enc3 >> 2);
+    if (i + 3 < len && cleanB64[i + 3] !== '=') bytes[p++] = ((enc3 & 3) << 6) | enc4;
+  }
+  return bytes.subarray(0, p);
+}
+
+/**
  * Parses paragraphs in Column 0 to identify individual sessions or break markers.
  */
 function parseCol0Sessions(paras: string[]): string[] {
@@ -178,7 +243,11 @@ export function parseDocxXmlToMarkdown(documentXml: string): string {
           const paras: string[] = [];
           while ((pMatch = pRegex.exec(cellMatch[1])) !== null) {
             const tMatches = pMatch[1].match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || [];
-            const text = tMatches.map(m => m.replace(/<[^>]+>/g, '')).join('').trim();
+            const text = tMatches
+              .map(m => m.replace(/<[^>]+>/g, ''))
+              .join('')
+              .replace(/(\d{1,2})(?=[A-Za-z])/g, '$1 ')
+              .trim();
             if (text.length > 0) {
               paras.push(decodeXmlEntities(text));
             }
@@ -269,14 +338,20 @@ export function extractTextFromDocxBytes(bytes: Uint8Array): string {
           const fileSlice = bytes.subarray(dataOffset, dataOffset + compSize);
           if (compMethod === 0) {
             // Uncompressed
-            documentXml = new TextDecoder('utf-8').decode(fileSlice);
+            documentXml = uint8ArrayToUtf8(fileSlice);
           } else if (compMethod === 8) {
             // Deflated
             try {
               const inflated = pako.inflateRaw(fileSlice);
-              documentXml = new TextDecoder('utf-8').decode(inflated);
+              documentXml = uint8ArrayToUtf8(inflated);
             } catch (inflateErr) {
               console.warn('DocxTextExtractor inflate error:', inflateErr);
+              try {
+                const inflated2 = pako.inflate(fileSlice);
+                documentXml = uint8ArrayToUtf8(inflated2);
+              } catch (inflateErr2) {
+                console.warn('DocxTextExtractor fallback inflate error:', inflateErr2);
+              }
             }
           }
         }
@@ -298,10 +373,6 @@ export function extractTextFromDocxBytes(bytes: Uint8Array): string {
  */
 export function extractTextFromDocxBase64(base64: string): string {
   if (!base64 || base64.length < 40) return '';
-  const binaryStr = atob(base64);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
+  const bytes = base64ToUint8Array(base64);
   return extractTextFromDocxBytes(bytes);
 }

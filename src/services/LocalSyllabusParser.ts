@@ -89,8 +89,8 @@ export class LocalSyllabusParser {
     /^\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(?:reading\s*week|readi\s*ng\s*week|spring\s*break|fall\s*break|thanksgiving\s*break|finals\s*week|exam\s*week|review\s*week|vacaciones|receso|vacances|rel[aâ]che|ferien)/i,
     /^\s*(?:reading\s*week|readi\s*ng\s*week|spring\s*break|fall\s*break|thanksgiving\s*break|finals\s*week|exam\s*week|review\s*week|vacaciones|receso|vacances|rel[aâ]che|ferien)\b/i,
     /^\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\b/i,
-    /^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre|januar|februar|m[aä]rz|juni|juli|oktober|dezember)\s+\d{1,2}(?:st|nd|rd|th)?\b/i,
-    /^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre|januar|februar|m[aä]rz|juni|juli|oktober|dezember)\b/i
+    /^\s*(\d{1,2})\s*(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre|januar|februar|m[aä]rz|juni|juli|oktober|dezember)\s+\d{1,2}(?:st|nd|rd|th)?\b/i,
+    /^\s*(\d{1,2})\s*(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre|januar|februar|m[aä]rz|juni|juli|oktober|dezember)\b/i
   ];
 
   private static readonly citationRegex = /((?:(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)(?:\s*(?:,\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*|\s+(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s+|,|;)\s*(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)){0,4}(?:\s+et\s+al\.?)?)\s*(?:,\s*\(?\s*\d{4}\s*\)?|\s*\(\s*\d{4}\s*\)|\s*,\s*\d{4})?\s*[:\-–—]?\s*\(?\s*(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\.?|ch\b|sections?|sec\.?|cap[íi]tulos?|cap\b\.?|chapitres?|kapitels?|kap\b\.?|pages?|pp?\.?|p[áa]ginas?|seiten?)\s*[:\-–—.]*\s*(\d+(?:\.\d+)?(?:[-\u2013\u2014\s&,and\+toyund]+(?:sections?|sec\.?|chs?\.?|chapters?|pp?\.?|pages?)?\s*\d+(?:\.\d+)?)*|\d{1,3}\s*[:\-–—]\s*\d{1,3})\)?)|(\b(?:DSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?|WHO[-\s]*ICD(?:-\d+)?|ICD[-\s]*(?:10|11|\d+))\b(?:\s*[:\-–—]?\s*(?:sections?|sec\.?|chapters?|chs?\.?|pp?\.?|pages?)?\s*[\d\s&,\-–—]+)?)|((?:(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)(?:\s*(?:,\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*|\s+(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s+|,|;)\s*(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)){0,4}(?:\s+et\s+al\.?)?)\s*\(\s*\d{1,3}\s*[:\-–—]\s*\d{1,3}\s*\))|(\b(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\.?|ch\b|sections?|sec\.?|cap[íi]tulos?|cap\b\.?|chapitres?|kapitels?|kap\b\.?|pages?|pp?\.?|p[áa]ginas?|seiten?)\s*[:\-–—.]*\s*(\d+(?:\.\d+)?(?:[-\u2013\u2014\s&,and\+toyund]+(?:sections?|sec\.?|chs?\.?|chapters?|pp?\.?|pages?)?\s*\d+(?:\.\d+)?)*|\d{1,3}\s*[:\-–—]\s*\d{1,3}))|((?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)(?:\s+et\s+al\.?|\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)?(?:\s+(?:articles?|papers?|readings?))?\s*\(\s*\d{4}(?:\s*,\s*\d{4})*\s*\))|((?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)(?:\s+et\s+al\.?|\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)\s*\([A-Za-z0-9\u00C0-\u024F\s\-–—/:\,]+\))|(\bRFC\s*\d+(?:\s*\([^\)]+\))?|See\s+Brightspace[^\n]*)/i;
@@ -553,6 +553,7 @@ export class LocalSyllabusParser {
         return '\n';
       })
       .replace(/(\b(?:week|wk|module|session|unit)\s*\d+)(?=[A-Za-z])/gi, '$1 ')
+      .replace(/(\b\d{1,2})(?=(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b)/gi, '$1 ')
       .replace(/(\d+)(?=(?:Articles?|Review)\b)/gi, '$1 ')
       .replace(/(?<![\t|][^\n]*)(\s+)(?=Due:\s+)/gi, '\n')
       .replace(/(?<![\t|][^\n]*)([^\s\n])(?=Due:\s+)/gi, '$1\n')
@@ -5162,11 +5163,21 @@ export class LocalSyllabusParser {
       }
 
       // Extract deliverable mentioned in chunk if not already an assignment
-      const deliverableMatch = chunk.match(/\b([A-Za-z0-9\s,&–\-/]+?)\s*Due\b/i) ||
-        chunk.match(/\bDue:\s*([A-Za-z0-9\s,&–\-/]+)/i);
+      let deliverableSnippet = chunk;
+      if (chunk.includes('<br>')) {
+        const parts = chunk.split(/<br\s*\/?>/i).map(p => p.trim());
+        const duePart = parts.find(p => /\bdue\b/i.test(p));
+        if (duePart) deliverableSnippet = duePart;
+      }
+      const deliverableMatch = deliverableSnippet.match(/\b([A-Za-z0-9\s,&–\-/]+?)\s*Due\b/i) ||
+        deliverableSnippet.match(/\bDue:\s*([A-Za-z0-9\s,&–\-/]+)/i);
       if (deliverableMatch && !isNoReadings) {
         let delivTitle = deliverableMatch[1].replace(/\s+/g, ' ').trim();
         delivTitle = delivTitle.replace(/^[•\-*▪●:–—| \t\n]+|[•\-*▪●:–—| \t\n]+$/g, '').trim();
+        delivTitle = cleanAssignmentTitle(delivTitle);
+        if (theme && delivTitle.toLowerCase().startsWith(theme.toLowerCase()) && delivTitle.length > theme.length + 3) {
+          delivTitle = cleanAssignmentTitle(delivTitle.substring(theme.length));
+        }
         const assignNumM = delivTitle.match(/\b(?:assignment|deliverable|project|paper|quiz|exam|discussion)\s*(\d+)\b/i);
         const assignNum = assignNumM ? parseInt(assignNumM[1], 10) : undefined;
         if (delivTitle.length >= 4 && !/^(?:date|time|assignment|readings?)$/i.test(delivTitle)) {
