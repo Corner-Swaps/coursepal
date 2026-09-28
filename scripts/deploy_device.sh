@@ -77,9 +77,9 @@ else
   plutil -replace CFBundleDevelopmentRegion -string "en" "$APP_PATH/Info.plist" 2>/dev/null || true
   plutil -replace CFBundlePackageType -string "APPL" "$APP_PATH/Info.plist" 2>/dev/null || true
   plutil -replace CFBundleIconName -string "AppIcon" "$APP_PATH/Info.plist" 2>/dev/null || true
-  plutil -replace CFBundleVersion -string "8" "$APP_PATH/Info.plist" 2>/dev/null || true
+  plutil -replace CFBundleVersion -string "9" "$APP_PATH/Info.plist" 2>/dev/null || true
   if [ -f "$APP_PATH/PlugIns/CoursePalWidget.appex/Info.plist" ]; then
-    plutil -replace CFBundleVersion -string "8" "$APP_PATH/PlugIns/CoursePalWidget.appex/Info.plist" 2>/dev/null || true
+    plutil -replace CFBundleVersion -string "9" "$APP_PATH/PlugIns/CoursePalWidget.appex/Info.plist" 2>/dev/null || true
   fi
 fi
 
