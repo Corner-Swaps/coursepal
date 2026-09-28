@@ -350,7 +350,11 @@ export function cleanAcademicWeekTheme(rawTheme?: string | null): string {
   // Presentation annotations (e.g. "Presentations x 2", "Presentation x 1")
   t = t.replace(/\bPresentations?\s*(?:x\s*\d+|\(\d+\)|\d+)\b/gi, ' ');
   t = t.replace(/\bPresentation\s+Reference\b/gi, ' ');
-  t = t.replace(/\bGroup\s+Presentations?\b/gi, ' ');
+  t = t.replace(/\(\s*Group\s+Presentations?\s*\)/gi, ' ');
+  t = t.replace(/[-–—:]\s*Group\s+Presentations?\b/gi, ' ');
+  if (!/\bGroup\s+Presentations?\b.*?\b(?:peer\s+group\s+reviews?|reviews?|discussions?|roundtables?)\b/i.test(t) && !/^\s*Group\s+Presentations?\s*$/i.test(t)) {
+    t = t.replace(/\bGroup\s+Presentations?\b/gi, ' ');
+  }
   // Chapter and page markers anywhere in string
   t = t.replace(/\b(?:chapters?|chps?\.?|chs?\.?|ch\b\.?|sections?|sec\.?)\s*\d+[\d\s,&–\-]*/gi, ' ');
   t = t.replace(/\b(?:pp?\.?|pages?)\s*\d+[\d\s–\-]*/gi, ' ');
@@ -358,6 +362,11 @@ export function cleanAcademicWeekTheme(rawTheme?: string | null): string {
   // Requirement labels
   t = t.replace(/\b(?:required|optional|assigned|suggested)\s*(?:readings?|materials?|texts?)?[:\s]*/gi, ' ');
   t = t.replace(/\b(?:required|optional)[:\s]+/gi, ' ');
+
+  // Administrative first-day boilerplate (e.g. "Introductions; Discussion of assignments; defining trauma" -> "defining trauma")
+  t = t.replace(/^(?:introductions?|welcome(?:\s+to\s+class)?|discussion\s+of\s+assignments?|course\s+overview|syllabus\s+review)\s*[:;,\-–—]+\s*/gi, '');
+  t = t.replace(/^(?:introductions?|welcome(?:\s+to\s+class)?|discussion\s+of\s+assignments?|course\s+overview|syllabus\s+review)\s*[:;,\-–—]+\s*/gi, '');
+  t = t.replace(/\b(?:discussion\s+about\s+the\s+research\s+paper|discussion\s+of\s+assignments?)\b[:;,\s.]*/gi, ' ');
 
   // 4. Strip dates and date ranges (e.g. "- 4/10/26", "4/10/2026", "Sep 17")
   t = t.replace(/[-–—]?\s*\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b\s*[-–—]?/g, ' ');
@@ -380,6 +389,11 @@ export function cleanAcademicWeekTheme(rawTheme?: string | null): string {
   t = t.replace(/\s*\([^\)]*$/, '');
   t = t.replace(/\s*\.{2,}$/, '');
 
+  // Convert loose spaced dashes/en-dashes between words to colons
+  // e.g. "neuroscience – brain and nervous system" -> "neuroscience: brain and nervous system"
+  // e.g. "language – discourse analysis" -> "language: discourse analysis"
+  t = t.replace(/([a-zA-Z0-9)])\s+[-–—]\s+([a-zA-Z0-9])/g, '$1: $2');
+
   // 8. Collapse spaces & trim punctuation
   t = t.replace(/\s+and\s*,\s+/gi, ' and ');
   t = t.replace(/\s*,\s*and\b/gi, ' and');
@@ -392,6 +406,18 @@ export function cleanAcademicWeekTheme(rawTheme?: string | null): string {
   if (isGenericPlaceholderTheme(t)) return '';
   if (/^[\d\s\-–—,;.:()]+$/.test(t)) return '';
   if (/^(?:week|module|unit|session)\s*\d*$/i.test(t)) return '';
+
+  if (t === t.toUpperCase() && t.length > 3 && /[A-Z]/.test(t)) {
+    t = t.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).replace(/\b(Of|And|The|In|For|To|A|An|With)\b/g, m => m.toLowerCase());
+  }
+
+  // Capitalize first letter of every clause after semicolons, colons, or periods
+  t = t.replace(/([;.:!?]\s+)([a-z])/g, (_, p1, p2) => p1 + p2.toUpperCase());
+
+  // Guarantee the first character is always capitalized: e.g. "defining trauma" -> "Defining trauma"
+  if (t.length > 0) {
+    t = t.charAt(0).toUpperCase() + t.slice(1);
+  }
 
   return t;
 }
@@ -563,7 +589,7 @@ export function deduplicateReadingTitle(title: string): string {
               uParts.push(p);
             }
           }
-          seg = uParts.join(' – ');
+          seg = uParts.join(': ');
         }
       }
 
@@ -610,7 +636,7 @@ export function deduplicateReadingTitle(title: string): string {
         if (uParts.length === 1) {
           str = uParts[0];
         } else {
-          str = uParts.join(' – ');
+          str = uParts.join(': ');
         }
       }
     }
@@ -704,14 +730,21 @@ export function formatDisplayTitleWithChapter(
     }
   }
   if (resTitle && resTitle.trim()) {
-    const escRes = resTitle.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const testRemainder = rawTitle
-      .replace(new RegExp(`^${escRes}[:—–-\\s]+`, 'i'), '')
-      .replace(/\(\s*\d{4}\s*\)/g, '')
-      .trim();
-    const remainderWithoutCh = stripChapterMentions(testRemainder).trim();
-    if (remainderWithoutCh.length >= 3) {
-      rawTitle = testRemainder;
+    const normRes = resTitle.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normAuth = (authorName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const isAuthorAsRes = normAuth && (normRes === normAuth || normAuth.includes(normRes) || normRes.includes(normAuth));
+
+    if (!isAuthorAsRes) {
+      const escRes = resTitle.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const testRemainder = rawTitle
+        .replace(new RegExp(`^${escRes}[:—–-\\s]+`, 'i'), '')
+        .replace(/\(\s*\d{4}\s*\)/g, '')
+        .trim();
+      const remainderWithoutCh = stripChapterMentions(testRemainder).trim();
+      const remainderIsFragment = /^(?:articles?|papers?|essays?|readings?|in\b)\b/i.test(testRemainder);
+      if (remainderWithoutCh.length >= 3 && !remainderIsFragment) {
+        rawTitle = testRemainder;
+      }
     }
   }
 
@@ -764,7 +797,7 @@ export function formatDisplayTitleWithChapter(
           substantiveTitle = uniqueParts[0];
         } else {
           const first = uniqueParts[0];
-          const rest = uniqueParts.slice(1).join(' – ').trim();
+          const rest = uniqueParts.slice(1).join(': ').trim();
           const normRest = rest.toLowerCase().replace(/[^a-z0-9]/g, '');
           const normFirst = first.toLowerCase().replace(/[^a-z0-9]/g, '');
           const normRes = (resTitle || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -789,7 +822,7 @@ export function formatDisplayTitleWithChapter(
           ) {
             substantiveTitle = rest;
           } else {
-            substantiveTitle = uniqueParts.join(' – ');
+            substantiveTitle = uniqueParts.join(': ');
           }
         }
       }

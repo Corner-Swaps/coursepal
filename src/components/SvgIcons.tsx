@@ -551,6 +551,19 @@ export const CalendarBadgePlusIcon: React.FC<IconProps> = ({ size = 20, color = 
   </Svg>
 );
 
+export const AppleCalendarIcon: React.FC<IconProps> = ({ size = 20 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect x="3" y="3" width="18" height="18" rx="4.5" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
+    <Path d="M3 7.5C3 5.015 5.015 3 7.5 3h9C18.985 3 21 5.015 21 7.5V8H3v-.5z" fill="#FF3B30" />
+    <Circle cx="8" cy="12" r="1.2" fill="#1C1C1E" />
+    <Circle cx="12" cy="12" r="1.2" fill="#1C1C1E" />
+    <Circle cx="16" cy="12" r="1.2" fill="#1C1C1E" />
+    <Circle cx="8" cy="16" r="1.2" fill="#1C1C1E" />
+    <Circle cx="12" cy="16" r="1.2" fill="#FF3B30" />
+    <Circle cx="16" cy="16" r="1.2" fill="#1C1C1E" />
+  </Svg>
+);
+
 export const GoogleCalendarIcon: React.FC<IconProps> = ({ size = 20 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Rect x="3" y="4" width="18" height="17" rx="3.5" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="1.2" />

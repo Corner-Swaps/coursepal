@@ -263,21 +263,21 @@ describe('GoogleCalendarService', () => {
   });
 
   describe('sync methods & openDateInCalendar', () => {
-    it('syncAssignment opens date in Calendar app via calshow on iOS and copies details to clipboard', async () => {
+    it('syncAssignment opens date in Google Calendar and copies details to clipboard', async () => {
       const success = await GoogleCalendarService.syncAssignment(mockAssignment, mockCourse);
       expect(success).toBe(true);
       expect(Linking.openURL).toHaveBeenCalledTimes(1);
-      expect(Linking.openURL).toHaveBeenCalledWith(expect.stringMatching(/^calshow:\d+$/));
+      expect(Linking.openURL).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/calendar\.google\.com\/calendar\/u\/0\/r\/day\/\d{4}\/\d{2}\/\d{2}$/));
     });
 
-    it('syncReading opens date in Calendar app via calshow on iOS and copies details to clipboard', async () => {
+    it('syncReading opens date in Google Calendar and copies details to clipboard', async () => {
       const success = await GoogleCalendarService.syncReading(mockReading, mockCourse);
       expect(success).toBe(true);
       expect(Linking.openURL).toHaveBeenCalledTimes(1);
-      expect(Linking.openURL).toHaveBeenCalledWith(expect.stringMatching(/^calshow:\d+$/));
+      expect(Linking.openURL).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/calendar\.google\.com\/calendar\/u\/0\/r\/day\/\d{4}\/\d{2}\/\d{2}$/));
     });
 
-    it('syncModule opens start date in Calendar app via calshow on iOS and copies overview to clipboard', async () => {
+    it('syncModule opens start date in Google Calendar and copies overview to clipboard', async () => {
       const success = await GoogleCalendarService.syncModule({
         moduleNumber: 1,
         theme: 'Family Foundations',
@@ -287,7 +287,7 @@ describe('GoogleCalendarService', () => {
       });
       expect(success).toBe(true);
       expect(Linking.openURL).toHaveBeenCalledTimes(1);
-      expect(Linking.openURL).toHaveBeenCalledWith(expect.stringMatching(/^calshow:\d+$/));
+      expect(Linking.openURL).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/calendar\.google\.com\/calendar\/u\/0\/r\/day\/\d{4}\/\d{2}\/\d{2}$/));
     });
   });
 

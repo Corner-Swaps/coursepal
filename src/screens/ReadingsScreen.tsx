@@ -19,6 +19,7 @@ import {
   TrashIcon,
   CalendarIcon,
   ArrowPathIcon,
+  AppleCalendarIcon,
   GoogleCalendarIcon,
   PlusIcon
 } from '../components/SvgIcons';
@@ -860,7 +861,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({
               {displayTitle}
             </Text>
 
-            {/* Subtitle & Suggested Reading: Author · Suggested Date */}
+            {/* Subtitle & Suggested Reading: Author & Suggested Date rendered as separate lines so neither gets cut off */}
             {(() => {
               // 1. Author: prefix with 'Author: ' consistently across sections
               let authorPart: string | null = null;
@@ -882,19 +883,21 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({
                 }
               }
 
-              // Assemble subtitle items with dots: strictly Author and Suggested Date (eliminating redundant estimated minutes)
-              const parts: string[] = [];
-              if (authorPart) parts.push(authorPart);
-              if (datePart) parts.push(datePart);
-
-              const bottomText = parts.join(' · ');
-
-              if (!bottomText) return null;
+              if (!authorPart && !datePart) return null;
 
               return (
-                <Text style={styles.readingAuthor} numberOfLines={1}>
-                  {bottomText}
-                </Text>
+                <View style={styles.readingSubtitleCol}>
+                  {authorPart ? (
+                    <Text style={styles.readingAuthor} numberOfLines={2}>
+                      {authorPart}
+                    </Text>
+                  ) : null}
+                  {datePart ? (
+                    <Text style={styles.readingSuggestedDate} numberOfLines={1}>
+                      {datePart}
+                    </Text>
+                  ) : null}
+                </View>
               );
             })()}
           </TouchableOpacity>
@@ -1205,7 +1208,7 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   <GoogleCalendarIcon size={15} />
-                  <Text style={styles.dateFilterGoogleBtnText}>Open Date in Calendar</Text>
+                  <Text style={styles.dateFilterGoogleBtnText}>Open Date in Google Calendar</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1461,11 +1464,14 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({
                 {(() => {
                   if (weekReadingsList.length === 0) {
                     const isExplicitBreak = cleanWeekTheme && /reading week|flex week|spring break|fall break|winter break|thanksgiving|recess|holiday/i.test(cleanWeekTheme);
-                    if (isExplicitBreak) {
+                    const isPresentationOrExam = cleanWeekTheme && /presentation|review|exam|quiz|workshop|discussion|no readings/i.test(cleanWeekTheme);
+                    if (isExplicitBreak || isPresentationOrExam || cleanWeekTheme) {
                       return (
                         <View style={styles.emptyWeekContainer}>
                           <Text style={styles.emptyWeekThemeText}>
-                            {cleanWeekTheme}
+                            {isExplicitBreak
+                              ? cleanWeekTheme
+                              : `${cleanWeekTheme || 'No readings scheduled'} · No readings assigned`}
                           </Text>
                         </View>
                       );
@@ -1554,27 +1560,6 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({
                     activeOpacity={0.7}
                   >
                     <Text style={styles.weekPillText}>{moduleLabel || `Module ${moduleNum}`}</Text>
-                  </TouchableOpacity>
-
-                  {/* Quick Google Calendar Sync Button */}
-                  <TouchableOpacity
-                    style={styles.moduleQuickSyncBtn}
-                    onPress={() => {
-                      const targetCourse = selectedCourseFilter || (moduleReadingsList[0] ? matchCourseForItem(moduleReadingsList[0], courses) : undefined) || courses[0];
-                      GoogleCalendarService.syncModule({
-                        moduleNumber: moduleNum,
-                        moduleLabel: moduleLabel || `Module ${moduleNum}`,
-                        theme: cleanModTheme || modTheme,
-                        readings: moduleReadingsList,
-                        course: targetCourse
-                      });
-                    }}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityLabel="Sync module to Google Calendar"
-                  >
-                    <GoogleCalendarIcon size={14} />
-                    <Text style={styles.moduleQuickSyncText}>Sync</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -2318,7 +2303,17 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
     color: '#8E9BAE'
   },
+  readingSubtitleCol: {
+    marginTop: 2,
+    gap: 2
+  },
   readingAuthor: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#596B85',
+    lineHeight: 18
+  },
+  readingSuggestedDate: {
     fontSize: 13,
     fontWeight: '500',
     color: '#596B85',

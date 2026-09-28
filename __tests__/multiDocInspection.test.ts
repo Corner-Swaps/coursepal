@@ -12,6 +12,25 @@ describe('Multi-Document Ingestion & Separation Diagnostics', () => {
     { name: 'cpc527.txt', label: 'CPC 527 Simple Syllabus' },
   ];
 
+  it('ensures test runner is active', () => {
+    expect(true).toBe(true);
+  });
+
+
+  it('parses and normalizes SXST-3010 (media_1790521397600.pdf)', () => {
+    if (fs.existsSync('/tmp/sxst3010.txt')) {
+      const text = fs.readFileSync('/tmp/sxst3010.txt', 'utf8');
+      const dto = LocalSyllabusParser.shared.parseText(text);
+      console.log('SXST-3010 DTO Code:', dto.courseCode, '| Name:', dto.courseName);
+      console.log('Weeks:', dto.weeks?.length, '| Readings:', dto.readings?.length, '| Assigns:', dto.assignments?.length);
+      const normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(dto, text);
+      console.log('Normalized Code:', normalized.courseCode, '| Name:', normalized.courseName);
+      console.log('Candidate Readings:', normalized.candidateReadings.length, '| Candidate Assigns:', normalized.candidateAssignments.length, '| Weeks:', normalized.weeks.length);
+      console.log('Weeks list:', normalized.weeks.map((w: any) => ({ w: w.weekNumber, m: w.moduleNumber, theme: w.theme })));
+      console.log('Readings sample:', normalized.candidateReadings.slice(0, 5).map((r: any) => ({ t: r.title, w: r.weekNumber, m: r.moduleNumber })));
+    }
+  });
+
   files.forEach(f => {
     const p = `/tmp/extracted_syllabi/${f.name}`;
     if (!fs.existsSync(p)) return;

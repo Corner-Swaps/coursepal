@@ -32,6 +32,7 @@ import {
   ClockIcon,
   CheckmarkIcon,
   ShieldCheckmarkIcon,
+  AppleCalendarIcon,
   GoogleCalendarIcon
 } from '../components/SvgIcons';
 import { Course, VaultDocument, Assignment, Reading } from '../types/models';
@@ -63,10 +64,10 @@ import {
   extractAllModuleNumbers,
   isRealDateOrRangeString,
   cleanDateRangeDisplay,
-  cleanAssignmentTitle
+  cleanAssignmentTitle,
+  cleanAcademicWeekTheme
 } from '../utils/readingDisplayHelper';
 import { resolveFullAuthorName } from '../utils/authorResolver';
-import { CalendarExportService } from '../services/CalendarExportService';
 import { ensureBundledPdfFile } from '../utils/bundledPdfService';
 
 interface SyllabusScreenProps {
@@ -211,14 +212,11 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
       ? formatSuggestedReadingCardText(reading.dueDate, reading.dateRangeStr, fallbackDateStr)
       : null;
 
-    const parts: string[] = [];
-    if (cleanAuthorPart) parts.push(cleanAuthorPart);
+    let cleanDatePart: string | null = null;
     if (cleanDate) {
       const dStr = cleanDate.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
-      if (dStr) parts.push(dStr);
+      if (dStr) cleanDatePart = dStr;
     }
-
-    const finalAuthorSub = parts.join(' · ');
 
     return (
       <TouchableOpacity
@@ -228,7 +226,12 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
         activeOpacity={0.7}
       >
         <Text style={styles.itemTitleText}>{dispTitle}</Text>
-        {finalAuthorSub.length > 0 && <Text style={styles.itemAuthorText}>{finalAuthorSub}</Text>}
+        {cleanAuthorPart ? (
+          <Text style={styles.itemAuthorText} numberOfLines={2}>{cleanAuthorPart}</Text>
+        ) : null}
+        {cleanDatePart ? (
+          <Text style={styles.itemSuggestedDateText} numberOfLines={1}>{cleanDatePart}</Text>
+        ) : null}
       </TouchableOpacity>
     );
   };
@@ -473,7 +476,16 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                     }
                   }
                 }
-                const sortedWeeks = Array.from(readingsByWeek.keys()).sort((a, b) => a - b);
+                const allCourseWeekNumbers = new Set<number>();
+                (course.weeks || []).forEach(w => {
+                  if (typeof w.weekNumber === 'number' && w.weekNumber > 0) {
+                    allCourseWeekNumbers.add(w.weekNumber);
+                  }
+                });
+                for (const wKey of readingsByWeek.keys()) {
+                  allCourseWeekNumbers.add(wKey);
+                }
+                const sortedWeeks = Array.from(allCourseWeekNumbers).sort((a, b) => a - b);
                 const sortedModules = Array.from(allCourseModuleNumbers).sort((a, b) => a - b);
 
                 return (
@@ -770,7 +782,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                         {/* Readings Section */}
                         <View style={styles.sectionContainer}>
                           <Text style={styles.sectionTitle}>Readings</Text>
-                          {courseReadings.length === 0 ? (
+                          {courseReadings.length === 0 && sortedWeeks.length === 0 ? (
                             <View style={styles.emptyItemsBox}>
                               {course.externalScheduleNotice ? (
                                 <Text style={[styles.emptyItemsText, { fontStyle: 'italic', color: '#4B5563' }]}>
@@ -783,7 +795,7 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           ) : (
                             <>
                               {/* Week-grouped readings (when week schedule exists) */}
-                              {sortedWeeks.length > 0 && sortedModules.length > 0 && (
+                              {sortedWeeks.length > 0 && sortedModules.length > 0 && (hasDedicatedModReadings || sortedWeeks.length === 0) && (
                                 <View style={{ marginTop: 4, marginBottom: 8 }}>
                                   <Text style={[styles.sectionTitle, { fontSize: 13, color: '#596B85', textTransform: 'uppercase', letterSpacing: 0.5 }]}>
                                     Weekly Calendar Schedule
@@ -801,25 +813,66 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                   if (dA !== dB) return dA - dB;
                                   return (a.title || '').localeCompare(b.title || '');
                                 });
+                                const cleanTheme = weekObj?.theme ? cleanAcademicWeekTheme(weekObj.theme) : '';
+                                const weekAssignments = (courseAssignments || []).filter(a => a.weekNumber === wNum);
                                 return (
                                   <View key={`week-${wNum}`} style={styles.weekSectionBox}>
                                     {/* Week Section Header */}
                                     <View style={styles.weekSectionHeader}>
-                                      <View style={styles.weekTagPill}>
-                                        <Text style={styles.weekTagText}>Week {wNum}</Text>
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
+                                        <View style={styles.weekTagPill}>
+                                          <Text style={styles.weekTagText}>Week {wNum}</Text>
+                                        </View>
+                                        {weekObj?.moduleNumber && (weekObj.moduleNumber !== wNum || (weekObj.moduleMention && !new RegExp(`^\\s*module\\s*0*${wNum}\\s*$`, 'i').test(weekObj.moduleMention))) ? (
+                                          <View style={[styles.weekTagPill, { backgroundColor: 'rgba(52, 199, 89, 0.12)' }]}>
+                                            <Text style={[styles.weekTagText, { color: '#34C759' }]}>{weekObj.moduleMention || `Module ${weekObj.moduleNumber}`}</Text>
+                                          </View>
+                                        ) : null}
                                       </View>
                                       {weekObj?.dateRangeStr && isRealDateOrRangeString(weekObj.dateRangeStr) ? (
                                         <Text style={styles.itemDueText}>{cleanDateRangeDisplay(weekObj.dateRangeStr)}</Text>
                                       ) : null}
                                     </View>
 
+                                    {/* Week Topic / Focus Theme */}
+                                    {cleanTheme && !/^Week\s*\d+$/i.test(cleanTheme) ? (
+                                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1C1C1E', marginTop: 4, marginBottom: 6, lineHeight: 18 }}>
+                                        {cleanTheme}
+                                      </Text>
+                                    ) : null}
+
+                                    {/* Scheduled Assignments in this week */}
+                                    {weekAssignments.map(a => (
+                                      <View key={a.id} style={{ marginBottom: 6, padding: 8, backgroundColor: '#F2F2F7', borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <View style={{ flex: 1, marginRight: 8 }}>
+                                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#FF9500', textTransform: 'uppercase', letterSpacing: 0.5 }}>ASSIGNMENT</Text>
+                                          <Text style={{ fontSize: 13, fontWeight: '500', color: '#1C1C1E' }} numberOfLines={2}>{a.title}</Text>
+                                        </View>
+                                        {a.dueDate ? (
+                                          <Text style={{ fontSize: 11, color: '#8E8E93' }}>
+                                            Due {new Date(a.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                    ))}
+
+                                    {/* Readings */}
                                     {weekReadings.map(r => renderSyllabusReadingRow(r, course.courseName, weekObj?.theme, weekObj?.dateRangeStr))}
+
+                                    {/* Empty state for weeks with no readings and no assignments */}
+                                    {weekReadings.length === 0 && weekAssignments.length === 0 ? (
+                                      <View style={{ paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#F2F2F7', borderRadius: 8, marginTop: 4 }}>
+                                        <Text style={{ fontSize: 12, color: '#8E8E93', fontStyle: 'italic' }}>
+                                          {cleanTheme ? `${cleanTheme} · No readings assigned` : 'No readings or assignments scheduled'}
+                                        </Text>
+                                      </View>
+                                    ) : null}
                                   </View>
                                 );
                               })}
 
                               {/* Module-grouped readings (when distinct modules exist) */}
-                              {sortedModules.length > 0 && (
+                              {sortedModules.length > 0 && (hasDedicatedModReadings || sortedWeeks.length === 0) && (
                                 <>
                                   {sortedWeeks.length > 0 && (
                                     <View style={{ marginTop: 14, marginBottom: 8 }}>
@@ -869,28 +922,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                                             {modDateStr && isRealDateOrRangeString(modDateStr) ? (
                                               <Text style={styles.itemDueText}>{cleanDateRangeDisplay(modDateStr)}</Text>
                                             ) : null}
-
-                                            {/* Quick Google Calendar Sync Button */}
-                                            <TouchableOpacity
-                                              style={styles.moduleQuickSyncBtn}
-                                              onPress={() => {
-                                                GoogleCalendarService.syncModule({
-                                                  moduleNumber: mNum,
-                                                  moduleLabel: `Module ${mNum}`,
-                                                  theme: modTheme,
-                                                  readings: modReadings,
-                                                  assignments: (course.assignments || []).filter(a => a.moduleNumber === mNum),
-                                                  dateRangeStr: modDateStr,
-                                                  course
-                                                });
-                                              }}
-                                              activeOpacity={0.7}
-                                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                              accessibilityLabel="Sync module to Google Calendar"
-                                            >
-                                              <GoogleCalendarIcon size={13} />
-                                              <Text style={styles.moduleQuickSyncText}>Sync</Text>
-                                            </TouchableOpacity>
                                           </View>
                                         </View>
                                         {modTheme ? (
@@ -1005,26 +1036,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
               </View>
             ) : (
               <>
-                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12 }}>
-                  <TouchableOpacity
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: '#FFFFFF',
-                      borderWidth: 1,
-                      borderColor: '#E3E8F0',
-                      borderRadius: 14,
-                      paddingHorizontal: 12,
-                      paddingVertical: 7,
-                      gap: 6
-                    }}
-                    onPress={() => setShowUploadModal(true)}
-                    activeOpacity={0.7}
-                  >
-                    <DocBadgePlusIcon size={14} color="#7C3AED" />
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#7C3AED' }}>Upload Document</Text>
-                  </TouchableOpacity>
-                </View>
                 {vaultDocs.map(doc => {
                   const courseDocs = vaultDocs.filter(d => d.courseId === doc.courseId);
                   const docReadings = readings.filter(r => !r.isDeleted && isItemForDocument(r, doc, courseDocs));
@@ -1907,6 +1918,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#596B85',
     lineHeight: 18
+  },
+  itemSuggestedDateText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#596B85',
+    lineHeight: 18,
+    marginTop: 2
   },
   itemDueText: {
     fontSize: 13,

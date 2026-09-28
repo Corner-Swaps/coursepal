@@ -93,7 +93,7 @@ export class LocalSyllabusParser {
     /^\s*(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre|januar|februar|m[aä]rz|juni|juli|oktober|dezember)\b/i
   ];
 
-  private static readonly citationRegex = /((?:(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)(?:\s*(?:,\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*|\s+(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s+|,|;)\s*(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)){0,4}(?:\s+et\s+al\.?)?)\s*(?:,\s*\(?\s*\d{4}\s*\)?|\s*\(\s*\d{4}\s*\)|\s*,\s*\d{4})?\s*[:\-–—]?\s*\(?\s*(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\.?|ch\b|sections?|sec\.?|cap[íi]tulos?|cap\b\.?|chapitres?|kapitels?|kap\b\.?|pages?|pp?\.?|p[áa]ginas?|seiten?)\s*[:\-–—.]*\s*(\d+(?:\.\d+)?(?:[-\u2013\u2014\s&,and\+toyund]+(?:sections?|sec\.?|chs?\.?|chapters?|pp?\.?|pages?)?\s*\d+(?:\.\d+)?)*|\d{1,3}\s*[:\-–—]\s*\d{1,3})\)?)|(\b(?:DSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?|WHO[-\s]*ICD(?:-\d+)?|ICD[-\s]*(?:10|11|\d+))\b(?:\s*[:\-–—]?\s*(?:sections?|sec\.?|chapters?|chs?\.?|pp?\.?|pages?)?\s*[\d\s&,\-–—]+)?)|((?:(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)(?:\s*(?:,\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*|\s+(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s+|,|;)\s*(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)){0,4}(?:\s+et\s+al\.?)?)\s*\(\s*\d{1,3}\s*[:\-–—]\s*\d{1,3}\s*\))|(\b(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\.?|ch\b|sections?|sec\.?|cap[íi]tulos?|cap\b\.?|chapitres?|kapitels?|kap\b\.?|pages?|pp?\.?|p[áa]ginas?|seiten?)\s*[:\-–—.]*\s*(\d+(?:\.\d+)?(?:[-\u2013\u2014\s&,and\+toyund]+(?:sections?|sec\.?|chs?\.?|chapters?|pp?\.?|pages?)?\s*\d+(?:\.\d+)?)*|\d{1,3}\s*[:\-–—]\s*\d{1,3}))|((?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)(?:\s+et\s+al\.?|\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)?\s*\(\s*\d{4}\s*\))|((?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)(?:\s+et\s+al\.?|\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)\s*\([A-Za-z0-9\u00C0-\u024F\s\-–—/:]+\))|(\bRFC\s*\d+(?:\s*\([^\)]+\))?|See\s+Brightspace[^\n]*)/i;
+  private static readonly citationRegex = /((?:(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)(?:\s*(?:,\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*|\s+(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s+|,|;)\s*(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)){0,4}(?:\s+et\s+al\.?)?)\s*(?:,\s*\(?\s*\d{4}\s*\)?|\s*\(\s*\d{4}\s*\)|\s*,\s*\d{4})?\s*[:\-–—]?\s*\(?\s*(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\.?|ch\b|sections?|sec\.?|cap[íi]tulos?|cap\b\.?|chapitres?|kapitels?|kap\b\.?|pages?|pp?\.?|p[áa]ginas?|seiten?)\s*[:\-–—.]*\s*(\d+(?:\.\d+)?(?:[-\u2013\u2014\s&,and\+toyund]+(?:sections?|sec\.?|chs?\.?|chapters?|pp?\.?|pages?)?\s*\d+(?:\.\d+)?)*|\d{1,3}\s*[:\-–—]\s*\d{1,3})\)?)|(\b(?:DSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?|WHO[-\s]*ICD(?:-\d+)?|ICD[-\s]*(?:10|11|\d+))\b(?:\s*[:\-–—]?\s*(?:sections?|sec\.?|chapters?|chs?\.?|pp?\.?|pages?)?\s*[\d\s&,\-–—]+)?)|((?:(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)(?:\s*(?:,\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*|\s+(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s+|,|;)\s*(?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+(?:\s*,\s*[A-Z]\.(?:\s*[A-Z]\.)*)?|[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'\-–]+)){0,4}(?:\s+et\s+al\.?)?)\s*\(\s*\d{1,3}\s*[:\-–—]\s*\d{1,3}\s*\))|(\b(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\.?|ch\b|sections?|sec\.?|cap[íi]tulos?|cap\b\.?|chapitres?|kapitels?|kap\b\.?|pages?|pp?\.?|p[áa]ginas?|seiten?)\s*[:\-–—.]*\s*(\d+(?:\.\d+)?(?:[-\u2013\u2014\s&,and\+toyund]+(?:sections?|sec\.?|chs?\.?|chapters?|pp?\.?|pages?)?\s*\d+(?:\.\d+)?)*|\d{1,3}\s*[:\-–—]\s*\d{1,3}))|((?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)(?:\s+et\s+al\.?|\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)?(?:\s+(?:articles?|papers?|readings?))?\s*\(\s*\d{4}(?:\s*,\s*\d{4})*\s*\))|((?:(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)(?:\s+et\s+al\.?|\s*(?:&|\band\b|\bund\b|\bet(?!\s+al\.?)\b|\by\b)\s*(?:\bvan\s+der\s+|\bde\s+|\bvon\s+)?[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F\.\-–]+)\s*\([A-Za-z0-9\u00C0-\u024F\s\-–—/:\,]+\))|(\bRFC\s*\d+(?:\s*\([^\)]+\))?|See\s+Brightspace[^\n]*)/i;
   private static readonly technicalDocRegex = /\b[A-Z][a-zA-Z0-9&/.\-]*(?:[ \t]+[a-zA-Z0-9][a-zA-Z0-9&/.\-]*){0,4}[ \t]+(?:Docs?|Documentation|Specs?|Specifications?|Papers?|Technical\s+Papers?|Whitepapers?|Guides?|User\s+Guides?|Pricing\s+Guides?|Core\s+Architecture|Architecture\s+Specs?|Architecture\s+Whitepapers?|Manuals?|Technical\s+Overview|System\s+Overview|Guidelines?|Standards?)\b|\bRFC\s*\d+(?:\s*\([^\)]+\))?/i;
   private static readonly endDocRegex = /\b((?:[A-Z]{2,}(?:-[A-Z0-9]+)*|Ansys|MATLAB|Python|Docker|Kubernetes|AWS|GCP|Azure|Linux|React|Django|Android|Apple|PostgreSQL|MySQL|Git|GitHub|Tableau)\b(?:\s+[A-Za-z0-9][A-Za-z0-9\.\-–/&]*){0,2}\s+(?:User\s+Manual(?:\s*&\s*Specs?)?|Docs?|Documentation|Specs?|Specifications?|Technical\s+Papers?|Whitepapers?|Whitepaper|Papers?|User\s+Guides?|Pricing\s+Guides?|Guides?|Manuals?|Technical\s+Overview|System\s+Overview|Guidelines?|Standards?))\s*$/;
   private static readonly chapterRegex = /\b(chapters?|chs?\.?|chps?\.?|chap\.?|cap[íi]tulos?|cap\.?|chapitres?|kapitels?|kap\.?)\s*(\d+(?:\.\d+)?([-\u2013\u2014\s&,and\+toyund]+\d+(?:\.\d+)?)*)\b/i;
@@ -5239,6 +5239,8 @@ export class LocalSyllabusParser {
         }
       }
 
+      const cleanedTheme = cleanAcademicWeekTheme(theme);
+
       const weekReadings: ReadingDTO[] = [];
       for (const item of readingItems) {
         let cleanTitle = item.replace(/^[•\-*▪●: \t]+|[•\-*▪●: \t]+$/g, '').trim();
@@ -5269,7 +5271,7 @@ export class LocalSyllabusParser {
           isCompleted: false,
           dueDate: isoDate,
           dateRangeStr: displayDate,
-          relevantTopics: theme.length > 0 ? theme : rowModuleMention,
+          relevantTopics: cleanedTheme.length > 0 ? cleanedTheme : (rowModuleMention || undefined),
           mediaType,
           summaryText: `Study ${cleanTitle}`,
           keyTakeawaysText: `• Review ${cleanTitle}`,
@@ -5277,7 +5279,6 @@ export class LocalSyllabusParser {
         });
       }
 
-      const cleanedTheme = cleanAcademicWeekTheme(theme);
       const finalTheme = rowModuleMention && cleanedTheme.length > 0 && !cleanedTheme.toLowerCase().includes(rowModuleMention.toLowerCase())
         ? `${rowModuleMention}: ${cleanedTheme}`
         : (cleanedTheme.length > 0 ? cleanedTheme : (rowModuleMention || `Week ${weekNum}`));
@@ -5326,6 +5327,16 @@ export class LocalSyllabusParser {
     let inPolicySection = false;
     let hasSeenWeekHeader = false;
     let inSummaryModuleOverview = false;
+    let tableHasModuleColumn = false;
+    const hasDedicatedModuleTable = lines.some(l => {
+      const low = l.toLowerCase().trim();
+      return low.includes('the following modules and topics will be integrated') ||
+        low.includes('modules and topics will be integrated') ||
+        low.includes('curriculum module matrix') ||
+        low.includes('curriculum modules') ||
+        low.includes('table 1: curriculum') ||
+        /^(?:modules?\s*\t\s*topics|modules?\s+topics?\s+related readings?)/i.test(low);
+    });
 
     const policySectionHeaders = [
       'course policies', 'late assignments', 'late policy', 'late submission', 'extension policy', 'late submission & extension policy', 'extension & late policy', 'coursepal parser', 'mapping guide',
@@ -5591,9 +5602,14 @@ export class LocalSyllabusParser {
         (lower.includes('reading') || lower.includes('docs') || lower.includes('requirements') || lower.includes('materials'))
       ) || /^(?:timeline\s+module|week\s+modules?\s+topics?|date\s+content\s+requirements)/i.test(lower);
 
-      if (isScheduleTableHeaderRow && !/^\s*(?:week|wk|module|mod|unit|session)\s*\d+/i.test(line)) {
-        inPolicySection = false;
-        continue;
+      if (isScheduleTableHeaderRow) {
+        if (lower.includes('module')) {
+          tableHasModuleColumn = true;
+        }
+        if (!/^\s*(?:week|wk|module|mod|unit|session)\s*\d+/i.test(line)) {
+          inPolicySection = false;
+          continue;
+        }
       }
 
       if (isWeekOrScheduleHeader) {
@@ -5749,6 +5765,9 @@ export class LocalSyllabusParser {
         if (modMatch) {
           currentWeekModNum = parseInt(modMatch[1], 10);
           currentWeekModMention = `Module ${currentWeekModNum}`;
+        } else if (tableHasModuleColumn && !hasDedicatedModuleTable && currentWeekNum > 0 && !isReadingWeekLine) {
+          currentWeekModNum = currentWeekNum;
+          currentWeekModMention = `Module ${currentWeekModNum}`;
         } else {
           currentWeekModNum = undefined;
           currentWeekModMention = undefined;
@@ -5884,8 +5903,8 @@ export class LocalSyllabusParser {
           LocalSyllabusParser.technicalDocRegex.test(line) ||
           LocalSyllabusParser.chapterRegex.test(line) ||
           LocalSyllabusParser.pagesRegex.test(line) ||
-          lower.includes('corey') || lower.includes('yalom') || lower.includes('creswell') ||
-          lower.includes('gehart') || lower.includes('nichols') || lower.includes('davis') ||
+          /\b(?:articles?|papers?|essays?|readings?|case\s+studies?|publications?|monographs?|reports?|whitepapers?)\b/i.test(line) ||
+          /(?:Corey|Yalom|Creswell|Neimeyer|Harris|Hochstetler|Bishop|Gehart|Maddux|Winstead|Wada|Fellner|Preston|Talaga|Carlson|Lezak|Marnat|Cummings|Stoica|Huyen|Kleppmann|Courtois|Ford|Tedeschi|Linklater|Ogden|Fisher|Schore|See Brightspace)\b/i.test(line) ||
           /\b(?:manuals?|dossiers?|packets?|protocols?|sheets?|perspectives?|ethics|guidelines?|code\s+of\s+ethics|handouts?|clinical\s+dossier|ctrs\s+manual|indigenous\s+perspectives|peer\s+consultation)\b/i.test(lower);
         if (!lineHasCitation) continue;
       }
@@ -5902,7 +5921,9 @@ export class LocalSyllabusParser {
       const hasReadingCitations = LocalSyllabusParser.citationRegex.test(line) ||
         LocalSyllabusParser.chapterRegex.test(line) ||
         LocalSyllabusParser.pagesRegex.test(line) ||
+        /\b(?:articles?|papers?|essays?|readings?|case\s+studies?|publications?|monographs?|reports?|whitepapers?)\b/i.test(line) ||
         lower.includes('gehart') || lower.includes('corey') || lower.includes('yalom') ||
+        lower.includes('courtois') || lower.includes('tedeschi') || lower.includes('linklater') || lower.includes('schore') ||
         (!isExplicitDeliverable && LocalSyllabusParser.technicalDocRegex.test(line));
 
       // Cell-level deliverable extraction for multi-column / tabbed tables
@@ -6032,12 +6053,14 @@ export class LocalSyllabusParser {
         LocalSyllabusParser.chapterRegex.test(workLine) ||
         LocalSyllabusParser.pagesRegex.test(workLine) ||
         LocalSyllabusParser.technicalDocRegex.test(workLine) ||
+        /\b(?:articles?|papers?|essays?|readings?|case\s+studies?|publications?|monographs?|reports?|whitepapers?)\b/i.test(workLine) ||
         lower.includes('corey') || lower.includes('yalom') || lower.includes('creswell') ||
         lower.includes('gehart') || lower.includes('nichols') || lower.includes('davis') ||
         lower.includes('wada') || lower.includes('fellner') || lower.includes('maddux') ||
         lower.includes('winstead') || lower.includes('preston') || lower.includes('talaga') ||
         lower.includes('carlson') || lower.includes('lezak') || lower.includes('marnat') ||
         lower.includes('cummings') || lower.includes('stoica') || lower.includes('huyen') ||
+        lower.includes('courtois') || lower.includes('tedeschi') || lower.includes('linklater') || lower.includes('schore') ||
         lower.includes('kleppmann') || lower.includes('dsm') || lower.includes('icd') ||
         lower.includes('isbn:') || lower.includes('(6th ed)') || lower.includes('7th canadian') ||
         lower.includes('sexuality counseling') || lower.includes('human sexuality') || lower.includes('growing into resilience') ||
@@ -6112,23 +6135,65 @@ export class LocalSyllabusParser {
         let rawSplits: string[] = [];
         if (cleanWorkLine.includes('|')) {
           const pipeParts = cleanWorkLine.split('|').map(s => s.trim()).filter(s => s.length >= 2);
-          for (const pp of pipeParts) {
-            if (pp.includes(';')) {
-              rawSplits.push(...pp.split(';').map(s => s.trim()).filter(s => s.length >= 3));
+          const lastPipeCell = pipeParts[pipeParts.length - 1] || '';
+          const lastPipeIsDate = this.extractAllDates(lastPipeCell, termYear).length > 0 &&
+            lastPipeCell.length <= 35 &&
+            !LocalSyllabusParser.chapterRegex.test(lastPipeCell) &&
+            !/\b(?:readings?|chapters?|ch\.|pages?|pp\.)\b/i.test(lastPipeCell);
+          const lastHasCitations = !lastPipeIsDate && (LocalSyllabusParser.citationRegex.test(lastPipeCell) ||
+            LocalSyllabusParser.chapterRegex.test(lastPipeCell) ||
+            /\b(?:articles?|papers?|essays?|readings?|case\s+studies?|publications?|monographs?|reports?|whitepapers?)\b/i.test(lastPipeCell) ||
+            /\b(?:no\s+readings?|chapters?|ch\.|pages?|pp\.)\b/i.test(lastPipeCell));
+
+          let baseCandidates: string[] = [];
+          if (pipeParts.length >= 2 && lastHasCitations) {
+            baseCandidates = [lastPipeCell];
+          } else {
+            const readingCandidates = pipeParts.filter((cell, cIdx) => {
+              if (cIdx === 0) return false;
+              if (/^\s*(?:week|wk|module|mod|unit|session|semana|semaine|woche)\s*\d+[:\-–\s]*$/i.test(cell)) return false;
+              if (this.extractAllDates(cell, termYear).length > 0 && cell.length <= 35 && !LocalSyllabusParser.chapterRegex.test(cell) && !/\b(?:readings?|chapters?|ch\.|pages?|pp\.)\b/i.test(cell)) return false;
+              if (isDeliverableNotReading(cell)) return false;
+              if (/\bdue\b/i.test(cell) && !LocalSyllabusParser.citationRegex.test(cell)) return false;
+              if (/\b(?:assignments?\s*\d*|homework|hw\s*\d+|quiz(?:zes)?\b|exams?|midterms?|finals?|tareas?\s*\d*|devoirs?\s*\d*|aufgab(?:e|en))\b/i.test(cell) && !LocalSyllabusParser.citationRegex.test(cell) && !LocalSyllabusParser.chapterRegex.test(cell)) return false;
+              return true;
+            });
+            baseCandidates = readingCandidates.length > 0 ? readingCandidates : [lastPipeCell];
+          }
+          for (const bc of baseCandidates) {
+            if (bc.includes(';')) {
+              rawSplits.push(...bc.split(';').map(s => s.trim()).filter(s => s.length >= 3));
             } else {
-              rawSplits.push(pp);
+              rawSplits.push(bc);
             }
           }
         } else if (cleanWorkLine.includes('\t')) {
           const tabCells = cleanWorkLine.split('\t').map(s => s.trim()).filter(s => s.length >= 2);
-          const readingCandidates = tabCells.filter(cell => {
-            if (/^\s*(?:week|wk|module|mod|unit|session|semana|semaine|woche)\s*\d+[:\-–\s]*$/i.test(cell)) return false;
-            if (this.extractAllDates(cell, termYear).length > 0 && cell.length <= 25) return false;
-            if (isDeliverableNotReading(cell)) return false;
-            if (/\b(?:assignments?\s*\d*|homework|hw\s*\d+|quiz(?:zes)?\b|exams?|midterms?|finals?|tareas?\s*\d*|devoirs?\s*\d*|aufgab(?:e|en))\b/i.test(cell) && !LocalSyllabusParser.citationRegex.test(cell) && !LocalSyllabusParser.chapterRegex.test(cell)) return false;
-            return true;
-          });
-          const baseCandidates = readingCandidates.length > 0 ? readingCandidates : tabCells;
+          const lastCell = tabCells[tabCells.length - 1] || '';
+          const lastCellIsDate = this.extractAllDates(lastCell, termYear).length > 0 &&
+            lastCell.length <= 35 &&
+            !LocalSyllabusParser.chapterRegex.test(lastCell) &&
+            !/\b(?:readings?|chapters?|ch\.|pages?|pp\.)\b/i.test(lastCell);
+          const lastHasCitations = !lastCellIsDate && (LocalSyllabusParser.citationRegex.test(lastCell) ||
+            LocalSyllabusParser.chapterRegex.test(lastCell) ||
+            /\b(?:articles?|papers?|essays?|readings?|case\s+studies?|publications?|monographs?|reports?|whitepapers?)\b/i.test(lastCell) ||
+            /\b(?:no\s+readings?|chapters?|ch\.|pages?|pp\.)\b/i.test(lastCell));
+
+          let baseCandidates: string[] = [];
+          if (tabCells.length >= 2 && lastHasCitations) {
+            baseCandidates = [lastCell];
+          } else {
+            const readingCandidates = tabCells.filter((cell, cIdx) => {
+              if (cIdx === 0) return false;
+              if (/^\s*(?:week|wk|module|mod|unit|session|semana|semaine|woche)\s*\d+[:\-–\s]*$/i.test(cell)) return false;
+              if (this.extractAllDates(cell, termYear).length > 0 && cell.length <= 35 && !LocalSyllabusParser.chapterRegex.test(cell) && !/\b(?:readings?|chapters?|ch\.|pages?|pp\.)\b/i.test(cell)) return false;
+              if (isDeliverableNotReading(cell)) return false;
+              if (/\bdue\b/i.test(cell) && !LocalSyllabusParser.citationRegex.test(cell)) return false;
+              if (/\b(?:assignments?\s*\d*|homework|hw\s*\d+|quiz(?:zes)?\b|exams?|midterms?|finals?|tareas?\s*\d*|devoirs?\s*\d*|aufgab(?:e|en))\b/i.test(cell) && !LocalSyllabusParser.citationRegex.test(cell) && !LocalSyllabusParser.chapterRegex.test(cell)) return false;
+              return true;
+            });
+            baseCandidates = readingCandidates.length > 0 ? readingCandidates : [lastCell];
+          }
           for (const bc of baseCandidates) {
             if (bc.includes(';')) {
               rawSplits.push(...bc.split(';').map(s => s.trim()).filter(s => s.length >= 3));
@@ -6157,13 +6222,19 @@ export class LocalSyllabusParser {
       for (const segment of subSegments) {
         const segLower = segment.toLowerCase();
         if (
+          /^\s*no\s+readings?[!.:]*\s*$/i.test(segLower) ||
           segLower.includes('no assigned reading') ||
           segLower.includes('no assigned readings') ||
           segLower.includes('no reading assigned') ||
           segLower.includes('no readings assigned') ||
+          segLower.includes('no readings!') ||
+          segLower.includes('no reading!') ||
           segLower.includes('no class sessions') ||
           segLower.includes('reading week') ||
-          segLower.includes('flex week')
+          segLower.includes('reading break') ||
+          segLower.includes('flex week') ||
+          /may\s+be\s+found\s+(?:under|in|on|at)\b/i.test(segLower) ||
+          /\b(?:all\s+required\s+readings\s+above|all\s+readings\s+above)\b/i.test(segLower)
         ) {
           continue;
         }
@@ -6173,7 +6244,9 @@ export class LocalSyllabusParser {
             LocalSyllabusParser.chapterRegex.test(segment) ||
             LocalSyllabusParser.pagesRegex.test(segment) ||
             LocalSyllabusParser.technicalDocRegex.test(segment) ||
-            /(?:Corey|Yalom|Creswell|Neimeyer|Harris|Hochstetler|Bishop|Gehart|Maddux|Winstead|Wada|Fellner|Preston|Talaga|Carlson|Lezak|Marnat|Cummings|Stoica|Huyen|Kleppmann|See Brightspace)\b/i.test(segment) ||
+            /\b(?:articles?|papers?|essays?|readings?|case\s+studies?|publications?|monographs?|reports?|whitepapers?)\b/i.test(segment) ||
+            /\b(?:by\s+[A-Z][a-zA-Z\s.&'’–-]+|[A-Z][a-zA-Z'\-–]+(?:\s+(?:&|and)\s+[A-Z][a-zA-Z'\-–]+)?(?:'s|\s+et\s+al\.?)?\s*(?:\(\s*\d{4}\s*\))?\s*(?:article|paper|chapter|book|essay|in\b))\b/i.test(segment) ||
+            /(?:Corey|Yalom|Creswell|Neimeyer|Harris|Hochstetler|Bishop|Gehart|Maddux|Winstead|Wada|Fellner|Preston|Talaga|Carlson|Lezak|Marnat|Cummings|Stoica|Huyen|Kleppmann|Courtois|Ford|Tedeschi|Linklater|Ogden|Fisher|Schore|See Brightspace)\b/i.test(segment) ||
             /\b(?:DSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?|WHO[-\s]*ICD(?:-\d+)?|ICD[-\s]*(?:10|11|\d+)|APA)\b/i.test(segment) ||
             /\b(?:chapters?|chps?\.?|chs?\.?|chap\.?|ch\b\.?|sections?|sec\.?|cap[íi]tulos?|cap\b\.?|chapitres?|kapitels?|kap\b\.?)\s*\d+/i.test(segment) ||
             /\b(?:pp?\.?|pages?|pg\.?|seiten?|p[áa]ginas?|pagine)\s*\d+/i.test(segment) ||
@@ -6265,8 +6338,31 @@ export class LocalSyllabusParser {
                 /^[A-Z][a-zA-Z'–-]+(?:\s*(?:,\s*&|&|and|,)\s*[A-Z][a-zA-Z'–-]+)?(?:\s*,\s*\d{4})$/i.test(topicRaw)
               );
 
+            const afterCit = segment.substring(citMatch.index + citMatch[0].length).trim();
             if (isAuthorPrefix) {
-              exactTitle = `${topicRaw.replace(/[:\-–—\s]+$/, '')}: ${exactTitle}`;
+              const cleanAuth = topicRaw.replace(/\b(?:book|textbook)\b/gi, '').replace(/[:\-–—\s]+$/, '').trim();
+              const cleanCit = exactTitle.replace(/^book\s+/i, '');
+              exactTitle = `${cleanAuth}: ${cleanCit}`;
+            } else if (!citHasAuthor && afterCit.length > 0 && /^(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\b|sections?|sec\b|pages?|pp?\b)\s*[\d\s,&and–-]+/i.test(cleanCit)) {
+              const bookM = afterCit.match(/\b(?:in|from)\s+([A-Z][a-zA-Z\s.&'’–-]+?\s+(?:book|textbook))\b/i);
+              const etAlM = afterCit.match(/\b(?:in|from)\s+([A-Z][a-zA-Z\s.&'’–-]+?\s+et\s+al\.?)\b/i);
+              const byM = afterCit.match(/\bby\s+([A-Z][a-zA-Z\s.&'’–-]+?)(?:\s+in\b|$)/i);
+              const inTextbook = /\b(?:in|from)\s+(?:the\s+)?textbook\b/i.test(afterCit);
+
+              let trailingAuth: string | null = null;
+              if (byM) {
+                trailingAuth = byM[1].trim();
+              } else if (etAlM) {
+                trailingAuth = etAlM[1].trim();
+              } else if (bookM) {
+                trailingAuth = bookM[1].replace(/\b(?:book|textbook)\b/gi, '').trim();
+              } else if (inTextbook) {
+                trailingAuth = 'Textbook';
+              }
+
+              if (trailingAuth) {
+                exactTitle = `${trailingAuth}: ${exactTitle}`;
+              }
             } else if (
               topicRaw.length >= 4 &&
               !/^(?:week|wk|module|mod|unit|lecture)\s*\d*$/i.test(topicRaw) &&
@@ -6274,7 +6370,20 @@ export class LocalSyllabusParser {
               !/^(?:pp?\.?|pages?)\s*\d+/i.test(topicRaw) &&
               !/^(?:required|optional|recommended|supplemental|read|watch|listen)\b/i.test(topicRaw)
             ) {
-              finalTopic = topicRaw;
+              const isLeadReadingPhrase = /\b(?:articles?|papers?|essays?|readings?|chapters?)\b/i.test(topicRaw) ||
+                /(?:['’]s|\b(?:in|on|by|from|of|for))\s*$/i.test(topicRaw);
+              if (isLeadReadingPhrase) {
+                exactTitle = `${topicRaw} ${cleanCit}${afterCit ? ` ${afterCit}` : ''}`.trim();
+              } else {
+                finalTopic = topicRaw;
+              }
+            } else if (
+              afterCit.length > 0 &&
+              !/\b(?:chapters?|chs?\.?|chps?\.?|chap\.?|ch\b|sections?|sec\b|pages?|pp?\b)\s*\d+/i.test(cleanCit) &&
+              /^\s*(?:articles?|papers?|essays?|readings?|in\b)\b/i.test(afterCit) &&
+              !/^\s*(?:review|sample|exam|presentation|due|discussion|overview)\b/i.test(afterCit)
+            ) {
+              exactTitle = `${topicRaw ? `${topicRaw} ` : ''}${cleanCit} ${afterCit}`.trim();
             }
           } else if (litMatch && litMatch.index !== undefined) {
             const topicRaw = segment.substring(0, litMatch.index)
@@ -6516,7 +6625,7 @@ export class LocalSyllabusParser {
               if (!w.readings || w.readings.length === 0) {
                 const isBreak = /reading\s*week|flex\s*week|no\s*class/i.test(w.theme || '');
                 if (!isBreak) {
-                  const fullReadingTitle = mod.theme ? `${mod.reading} · ${mod.theme}` : mod.reading;
+                  const fullReadingTitle = mod.reading;
                   w.readings = [{
                     id: `reading-canonical-${mod.modNum}-${Math.random().toString(36).substring(2, 7)}`,
                     title: fullReadingTitle,
@@ -6777,11 +6886,14 @@ export class LocalSyllabusParser {
     title = title.replace(/\s+(?:[-–—|:]\s*)?\bdue\s*[:\-–—]?\s*.*$/i, '').trim();
     title = title.replace(/\s*\(\s*due\s*[:\-–—]?\s*[^)]*\)/gi, '').trim();
 
-    const yearMatch = title.match(/\(\s*\d{4}\s*\)\.?\s*/);
+    const yearMatch = title.match(/\(\s*\d{4}(?:\s*,\s*\d{4})*\s*\)\.?\s*/);
     if (yearMatch && yearMatch.index !== undefined) {
+      const beforeYear = title.substring(0, yearMatch.index).trim();
       const afterYear = title.substring(yearMatch.index + yearMatch[0].length).trim();
       const firstPart = afterYear.split(/[.(]/)[0]?.trim();
-      if (firstPart && firstPart.length >= 3 && !/^(?:ch(?:apter)?s?|pp?|pages?|sec(?:tion)?s?|introduction|overview|review)\b/i.test(firstPart)) {
+      const beforeHasArticleOrAuthor = /\b(?:articles?|papers?|essays?|readings?|chapters?)\b/i.test(beforeYear) || /['’]s\b/i.test(beforeYear);
+      const afterStartsWithNoise = /^(?:articles?|papers?|essays?|readings?|chapters?|in\b)/i.test(firstPart);
+      if (!beforeHasArticleOrAuthor && !afterStartsWithNoise && firstPart && firstPart.length >= 3 && !/^(?:ch(?:apter)?s?|pp?|pages?|sec(?:tion)?s?|introduction|overview|review)\b/i.test(firstPart)) {
         title = firstPart;
       }
     }

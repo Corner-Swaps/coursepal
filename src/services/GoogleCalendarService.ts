@@ -551,7 +551,7 @@ export class GoogleCalendarService {
       return await this.openDateInGoogleCalendar(finalDate);
     } catch {
       Alert.alert(
-        'Unable to Open Calendar',
+        'Unable to Open Google Calendar',
         'Could not open Google Calendar on this device. Please check your internet connection or browser settings.'
       );
       return false;
@@ -629,7 +629,7 @@ export class GoogleCalendarService {
       return await this.openDateInGoogleCalendar(finalDate);
     } catch {
       Alert.alert(
-        'Unable to Open Calendar',
+        'Unable to Open Google Calendar',
         'Could not open Google Calendar on this device. Please check your internet connection or browser settings.'
       );
       return false;
@@ -690,7 +690,7 @@ export class GoogleCalendarService {
       return await this.openDateInGoogleCalendar(startDate);
     } catch {
       Alert.alert(
-        'Unable to Open Calendar',
+        'Unable to Open Google Calendar',
         'Could not open Google Calendar on this device. Please check your internet connection or browser settings.'
       );
       return false;
@@ -713,32 +713,13 @@ export class GoogleCalendarService {
   }
 
   /**
-   * Opens the calendar application directly on a specific date.
-   * On iOS, utilizes the native 'calshow:<seconds_since_2001>' deep-link
-   * to guarantee navigating directly to that exact day view in the Calendar app.
-   * On Android, utilizes 'content://com.android.calendar/time/<millis>'.
-   * On Web/Desktop, falls back to Google Calendar Day View route.
+   * Opens Google Calendar directly on a specific date in Day View,
+   * allowing the user to view that day's schedule and enter new items directly.
    */
-  public static async openDateInCalendar(date: Date): Promise<boolean> {
+  public static async openDateInGoogleCalendar(date: Date): Promise<boolean> {
     const rawDate = (date instanceof Date && !isNaN(date.getTime())) ? date : new Date();
     // Pin to local noon to avoid any timezone boundary offset when converting to seconds
     const validDate = new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate(), 12, 0, 0);
-
-    if (Platform.OS === 'ios') {
-      try {
-        const appleEpoch = Date.UTC(2001, 0, 1, 0, 0, 0);
-        const seconds = Math.floor((validDate.getTime() - appleEpoch) / 1000);
-        const calshowUrl = `calshow:${seconds}`;
-        await Linking.openURL(calshowUrl);
-        return true;
-      } catch {}
-    } else if (Platform.OS === 'android') {
-      try {
-        const androidUrl = `content://com.android.calendar/time/${validDate.getTime()}`;
-        await Linking.openURL(androidUrl);
-        return true;
-      } catch {}
-    }
 
     try {
       const url = this.buildDayViewUrl(validDate);
@@ -746,19 +727,19 @@ export class GoogleCalendarService {
       return true;
     } catch {
       Alert.alert(
-        'Unable to Open Calendar',
-        'Could not open calendar on this device.'
+        'Unable to Open Google Calendar',
+        'Could not open Google Calendar on this device. Please check your internet connection or browser settings.'
       );
       return false;
     }
   }
 
   /**
-   * Opens the calendar directly on a specific date in Day View,
-   * allowing the user to view that day's schedule and enter new items directly.
+   * Opens the calendar application directly on a specific date.
+   * Universal implementation opens Google Calendar Day View route.
    */
-  public static async openDateInGoogleCalendar(date: Date): Promise<boolean> {
-    return await this.openDateInCalendar(date);
+  public static async openDateInCalendar(date: Date): Promise<boolean> {
+    return await this.openDateInGoogleCalendar(date);
   }
 
   /**
@@ -793,7 +774,7 @@ export class GoogleCalendarService {
     } catch {
       Alert.alert(
         'Unable to Open Calendar',
-        'Could not open Google Calendar on this device.'
+        'Could not open Calendar on this device.'
       );
       return false;
     }

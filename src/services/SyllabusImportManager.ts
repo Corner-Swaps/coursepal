@@ -29,7 +29,8 @@ import {
   isInvalidAssignmentTitle,
   getReadingChapterSortKey,
   isRealDateOrRangeString,
-  isItemForCourse
+  isItemForCourse,
+  cleanAcademicWeekTheme
 } from '../utils/readingDisplayHelper';
 import {
   resolveFullAuthorName,
@@ -149,6 +150,8 @@ export interface NormalizedSyllabusPayload {
     date?: string;
     startDate?: string;
     dateRangeStr?: string;
+    moduleNumber?: number | null;
+    moduleMention?: string | null;
   }[];
   externalScheduleNotice?: string | null;
   gradingScale?: string | null;
@@ -526,6 +529,8 @@ export class SyllabusImportManager {
           .replace(/\s+(?:pp?\.?|pages?|pg\.?)\s*$/i, '')
           .replace(/^[•\-*▪●: \t\n ]+|[•\-*▪●: \t\n ]+$/g, '')
           .replace(/[:;·•\-–—.]+\s*$/, '')
+          .replace(/\s+(?:and|&|\+|et|und|y)\s*$/i, '')
+          .replace(/[:;·•\-–—,.]+\s*$/, '')
           .trim();
 
         // Isolate clean resource / book title if author or book prefix is present

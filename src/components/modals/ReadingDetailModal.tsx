@@ -27,6 +27,7 @@ import {
   ArrowUpRightIcon,
   BookFillIcon,
   CalendarIcon,
+  AppleCalendarIcon,
   GoogleCalendarIcon
 } from '../SvgIcons';
 import {
@@ -760,7 +761,7 @@ export const ReadingDetailModal: React.FC<ReadingDetailModalProps> = ({
               >
                 <View style={styles.googleCalendarActionBtnLeft}>
                   <GoogleCalendarIcon size={18} />
-                  <Text style={styles.googleCalendarActionBtnText}>Open Date in Calendar</Text>
+                  <Text style={styles.googleCalendarActionBtnText}>Open in Google Calendar</Text>
                 </View>
                 <ArrowUpRightIcon size={13} color="#64748B" />
               </TouchableOpacity>

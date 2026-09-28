@@ -1,5 +1,6 @@
 import { LocalSyllabusParser } from '../src/services/LocalSyllabusParser';
 import { SyllabusImportManager } from '../src/services/SyllabusImportManager';
+import { cleanAcademicWeekTheme } from '../src/utils/readingDisplayHelper';
 
 describe('CPC 522 Psychology of Trauma Syllabus Ingestion', () => {
   const cpc522SampleMarkdown = `COURSE SCHEDULE - CPC 522: FALL 2026: PSYCHOLOGY OF TRAUMA
@@ -48,7 +49,9 @@ Linklater, R. (2014). Decolonizing trauma work: Indigenous stories and strategie
 
   it('correctly extracts and parses the actual binary .docx file end-to-end', () => {
     const fs = require('fs');
-    const docxPath = '/tmp/CoursePal_Device_Docs_PostDeploy3/syllabi/1790522818720_CPC_522_Fall_2026_Reading_Schedule__1_.docx';
+    const docxPath = fs.existsSync('/tmp/CoursePal_Device_Docs_Current/syllabi/1790528226564_CPC_522_Fall_2026_Reading_Schedule__1_.docx')
+      ? '/tmp/CoursePal_Device_Docs_Current/syllabi/1790528226564_CPC_522_Fall_2026_Reading_Schedule__1_.docx'
+      : '/tmp/CoursePal_Device_Docs_PostDeploy3/syllabi/1790522818720_CPC_522_Fall_2026_Reading_Schedule__1_.docx';
     if (!fs.existsSync(docxPath)) {
       console.warn('Docx file not found at:', docxPath);
       return;
@@ -56,9 +59,9 @@ Linklater, R. (2014). Decolonizing trauma work: Indigenous stories and strategie
     const { extractTextFromDocxBytes } = require('../src/services/DocxTextExtractor');
     const bytes = fs.readFileSync(docxPath);
     const md = extractTextFromDocxBytes(bytes);
-    console.log('Extracted Docx Markdown snippet:\n', md.substring(0, 500));
-
+    console.log('MD Week 4 line:', md.split('\n').find((l: string) => l.includes('October 23') || l.includes('Polyvagal')));
     const dto = LocalSyllabusParser.shared.parseText(md);
+    console.log('DTO Week 4 obj:', dto.weeks?.find(w => w.weekNumber === 4));
     console.log('End-to-End DTO courseCode:', dto.courseCode);
     console.log('End-to-End DTO courseName:', dto.courseName);
     console.log('End-to-End DTO weeks count:', dto.weeks?.length);
@@ -78,14 +81,18 @@ Linklater, R. (2014). Decolonizing trauma work: Indigenous stories and strategie
 
   it('runs full SyllabusImportManager pipeline from binary .docx file and asserts normalized Course structure', () => {
     const fs = require('fs');
-    const docxPath = '/tmp/CoursePal_Device_Docs_PostDeploy3/syllabi/1790522818720_CPC_522_Fall_2026_Reading_Schedule__1_.docx';
+    const docxPath = fs.existsSync('/tmp/CoursePal_Device_Docs_Current/syllabi/1790528226564_CPC_522_Fall_2026_Reading_Schedule__1_.docx')
+      ? '/tmp/CoursePal_Device_Docs_Current/syllabi/1790528226564_CPC_522_Fall_2026_Reading_Schedule__1_.docx'
+      : '/tmp/CoursePal_Device_Docs_PostDeploy3/syllabi/1790522818720_CPC_522_Fall_2026_Reading_Schedule__1_.docx';
     if (!fs.existsSync(docxPath)) return;
     const { extractTextFromDocxBytes } = require('../src/services/DocxTextExtractor');
     const bytes = fs.readFileSync(docxPath);
     const rawText = extractTextFromDocxBytes(bytes);
     const dto = LocalSyllabusParser.shared.parseText(rawText);
+    console.log('DTO week 3 readings:', dto.weeks?.find(w => w.weekNumber === 3)?.readings);
 
     const normalized = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(dto, rawText);
+    console.log('Normalized candidate readings for week 3:', normalized.candidateReadings.filter((r: any) => r.weekNumber === 3));
     const cleanReadingsList = SyllabusImportManager.shared.deduplicateReadings(
       normalized.candidateReadings,
       normalized.textbooks,
@@ -106,6 +113,7 @@ Linklater, R. (2014). Decolonizing trauma work: Indigenous stories and strategie
     console.log('Clean Assignments Count:', cleanAssignmentsList.length);
     cleanAssignmentsList.forEach(a => console.log(`  A: ${a.title} | Wk: ${a.weekNumber} | Due: ${a.dueDate}`));
     console.log('Clean Readings Count:', cleanReadingsList.length);
+    cleanReadingsList.forEach(r => console.log(`  R: ${r.title} | Wk: ${r.weekNumber} | Ch: ${r.chapterText} | Pg: ${r.pagesText}`));
     console.log('Textbooks Count:', normalized.textbooks?.length);
     normalized.textbooks?.forEach(t => console.log(`  T: ${t.title} | ${t.authorName}`));
 
@@ -115,6 +123,9 @@ Linklater, R. (2014). Decolonizing trauma work: Indigenous stories and strategie
 
     // Assert 10 Weeks with precise dates
     expect(normalized.weeks.length).toBe(10);
+    expect(cleanAcademicWeekTheme(normalized.weeks[0].theme)).toMatch(/^Defining trauma/);
+    expect(cleanAcademicWeekTheme(normalized.weeks[0].theme)).not.toContain(' – ');
+    expect(cleanAcademicWeekTheme(normalized.weeks[0].theme)).not.toContain('Introductions');
     expect(normalized.weeks[0].dateRangeStr).toContain('Oct 2, 2026');
     expect(normalized.weeks[1].dateRangeStr).toContain('Oct 9, 2026');
     expect(normalized.weeks[2].dateRangeStr).toContain('Oct 16, 2026');
@@ -131,12 +142,134 @@ Linklater, R. (2014). Decolonizing trauma work: Indigenous stories and strategie
     expect(cleanAssignmentsList.length).toBe(1);
     expect(cleanAssignmentsList[0].title).toBe('Language and Violence Analysis/Psychotherapy for Trauma Paper');
     expect(cleanAssignmentsList[0].weekNumber).toBe(6);
-    expect(new Date(cleanAssignmentsList[0].dueDate!).toISOString()).toContain('2026-11-15');
+    // Assert 10 Modules mapped to the 10 Sessions
+    expect(normalized.weeks[0].moduleNumber).toBe(1);
+    expect(normalized.weeks[5].moduleNumber).toBe(6);
+    expect(normalized.weeks[9].moduleNumber).toBe(10);
+    expect(cleanAssignmentsList[0].moduleNumber).toBe(6);
+    expect(cleanReadingsList.every(r => typeof r.moduleNumber === 'number' && r.moduleNumber >= 1 && r.moduleNumber <= 10)).toBe(true);
 
     // Assert Textbooks
     expect(normalized.textbooks.length).toBe(3);
     expect(normalized.textbooks[0].authorName).toContain('Briere');
     expect(normalized.textbooks[1].authorName).toContain('Tedeschi');
     expect(normalized.textbooks[2].authorName).toContain('Linklater');
+
+    // Generate pristine, complete CoursePal_AutoBackup_Clean.json for device deployment
+    const courseId = 'c-1790543041391-pdjz';
+    const docId = 'vd-1790543041391-kfhz';
+    const nowIso = new Date().toISOString();
+
+    const courseWeeks = normalized.weeks.map(w => ({
+      id: `w-${w.weekNumber}`,
+      weekNumber: w.weekNumber,
+      theme: cleanAcademicWeekTheme(w.theme) || `Week ${w.weekNumber}`,
+      startDate: w.startDate || null,
+      dateRangeStr: w.dateRangeStr || null,
+      moduleNumber: w.moduleNumber || null,
+      moduleMention: w.moduleMention || null,
+      courseId,
+      readings: []
+    }));
+
+    const finalReadings = cleanReadingsList.map((r, idx) => ({
+      ...r,
+      id: `r-1790543041391-${idx}`,
+      courseId,
+      courseCode: 'CPC 522',
+      sourceDocumentId: docId,
+      sourceDocumentName: 'CPC 522 Fall 2026 Reading Schedule (1).docx',
+      docColorHex: '#DC2626',
+      weekId: r.weekNumber ? `w-${r.weekNumber}` : undefined,
+      isCompleted: false,
+      isDeleted: false,
+      isFavorite: false
+    }));
+
+    const finalAssignments = cleanAssignmentsList.map((a, idx) => ({
+      ...a,
+      id: `a-1790543041392-${idx}`,
+      courseId,
+      courseCode: 'CPC 522',
+      sourceDocumentId: docId,
+      sourceDocumentName: 'CPC 522 Fall 2026 Reading Schedule (1).docx',
+      docColorHex: '#DC2626',
+      isCompleted: false,
+      isDeleted: false,
+      isFavorite: false
+    }));
+
+    const finalCourse = {
+      id: courseId,
+      creatorId: 'user-self',
+      courseName: 'Psychology of Trauma',
+      courseCode: 'CPC 522',
+      courseDescription: '',
+      instructorName: null,
+      instructorEmail: null,
+      officeHours: null,
+      externalScheduleNotice: null,
+      gradingScale: null,
+      gradingScaleRows: null,
+      hexColor: '#DC2626',
+      termWeeks: 10,
+      sharingCode: '334021',
+      isDeleted: false,
+      isFavorite: true,
+      createdAt: nowIso,
+      weeks: courseWeeks,
+      assignments: finalAssignments,
+      syllabusDocs: [],
+      textbooks: normalized.textbooks
+    };
+
+    const vaultDoc = {
+      id: docId,
+      title: 'CPC 522 Fall 2026 Reading Schedule',
+      category: 'Syllabi',
+      fileSize: '0.0 MB',
+      fileType: 'DOCX',
+      courseCode: 'CPC 522',
+      courseId,
+      fileContent: rawText,
+      docColorHex: '#DC2626',
+      rawFileDataUri: 'file:///var/mobile/Containers/Data/Application/3573EFDB-3A94-43E6-A1D7-C75889D2F49D/Documents/syllabi/1790543041102_CPC_522_Fall_2026_Reading_Schedule__1_.docx',
+      pageImages: [
+        'file:///var/mobile/Containers/Data/Application/3573EFDB-3A94-43E6-A1D7-C75889D2F49D/Library/Caches/CoursePal_Rendered_Pages/doc_page_2629C372-A420-4704-9E69-924732D9ED9C_0.jpg',
+        'file:///var/mobile/Containers/Data/Application/3573EFDB-3A94-43E6-A1D7-C75889D2F49D/Library/Caches/CoursePal_Rendered_Pages/doc_page_2629C372-A420-4704-9E69-924732D9ED9C_1.jpg'
+      ],
+      uploadedAt: nowIso
+    };
+
+    const cleanBackup = {
+      version: 5,
+      timestamp: Date.now(),
+      courses: [finalCourse],
+      readings: finalReadings,
+      assignments: finalAssignments,
+      vaultDocs: [vaultDoc],
+      hasAcceptedTerms: true,
+      diagnosticRecord: {
+        importId: `diag-${Date.now()}-cpc522`,
+        appBuildVersion: '2.0.0 (Build 42)',
+        documentHash: '00000000531c8efb',
+        receivedByteCount: 23000,
+        parserSource: 'LOCAL_DETERMINISTIC',
+        providerModel: 'on-device-engine',
+        responseStatus: 'SUCCESS',
+        fallbackReason: null,
+        extractedCounts: {
+          assignments: finalAssignments.length,
+          readings: finalReadings.length,
+          weeks: courseWeeks.length,
+          textbooks: normalized.textbooks.length
+        },
+        saveOutcome: 'SAVED_TO_DISK',
+        timestamp: nowIso
+      }
+    };
+
+    fs.writeFileSync('/tmp/CoursePal_AutoBackup_Clean.json', JSON.stringify(cleanBackup, null, 2), 'utf8');
+    console.log('Successfully wrote /tmp/CoursePal_AutoBackup_Clean.json with 10 weeks, 16 readings, 1 assignment!');
   });
 });

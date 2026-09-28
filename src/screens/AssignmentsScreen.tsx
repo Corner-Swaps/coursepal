@@ -18,6 +18,7 @@ import {
   TrashIcon,
   CalendarIcon,
   ArrowPathIcon,
+  AppleCalendarIcon,
   GoogleCalendarIcon,
   PlusIcon
 } from '../components/SvgIcons';
@@ -679,7 +680,7 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   <GoogleCalendarIcon size={15} />
-                  <Text style={styles.dateFilterGoogleBtnText}>Open Date in Calendar</Text>
+                  <Text style={styles.dateFilterGoogleBtnText}>Open Date in Google Calendar</Text>
                 </TouchableOpacity>
               </View>
             </View>

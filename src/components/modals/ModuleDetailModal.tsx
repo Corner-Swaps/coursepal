@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Course, Reading, Assignment } from '../../types/models';
 import { CoursePalTheme } from '../../constants/theme';
 import {
+  AppleCalendarIcon,
   GoogleCalendarIcon,
   ArrowUpRightIcon,
   CheckmarkCircleFillIcon,
@@ -163,7 +164,7 @@ export const ModuleDetailModal: React.FC<ModuleDetailModalProps> = ({
                 <GoogleCalendarIcon size={22} />
               </View>
               <View style={styles.syncCardTextCol}>
-                <Text style={styles.syncCardTitle}>Open Module Date in Calendar</Text>
+                <Text style={styles.syncCardTitle}>Sync Module to Google Calendar</Text>
                 <Text style={styles.syncCardSubtitle}>
                   Includes overview, {readings.length} reading{readings.length === 1 ? '' : 's'}
                   {moduleAssignments.length > 0 ? ` & ${moduleAssignments.length} deliverable${moduleAssignments.length === 1 ? '' : 's'}` : ''}

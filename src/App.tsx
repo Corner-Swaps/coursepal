@@ -262,7 +262,7 @@ function MainAppView() {
           onSelectTab={tab => setSelectedTab(tab)}
           onPressCenterPlus={() => {
             if (!isUploading) {
-              setShowAddChoiceModal(true);
+              setShowAddCourseModal(true);
             }
           }}
           isUploading={isUploading}
