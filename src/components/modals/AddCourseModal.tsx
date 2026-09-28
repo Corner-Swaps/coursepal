@@ -72,9 +72,10 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
 
   if (!visible) return null;
 
-  const hasSyllabusSource = !!(attachedFileName && attachedFileName.length > 0);
-  const canSave = courseName.trim().length > 0;
-  const isNameMissing = showValidationHighlight && !courseName.trim();
+  const hasSyllabusSource = !!(attachedFileName && attachedFileName.length > 0) || selectedVaultDocIds.length > 0;
+  const canSave = hasSyllabusSource || (courseName.trim().length > 0 && courseDescription.trim().length > 0);
+  const isNameMissing = showValidationHighlight && !hasSyllabusSource && !courseName.trim();
+  const isDescMissing = showValidationHighlight && !hasSyllabusSource && !courseDescription.trim();
 
   const handleAttachRealDoc = async () => {
     if (isUploading) {
@@ -141,18 +142,17 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   };
 
   const handleSave = () => {
-    const trimmedName = courseName.trim();
-
-    if (!trimmedName) {
+    if (!canSave) {
       setShowValidationHighlight(true);
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
-      Alert.alert(
-        'Required Information Missing',
-        'Please enter a course name before saving.'
-      );
+      if (!hasSyllabusSource) {
+        if (!courseName.trim()) {
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        }
+      }
       return;
     }
 
+    const trimmedName = courseName.trim();
     const isGenericCourseName = /^(new\s*course|new)$/i.test(trimmedName);
     const codeMatch = trimmedName.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
     const derivedCode = codeMatch
@@ -161,15 +161,16 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
       ? ''
       : (trimmedName.length <= 8 && /^[A-Za-z0-9\s-]+$/.test(trimmedName) ? trimmedName.toUpperCase() : '');
 
-    if (attachedFileName) {
+    if (hasSyllabusSource) {
       const chosenDoc = vaultDocs.find(d => selectedVaultDocIds.includes(d.id));
+      const fileToImport = attachedFileName || chosenDoc?.title || 'Syllabus';
       importSyllabusDocument({
-        fileName: attachedFileName,
+        fileName: fileToImport,
         fileUri: attachedFileUri || chosenDoc?.rawFileDataUri || undefined,
         rawText: chosenDoc?.fileContent || undefined,
         fileSize: attachedFileSize || chosenDoc?.fileSize,
         preferredHexColor: selectedColorHex,
-        preserveCourseTitle: isGenericCourseName ? undefined : trimmedName,
+        preserveCourseTitle: isGenericCourseName || !trimmedName ? undefined : trimmedName,
         preserveCourseSubtitle: courseDescription.trim() || undefined,
         preserveCourseCode: derivedCode || undefined,
         isNewCourse: true
@@ -245,7 +246,8 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           <TouchableOpacity
             onPress={handleSave}
             style={[styles.navButton, styles.actionButton]}
-            activeOpacity={canSave ? 0.7 : 0.4}
+            activeOpacity={canSave ? 0.7 : 1}
+            disabled={!canSave}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Save</Text>
@@ -301,14 +303,27 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
           {/* Section 2: Course Description */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>Course Description</Text>
+            {isDescMissing && (
+              <View style={styles.requiredBadge}>
+                <Text style={styles.requiredBadgeText}>Required</Text>
+              </View>
+            )}
           </View>
-          <View style={styles.inputCapsule}>
+          <View
+            style={[
+              styles.inputCapsule,
+              isDescMissing && styles.inputCapsuleError
+            ]}
+          >
             <TextInput
               style={styles.textInput}
               placeholder="Course Description (e.g., Intro to Cognitive Psychology)"
               placeholderTextColor="#8E9BAE"
               value={courseDescription}
-              onChangeText={setCourseDescription}
+              onChangeText={text => {
+                setCourseDescription(text);
+                if (text.trim()) setShowValidationHighlight(false);
+              }}
               returnKeyType="done"
             />
             {courseDescription.length > 0 && (
@@ -390,7 +405,12 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
             {hasSyllabusSource && (
               <TouchableOpacity
                 style={styles.removePill}
-                onPress={() => setAttachedFileName(null)}
+                onPress={() => {
+                  setAttachedFileName(null);
+                  setAttachedFileUri(undefined);
+                  setAttachedFileSize(undefined);
+                  setSelectedVaultDocIds([]);
+                }}
                 activeOpacity={0.7}
               >
                 <TrashIcon size={11} color="#FFFFFF" />
@@ -399,11 +419,11 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
             )}
           </View>
 
-          {/* Section 5: Choose Vault Document (Rendered if vault docs exist) */}
+          {/* Section 5: Choose Vault Document - Rendered if vault docs exist */}
           {vaultDocs.length > 0 && (
             <View style={styles.vaultSectionWrap}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeader}>Choose Vault Document ({vaultDocs.length})</Text>
+                <Text style={styles.sectionHeader}>Choose Vault Document</Text>
                 {hasSyllabusSource ? (
                   <View style={styles.attachedBadge}>
                     <Text style={styles.badgeTextWhite}>SELECTED</Text>
@@ -430,12 +450,8 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
                 </View>
 
                 <View style={styles.uploadTextCol}>
-                  <Text style={styles.uploadTitle}>Choose Saved Document from Vault</Text>
+                  <Text style={styles.uploadTitle}>Choose Document from Vault</Text>
                   <Text style={styles.uploadSubtitle}>Pick from documents stored in Syllabus</Text>
-                </View>
-
-                <View style={styles.vaultCountBadge}>
-                  <Text style={styles.vaultCountBadgeText}>({vaultDocs.length} Saved)</Text>
                 </View>
               </TouchableOpacity>
             </View>
