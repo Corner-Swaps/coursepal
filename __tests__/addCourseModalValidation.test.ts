@@ -9,40 +9,33 @@ describe('AddCourseModal Validation & HIG Cleanliness Suite', () => {
     modalSource = fs.readFileSync(modalFilePath, 'utf8');
   });
 
-  describe('Pure Validation Predicate Logic', () => {
-    const computeCanSave = (
-      attachedFileName: string | null,
-      selectedVaultDocIds: string[]
-    ) => {
-      const hasSyllabusSource = !!(attachedFileName && attachedFileName.length > 0) || selectedVaultDocIds.length > 0;
-      return hasSyllabusSource;
-    };
-
-    it('disallows save when no document is attached or selected from vault', () => {
-      expect(computeCanSave(null, [])).toBe(false);
-      expect(computeCanSave('', [])).toBe(false);
+  describe('AddCourseModal Navigation Bar & Redundancy Elimination', () => {
+    it('does NOT contain a redundant Save button in the main modal navigation bar', () => {
+      // The main nav bar should only have Cancel and the Title, plus symmetrical spacer
+      const navBarMatch = modalSource.match(/<View style=\{styles\.navBar\}>([\s\S]*?)<\/View>/);
+      expect(navBarMatch).not.toBeNull();
+      const navBarContent = navBarMatch![1];
+      expect(navBarContent).toContain('Cancel');
+      expect(navBarContent).toContain('Create New Course');
+      expect(navBarContent).not.toContain('>Save<');
     });
 
-    it('disallows save even if course name and description are typed without uploading class material', () => {
-      // Regardless of user typing name or description, uploading class material is required
-      expect(computeCanSave(null, [])).toBe(false);
+    it('uses a symmetrical spacer to keep the title centered per Apple HIG', () => {
+      expect(modalSource).toContain('<View style={[styles.navButton, styles.actionButton]} />');
     });
 
-    it('allows save when class material is uploaded via file picker', () => {
-      expect(computeCanSave('CPC527_Syllabus.pdf', [])).toBe(true);
+    it('directly imports syllabus on file selection without needing a Save button', () => {
+      expect(modalSource).toContain('importSyllabusDocument({');
+      expect(modalSource).toContain('fileName: asset.name');
     });
 
-    it('allows save when document is selected from vault', () => {
-      expect(computeCanSave(null, ['vault-doc-1'])).toBe(true);
-      expect(computeCanSave('', ['vault-doc-1'])).toBe(true);
-    });
-
-    it('allows save when both file name and vault selection are active', () => {
-      expect(computeCanSave('Research_Methods.docx', ['vault-doc-2'])).toBe(true);
+    it('directly imports syllabus on vault document selection without needing a Save button', () => {
+      expect(modalSource).toContain('handleDoneVaultSelection');
+      expect(modalSource).toContain('const chosen = vaultDocs.filter');
     });
   });
 
-  describe('AddCourseModal Code & HIG Copy Verification', () => {
+  describe('AddCourseModal Copy & HIG Verification', () => {
     it('does NOT contain "(2 Saved)" or "({vaultDocs.length} Saved)" badge', () => {
       expect(modalSource).not.toContain('Saved)');
       expect(modalSource).not.toContain('{vaultDocs.length} Saved');
@@ -57,22 +50,6 @@ describe('AddCourseModal Validation & HIG Cleanliness Suite', () => {
     it('labels Section 5 header cleanly as "Choose Vault Document" without count in parentheses', () => {
       expect(modalSource).toContain('<Text style={styles.sectionHeader}>Choose Vault Document</Text>');
       expect(modalSource).not.toContain('Choose Vault Document (');
-    });
-
-    it('strictly assigns canSave to hasSyllabusSource requiring an uploaded document before clicking Save', () => {
-      expect(modalSource).toContain('const canSave = hasSyllabusSource;');
-    });
-
-    it('binds disabled={!canSave} to the Save button TouchableOpacity', () => {
-      expect(modalSource).toContain('disabled={!canSave}');
-    });
-
-    it('applies styles.saveTextDisabled when !canSave', () => {
-      expect(modalSource).toContain('!canSave && styles.saveTextDisabled');
-    });
-
-    it('allows importSyllabusDocument to parse title automatically if courseName is empty', () => {
-      expect(modalSource).toContain('preserveCourseTitle: isGenericCourseName || !trimmedName ? undefined : trimmedName');
     });
   });
 });

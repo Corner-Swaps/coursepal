@@ -73,7 +73,6 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   if (!visible) return null;
 
   const hasSyllabusSource = !!(attachedFileName && attachedFileName.length > 0) || selectedVaultDocIds.length > 0;
-  const canSave = hasSyllabusSource;
   const isDocMissing = showValidationHighlight && !hasSyllabusSource;
 
   const handleAttachRealDoc = async () => {
@@ -140,57 +139,6 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
     }
   };
 
-  const handleSave = () => {
-    if (!canSave) {
-      setShowValidationHighlight(true);
-      scrollRef.current?.scrollToEnd({ animated: true });
-      Alert.alert(
-        'Class Material Required',
-        'Please upload or select a syllabus document before saving.'
-      );
-      return;
-    }
-
-    const trimmedName = courseName.trim();
-    const isGenericCourseName = /^(new\s*course|new)$/i.test(trimmedName);
-    const codeMatch = trimmedName.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
-    const derivedCode = codeMatch
-      ? codeMatch[1].toUpperCase().replace(/\s+/g, ' ')
-      : isGenericCourseName
-      ? ''
-      : (trimmedName.length <= 8 && /^[A-Za-z0-9\s-]+$/.test(trimmedName) ? trimmedName.toUpperCase() : '');
-
-    const chosenDoc = vaultDocs.find(d => selectedVaultDocIds.includes(d.id));
-    const fileToImport = attachedFileName || chosenDoc?.title || 'Syllabus';
-    importSyllabusDocument({
-      fileName: fileToImport,
-      fileUri: attachedFileUri || chosenDoc?.rawFileDataUri || undefined,
-      rawText: chosenDoc?.fileContent || undefined,
-      fileSize: attachedFileSize || chosenDoc?.fileSize,
-      preferredHexColor: selectedColorHex,
-      preserveCourseTitle: isGenericCourseName || !trimmedName ? undefined : trimmedName,
-      preserveCourseSubtitle: courseDescription.trim() || undefined,
-      preserveCourseCode: derivedCode || undefined,
-      isNewCourse: true
-    }).then(res => {
-      if (res && !res.success) {
-        Alert.alert('Import Notice', res.message || 'Could not parse syllabus document.');
-      }
-    }).catch(err => {
-      Alert.alert('Import Failed', err?.message || 'Error processing syllabus document.');
-    });
-
-    setCourseName('');
-    setCourseDescription('');
-    setAttachedFileName(null);
-    setAttachedFileUri(undefined);
-    setAttachedFileSize(undefined);
-    setSelectedVaultDocIds([]);
-    setShowValidationHighlight(false);
-    onCourseCreated?.();
-    onClose();
-  };
-
   const toggleVaultDocSelection = (docId: string) => {
     if (selectedVaultDocIds.includes(docId)) {
       setSelectedVaultDocIds(selectedVaultDocIds.filter(id => id !== docId));
@@ -202,15 +150,40 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
   const handleDoneVaultSelection = () => {
     const chosen = vaultDocs.filter(d => selectedVaultDocIds.includes(d.id));
     if (chosen.length > 0) {
-      setAttachedFileName(chosen.map(d => d.title).join(', '));
+      const userEnteredName = courseName.trim();
+      const codeMatch = userEnteredName.match(/\b([A-Z]{2,6}\s*\d{2,4}[A-Z]?)\b/i);
+      const derivedCode = codeMatch ? codeMatch[1].toUpperCase().replace(/\s+/g, ' ') : '';
       const firstDoc = chosen[0];
-      if (firstDoc.rawFileDataUri) {
-        setAttachedFileUri(firstDoc.rawFileDataUri);
-      }
-      if (firstDoc.fileSize) {
-        setAttachedFileSize(firstDoc.fileSize);
-      }
+
+      setShowingVaultSelector(false);
+      setCourseName('');
+      setCourseDescription('');
+      setAttachedFileName(null);
+      setAttachedFileUri(undefined);
+      setAttachedFileSize(undefined);
+      setSelectedVaultDocIds([]);
       setShowValidationHighlight(false);
+      onCourseCreated?.();
+      onClose();
+
+      importSyllabusDocument({
+        fileName: chosen.map(d => d.title).join(', '),
+        fileUri: firstDoc.rawFileDataUri || undefined,
+        rawText: firstDoc.fileContent || undefined,
+        fileSize: firstDoc.fileSize,
+        preferredHexColor: selectedColorHex,
+        preserveCourseTitle: userEnteredName || undefined,
+        preserveCourseSubtitle: courseDescription.trim() || undefined,
+        preserveCourseCode: derivedCode || undefined,
+        isNewCourse: true
+      }).then(res => {
+        if (res && !res.success) {
+          Alert.alert('Import Notice', res.message || 'Could not parse syllabus document.');
+        }
+      }).catch(err => {
+        Alert.alert('Import Failed', err?.message || 'Error processing syllabus document.');
+      });
+      return;
     }
     setShowingVaultSelector(false);
   };
@@ -233,15 +206,8 @@ export const AddCourseModal: React.FC<AddCourseModalProps> = ({
             <Text style={styles.navTitle} numberOfLines={1}>Create New Course</Text>
           </View>
 
-          <TouchableOpacity
-            onPress={handleSave}
-            style={[styles.navButton, styles.actionButton]}
-            activeOpacity={canSave ? 0.7 : 1}
-            disabled={!canSave}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Save</Text>
-          </TouchableOpacity>
+          {/* Symmetrical placeholder to center the title per Apple HIG */}
+          <View style={[styles.navButton, styles.actionButton]} />
         </View>
 
         <ScrollView
