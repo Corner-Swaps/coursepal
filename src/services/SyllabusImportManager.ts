@@ -515,8 +515,10 @@ export class SyllabusImportManager {
           }
         }
 
-        const pgMatch = seg.match(/\b(?:pp?\.?|pages?|pg\.?)\s*([\d\s\-–—]+)/i);
-        const extractedPages: string | null | undefined = pgMatch ? `pg. ${pgMatch[1].trim()}` : (sIdx === 0 ? candidate.pagesText : undefined);
+        const pgMatch = seg.match(/\b(?:pp?\.?|pages?|pg\.?)\s*([\d\s\-–—]+(?:\s*(?:to|-|–|—)\s*\d+)?)/i);
+        const extractedPages: string | null | undefined = pgMatch
+          ? `pg. ${pgMatch[1].trim().replace(/\s*to\s*/i, '–')}`
+          : (sIdx === 0 ? candidate.pagesText : undefined);
 
         let mediaType = candidate.mediaType;
         if (videoUrl) {
@@ -525,13 +527,18 @@ export class SyllabusImportManager {
 
         // Clean page indicators from segment title
         let cleanSegTitle = seg
-          .replace(/\b(?:pp?\.?|pages?|pg\.?)\s*[\d\s\-–—]+/gi, '')
+          .replace(/\b(?:pp?\.?|pages?|pg\.?)\s*[\d\s\-–—]+(?:\s*(?:to|-|–|—)\s*\d+)?/gi, '')
           .replace(/\s+(?:pp?\.?|pages?|pg\.?)\s*$/i, '')
           .replace(/^[•\-*▪●: \t\n ]+|[•\-*▪●: \t\n ]+$/g, '')
           .replace(/[:;·•\-–—.]+\s*$/, '')
           .replace(/\s+(?:and|&|\+|et|und|y)\s*$/i, '')
           .replace(/[:;·•\-–—,.]+\s*$/, '')
+          .replace(/\(\s*\)/g, '')
           .trim();
+
+        if (/^textbook$/i.test(cleanSegTitle) && extractedPages) {
+          cleanSegTitle = `Textbook (${extractedPages})`;
+        }
 
         // Isolate clean resource / book title if author or book prefix is present
         let cleanResTitle = cleanSegTitle;
@@ -926,7 +933,8 @@ export class SyllabusImportManager {
             const rawWt = aItem.weight != null ? aItem.weight : (aItem.weightPercentage || null);
             let aItemWeight: string | null = null;
             if (typeof rawWt === 'number' && !isNaN(rawWt)) {
-              aItemWeight = rawWt > 0 && rawWt <= 1 ? `${Math.round(rawWt * 100)}%` : `${Math.round(rawWt)}%`;
+              const scaled = rawWt > 0 && rawWt <= 1 ? rawWt * 100 : rawWt;
+              aItemWeight = `${Number(scaled.toFixed(2))}%`;
             } else if (typeof rawWt === 'string' && rawWt.trim()) {
               aItemWeight = rawWt.trim().includes('%') ? rawWt.trim() : `${rawWt.trim()}%`;
             }
@@ -1016,7 +1024,8 @@ export class SyllabusImportManager {
             if (!existing.weightPercentage && (a.weightPercentage || a.weight || (a as any).percentage)) {
               const rawW = a.weightPercentage || a.weight || (a as any).percentage;
               if (typeof rawW === 'number' && !isNaN(rawW)) {
-                existing.weightPercentage = rawW > 0 && rawW <= 1 ? `${Math.round(rawW * 100)}%` : `${Math.round(rawW)}%`;
+                const scaled = rawW > 0 && rawW <= 1 ? rawW * 100 : rawW;
+                existing.weightPercentage = `${Number(scaled.toFixed(2))}%`;
               } else if (typeof rawW === 'string' && rawW.trim()) {
                 existing.weightPercentage = rawW.trim().includes('%') ? rawW.trim() : `${rawW.trim()}%`;
               }
@@ -2068,9 +2077,10 @@ export class SyllabusImportManager {
       const rawWeight = a.weightPercentage ?? (a as any).weight ?? (a as any).weight_percentage ?? (a as any).percentage ?? (a as any).gradeWeight;
       if (typeof rawWeight === 'number' && !isNaN(rawWeight)) {
         if (rawWeight > 0 && rawWeight <= 1) {
-          cleanWeight = `${Math.round(rawWeight * 100)}%`;
+          const scaled = rawWeight * 100;
+          cleanWeight = `${Number(scaled.toFixed(2))}%`;
         } else if (rawWeight > 0) {
-          cleanWeight = `${Math.round(rawWeight)}%`;
+          cleanWeight = `${Number(rawWeight.toFixed(2))}%`;
         }
       } else if (typeof rawWeight === 'string' && rawWeight.trim()) {
         const wtTrim = rawWeight.trim();
@@ -2197,9 +2207,21 @@ export class SyllabusImportManager {
 
           // If both assignments have explicit weight percentages and they are different (e.g. 20% vs 10%), they are separate assignments!
           if (cleanWeight && existingA.weightPercentage) {
-            const w1 = parseInt(cleanWeight.replace(/\D/g, ''), 10);
-            const w2 = parseInt(existingA.weightPercentage.replace(/\D/g, ''), 10);
-            if (!isNaN(w1) && !isNaN(w2) && w1 !== w2) {
+            const w1 = parseFloat(cleanWeight.replace(/%/g, ''));
+            const w2 = parseFloat(existingA.weightPercentage.replace(/%/g, ''));
+            if (!isNaN(w1) && !isNaN(w2) && Math.abs(w1 - w2) > 0.01) {
+              return false;
+            }
+          }
+
+          // If both assignments have subtitles after a colon and the subtitles are distinct, they are separate parts of a multi-part assignment!
+          if (existingA.title.includes(':') && rawTitle.includes(':')) {
+            const subA = existingA.title.split(':')[1].toLowerCase().trim();
+            const subB = rawTitle.split(':')[1].toLowerCase().trim();
+            const wordsA = subA.split(/\s+/).filter(w => w.length > 2);
+            const wordsB = subB.split(/\s+/).filter(w => w.length > 2);
+            const sharedSubWords = wordsA.filter(w => wordsB.includes(w));
+            if (wordsA.length > 0 && wordsB.length > 0 && sharedSubWords.length === 0) {
               return false;
             }
           }
