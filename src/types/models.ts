@@ -203,6 +203,9 @@ export interface Course {
   assignments: Assignment[];
   syllabusDocs: SyllabusDocument[];
   textbooks?: TextbookResource[];
+  confidenceScore?: number | null;
+  lowConfidence?: boolean;
+  topics?: string[];
 }
 
 export interface Week {

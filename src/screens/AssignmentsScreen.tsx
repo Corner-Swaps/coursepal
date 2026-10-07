@@ -579,6 +579,13 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({
         );
       })()}
 
+      {/* Review Needed Banner (Layer 3) */}
+      {activeCourse?.lowConfidence ? (
+        <View style={styles.reviewNeededBanner}>
+          <Text style={styles.reviewNeededBannerText}>Review needed</Text>
+        </View>
+      ) : null}
+
       {/* Trash Mode Banner */}
       {sortMode === 'trash' && (
         <View style={styles.trashModeBanner}>
@@ -703,69 +710,17 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({
               <Text style={styles.allSectionTitle}>All Assignments</Text>
             </View>
           )}
-          {/* Non-week assignments (when week toggle is turned off or course-wide deliverables) */}
-          {unassignedAssignments.length > 0 && (() => {
-            const hasModules = unassignedAssignments.some(a => a.moduleMention || a.moduleNumber);
-            if (hasModules) {
-              const modMap = new Map<string, Assignment[]>();
-              for (const a of unassignedAssignments) {
-                const mLabel = a.moduleMention || (a.moduleNumber ? `Module ${a.moduleNumber}` : 'General');
-                const list = modMap.get(mLabel) || [];
-                list.push(a);
-                modMap.set(mLabel, list);
-              }
-              return (
-                <View style={styles.unassignedGroupSection}>
-                  {Array.from(modMap.entries()).map(([mLabel, mList]) => {
-                    const sampleA = mList[0];
-                    const matchedC = sampleA ? matchCourseForItem(sampleA, courses) : null;
-                    const modNum = sampleA?.moduleNumber;
-                    const modTheme = sampleA?.relevantTopics ||
-                      (modNum ? matchedC?.weeks?.find(w => w.moduleNumber === modNum)?.theme : undefined);
-                    return (
-                      <View key={`mod-group-${mLabel}`} style={{ gap: 6, marginBottom: 8 }}>
-                        <View style={styles.weekHeaderRow}>
-                          <View style={styles.weekPill}>
-                            <Text style={styles.weekPillText}>{mLabel}</Text>
-                          </View>
-                        </View>
-                        {modTheme ? (
-                          <View style={styles.weekThemeHeaderRow}>
-                            <Text style={styles.weekThemeHeaderText} numberOfLines={2}>
-                              {modTheme}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {mList.map(a => renderAssignmentCard(a))}
-                      </View>
-                    );
-                  })}
+          {/* Non-week assignments (General group) */}
+          {unassignedAssignments.length > 0 && (
+            <View style={styles.unassignedGroupSection}>
+              <View style={styles.weekHeaderRow}>
+                <View style={styles.weekPill}>
+                  <Text style={styles.weekPillText}>General</Text>
                 </View>
-              );
-            }
-            if (unassignedAssignments.some(a => a.assignmentNumber != null)) {
-              return (
-                <View style={styles.unassignedGroupSection}>
-                  <View style={styles.weekHeaderRow}>
-                    <View style={styles.weekPill}>
-                      <Text style={styles.weekPillText}>Deliverables</Text>
-                    </View>
-                  </View>
-                  {unassignedAssignments.map(a => renderAssignmentCard(a))}
-                </View>
-              );
-            }
-            return (
-              <View style={styles.unassignedGroupSection}>
-                <View style={styles.weekHeaderRow}>
-                  <View style={styles.weekPill}>
-                    <Text style={styles.weekPillText}>Assignments</Text>
-                  </View>
-                </View>
-                {unassignedAssignments.map(a => renderAssignmentCard(a))}
               </View>
-            );
-          })()}
+              {unassignedAssignments.map(a => renderAssignmentCard(a))}
+            </View>
+          )}
 
           {/* Week-grouped assignments (when week toggle is turned on) */}
           {groupedAssignments.map(([weekNum, weekList]) => (
@@ -775,22 +730,6 @@ export const AssignmentsScreen: React.FC<AssignmentsScreenProps> = ({
                 <View style={styles.weekPill}>
                   <Text style={styles.weekPillText}>Week {weekNum}</Text>
                 </View>
-                {(() => {
-                  const firstWithMod = weekList.find(a => a.moduleMention);
-                  const matchedCourse = firstWithMod ? matchCourseForItem(firstWithMod, courses) : (activeCourse || courses[0]);
-                  const wkObj = matchedCourse?.weeks?.find(w => w.weekNumber === weekNum);
-                  const modBadge = firstWithMod?.moduleMention || wkObj?.moduleMention;
-                  if (!modBadge) return null;
-                  // If course already has a dedicated module section or unassigned module deliverables, do not repeat module pills in weeks
-                  const hasModules = assignments.some(a => a.moduleNumber && (!a.weekNumber || a.weekNumber === 0));
-                  if (hasModules) return null;
-                  if (/^weeks?\b/i.test(modBadge.trim()) || modBadge.trim().toLowerCase() === `module ${weekNum}` || modBadge.trim().toLowerCase() === `mod ${weekNum}`) return null;
-                  return (
-                    <View style={[styles.weekPill, { backgroundColor: '#ECEEF2', marginLeft: 6 }]}>
-                      <Text style={[styles.weekPillText, { color: '#475569' }]}>{modBadge}</Text>
-                    </View>
-                  );
-                })()}
                 {weekNum === currentAcademicWeek && (
                   <View style={styles.currentWeekHeaderBadge}>
                     <Text style={styles.currentWeekHeaderBadgeText}>Current Week</Text>
@@ -1541,5 +1480,22 @@ const styles = StyleSheet.create({
     color: '#718096',
     letterSpacing: 0.8,
     textTransform: 'uppercase'
+  },
+  reviewNeededBanner: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  reviewNeededBannerText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#C2410C'
   }
 });

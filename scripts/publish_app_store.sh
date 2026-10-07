@@ -6,8 +6,8 @@ IOS_DIR="$PROJECT_DIR/ios"
 WORKSPACE="$IOS_DIR/CoursePal.xcworkspace"
 SCHEME="CoursePal"
 DATE_STR=$(date +%Y-%m-%d)
-BUILD_NUM="10"
-VERSION="1.4.4"
+BUILD_NUM="18"
+VERSION="1.4.6"
 ARCHIVE_PATH="$HOME/Library/Developer/Xcode/Archives/$DATE_STR/CoursePal ${VERSION} (Build ${BUILD_NUM}).xcarchive"
 EXPORT_DIR="$PROJECT_DIR/build/AppStore"
 UPLOAD_DIR="$PROJECT_DIR/build/UploadAppStore"
@@ -72,7 +72,7 @@ cat << 'UPLOAD_PLIST' > "$UPLOAD_DIR/UploadOptions.plist"
 	<key>teamID</key>
 	<string>KZ8W2GCVH8</string>
 	<key>uploadSymbols</key>
-	<true/>
+	<false/>
 </dict>
 </plist>
 UPLOAD_PLIST

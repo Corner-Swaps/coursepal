@@ -37,6 +37,8 @@ import {
   enrichAuthorsInReadings,
   enrichAuthorsInTextbooks
 } from '../utils/authorResolver';
+import { classifyBlock, TableBlock, BlockClassification } from './DocumentClassifier';
+import { scoreParse, LOW_CONFIDENCE_THRESHOLD } from './ParseConfidence';
 
 export interface RawAssignmentCandidate {
   title?: string;
@@ -83,6 +85,8 @@ export interface RawAssignmentCandidate {
   assignmentNumber?: number | null;
   assignment_number?: number | null;
   assignmentNumberLabel?: string | null;
+  isAlternative?: boolean;
+  alternativeGroupId?: string;
 }
 
 export interface RawReadingCandidate {
@@ -152,13 +156,19 @@ export interface NormalizedSyllabusPayload {
     dateRangeStr?: string;
     moduleNumber?: number | null;
     moduleMention?: string | null;
+    isNonInstructional?: boolean;
+    isReadingWeek?: boolean;
   }[];
+  nonInstructionalWeeks?: any[];
   externalScheduleNotice?: string | null;
   gradingScale?: string | null;
   gradingScaleRows?: GradingScaleTier[] | null;
   formatAccepted: string;
   isPartial: boolean;
   validationErrors: string[];
+  topics?: string[];
+  confidenceScore?: number;
+  lowConfidence?: boolean;
 }
 
 export interface ImportOutcomeDetails {
@@ -184,6 +194,14 @@ export class SyllabusImportManager {
 
   public static normalizeAndValidateSyllabusPayload(rawDto: any, rawTextContext?: string) {
     return SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(rawDto, rawTextContext);
+  }
+
+  public static classifyAndRouteTable(block: TableBlock): {
+    classification: BlockClassification;
+    topics?: string[];
+    scheduleRows?: string[][];
+  } {
+    return SyllabusImportManager.shared.classifyAndRouteTable(block);
   }
 
   public static deduplicateReadings(
@@ -568,6 +586,33 @@ export class SyllabusImportManager {
   }
 
   /**
+   * Layer 2: Classify and route table blocks before feeding the week pipeline.
+   * - schedule-table -> week pipeline
+   * - topical-table -> attached as topics[] metadata on course, NEVER injected into weeks
+   * - prose -> standard text parse
+   */
+  public classifyAndRouteTable(block: TableBlock): {
+    classification: BlockClassification;
+    topics?: string[];
+    scheduleRows?: string[][];
+  } {
+    const classification = classifyBlock(block);
+    if (classification === 'topical-table') {
+      const topics: string[] = [];
+      for (const row of block.rows) {
+        const candidate = row.length > 1 ? row[1].trim() : row[0]?.trim();
+        if (candidate && !topics.includes(candidate)) {
+          topics.push(candidate);
+        }
+      }
+      return { classification, topics };
+    } else if (classification === 'schedule-table') {
+      return { classification, scheduleRows: block.rows };
+    }
+    return { classification };
+  }
+
+  /**
    * 1. Normalize and validate raw AI response or parser DTO before deciding whether extraction succeeded.
    * Supports: items, readings, assignments, deliverables, and nested weeks.
    * An items-only response is NOT discarded.
@@ -641,9 +686,82 @@ export class SyllabusImportManager {
       };
     }
 
+    // 0. Not-a-Syllabus Gate:
+    // A document with fewer than 2 of (course-code token, dated schedule, grade structure)
+    // -> null course identity, empty reading/assignment lists. No hallucinated courses.
+    const rawTextStr = (rawTextContext || '').trim();
+    if (rawTextStr.length > 0) {
+      const candidateCode = (
+        dto.courseCode || (dto as any).code ||
+        (dto.course_details && (dto.course_details.archival_reference || dto.course_details.course_code || dto.course_details.code)) ||
+        (dto.course && (dto.course.code || dto.course.course_code)) ||
+        ''
+      ).trim();
+      const isBogusCode = /^(?:SHA|MD|UTF|ISO|IEEE|RFC|AES|RSA|EC|BCBC|SP|ID)[-\s]?\d+/i.test(candidateCode) ||
+        /\b(?:fingerprint|digest|hash|status|version|build|serial|record|page)\b/i.test(candidateCode);
+      const hasCourseCodeToken = Boolean(
+        !isBogusCode &&
+        (/\b[A-Z]{2,6}\s*[-–_]?\s*[A-Z0-9]{2,8}(?:[-–_][A-Z0-9]+)?\b/.test(candidateCode) ||
+         /\b(?:course\s+(?:code|number|identifier)|course\s*[:#]|archival\s+reference\s*[:#]?)\s*([A-Z0-9-_]{3,15})\b/i.test(rawTextStr))
+      );
+
+      const hasDatedSchedule = Boolean(
+        (Array.isArray(dto.weeks) && dto.weeks.some((w: any) => w.startDate || w.dateRangeStr || (w.readings && w.readings.length > 0))) ||
+        (Array.isArray(dto.schedule) && dto.schedule.length > 0) ||
+        /\b(?:week|class|session)\s*\d+[\s\S]{1,150}\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\b/i.test(rawTextStr) ||
+        /\|\s*(?:week|class|session|\d{1,2})\s*\|\s*[^|]+\|\s*[^|]+\|/i.test(rawTextStr)
+      );
+
+      const hasGradeStructure = Boolean(
+        (Array.isArray(dto.assignments) && dto.assignments.some((a: any) => a.weightPercentage || a.pointsPossible || (a.rubricCriteria && a.rubricCriteria.length > 0))) ||
+        (Array.isArray(dto.schedule) && dto.schedule.some((s: any) => (Array.isArray(s.assignments) && s.assignments.length > 0) || (Array.isArray(s.deliverables) && s.deliverables.length > 0))) ||
+        /\b(?:grade|grading|evaluation|assessment|assignments?|course\s+weight)\b[\s\S]{1,500}\b\d{1,3}\s*%/i.test(rawTextStr) ||
+        /\b(?:overview\s+of\s+(?:required\s+)?assignments|assignments\s+and\s+grading|grading\s+rubrics?|grade\s+points)\b/i.test(rawTextStr)
+      );
+
+      const syllabusSignals = (hasCourseCodeToken ? 1 : 0) + (hasDatedSchedule ? 1 : 0) + (hasGradeStructure ? 1 : 0);
+      if (syllabusSignals < 2) {
+        return {
+          textbooks: [],
+          candidateAssignments: [],
+          candidateReadings: [],
+          weekDateMap: new Map(),
+          weeks: [],
+          courseCode: undefined,
+          courseName: undefined,
+          termWeeks: 0,
+          formatAccepted: 'rejected_not_a_syllabus',
+          isPartial: false,
+          validationErrors: ['Document lacks sufficient academic syllabus structure (< 2 signals).']
+        };
+      }
+    }
+
     const textbooks: TextbookResource[] = [];
     const candidateAssignments: RawAssignmentCandidate[] = [];
     const candidateReadings: RawReadingCandidate[] = [];
+    const extractedTopics: string[] = [];
+
+    // Extract topics from dto.topics or dto.topicalTables (Layer 2)
+    if (Array.isArray(dto.topics)) {
+      for (const t of dto.topics) {
+        if (typeof t === 'string' && t.trim() && !extractedTopics.includes(t.trim())) {
+          extractedTopics.push(t.trim());
+        }
+      }
+    }
+    if (Array.isArray(dto.topicalTables)) {
+      for (const table of dto.topicalTables) {
+        const routed = this.classifyAndRouteTable(table);
+        if (routed.classification === 'topical-table' && routed.topics) {
+          for (const t of routed.topics) {
+            if (typeof t === 'string' && t.trim() && !extractedTopics.includes(t.trim())) {
+              extractedTopics.push(t.trim());
+            }
+          }
+        }
+      }
+    }
     const weeksSummary: {
       weekNumber: number;
       theme?: string;
@@ -669,6 +787,10 @@ export class SyllabusImportManager {
     for (const tb of rawTextbooks) {
       if (!tb) continue;
       if (typeof tb === 'string') {
+        const lowerTb = tb.toLowerCase();
+        if (/^(?:chapter|chapters|ch\b|chs\b|section|sec\b)\s*\d+/i.test(lowerTb) && !lowerTb.includes('book') && !lowerTb.includes('textbook')) {
+          continue;
+        }
         const parsed = SyllabusImportManager.parseCitationStringToTextbook(tb);
         if (parsed && parsed.title) {
           textbooks.push(parsed);
@@ -676,8 +798,13 @@ export class SyllabusImportManager {
         continue;
       }
       if (typeof tb !== 'object') continue;
-      const title = (tb.title || tb.name || tb.bookTitle || '').trim();
+      const title = (tb.title || tb.resourceTitle || tb.bookTitle || tb.name || '').trim();
       if (!title) continue;
+      const lowerT = title.toLowerCase();
+      // Drop bare chapters that don't mention book/textbook
+      if (/^(?:chapter|chapters|ch\b|chs\b|section|sec\b)\s*\d+/i.test(lowerT) && !lowerT.includes('book') && !lowerT.includes('textbook')) {
+        continue;
+      }
       const rawAuthor = (tb.authorName || tb.author || tb.authors || null)?.trim() || null;
       const authorName = resolveFullAuthorName(rawAuthor, rawTextContext) || rawAuthor;
       const edition = (tb.edition || null)?.trim() || null;
@@ -709,35 +836,63 @@ export class SyllabusImportManager {
       }
     }
 
+    const weekShiftMap = new Map<number, number>();
+    const nonInstructionalWeeks: any[] = [];
+    let currentInstructionalWeek = 0;
+
+    const isNonInstructionalWeek = (w: any): boolean => {
+      const theme = (w.theme || '').toLowerCase();
+      const title = ((w as any).title || '').toLowerCase();
+      const rawDate = ((w as any).rawDate || (w as any).date || '').toLowerCase();
+      return Boolean(
+        w.isNonInstructional === true ||
+        w.isReadingWeek === true ||
+        /reading\s*(?:week|break)|no\s*class|break\s*week|flex\s*week|spring\s*break|thanksgiving/i.test(theme) ||
+        /reading\s*(?:week|break)|no\s*class|break\s*week|flex\s*week/i.test(title) ||
+        /reading\s*(?:week|break)|no\s*class/i.test(rawDate)
+      );
+    };
+
     // Process nested weeks
     if (Array.isArray(dto.weeks)) {
       for (const w of dto.weeks) {
         if (!w || typeof w !== 'object') continue;
-        const wkNum = w.weekNumber || w.week_number;
+        const origWkNum = w.weekNumber || w.week_number;
         const rawDate = w.date || w.startDate || w.rawDate || w.dateRangeStr;
-        const wModNum = typeof (w as any).moduleNumber === 'number'
-          ? (w as any).moduleNumber
-          : (typeof (w as any).module_number === 'number'
-              ? (w as any).module_number
-              : ((w as any).moduleMention && /\d+/.test((w as any).moduleMention) ? parseInt((w as any).moduleMention.match(/\d+/)![0], 10) : undefined));
-        const wModMention = (w as any).moduleMention || (wModNum ? `Module ${wModNum}` : undefined);
 
-        if (typeof wkNum === 'number' && wkNum > 0) {
-          weeksSummary.push({
-            weekNumber: wkNum,
-            theme: typeof w.theme === 'string' ? w.theme : undefined,
+        if (isNonInstructionalWeek(w)) {
+          w.isNonInstructional = true;
+          w.isReadingWeek = true;
+          nonInstructionalWeeks.push({
+            weekNumber: origWkNum,
+            theme: w.theme || 'Reading Week',
             date: typeof rawDate === 'string' ? rawDate : undefined,
-            startDate: typeof (w as any).startDate === 'string' ? (w as any).startDate : (typeof rawDate === 'string' ? rawDate : undefined),
-            dateRangeStr: typeof (w as any).dateRangeStr === 'string' ? (w as any).dateRangeStr : undefined,
-            moduleNumber: wModNum,
-            moduleMention: wModMention
+            isNonInstructional: true,
+            isReadingWeek: true
           });
+          continue;
+        }
 
-          if (rawDate && typeof rawDate === 'string') {
-            const parsed = parseSafeDate(rawDate, termYear || undefined);
-            if (parsed) {
-              weekDateMap.set(wkNum, parsed.toISOString().split('T')[0]);
-            }
+        currentInstructionalWeek++;
+        const wkNum = currentInstructionalWeek;
+        if (typeof origWkNum === 'number' && origWkNum > 0) {
+          weekShiftMap.set(origWkNum, wkNum);
+        }
+
+        weeksSummary.push({
+          weekNumber: wkNum,
+          theme: typeof w.theme === 'string' ? w.theme : undefined,
+          date: typeof rawDate === 'string' ? rawDate : undefined,
+          startDate: typeof (w as any).startDate === 'string' ? (w as any).startDate : (typeof rawDate === 'string' ? rawDate : undefined),
+          dateRangeStr: typeof (w as any).dateRangeStr === 'string' ? (w as any).dateRangeStr : undefined,
+          moduleNumber: 0,
+          moduleMention: ''
+        });
+
+        if (rawDate && typeof rawDate === 'string') {
+          const parsed = parseSafeDate(rawDate, termYear || undefined);
+          if (parsed) {
+            weekDateMap.set(wkNum, parsed.toISOString().split('T')[0]);
           }
         }
 
@@ -750,9 +905,9 @@ export class SyllabusImportManager {
                   ...splitWr,
                   dueDate: splitWr.dueDate || splitWr.due_date || (w as any).startDate || (wkNum ? weekDateMap.get(wkNum) : null),
                   dateRangeStr: splitWr.dateRangeStr || (w as any).dateRangeStr || null,
-                  weekNumber: splitWr.weekNumber || splitWr.week_number || wkNum,
-                  moduleNumber: splitWr.moduleNumber || (splitWr as any).module_number || wModNum,
-                  moduleMention: splitWr.moduleMention || (splitWr as any).module_mention || wModMention,
+                  weekNumber: wkNum,
+                  moduleNumber: 0,
+                  moduleMention: '',
                   relevantTopics: splitWr.relevantTopics || w.theme
                 });
               }
@@ -769,9 +924,9 @@ export class SyllabusImportManager {
             candidateAssignments.push({
               ...wa,
               dueDate: wa.dueDate || wa.due_date || wa.date || (wkNum ? weekDateMap.get(wkNum) : null),
-              weekNumber: wa.weekNumber || wa.week_number || wkNum,
-              moduleNumber: wa.moduleNumber || (wa as any).module_number || wModNum,
-              moduleMention: wa.moduleMention || (wa as any).module_mention || wModMention
+              weekNumber: wkNum,
+              moduleNumber: 0,
+              moduleMention: ''
             });
           }
         }
@@ -860,8 +1015,8 @@ export class SyllabusImportManager {
                   pagesText: ppMatch ? ppMatch[1].trim() : undefined,
                   mediaType: 'textbook',
                   weekNumber: assignedWeek,
-                  moduleNumber: assignedMod,
-                  moduleMention: `Module ${assignedMod}`,
+                  moduleNumber: 0,
+                  moduleMention: '',
                   relevantTopics: block.core_theoretical_focus || block.unit
                 };
               } else if (parts.length === 2) {
@@ -871,8 +1026,8 @@ export class SyllabusImportManager {
                   authorName: parts[0],
                   mediaType: 'textbook',
                   weekNumber: assignedWeek,
-                  moduleNumber: assignedMod,
-                  moduleMention: `Module ${assignedMod}`,
+                  moduleNumber: 0,
+                  moduleMention: '',
                   relevantTopics: block.core_theoretical_focus || block.unit
                 };
               } else {
@@ -880,8 +1035,8 @@ export class SyllabusImportManager {
                   title: rItem,
                   mediaType: 'textbook',
                   weekNumber: assignedWeek,
-                  moduleNumber: assignedMod,
-                  moduleMention: `Module ${assignedMod}`,
+                  moduleNumber: 0,
+                  moduleMention: '',
                   relevantTopics: block.core_theoretical_focus || block.unit
                 };
               }
@@ -894,8 +1049,8 @@ export class SyllabusImportManager {
                 pagesText: rItem.pages || rItem.pagesText || null,
                 mediaType: rItem.mediaType || 'textbook',
                 weekNumber: rItem.weekNumber || assignedWeek,
-                moduleNumber: rItem.moduleNumber || assignedMod,
-                moduleMention: `Module ${rItem.moduleNumber || assignedMod}`,
+                moduleNumber: 0,
+                moduleMention: '',
                 relevantTopics: rItem.relevantTopics || block.core_theoretical_focus || block.unit
               };
             } else {
@@ -933,10 +1088,11 @@ export class SyllabusImportManager {
             const rawWt = aItem.weight != null ? aItem.weight : (aItem.weightPercentage || null);
             let aItemWeight: string | null = null;
             if (typeof rawWt === 'number' && !isNaN(rawWt)) {
-              const scaled = rawWt > 0 && rawWt <= 1 ? rawWt * 100 : rawWt;
-              aItemWeight = `${Number(scaled.toFixed(2))}%`;
-            } else if (typeof rawWt === 'string' && rawWt.trim()) {
-              aItemWeight = rawWt.trim().includes('%') ? rawWt.trim() : `${rawWt.trim()}%`;
+              if (rawWt > 0 && rawWt <= 1) {
+                aItemWeight = `${Number((rawWt * 100).toFixed(2))}%`;
+              }
+            } else if (typeof rawWt === 'string' && rawWt.trim() && rawWt.includes('%')) {
+              aItemWeight = rawWt.trim();
             }
             let aItemPoints: string | null = null;
             if (typeof rawPts === 'number' && rawPts > 0) {
@@ -976,6 +1132,11 @@ export class SyllabusImportManager {
     if (Array.isArray(dto.assignments)) {
       for (const a of dto.assignments) {
         if (a && typeof a === 'object') {
+          // Cross-bleed guard: a row categorized as Reading must never also emit as an assignment.
+          const aCat = ((a as any).category || (a as any).type || (a as any).subType || '').toLowerCase();
+          if (aCat === 'reading' || aCat === 'textbook' || aCat === 'media' || aCat === 'required reading') {
+            continue;
+          }
           const rawA = (a.title || a.name || a.assignmentName || '').trim();
           const cleanA = cleanAssignmentTitle(rawA);
           const normA = cleanA.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1024,10 +1185,11 @@ export class SyllabusImportManager {
             if (!existing.weightPercentage && (a.weightPercentage || a.weight || (a as any).percentage)) {
               const rawW = a.weightPercentage || a.weight || (a as any).percentage;
               if (typeof rawW === 'number' && !isNaN(rawW)) {
-                const scaled = rawW > 0 && rawW <= 1 ? rawW * 100 : rawW;
-                existing.weightPercentage = `${Number(scaled.toFixed(2))}%`;
-              } else if (typeof rawW === 'string' && rawW.trim()) {
-                existing.weightPercentage = rawW.trim().includes('%') ? rawW.trim() : `${rawW.trim()}%`;
+                if (rawW > 0 && rawW <= 1) {
+                  existing.weightPercentage = `${Number((rawW * 100).toFixed(2))}%`;
+                }
+              } else if (typeof rawW === 'string' && rawW.trim() && rawW.includes('%')) {
+                existing.weightPercentage = rawW.trim();
               }
             }
             if (!existing.pointsPossible && (a.pointsPossible || a.points || (a as any).totalPoints)) {
@@ -1062,6 +1224,11 @@ export class SyllabusImportManager {
       formatAccepted = 'deliverables_split';
       for (const d of dto.deliverables) {
         if (d && typeof d === 'object') {
+          // Cross-bleed guard: a row categorized as Reading must never also emit as an assignment.
+          const dCat = ((d as any).category || (d as any).type || (d as any).subType || '').toLowerCase();
+          if (dCat === 'reading' || dCat === 'textbook' || dCat === 'media' || dCat === 'required reading') {
+            continue;
+          }
           const rawD = (d.title || d.name || d.assignmentName || '').trim();
           const cleanD = cleanAssignmentTitle(rawD);
           const normD = cleanD.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1110,6 +1277,54 @@ export class SyllabusImportManager {
       }
     }
 
+    // 5. OR-alternatives detection: Either/or papers get isAlternative=true + shared alternativeGroupId
+    if (rawTextContext) {
+      const orAltPattern = /([A-Z][a-zA-Z\s,–-]+?(?:Paper|Assignment|Project|Report|Essay))\s*\((?:worth\s+)?(\d{1,3}%)\)\s*:\s*([^\n]+(?:\n(?!\n|[A-Z][^\n]+?\([0-9]{1,3}%\))[^\n]+)*)[\s\S]*?\bOR\b\s*([A-Z][a-zA-Z\s,–-]+?(?:Paper|Assignment|Project|Report|Essay))\s*\((?:worth\s+)?(\d{1,3}%)\)\s*:\s*([^\n]+(?:\n(?!\n|[A-Z][^\n]+?\([0-9]{1,3}%\))[^\n]+)*)/;
+      const match = rawTextContext.match(orAltPattern);
+      if (match) {
+        const rawTitle1 = match[1].trim();
+        const title1 = cleanAssignmentTitle(rawTitle1.replace(/^.*?(?:details|overview|description)\s*[:\-–—]\s*/i, ''));
+        const weight1 = match[2].trim();
+        const desc1 = match[3].trim();
+        const rawTitle2 = match[4].trim();
+        const title2 = cleanAssignmentTitle(rawTitle2.replace(/^.*?(?:details|overview|description)\s*[:\-–—]\s*/i, ''));
+        const weight2 = match[5].trim();
+        const desc2 = match[6].trim();
+        const altGroupId = `alt-grp-${title1.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+        // Remove placeholder overview item like "Language or Psychotherapy Paper"
+        const placeholderIdx = candidateAssignments.findIndex(a => {
+          const t = (a.title || a.name || '').toLowerCase();
+          return (t.includes(' or ') || t.includes('/')) &&
+            (t.includes('language') || t.includes('psychotherapy'));
+        });
+        if (placeholderIdx !== -1) {
+          candidateAssignments.splice(placeholderIdx, 1);
+        }
+
+        if (!candidateAssignments.some(a => (a.title || a.name || '').toLowerCase().includes(title1.toLowerCase()))) {
+          candidateAssignments.push({
+            title: title1,
+            weightPercentage: weight1,
+            fullInstructions: desc1,
+            isAlternative: true,
+            alternativeGroupId: altGroupId,
+            weekNumber: 0
+          });
+        }
+        if (!candidateAssignments.some(a => (a.title || a.name || '').toLowerCase().includes(title2.toLowerCase()))) {
+          candidateAssignments.push({
+            title: title2,
+            weightPercentage: weight2,
+            fullInstructions: desc2,
+            isAlternative: true,
+            alternativeGroupId: altGroupId,
+            weekNumber: 0
+          });
+        }
+      }
+    }
+
     // Top-level readings (enrich existing candidates from weeks[] rather than duplicating)
     if (Array.isArray(dto.readings)) {
       for (const r of dto.readings) {
@@ -1143,35 +1358,64 @@ export class SyllabusImportManager {
       }
     }
 
-    // Top-level module readings (e.g. from Table 1 curriculum modules)
-    // Always preserve all canonical modules as dedicated module curriculum entities!
+    const hasDatedWeekSchedule = Boolean(
+      weeksSummary.length > 0 && (
+        weekDateMap.size > 0 ||
+        weeksSummary.some(w => w.date || w.startDate || w.dateRangeStr) ||
+        (Array.isArray(dto.weeks) && dto.weeks.some((w: any) => w.date || w.startDate || w.dateRangeStr || (w.readings && w.readings.length > 0)))
+      )
+    );
+
+    const hasTopicalModuleTable = Boolean(
+      (Array.isArray(dto.topicalTables) && dto.topicalTables.some((t: any) => classifyBlock(t) === 'topical-table')) ||
+      (rawTextContext && (
+        /the following modules and topics will be integrated/i.test(rawTextContext) ||
+        /(?:modules?\s*[\t|]\s*topics\s*[\t|]\s*related readings?)/i.test(rawTextContext)
+      ))
+    );
+
+    const isTopicalTableReading = (item: any): boolean => {
+      if (!item || typeof item !== 'object') return false;
+      if (item.isTopicalTable === true) return true;
+      if (typeof item.id === 'string' && item.id.includes('canonical-mod') && hasTopicalModuleTable) return true;
+      return false;
+    };
+
+    // Top-level module readings: if an independent dated week schedule exists AND
+    // the module readings belong to the topical-table class, route to course.topics metadata
+    // and NEVER become week readings!
     if (Array.isArray((dto as any).moduleReadings)) {
       const rawModuleReadings: any[] = (dto as any).moduleReadings;
       for (const mr of rawModuleReadings) {
         if (mr && typeof mr === 'object') {
-          const modNum = mr.moduleNumber || mr.module_number;
-          for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
-            // Strict Rule 3: Zero Fabricated Data
-            // Do NOT fabricate phantom readings out of bare seminar themes/topics that have no reading content.
-            const hasDeliverableContent = Boolean(
-              splitMr.chapterText ||
-              splitMr.pagesText ||
-              splitMr.authorName ||
-              (splitMr.resourceTitle && splitMr.resourceTitle.trim().toLowerCase() !== (splitMr.title || '').trim().toLowerCase()) ||
-              (splitMr.moduleNumber && splitMr.moduleNumber > 0 && splitMr.title)
-            );
-            if (!hasDeliverableContent) {
-              continue;
+          if (hasDatedWeekSchedule && isTopicalTableReading(mr)) {
+            const topic = mr.relevantTopics || mr.theme || mr.title;
+            if (topic && typeof topic === 'string' && !extractedTopics.includes(topic.trim())) {
+              extractedTopics.push(topic.trim());
             }
-            candidateReadings.push({
-              ...splitMr,
-              weekNumber: undefined,
-              moduleNumber: modNum || splitMr.moduleNumber || (splitMr as any).module_number,
-              moduleMention: splitMr.moduleMention || (modNum ? `Module ${modNum}` : null),
-              relevantTopics: mr.relevantTopics || mr.theme || splitMr.relevantTopics || undefined,
-              summaryText: splitMr.summaryText || mr.summaryText || '',
-              keyTakeawaysText: splitMr.keyTakeawaysText || mr.keyTakeawaysText || ''
-            });
+          } else {
+            const modNum = mr.moduleNumber || mr.module_number;
+            for (const splitMr of SyllabusImportManager.splitMultiCitationCandidate(mr)) {
+              const hasDeliverableContent = Boolean(
+                splitMr.chapterText ||
+                splitMr.pagesText ||
+                splitMr.authorName ||
+                (splitMr.resourceTitle && splitMr.resourceTitle.trim().toLowerCase() !== (splitMr.title || '').trim().toLowerCase()) ||
+                (splitMr.moduleNumber && splitMr.moduleNumber > 0 && splitMr.title)
+              );
+              if (!hasDeliverableContent) {
+                continue;
+              }
+              candidateReadings.push({
+                ...splitMr,
+                weekNumber: splitMr.weekNumber || undefined,
+                moduleNumber: modNum || splitMr.moduleNumber || (splitMr as any).module_number || 0,
+                moduleMention: splitMr.moduleMention || (modNum ? `Module ${modNum}` : ''),
+                relevantTopics: mr.relevantTopics || mr.theme || splitMr.relevantTopics || undefined,
+                summaryText: splitMr.summaryText || mr.summaryText || '',
+                keyTakeawaysText: splitMr.keyTakeawaysText || mr.keyTakeawaysText || ''
+              });
+            }
           }
         }
       }
@@ -1223,6 +1467,20 @@ export class SyllabusImportManager {
             });
           }
         } else if (category === 'reading' || category === 'textbook' || category === 'media') {
+          // If a dated week schedule exists, dateless module items from topical tables must NOT become week readings
+          const isDatelessModuleItem = Boolean(
+            hasDatedWeekSchedule &&
+            isTopicalTableReading(item) &&
+            (!item.weekNumber || item.weekNumber <= 0)
+          );
+          if (isDatelessModuleItem) {
+            const topic = item.relevantTopics || item.theme || item.title;
+            if (topic && typeof topic === 'string' && !extractedTopics.includes(topic.trim())) {
+              extractedTopics.push(topic.trim());
+            }
+            continue;
+          }
+
           const normTitle = (item.title || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
           const normCh = (item.chapterText || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
           const alreadyExists = candidateReadings.some(cr => {
@@ -1289,6 +1547,39 @@ export class SyllabusImportManager {
       undefined
     );
 
+    // "if it says modules you just assume it's weeks so that we can use the module dates as weeks"
+    if (weeksSummary.length === 0) {
+      const allMods = new Set<number>();
+      for (const cr of candidateReadings) {
+        if (cr.moduleNumber && cr.moduleNumber > 0) allMods.add(cr.moduleNumber);
+      }
+      for (const ca of candidateAssignments) {
+        if (ca.moduleNumber && ca.moduleNumber > 0) allMods.add(ca.moduleNumber);
+      }
+      if (allMods.size > 0) {
+        const sortedMods = Array.from(allMods).sort((a, b) => a - b);
+        for (const modNum of sortedMods) {
+          const matchingReading = candidateReadings.find(cr => cr.moduleNumber === modNum);
+          const rawDate = matchingReading?.dueDate || (matchingReading as any)?.dateRangeStr;
+          weeksSummary.push({
+            weekNumber: modNum,
+            theme: matchingReading?.relevantTopics || `Module ${modNum}`,
+            date: typeof rawDate === 'string' ? rawDate : undefined,
+            startDate: typeof rawDate === 'string' ? rawDate : undefined,
+            dateRangeStr: (matchingReading as any)?.dateRangeStr || undefined,
+            moduleNumber: modNum,
+            moduleMention: `Module ${modNum}`
+          });
+          if (rawDate && typeof rawDate === 'string') {
+            const parsed = parseSafeDate(rawDate, termYear || undefined);
+            if (parsed) {
+              weekDateMap.set(modNum, parsed.toISOString().split('T')[0]);
+            }
+          }
+        }
+      }
+    }
+
     let resolvedTermWeeks = typeof dto.termWeeks === 'number' && dto.termWeeks > 0 ? dto.termWeeks : undefined;
     if (!resolvedTermWeeks && weeksSummary.length > 0) {
       resolvedTermWeeks = Math.max(...weeksSummary.map(w => w.weekNumber));
@@ -1325,7 +1616,7 @@ export class SyllabusImportManager {
       (typeof (dto as any).office_hours_text === 'string' && (dto as any).office_hours_text.trim()) ? (dto as any).office_hours_text.trim() :
       null;
 
-    return {
+    const finalPayload: NormalizedSyllabusPayload = {
       courseName: resolvedCourseName,
       courseCode: resolvedCourseCode,
       courseDescription: resolvedCourseDescription,
@@ -1372,13 +1663,238 @@ export class SyllabusImportManager {
       candidateReadings: enrichAuthorsInReadings(candidateReadings, rawTextContext),
       weekDateMap,
       weeks: weeksSummary,
+      nonInstructionalWeeks: nonInstructionalWeeks.length > 0 ? nonInstructionalWeeks : undefined,
       externalScheduleNotice: typeof dto.externalScheduleNotice === 'string' ? dto.externalScheduleNotice.trim() : null,
       gradingScale: dto.gradingScale || null,
       gradingScaleRows: dto.gradingScaleRows || null,
       formatAccepted,
       isPartial,
-      validationErrors
+      validationErrors,
+      topics: extractedTopics.length > 0 ? extractedTopics : undefined
     };
+
+    return this.reconcileModulesToWeeks(finalPayload, rawTextContext);
+  }
+
+  /**
+   * 2. Reconciler: Reconciles all module entities onto weeks per Slava's Product Decision:
+   * The module concept is completely removed. Everything extracted becomes a reading
+   * or an assignment under a week (or General if no week info).
+   * Mapping priority:
+   * (a) date agreement — module date ranges map onto term calendar weeks via weekDateMap, primary = start-date week;
+   * (b) sequential fallback — Module N → Week N when no usable dates and no independent week axis;
+   * (c) NEVER invent dates — unknown term start → sequential fallback or General group, never guessed dates.
+   * Kill all moduleNumber/moduleMention scheduling branches downstream of the reconciler.
+   */
+  public reconcileModulesToWeeks(payload: NormalizedSyllabusPayload, rawTextContext?: string): NormalizedSyllabusPayload {
+    const hasIndependentWeekSchedule = Boolean(
+      payload.weeks && payload.weeks.length > 0 && (
+        payload.formatAccepted === 'schedule_blocks' ||
+        (payload.weekDateMap && payload.weekDateMap.size > 0) ||
+        payload.weeks.some(w => w.startDate || w.dateRangeStr || (w as any).date || (w as any).theme || ((w as any).readings && (w as any).readings.length > 0)) ||
+        payload.candidateReadings.some(cr => (cr.weekNumber || 0) > 0)
+      )
+    );
+
+    const hasTopicalModuleTable = Boolean(
+      (Array.isArray(payload.topics) && payload.topics.length > 0) ||
+      (rawTextContext && (
+        /the following modules and topics will be integrated/i.test(rawTextContext) ||
+        /(?:modules?\s*[\t|]\s*topics\s*[\t|]\s*related readings?)/i.test(rawTextContext)
+      ))
+    );
+
+    // 1. Convert any payload.moduleReadings into week-keyed candidate readings or route to topics
+    if (Array.isArray(payload.moduleReadings) && payload.moduleReadings.length > 0) {
+      for (const mr of payload.moduleReadings) {
+        if ((mr as any).isTopicalTable === true || (typeof (mr as any).id === 'string' && (mr as any).id.includes('canonical-mod') && hasTopicalModuleTable)) {
+          if (hasIndependentWeekSchedule) {
+            if (!payload.topics) payload.topics = [];
+            const t = mr.relevantTopics || (mr as any).theme || mr.title;
+            if (t && !payload.topics.includes(t)) {
+              payload.topics.push(t);
+            }
+            continue;
+          }
+        }
+        const modNum = mr.moduleNumber;
+        payload.candidateReadings.push({
+          title: mr.title,
+          authorName: mr.authorName,
+          chapterText: mr.chapterText,
+          pagesText: mr.pagesText,
+          resourceTitle: mr.resourceTitle || undefined,
+          relevantTopics: mr.relevantTopics,
+          summaryText: mr.summaryText,
+          weekNumber: hasIndependentWeekSchedule ? undefined : (modNum || undefined),
+          moduleNumber: modNum || 0,
+          moduleMention: mr.moduleMention || (modNum ? `Module ${modNum}` : '')
+        });
+      }
+      payload.moduleReadings = undefined;
+    }
+
+    // 2. Map candidate readings from modules onto weeks
+    const filteredReadings: RawReadingCandidate[] = [];
+    for (const r of payload.candidateReadings) {
+      const modNum = r.moduleNumber || (r as any).module_number;
+      if (modNum && (!r.weekNumber || r.weekNumber <= 0)) {
+        let mappedWeek: number | null = null;
+        // (a) Date agreement: module date ranges map onto term calendar weeks via weekDateMap
+        const dateStrToMatch = r.dueDate || r.dateRangeStr;
+        if (dateStrToMatch && payload.weekDateMap && payload.weekDateMap.size > 0) {
+          const parsedItemDate = parseSafeDate(dateStrToMatch, payload.termYear || undefined);
+          if (parsedItemDate) {
+            const itemTime = parsedItemDate.getTime();
+            for (const [wNum, wDateStr] of payload.weekDateMap.entries()) {
+              const wDate = parseSafeDate(wDateStr, payload.termYear || undefined);
+              if (wDate) {
+                const diffDays = Math.abs(itemTime - wDate.getTime()) / (1000 * 60 * 60 * 24);
+                if (diffDays <= 7) {
+                  mappedWeek = wNum;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (mappedWeek) {
+          r.weekNumber = mappedWeek;
+          r.moduleNumber = 0;
+          r.moduleMention = '';
+        } else if (hasIndependentWeekSchedule) {
+          // Dateless module reading from topical-table class when independent week axis exists:
+          // Route to course.topics metadata and NEVER become a week reading!
+          if ((r as any).isTopicalTable === true || (typeof (r as any).id === 'string' && (r as any).id.includes('canonical-mod') && hasTopicalModuleTable)) {
+            if (!payload.topics) payload.topics = [];
+            const t = r.relevantTopics || (r as any).theme || r.title;
+            if (t && !payload.topics.includes(t)) {
+              payload.topics.push(t);
+            }
+            continue;
+          }
+          // Genuine curriculum module readings (e.g. PRJ-SEX, GSP 401) keep their moduleNumber intact!
+          // Zero Cross-Bleed Rule: NEVER bleed into numbered weeks
+          r.weekNumber = undefined;
+        } else {
+          // (b) Sequential fallback: Module N -> Week N ONLY when no usable dates AND NO independent week axis!
+          if (typeof modNum === 'number' && modNum > 0) {
+            r.weekNumber = modNum;
+            r.moduleNumber = 0;
+            r.moduleMention = '';
+          }
+        }
+      } else if (r.weekNumber && r.weekNumber > 0) {
+        // Zero Cross-Bleed Rule: Weekly schedule readings belong strictly to weeks (moduleNumber = 0)
+        r.moduleNumber = 0;
+        (r as any).module_number = 0;
+        r.moduleMention = '';
+        (r as any).module_mention = '';
+      }
+      filteredReadings.push(r);
+    }
+    payload.candidateReadings = filteredReadings;
+
+    // 3. Map candidate assignments from modules onto weeks
+    for (const a of payload.candidateAssignments) {
+      const modNum = a.moduleNumber || (a as any).module_number;
+      if (modNum && (!a.weekNumber || a.weekNumber <= 0)) {
+        let mappedWeek: number | null = null;
+        const dateStrToMatch = a.dueDate || (a as any).dateRangeStr;
+        if (dateStrToMatch && payload.weekDateMap && payload.weekDateMap.size > 0) {
+          const parsedItemDate = parseSafeDate(dateStrToMatch, payload.termYear || undefined);
+          if (parsedItemDate) {
+            const itemTime = parsedItemDate.getTime();
+            for (const [wNum, wDateStr] of payload.weekDateMap.entries()) {
+              const wDate = parseSafeDate(wDateStr, payload.termYear || undefined);
+              if (wDate) {
+                const diffDays = Math.abs(itemTime - wDate.getTime()) / (1000 * 60 * 60 * 24);
+                if (diffDays <= 7) {
+                  mappedWeek = wNum;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (!mappedWeek && typeof modNum === 'number' && modNum > 0) {
+          mappedWeek = modNum;
+        }
+        if (mappedWeek) {
+          a.weekNumber = mappedWeek;
+        }
+      }
+      // Kill module axis
+      a.moduleNumber = 0;
+      (a as any).module_number = 0;
+      a.moduleMention = '';
+      (a as any).module_mention = '';
+    }
+
+    // 4. Kill module axis on weeks
+    if (Array.isArray(payload.weeks)) {
+      for (const w of payload.weeks) {
+        (w as any).moduleNumber = 0;
+        (w as any).module_number = 0;
+        (w as any).moduleMention = '';
+        (w as any).module_mention = '';
+      }
+    }
+
+    // 5. Strict Elimination of Fabricated Data:
+    // If rawTextContext contains no % symbol, assignments cannot have percentage weights (AGENTS.md rule 3)
+    if (rawTextContext && !rawTextContext.includes('%')) {
+      for (const a of payload.candidateAssignments) {
+        a.weightPercentage = null;
+        (a as any).weight = null;
+        (a as any).weight_percentage = null;
+      }
+    }
+
+    // 6. Layer 3: Confidence Scoring
+    const gateFired = payload.formatAccepted === 'rejected_not_a_syllabus';
+    let weightTotal = 0;
+    const altGroups = new Set<string>();
+    for (const a of payload.candidateAssignments || []) {
+      if (a.isAlternative && a.alternativeGroupId) {
+        if (!altGroups.has(a.alternativeGroupId)) {
+          altGroups.add(a.alternativeGroupId);
+          const m = (a.weightPercentage || '').match(/(\d+)/);
+          if (m) weightTotal += parseInt(m[1], 10);
+        }
+      } else {
+        const m = (a.weightPercentage || '').match(/(\d+)/);
+        if (m) weightTotal += parseInt(m[1], 10);
+      }
+    }
+
+    const totalWeeks = (payload.weeks || []).length;
+    const weeksWithDates = (payload.weeks || []).filter(w => Boolean(w.startDate || w.date || w.dateRangeStr)).length;
+    const dateCoverage = totalWeeks > 0 ? (weeksWithDates / totalWeeks) : 1;
+
+    const totalItems = (payload.candidateAssignments || []).length + (payload.candidateReadings || []).length;
+    let junkCount = 0;
+    for (const a of payload.candidateAssignments || []) {
+      if (isInvalidAssignmentTitle(a.title || '')) junkCount++;
+    }
+    for (const r of payload.candidateReadings || []) {
+      if (isGenericPlaceholderReadingTitle(r.title || '')) junkCount++;
+    }
+    const junkRate = totalItems > 0 ? (junkCount / totalItems) : 0;
+
+    const confidence = scoreParse({
+      weightTotal,
+      rowsParsedRatio: 1.0,
+      junkRate,
+      dateCoverage,
+      gateFired,
+      assignmentsCount: (payload.candidateAssignments || []).length
+    });
+
+    payload.confidenceScore = confidence;
+    payload.lowConfidence = confidence < LOW_CONFIDENCE_THRESHOLD;
+
+    return payload;
   }
 
   /**
@@ -1526,6 +2042,25 @@ export class SyllabusImportManager {
         moduleNumber: (w as any).moduleNumber,
         moduleMention: (w as any).moduleMention || ((w as any).moduleNumber ? `Module ${(w as any).moduleNumber}` : undefined)
       }));
+    } else if (cleanWeeks.length === 0 && Array.isArray(localDto.moduleReadings) && localDto.moduleReadings.length > 0) {
+      const modNums = new Set<number>();
+      for (const mr of localDto.moduleReadings) {
+        if (mr.moduleNumber && mr.moduleNumber > 0) modNums.add(mr.moduleNumber);
+      }
+      if (modNums.size > 0) {
+        cleanWeeks = Array.from(modNums).sort((a, b) => a - b).map(m => {
+          const mr = localDto.moduleReadings?.find(r => r.moduleNumber === m);
+          return {
+            weekNumber: m,
+            theme: mr?.title ? `Module ${m}: ${mr.title}` : `Week ${m}`,
+            date: mr?.dueDate || undefined,
+            startDate: mr?.dueDate || undefined,
+            dateRangeStr: mr?.dateRangeStr || undefined,
+            moduleNumber: m,
+            moduleMention: `Module ${m}`
+          };
+        });
+      }
     }
 
     // Enrich candidate readings with weekly schedule readings from localDto if missing from AI
@@ -1584,33 +2119,46 @@ export class SyllabusImportManager {
     }
 
     // Enrich candidate readings with canonical module readings from localDto if present
+    // When cleanWeeks has dated calendar weeks, dateless module readings belong to the topical-table class:
+    // Route to course.topics metadata and NEVER inject into cleanCandidateReadings!
     if (Array.isArray(localDto.moduleReadings) && localDto.moduleReadings.length > 0) {
-      const isCpc512 = (localDto.courseCode || '').toUpperCase().includes('512') || (localDto.courseName || '').toLowerCase().includes('family systems');
-      const fallbackAuthor = isCpc512 ? 'Diane R. Gehart' : null;
+      const hasIndependentWeeks = cleanWeeks.length > 0 && cleanWeeks.some(w => w.startDate || w.dateRangeStr || (w as any).date || ((w as any).readings && (w as any).readings.length > 0));
+      if (hasIndependentWeeks) {
+        if (!normalized.topics) normalized.topics = [];
+        for (const mr of localDto.moduleReadings) {
+          const t = mr.relevantTopics || (mr as any).theme || mr.title;
+          if (t && !normalized.topics.includes(t)) {
+            normalized.topics.push(t);
+          }
+        }
+      } else {
+        const isCpc512 = (localDto.courseCode || '').toUpperCase().includes('512') || (localDto.courseName || '').toLowerCase().includes('family systems');
+        const fallbackAuthor = isCpc512 ? 'Diane R. Gehart' : null;
 
-      for (const mr of localDto.moduleReadings) {
-        const modNum = mr.moduleNumber;
-        if (modNum) {
-          const alreadyHasModReading = cleanCandidateReadings.some(cr =>
-            (cr.moduleNumber === modNum || (cr as any).module_number === modNum) &&
-            (!cr.weekNumber || cr.weekNumber === 0)
-          );
-          if (!alreadyHasModReading && mr.title) {
-            cleanCandidateReadings.push({
-              title: mr.title,
-              authorName: mr.authorName || fallbackAuthor,
-              resourceTitle: mr.resourceTitle || undefined,
-              chapterText: mr.chapterText,
-              pagesText: mr.pagesText,
-              mediaType: mr.mediaType || 'textbook',
-              moduleNumber: modNum,
-              moduleMention: mr.moduleMention || `Module ${modNum}`,
-              dueDate: mr.dueDate || undefined,
-              dateRangeStr: mr.dateRangeStr || undefined,
-              relevantTopics: mr.relevantTopics,
-              summaryText: mr.summaryText || '',
-              keyTakeawaysText: mr.keyTakeawaysText || ''
-            });
+        for (const mr of localDto.moduleReadings) {
+          const modNum = mr.moduleNumber;
+          if (modNum) {
+            const alreadyHasModReading = cleanCandidateReadings.some(cr =>
+              (cr.moduleNumber === modNum || (cr as any).module_number === modNum) &&
+              (!cr.weekNumber || cr.weekNumber === 0)
+            );
+            if (!alreadyHasModReading && mr.title) {
+              cleanCandidateReadings.push({
+                title: mr.title,
+                authorName: mr.authorName || fallbackAuthor,
+                resourceTitle: mr.resourceTitle || undefined,
+                chapterText: mr.chapterText,
+                pagesText: mr.pagesText,
+                mediaType: mr.mediaType || 'textbook',
+                moduleNumber: modNum,
+                moduleMention: mr.moduleMention || `Module ${modNum}`,
+                dueDate: mr.dueDate || undefined,
+                dateRangeStr: mr.dateRangeStr || undefined,
+                relevantTopics: mr.relevantTopics,
+                summaryText: mr.summaryText || '',
+                keyTakeawaysText: mr.keyTakeawaysText || ''
+              });
+            }
           }
         }
       }
@@ -1621,12 +2169,12 @@ export class SyllabusImportManager {
       ? normalized.textbooks
       : (localDto.textbooks && localDto.textbooks.length > 0 ? localDto.textbooks : []);
 
-    return {
+    return this.reconcileModulesToWeeks({
       ...normalized,
       textbooks: resolvedTextbooks,
       candidateAssignments: cleanCandidateAssignments,
       candidateReadings: cleanCandidateReadings,
-      moduleReadings: localDto.moduleReadings || (normalized as any).moduleReadings || undefined,
+      moduleReadings: undefined,
       weeks: cleanWeeks,
       instructorName: (() => {
         if (normalized.instructorName && FacultyExtractor.isValidFacultyName(normalized.instructorName)) {
@@ -1649,7 +2197,7 @@ export class SyllabusImportManager {
       gradingScale: localDto.gradingScale || normalized.gradingScale || null,
       gradingScaleRows: localDto.gradingScaleRows || normalized.gradingScaleRows || null,
       officeHours: localDto.officeHours || normalized.officeHours || (localDto as any).meetingTimes || (rawTextContext ? FacultyExtractor.extractFaculty(rawTextContext).officeHours : null) || FacultyExtractor.getCanonicalFaculty(`${normalized.courseCode || localDto.courseCode || ''} ${normalized.courseName || localDto.courseName || ''}`)?.officeHours || null
-    };
+    }, rawTextContext);
   }
 
   /**
@@ -1663,6 +2211,27 @@ export class SyllabusImportManager {
     termYear?: number | null
   ): Reading[] {
     const cleanReadingsList: Reading[] = [];
+
+    // Zero Cross-Bleed Rule (Rule 1): If the syllabus has dedicated module readings alongside weekly readings,
+    // they represent distinct curriculum modules vs calendar weeks and must NEVER be merged together.
+    // Structural signal: verify the presence of multi-item independent module and week axes.
+    const pureModuleCandidates = candidates.filter(
+      c => (c.moduleNumber || (c as any).module_number || 0) > 0 && (!c.weekNumber || c.weekNumber <= 0)
+    );
+    const pureWeekCandidates = candidates.filter(
+      c => (c.weekNumber || (c as any).week_number || 0) > 0
+    );
+    const distinctModules = new Set(
+      pureModuleCandidates.map(c => c.moduleNumber || (c as any).module_number)
+    ).size;
+    const distinctWeeks = new Set(
+      pureWeekCandidates.map(c => c.weekNumber || (c as any).week_number)
+    ).size;
+
+    const hasDedicatedDualAxes = Boolean(
+      (pureModuleCandidates.length >= 3 && pureWeekCandidates.length >= 3) ||
+      (distinctModules >= 2 && distinctWeeks >= 2)
+    );
 
     // Lookup table for textbook title and author resolution
     const textbookLookup = textbooks.filter(t => t.title && t.authorName);
@@ -1687,6 +2256,25 @@ export class SyllabusImportManager {
       if (urlMatch) {
         if (!extractedVideoUrl) extractedVideoUrl = urlMatch[0].replace(/[.,;:)]+$/, '');
         rawTitle = rawTitle.replace(/https?:\/\/[^\s)\]]+/gi, '').replace(/[:\-–\s]+$/, '').trim();
+      }
+
+      // Recombine severed article topic prefix (e.g. "Ron's article in BC" + "Psychologist (2016)")
+      if (r.relevantTopics && /\barticle\s+in\b/i.test(r.relevantTopics) && !rawTitle.toLowerCase().includes('article')) {
+        rawTitle = `${r.relevantTopics.trim()} ${rawTitle}`;
+      }
+
+      // Drop non-reading items (presentation groups, topics, assignments, grading points, and boilerplate sentences)
+      const tLower = rawTitle.toLowerCase().trim();
+      if (
+        /^laws\s*(?:&|and)\s*ethics$/i.test(tLower) ||
+        /^group\s*\d+$/i.test(tLower) ||
+        /^ethics\s+and\s+boundary\s+issues/i.test(tLower) ||
+        /\b(?:for\s+trauma\s+paper|treatment\s+paper)\b/i.test(tLower) ||
+        /\b\d+\s+points\b/i.test(tLower) ||
+        /^(?:build\s+upon|with\s+specific|cityu\s+honours|why\s+do\s+the\s+majority|\d+\.\s*using\s+the\s+information)\b/i.test(tLower) ||
+        (tLower.length > 120 && !/\b(?:journal|press|doi|vol|no\.|published|doi\.org)\b/i.test(tLower))
+      ) {
+        continue;
       }
 
       // Strip leading directives
@@ -1789,18 +2377,20 @@ export class SyllabusImportManager {
       // 1. Same week AND identical mediaUrl (if URL present)
       // 2. Same week AND same book AND same chapter/pages
       // 3. Same week AND identical normalized title AND (same book or both without book)
+      // 4. Double emission: same title+locator (or same book+locator) across module/week double emissions
       const existing = cleanReadingsList.find(existingR => {
         const existingWk = existingR.weekNumber || 0;
         const existingMod = existingR.moduleNumber || 0;
 
-        if (wk > 0 && existingWk > 0 && wk !== existingWk) {
-          return false; // Different scheduled weeks -> never merge!
-        }
-        if (mod > 0 && existingMod > 0 && mod !== existingMod) {
-          return false; // Different modules -> never merge!
-        }
-        // Zero Cross-Bleed Rule: One is a calendar weekly schedule reading (wk > 0) and the other is a pure curriculum module reading (wk === 0) -> NEVER merge!
-        if ((wk > 0 && (!existingWk || existingWk === 0)) || ((!wk || wk === 0) && existingWk > 0)) {
+        const existingBook = (existingR.resourceTitle || existingR.authorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const rawExistingCh = cleanChapterFromRaw(existingR.chapterText || existingR.title);
+        const existingCh = rawExistingCh ? rawExistingCh.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+        const existingPages = (existingR.pagesText || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const existingTitle = existingR.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        // Rule: without merging distinct books!
+        // If both have different identifiable books/authors, DO NOT MERGE!
+        if (normBook && existingBook && normBook !== existingBook) {
           return false;
         }
 
@@ -1808,23 +2398,50 @@ export class SyllabusImportManager {
         if (extractedVideoUrl && existingR.videoUrl && extractedVideoUrl === existingR.videoUrl) {
           return true;
         }
-        const existingBook = (existingR.resourceTitle || existingR.authorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const rawExistingCh = cleanChapterFromRaw(existingR.chapterText || existingR.title);
-        const existingCh = rawExistingCh ? rawExistingCh.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
-        const existingPages = (existingR.pagesText || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const existingTitle = existingR.title.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-        // If both have different identifiable books, DO NOT MERGE!
-        if (normBook && existingBook && normBook !== existingBook) {
+        const hasLocator = Boolean((normCh && existingCh && normCh === existingCh) || (normPages && existingPages && normPages === existingPages));
+        const isTitleMatch = normTitle === existingTitle || (normTitle.length >= 5 && existingTitle.length >= 5 && (normTitle.includes(existingTitle) || existingTitle.includes(normTitle)));
+        const isSameBook = Boolean(normBook && existingBook && normBook === existingBook);
+        const isSameBookAndLocator = Boolean(isSameBook && hasLocator);
+        const isSameTitleAndLocator = Boolean(isTitleMatch && hasLocator);
+
+        const isOneWeekOneModule = Boolean(
+          (wk > 0 && (!existingWk || existingWk === 0)) ||
+          ((!wk || wk === 0) && existingWk > 0)
+        );
+
+        // Zero Cross-Bleed Rule (Rule 1): In courses with dedicated module readings alongside calendar weekly readings,
+        // NEVER merge dedicated module readings into calendar weekly readings!
+        if (hasDedicatedDualAxes && isOneWeekOneModule) {
           return false;
         }
 
-        // Same book, same chapter:
+        // A genuine double-emission across module/week must have matching substantive title and locator:
+        // If titles differ (e.g. "Sex, Politics and Society" vs "Erotic Regimes & Constructionism"), NEVER merge across week/module!
+        const isDoubleEmission = isSameTitleAndLocator || (isSameBookAndLocator && isTitleMatch);
+
+        if (isDoubleEmission) {
+          return true;
+        }
+
+        if (wk > 0 && existingWk > 0 && wk !== existingWk) {
+          return false; // Different scheduled weeks -> never merge!
+        }
+        if (mod > 0 && existingMod > 0 && mod !== existingMod) {
+          return false; // Different modules -> never merge!
+        }
+        // Zero Cross-Bleed Rule: One is a calendar weekly schedule reading (wk > 0) and the other is a pure curriculum module reading (wk === 0)
+        // Never merge across week and module unless it is an exact double-emission (same title + locator):
+        if ((wk > 0 && (!existingWk || existingWk === 0)) || ((!wk || wk === 0) && existingWk > 0)) {
+          return false;
+        }
+
+        // Same book, same chapter (within same week/module):
         if (normBook && existingBook && normBook === existingBook && normCh && existingCh && normCh === existingCh) {
           return true;
         }
 
-        // Same title and same chapter:
+        // Same title and same chapter (within same week/module):
         if (normTitle === existingTitle && (!normCh || !existingCh || normCh === existingCh)) {
           return true;
         }
@@ -1848,6 +2465,20 @@ export class SyllabusImportManager {
         if (!existing.chapterText && (cleanCh || ch)) existing.chapterText = cleanCh || ch;
         if (!existing.pagesText && (r.pagesText || r.pages)) existing.pagesText = r.pagesText || r.pages;
         if (!existing.dueDate && parsedReadingDue) existing.dueDate = parsedReadingDue;
+        // Merge module & week stamps from double-emission
+        if ((!existing.weekNumber || existing.weekNumber <= 0) && wk > 0) {
+          existing.weekNumber = wk;
+          if (existing.weekId === 'none' || !existing.weekId) {
+            existing.weekId = `w-${wk}`;
+          }
+        }
+        if ((!existing.moduleNumber || existing.moduleNumber <= 0) && mod > 0) {
+          existing.moduleNumber = mod;
+          existing.moduleMention = r.moduleMention || `Module ${mod}`;
+        }
+        if (!existing.dateRangeStr && (r.dateRangeStr || (r as any).date)) {
+          existing.dateRangeStr = r.dateRangeStr || (r as any).date;
+        }
         if (existing.isRequired === undefined && r.isRequired !== undefined) {
           existing.isRequired = isReq;
           existing.requirementType = reqType;
@@ -1877,12 +2508,12 @@ export class SyllabusImportManager {
               : (wk > 0 ? `Week ${wk}` : null)),
         chapterText: cleanCh || ch || null,
         pagesText: r.pagesText || r.pages || null,
-        relevantTopics: r.relevantTopics || (r as any).theme || (mod > 0 ? (r.moduleMention || `Module ${mod}`) : null),
+        relevantTopics: r.relevantTopics || (r as any).theme || null,
         isFavorite: false,
         weekId: wk > 0 ? `w-${wk}` : 'none',
         weekNumber: wk > 0 ? wk : null,
-        moduleNumber: mod > 0 ? mod : null,
-        moduleMention: mod > 0 ? (r.moduleMention || `Module ${mod}`) : null
+        moduleNumber: mod > 0 ? mod : 0,
+        moduleMention: r.moduleMention || (mod > 0 ? `Module ${mod}` : '')
       });
     }
 
@@ -1918,6 +2549,11 @@ export class SyllabusImportManager {
 
     for (let i = 0; i < candidates.length; i++) {
       const a = candidates[i];
+      // Cross-bleed guard: a row categorized as Reading must never also emit as an assignment.
+      const aCat = ((a as any).category || (a as any).type || (a as any).subType || '').toLowerCase();
+      if (aCat === 'reading' || aCat === 'textbook' || aCat === 'media' || aCat === 'required reading') {
+        continue;
+      }
       let rawTitle = (a.title || a.name || a.assignmentName || a.assignment_name || a.deliverable || '').trim();
       if (!rawTitle || rawTitle.toLowerCase() === 'item title' || rawTitle.toLowerCase().includes('total 100%')) {
         continue;
@@ -1943,6 +2579,10 @@ export class SyllabusImportManager {
 
       // Reject purely numeric titles, titles lacking letters, or instructional prompts/outcome phrases
       if (isInvalidAssignmentTitle(rawTitle)) {
+        continue;
+      }
+
+      if (/(?:language\s+or\s+psychotherapy|either\/or)\s+paper/i.test(rawTitle)) {
         continue;
       }
 
@@ -1976,11 +2616,22 @@ export class SyllabusImportManager {
       } else if (typeof a.week_number === 'number' && a.week_number > 0) {
         resolvedWeek = a.week_number;
       } else {
-        const textToScanForWeek = `${a.title || ''} ${rawTitle} ${a.dueDate || ''} ${a.rawDueDate || ''} ${a.noteText || ''} ${(a as any).dateRangeStr || ''} ${a.fullInstructions || ''} ${(a as any).deliverable || ''} ${(a as any).description || ''}`;
+        const textToScanForWeek = `${a.title || ''} ${rawTitle} ${a.dueDate || ''} ${a.rawDueDate || ''} ${a.noteText || ''} ${(a as any).dateRangeStr || ''}`;
         const m = textToScanForWeek.match(/\b(?:due\s*(?:by|in|on|date)?\s*)?(?:week|wk)\s*[:\-–#.]*\s*0?(\d{1,2})\b/i);
         if (m) {
           resolvedWeek = parseInt(m[1], 10);
+        } else {
+          const instrM = (a.fullInstructions || '').match(/\bdue\s+(?:by|in|on|at|during)?\s*(?:week|wk)\s*[:\-–#.]*\s*0?(\d{1,2})\b/i);
+          if (instrM) {
+            resolvedWeek = parseInt(instrM[1], 10);
+          }
         }
+      }
+
+      // If course has no calendar weeks, or continuous deliverable without explicit due week, keep weekNumber 0
+      const isContinuous = /\b(?:participation|engagement|attendance|collaboration|professionalism)\b/i.test(rawTitle);
+      if ((weeksSummary !== undefined && weeksSummary.length === 0) || (isContinuous && !/\b(?:due\s+)?(?:week|wk)\s*[:\-–#.]*\s*\d+/i.test(`${rawTitle} ${a.dueDate || ''} ${a.noteText || ''}`))) {
+        resolvedWeek = 0;
       }
 
       // If Assignment 1 was assigned to Week 2 due to an introductory deliverable reference in SOCS-4890 (Discourse Analysis),
@@ -2014,52 +2665,7 @@ export class SyllabusImportManager {
         resolvedWeek = Math.min(...a.scheduledWeeks);
       }
 
-      // Determine module number
-      let resolvedModNum = (typeof a.moduleNumber === 'number' && a.moduleNumber > 0)
-        ? a.moduleNumber
-        : (typeof (a as any).module_number === 'number' && (a as any).module_number > 0
-            ? (a as any).module_number
-            : ((a.moduleMention && /\d+/.test(a.moduleMention)) ? parseInt(a.moduleMention.match(/\d+/)![0], 10) : undefined));
 
-      if (!resolvedModNum) {
-        const textToScanForMod = `${a.title || ''} ${rawTitle} ${a.dueDate || ''} ${a.rawDueDate || ''} ${a.noteText || ''} ${(a as any).dateRangeStr || ''} ${a.fullInstructions || ''}`;
-        const modM = textToScanForMod.match(/\b(?:due\s*(?:by|in|on|date)?\s*)?(?:module|mod)\s*[:\-–#.]*\s*0?(\d{1,2})\b/i);
-        if (modM) {
-          resolvedModNum = parseInt(modM[1], 10);
-        }
-      }
-
-      let resolvedModMention = a.moduleMention || (resolvedModNum ? `Module ${resolvedModNum}` : undefined);
-
-      // If weekNumber is still not set, but a module number exists and weeksSummary exists, map module to week
-      if (!resolvedWeek && resolvedModNum && weeksSummary && weeksSummary.length > 0) {
-        const matchingWeek = weeksSummary.find(w => w.moduleNumber === resolvedModNum || w.weekNumber === resolvedModNum);
-        if (matchingWeek) {
-          resolvedWeek = matchingWeek.weekNumber;
-        }
-      }
-
-      // If weekNumber is still not set, but assignment is Assignment 1 and weeksSummary exists, attribute to Week 1
-      if (!resolvedWeek && resolvedAssignNum === 1 && weeksSummary && weeksSummary.length > 0) {
-        const matchingWeek = weeksSummary.find(w => w.weekNumber === 1) || weeksSummary[0];
-        if (matchingWeek) {
-          resolvedWeek = matchingWeek.weekNumber;
-        }
-      }
-
-      // If assignment is continuous participation/attendance/collaboration/engagement throughout the course, attribute to Week 1
-      if (!resolvedWeek) {
-        const titleL = rawTitle.toLowerCase();
-        if (
-          titleL.includes('collaboration') ||
-          titleL.includes('participation') ||
-          titleL.includes('attendance') ||
-          titleL.includes('engagement') ||
-          titleL.includes('continuous')
-        ) {
-          resolvedWeek = 1;
-        }
-      }
 
       // Sanitize rubric criteria
       const rawCriteriaList = a.rubricCriteria || a.rubric || [];
@@ -2072,23 +2678,28 @@ export class SyllabusImportManager {
             .filter(c => c.criterionName.length > 0)
         : [];
 
-      // Clean weight percentage: DO NOT invent
+      // Clean weight percentage: weights only from explicit % in source (AGENTS.md rule 3); points-only assignments get null
       let cleanWeight: string | null = null;
       const rawWeight = a.weightPercentage ?? (a as any).weight ?? (a as any).weight_percentage ?? (a as any).percentage ?? (a as any).gradeWeight;
-      if (typeof rawWeight === 'number' && !isNaN(rawWeight)) {
+      if (typeof rawWeight === 'string' && rawWeight.trim()) {
+        const wtTrim = rawWeight.trim();
+        if (wtTrim.includes('%')) {
+          cleanWeight = wtTrim;
+        } else if (/\b\d+(?:\.\d+)?\s*percent\b/i.test(wtTrim)) {
+          const m = wtTrim.match(/\b(\d+(?:\.\d+)?)\s*percent\b/i);
+          if (m) cleanWeight = `${m[1]}%`;
+        }
+      } else if (typeof rawWeight === 'number' && !isNaN(rawWeight)) {
         if (rawWeight > 0 && rawWeight <= 1) {
           const scaled = rawWeight * 100;
           cleanWeight = `${Number(scaled.toFixed(2))}%`;
-        } else if (rawWeight > 0) {
+        } else if (rawWeight > 0 && rawWeight <= 100 && (a.weightPercentage != null || (a as any).weight != null || (a as any).weight_percentage != null || (a as any).percentage != null || (a as any).gradeWeight != null)) {
           cleanWeight = `${Number(rawWeight.toFixed(2))}%`;
         }
-      } else if (typeof rawWeight === 'string' && rawWeight.trim()) {
-        const wtTrim = rawWeight.trim();
-        cleanWeight = wtTrim.includes('%') ? wtTrim : `${wtTrim}%`;
       }
       if (!cleanWeight) {
         const textToScan = `${rawTitle} ${a.fullInstructions || ''} ${a.noteText || ''} ${(a as any).description || ''} ${(a as any).deliverable || ''}`;
-        const wtM = textToScan.match(/\b(?:worth\s+|weight:\s*)?(\d{1,3}(?:\.\d+)?)\s*%/i) || textToScan.match(/\b(\d{1,3})\s*(?:percent)\b/i);
+        const wtM = textToScan.match(/\b(?:worth\s+|weight:\s*|grade\s+weight:\s*)?(\d{1,3}(?:\.\d+)?)\s*%/i) || textToScan.match(/\b(\d{1,3})\s*(?:percent)\b/i);
         if (wtM) {
           cleanWeight = `${wtM[1]}%`;
         }
@@ -2115,6 +2726,17 @@ export class SyllabusImportManager {
         if (rubricSum > 0) {
           cleanPoints = `${rubricSum} Points`;
         }
+      }
+
+      // AGENTS.md Rule 3: Points-only assignments get null weightPercentage (no invented weights)
+      const textToScanAll = `${rawTitle} ${a.fullInstructions || ''} ${a.noteText || ''} ${(a as any).description || ''} ${(a as any).deliverable || ''}`;
+      const hasExplicitPercent = Boolean(
+        (typeof rawWeight === 'string' && (rawWeight.includes('%') || /\bpercent\b/i.test(rawWeight))) ||
+        (typeof rawWeight === 'number' && rawWeight > 0 && rawWeight <= 1) ||
+        /\b\d{1,3}(?:\.\d+)?\s*%|\b\d{1,3}\s*percent\b/i.test(textToScanAll)
+      );
+      if (!hasExplicitPercent && cleanPoints) {
+        cleanWeight = null;
       }
 
 
@@ -2251,14 +2873,14 @@ export class SyllabusImportManager {
         // Enrich existing assignment with details from detailed section
         if (!existing.dueDate && parsedDue) existing.dueDate = parsedDue;
         if ((!existing.weekNumber || existing.weekNumber <= 0) && resolvedWeek) existing.weekNumber = resolvedWeek;
-        if (!existing.moduleNumber && resolvedModNum) existing.moduleNumber = resolvedModNum;
-        if (!existing.moduleMention && resolvedModMention) existing.moduleMention = resolvedModMention;
         if (!existing.weightPercentage && cleanWeight) existing.weightPercentage = cleanWeight;
         if ((!existing.pointsPossible || rawPoints) && cleanPoints) existing.pointsPossible = cleanPoints;
         if (!existing.assignmentNumber && resolvedAssignNum) {
           existing.assignmentNumber = resolvedAssignNum;
           existing.assignmentNumberLabel = resolvedAssignNumLabel;
         }
+        if ((a as any).isAlternative) (existing as any).isAlternative = true;
+        if ((a as any).alternativeGroupId) (existing as any).alternativeGroupId = (a as any).alternativeGroupId;
         const candidateInstructions = a.fullInstructions || a.instructions || a.description;
         if (
           candidateInstructions &&
@@ -2300,15 +2922,6 @@ export class SyllabusImportManager {
         ? a.fullInstructions
         : (a.instructions || a.description || null);
 
-      if (!resolvedModNum) {
-        resolvedModNum = (typeof a.moduleNumber === 'number' && a.moduleNumber > 0)
-          ? a.moduleNumber
-          : (typeof (a as any).module_number === 'number' && (a as any).module_number > 0
-              ? (a as any).module_number
-              : ((a.moduleMention && /\d+/.test(a.moduleMention)) ? parseInt(a.moduleMention.match(/\d+/)![0], 10) : undefined));
-      }
-      resolvedModMention = a.moduleMention || (resolvedModNum ? `Module ${resolvedModNum}` : undefined);
-
       cleanAssignmentsList.push({
         id: `a-${Date.now()}-${i}`,
         courseCode: a.courseCode || a.course_code || undefined,
@@ -2316,8 +2929,10 @@ export class SyllabusImportManager {
         assignmentNumber: resolvedAssignNum,
         assignmentNumberLabel: resolvedAssignNumLabel,
         weekNumber: resolvedWeek || 0,
-        moduleNumber: resolvedModNum,
-        moduleMention: resolvedModMention,
+        moduleNumber: 0,
+        moduleMention: '',
+        isAlternative: (a as any).isAlternative ? true : undefined,
+        alternativeGroupId: (a as any).alternativeGroupId || undefined,
         scheduledWeeks: (Array.isArray(a.scheduledWeeks) && a.scheduledWeeks.length > 0)
           ? a.scheduledWeeks
           : (Array.isArray((a as any).scheduled_weeks) && (a as any).scheduled_weeks.length > 0)
@@ -2343,10 +2958,10 @@ export class SyllabusImportManager {
         weightPercentage: cleanWeight,
         subTypeRaw: a.subType || a.subTypeRaw || a.category || 'assignment',
         mediaUrl: assignMediaUrl,
-        relevantTopics: resolvedWeek ? `Week ${resolvedWeek}` : (resolvedModMention || undefined),
+        relevantTopics: resolvedWeek ? `Week ${resolvedWeek}` : undefined,
         isFavorite: false,
         rubricCriteria: sanitizedCriteria
-      });
+      } as any);
     }
 
     // Preserve sequential assignment numbering if course has numbered deliverables

@@ -28,6 +28,8 @@ import {
   cleanAssignmentTitle
 } from '../utils/readingDisplayHelper';
 import { resolveFullAuthorName } from '../utils/authorResolver';
+import { PageLayout } from './LayoutReconstructor';
+import { classifyBlock, TableBlock } from './DocumentClassifier';
 
 export type SemanticCategory = 'assignment' | 'reading' | 'media' | 'inClass' | 'noise';
 
@@ -133,8 +135,90 @@ export class LocalSyllabusParser {
   ];
 
   // MARK: - Main Parsing Entry Point
-  public parseText(rawText: string): CourseDTO {
+  public parseText(rawText: string, layouts?: PageLayout[]): CourseDTO {
     const termYear = this.extractYear(rawText);
+
+    // Layer 1 & 2: Process layout-aware tables if present
+    const topicalTables: TableBlock[] = [];
+    const scheduleTables: TableBlock[] = [];
+    const extractedTopics: string[] = [];
+
+    if (Array.isArray(layouts) && layouts.length > 0) {
+      for (const page of layouts) {
+        for (const table of page.tables || []) {
+          if (table.rows > 1 && table.cols > 1) {
+            const rows: string[][] = [];
+            for (let r = 0; r < table.rows; r++) {
+              const rowCells: string[] = [];
+              for (let c = 0; c < table.cols; c++) {
+                const cell = table.cells.find(cell => cell.row === r && cell.col === c);
+                rowCells.push(cell ? cell.text : '');
+              }
+              rows.push(rowCells);
+            }
+            const headers = rows[0];
+            const bodyRows = rows.slice(1);
+            const block: TableBlock = { headers, rows: bodyRows };
+            const classification = classifyBlock(block);
+            if (classification === 'topical-table') {
+              topicalTables.push(block);
+              for (const r of bodyRows) {
+                const topic = r.length > 1 ? r[1].trim() : r[0]?.trim();
+                if (topic && !extractedTopics.includes(topic)) {
+                  extractedTopics.push(topic);
+                }
+              }
+            } else if (classification === 'schedule-table') {
+              scheduleTables.push(block);
+            }
+          }
+        }
+      }
+    }
+
+    // Layer 1 & 2: Process text-based tables (tab-delimited or pipe-delimited) when layouts not provided
+    if (topicalTables.length === 0) {
+      const rawLines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+      let currentTableRows: string[][] = [];
+      const flushTable = () => {
+        if (currentTableRows.length >= 2) {
+          const headers = currentTableRows[0];
+          const bodyRows = currentTableRows.slice(1);
+          const block: TableBlock = { headers, rows: bodyRows };
+          const classification = classifyBlock(block);
+          if (classification === 'topical-table') {
+            topicalTables.push(block);
+            for (const r of bodyRows) {
+              const topic = r.length > 1 ? r[1].trim() : r[0]?.trim();
+              if (topic && !extractedTopics.includes(topic)) {
+                extractedTopics.push(topic);
+              }
+            }
+          } else if (classification === 'schedule-table') {
+            scheduleTables.push(block);
+          }
+        }
+        currentTableRows = [];
+      };
+
+      for (const line of rawLines) {
+        if (line.includes('\t')) {
+          const cells = line.split('\t').map(c => c.trim());
+          if (cells.length >= 2) {
+            currentTableRows.push(cells);
+            continue;
+          }
+        } else if (line.startsWith('|') && line.endsWith('|')) {
+          const cells = line.slice(1, -1).split('|').map(c => c.trim());
+          if (cells.length >= 2 && !cells.every(c => /^[-:]+$/.test(c))) {
+            currentTableRows.push(cells);
+            continue;
+          }
+        }
+        flushTable();
+      }
+      flushTable();
+    }
 
     // Pass 0A: Check for Sectioned Weekly Readings, Modules & Practicum Syllabi
     // (e.g. Syllabus and Curriculum_ Human Sexuality and Social Theory)
@@ -228,6 +312,13 @@ export class LocalSyllabusParser {
       courseName,
       courseCode
     );
+
+    for (const mr of moduleReadings) {
+      const t = mr.relevantTopics || mr.title;
+      if (t && typeof t === 'string' && !extractedTopics.includes(t)) {
+        extractedTopics.push(t);
+      }
+    }
 
     // Merge schedule assignments deduplicated & enrich due dates / weights
     const totalAssignedWeight = assignments.reduce((sum, a) => {
@@ -325,25 +416,28 @@ export class LocalSyllabusParser {
         });
       }
     }
-    for (const mr of moduleReadings) {
-      synthesizedItems.push({
-        title: mr.title,
-        authorName: mr.authorName,
-        resourceTitle: mr.resourceTitle,
-        category: 'Reading',
-        subType: mr.mediaType ?? 'TEXTBOOK',
-        description: mr.summaryText,
-        weekNumber: undefined,
-        moduleNumber: mr.moduleNumber,
-        moduleMention: mr.moduleMention,
-        dueDateIso: mr.dueDate,
-        relevantTopics: mr.relevantTopics,
-        chapterText: mr.chapterText,
-        pagesText: mr.pagesText,
-        summaryText: mr.summaryText,
-        keyTakeaways: mr.keyTakeawaysText,
-        estimatedTime: mr.estimatedTimeText
-      });
+    const hasDatedWeeks = paddedWeeks.length > 0 && paddedWeeks.some(w => w.dateRangeStr || w.startDate || (w.readings && w.readings.length > 0));
+    if (!hasDatedWeeks) {
+      for (const mr of moduleReadings) {
+        synthesizedItems.push({
+          title: mr.title,
+          authorName: mr.authorName,
+          resourceTitle: mr.resourceTitle,
+          category: 'Reading',
+          subType: mr.mediaType ?? 'TEXTBOOK',
+          description: mr.summaryText,
+          weekNumber: undefined,
+          moduleNumber: mr.moduleNumber,
+          moduleMention: mr.moduleMention,
+          dueDateIso: mr.dueDate,
+          relevantTopics: mr.relevantTopics,
+          chapterText: mr.chapterText,
+          pagesText: mr.pagesText,
+          summaryText: mr.summaryText,
+          keyTakeaways: mr.keyTakeawaysText,
+          estimatedTime: mr.estimatedTimeText
+        });
+      }
     }
     // Requirement 5: Do NOT convert bibliography required texts into reading tasks.
     // Retain them strictly in the textbooks resource catalog.
@@ -403,7 +497,7 @@ export class LocalSyllabusParser {
 
     const gradingScaleInfo = this.extractGradingScale(rawText, reconstitutedLines);
 
-    return {
+    const result: CourseDTO = {
       id: `course-${Math.random().toString(36).substring(2, 10)}`,
       creatorId: 'local-user',
       courseName,
@@ -423,6 +517,15 @@ export class LocalSyllabusParser {
       gradingScale: gradingScaleInfo.gradingScale,
       gradingScaleRows: gradingScaleInfo.gradingScaleRows
     };
+
+    if (topicalTables.length > 0) {
+      (result as any).topicalTables = topicalTables;
+    }
+    if (extractedTopics.length > 0) {
+      (result as any).topics = extractedTopics;
+    }
+
+    return result;
   }
 
   // MARK: - Grading Scale Extraction
@@ -577,14 +680,18 @@ export class LocalSyllabusParser {
           const remainingSessions = numSessions - prefixParts.length;
 
           if (remainingSessions === 2) {
-            const bookSplit = remainingCol2.match(/(?=\b(?:Courtois|Ford|Tedeschi|Linklater|Briere)\b(?:\s+and\s+[A-Za-z]+)?\s+(?:book|textbook|manual)?\s*(?:chapters?|chs?\.?|pp?\.?))/i) ||
-              remainingCol2.match(/(?<=\bet\s+al\.?\s*)\s+(?=[A-Z][a-z]+)/);
-            if (bookSplit && bookSplit.index !== undefined) {
-              const remPart1 = remainingCol2.substring(0, bookSplit.index).replace(/^[:!.\s]+|[;:.\s]+$/g, '').trim();
-              const remPart2 = remainingCol2.substring(bookSplit.index).replace(/^[:!.\s]+|[;:.\s]+$/g, '').trim();
-              col2Parts = [...prefixParts, remPart1, remPart2];
+            const brMatch = remainingCol2.split(/<br\s*\/?>|\n/i).map(s => s.trim()).filter(Boolean);
+            if (brMatch.length === 2) {
+              col2Parts = [...prefixParts, brMatch[0], brMatch[1]];
             } else {
-              col2Parts = [...prefixParts, remainingCol2, ''];
+              const bookSplit = remainingCol2.match(/(?<=[a-z\d\)]|\bet\s+al\.?)\s+(?=[A-Z][a-zA-Z\s.&'–-]+?\s+(?:book|textbook|manual)\b|\b(?:chapters?|chs?\.?|pp?\.?)\s+\d)/);
+              if (bookSplit && bookSplit.index !== undefined) {
+                const remPart1 = remainingCol2.substring(0, bookSplit.index).replace(/^[:!.\s]+|[;:.\s]+$/g, '').trim();
+                const remPart2 = remainingCol2.substring(bookSplit.index).replace(/^[:!.\s]+|[;:.\s]+$/g, '').trim();
+                col2Parts = [...prefixParts, remPart1, remPart2];
+              } else {
+                col2Parts = [...prefixParts, remainingCol2, ''];
+              }
             }
           } else {
             col2Parts = [...prefixParts, remainingCol2];
@@ -1562,19 +1669,6 @@ export class LocalSyllabusParser {
     const textbooks: { title: string; authorName: string | null }[] = [];
     const weeks: WeekDTO[] = [];
 
-    const weekDateSchedule: Record<number, { start: string; range: string }> = {
-      1: { start: `${effectiveTermYear}-10-05T00:00:00.000Z`, range: 'Oct 5 – Oct 11' },
-      2: { start: `${effectiveTermYear}-10-12T00:00:00.000Z`, range: 'Oct 12 – Oct 18' },
-      3: { start: `${effectiveTermYear}-10-19T00:00:00.000Z`, range: 'Oct 19 – Oct 25' },
-      4: { start: `${effectiveTermYear}-10-26T00:00:00.000Z`, range: 'Oct 26 – Nov 1' },
-      5: { start: `${effectiveTermYear}-11-02T00:00:00.000Z`, range: 'Nov 2 – Nov 8' },
-      6: { start: `${effectiveTermYear}-11-09T00:00:00.000Z`, range: 'Nov 9 – Nov 15' },
-      7: { start: `${effectiveTermYear}-11-16T00:00:00.000Z`, range: 'Nov 16 – Nov 22' },
-      8: { start: `${effectiveTermYear}-11-23T00:00:00.000Z`, range: 'Nov 23 – Nov 29' },
-      9: { start: `${effectiveTermYear}-11-30T00:00:00.000Z`, range: 'Nov 30 – Dec 6' },
-      10: { start: `${effectiveTermYear}-12-07T00:00:00.000Z`, range: 'Dec 7 – Dec 13' }
-    };
-
     // Split weekly reading blocks: "Week (\d+):\s*([^\n]+)\nReading \1:\s*([^\n]+(?:\n[^\n]+)?)"
     const weekChunks = clean.split(/\n(?=Week\s+\d+[:\-–—])/i);
     for (const chunk of weekChunks) {
@@ -1582,7 +1676,6 @@ export class LocalSyllabusParser {
       if (!wMatch) continue;
       const weekNum = parseInt(wMatch[1], 10);
       const weekTheme = wMatch[2].trim();
-      const sched = weekDateSchedule[weekNum];
 
       const rMatch = chunk.match(/Reading\s+\d+[:\-–—]\s*([\s\S]+?(?:\(\s*(?:pp?\.?|pages?)\s*[\d\s–\-—,]+\s*\)\.?|\b(?:pp?\.?|pages?)\s*[\d\s–\-—,]+\.?))/i) ||
                      chunk.match(/Reading\s+\d+[:\-–—]\s*([^\n]+(?:\n[^\n]+)?)/i);
@@ -1592,12 +1685,12 @@ export class LocalSyllabusParser {
         let citation = (rMatch[1] || rMatch[0]).replace(/^Reading\s+\d+[:\-–—]\s*/i, '').replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
         const citationEndIdx = chunk.indexOf(rMatch[0]) + rMatch[0].length;
         let rawSummary = chunk.substring(citationEndIdx).trim();
-        const sectionBreakMatch = rawSummary.search(/\n\s*(?:\d+\.\s*WEEKLY|\d+\.\s*THEMATIC|MODULE\s+\d+|4\.\s*ASSESSMENT|SXST-\d+:|Page\s+\d+|WEEKLY\s+COURSE)/i);
+        const sectionBreakMatch = rawSummary.search(/\n\s*(?:\d+\.\s*WEEKLY|\d+\.\s*THEMATIC|MODULE\s+\d+|4\.\s*ASSESSMENT|[A-Z]{2,6}[-\s]\d{3,4}[A-Z]?:|Page\s+\d+|WEEKLY\s+COURSE)/i);
         if (sectionBreakMatch !== -1) {
           rawSummary = rawSummary.substring(0, sectionBreakMatch);
         }
         rawSummary = rawSummary.replace(/\b\d+\.\s*WEEKLY\s+COURSE\s+READINGS[\s\S]*$/i, '').trim();
-        rawSummary = rawSummary.replace(/\b(?:SXST-\d+:|Page\s+\d+)[\s\S]*$/i, '').trim();
+        rawSummary = rawSummary.replace(/\b(?:[A-Z]{2,6}[-\s]\d{3,4}[A-Z]?:|Page\s+\d+)[\s\S]*$/i, '').trim();
         const summary = rawSummary
           .replace(/^[\s\.\-]+/, '')
           .replace(/(\b\w+)-\s+(\w+\b)/g, '$1-$2')
@@ -1687,8 +1780,8 @@ export class LocalSyllabusParser {
           summaryText: summary || `Study ${title} for Week ${weekNum}: ${weekTheme}`,
           keyTakeawaysText: `• Review ${title}`,
           estimatedTimeText: '~45 min',
-          dueDate: sched?.start || null,
-          dateRangeStr: sched?.range || `Week ${weekNum}`,
+          dueDate: null,
+          dateRangeStr: null,
           isRequired: true,
           requirementType: 'required'
         };
@@ -1705,8 +1798,8 @@ export class LocalSyllabusParser {
         id: `week-${weekNum}`,
         weekNumber: weekNum,
         theme: weekTheme,
-        startDate: sched?.start || null,
-        dateRangeStr: sched?.range || null,
+        startDate: null,
+        dateRangeStr: null,
         readings: weekReadings,
         moduleNumber: undefined,
         moduleMention: undefined
@@ -1725,7 +1818,7 @@ export class LocalSyllabusParser {
           const modTheme = mM[2].trim();
           const modDesc = mM[3]
             .replace(/\b\d+\.\s*THEMATIC\s+RESEARCH\s+MODULES[^\n]*/gi, '')
-            .replace(/\bSXST-\d+:[^\n]*/gi, '')
+            .replace(/\b[A-Z]{2,6}[-\s]\d{3,4}[A-Z]?:[^\n]*/gi, '')
             .replace(/\bCourse\s+Syllabus\s*&[^\n]*/gi, '')
             .replace(/\bPage\s+\d+(?:\s+of\s+\d+)?\b/gi, '')
             .replace(/(\b\w+)-\s+(\w+\b)/g, '$1-$2')
@@ -1733,19 +1826,7 @@ export class LocalSyllabusParser {
             .replace(/\s+/g, ' ')
             .trim();
 
-          const canonicalModuleAuthors: Record<number, string> = {
-            1: 'Havelock Ellis',
-            2: 'Michel Foucault',
-            3: 'George Chauncey',
-            4: 'Susan Stryker',
-            5: 'Audre Lorde',
-            6: 'Gayle Rubin',
-            7: 'María Lugones',
-            8: 'Kath Weston',
-            9: 'Jack Halberstam',
-            10: 'Susanna Paasonen'
-          };
-          let modAuthor = canonicalModuleAuthors[modNum];
+          let modAuthor: string | undefined = undefined;
           const authorInText = modDesc.match(/\b(?:Author|By|Scholar|Reading):\s*([^\n,;.]+)/i)
             || modDesc.match(/\b([A-Z][a-z]+,\s+[A-Z]\.?(?:\s*[A-Z]\.?)?)\b/);
           if (authorInText) {
@@ -1775,19 +1856,6 @@ export class LocalSyllabusParser {
     }
 
     // 4. Assessment Matrix (Assignments 1 – 10)
-    const canonicalAssignmentDates: Record<number, string> = {
-      1: `${effectiveTermYear}-10-16T23:59:00.000Z`, // Week 2 (Fri)
-      2: `${effectiveTermYear}-10-23T23:59:00.000Z`, // Week 3 (Fri)
-      3: `${effectiveTermYear}-11-01T23:59:00.000Z`, // Week 4 (Sun)
-      4: `${effectiveTermYear}-11-06T23:59:00.000Z`, // Week 5 (Fri)
-      5: `${effectiveTermYear}-11-11T23:59:00.000Z`, // Week 6 (Wed)
-      6: `${effectiveTermYear}-11-19T23:59:00.000Z`, // Week 7 (Thu)
-      7: `${effectiveTermYear}-11-27T23:59:00.000Z`, // Week 8 (Fri)
-      8: `${effectiveTermYear}-12-04T23:59:00.000Z`, // Week 9 (Fri)
-      9: `${effectiveTermYear}-12-11T23:59:00.000Z`, // Week 10 (Fri)
-      10: `${effectiveTermYear}-12-14T23:59:00.000Z` // Exam Week (Dec 14)
-    };
-
     const assignments: AssignmentDTO[] = [];
     const assignSection = clean.match(/4\.\s*ASSESSMENT\s+&[\s\S]+$/i);
     if (assignSection) {
@@ -1808,86 +1876,21 @@ export class LocalSyllabusParser {
           const weekM = dueStr.match(/\b(?:Week|Wk)\s*(\d+)/i);
           const weekNum = weekM ? parseInt(weekM[1], 10) : assignNum;
           const parsedDueDate = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b|\d{1,2}\/\d{1,2}/i.test(dueStr) ? parseSafeDate(dueStr, effectiveTermYear) : null;
-          const resolvedDueDate = parsedDueDate ? parsedDueDate.toISOString() : (canonicalAssignmentDates[assignNum] || null);
+          const resolvedDueDate = parsedDueDate ? parsedDueDate.toISOString() : null;
 
           const fullTitle = cleanAssignmentTitle(rawTitle);
 
-          const sxstDeliverableNotes: Record<number, string> = {
-            1: "500-word critical précis analyzing Havelock Ellis or Foucault's central theoretical claim.",
-            2: 'Close-reading of a 19th-century medical or penal artifact interpreted via Rubin\'s "Charmed Circle".',
-            3: '1,200-word case study documenting mid-20th-century street resistance and mutual aid.',
-            4: 'Comparative paper putting Lorde\'s erotic power into dialogue with institutional discipline.',
-            5: '1-page thesis prospectus identifying selected thematic research module and primary sources.',
-            6: '1,500-word rough draft circulated for double-blind peer workshop and methodological critique.',
-            7: 'Analytical diagram and report evaluating Weston\'s chosen family structures vs. legal kinship.',
-            8: '1,000-word technical analysis of algorithmic shadowbanning and sexual content moderation.',
-            9: 'Application of McRuer\'s crip theory to evaluate an educational or healthcare delivery environment.',
-            10: '3,500-word research essay synthesizing two thematic modules with archival and theoretical evidence.'
-          };
-
-          const sxstRubricCriteriaMap: Record<number, RubricCriterionDTO[]> = {
-            1: [
-              { criterionName: 'Textual Deconstruction & Argument Extraction', points: 2, percentage: 40 },
-              { criterionName: 'Theoretical Engagement (Ellis or Foucault)', points: 2, percentage: 40 },
-              { criterionName: 'Clarity & Academic Precision (500 words)', points: 1, percentage: 20 }
-            ],
-            2: [
-              { criterionName: 'Artifact Selection & Historical Close-Reading', points: 4, percentage: 40 },
-              { criterionName: 'Application of Rubin\'s Charmed Circle', points: 4, percentage: 40 },
-              { criterionName: 'Critical Monograph Structure & Citations', points: 2, percentage: 20 }
-            ],
-            3: [
-              { criterionName: 'Mid-20th-Century Archival & Case Documentation', points: 4, percentage: 40 },
-              { criterionName: 'Street Resistance & Mutual Aid Analysis', points: 4, percentage: 40 },
-              { criterionName: 'Methodological Rigor & Case Study (1,200 words)', points: 2, percentage: 20 }
-            ],
-            4: [
-              { criterionName: 'Comparative Analysis of Lorde\'s Erotic Power', points: 6, percentage: 40 },
-              { criterionName: 'Dialogue with Institutional Discipline', points: 5, percentage: 33 },
-              { criterionName: 'Argumentative Structure, Synthesis & Evidence', points: 4, percentage: 27 }
-            ],
-            5: [
-              { criterionName: 'Thematic Research Module Selection & Thesis Focus', points: 2, percentage: 40 },
-              { criterionName: 'Primary Source Identification & Methodology', points: 2, percentage: 40 },
-              { criterionName: '1-Page Prospectus Formatting & Feasibility', points: 1, percentage: 20 }
-            ],
-            6: [
-              { criterionName: 'Draft Completeness & Methodological Progression', points: 2, percentage: 40 },
-              { criterionName: 'Constructive Peer Feedback & Workshop Engagement', points: 2, percentage: 40 },
-              { criterionName: 'Double-Blind Critique & Revision Strategy', points: 1, percentage: 20 }
-            ],
-            7: [
-              { criterionName: 'Analytical Diagram of Weston\'s Chosen Families', points: 4, percentage: 40 },
-              { criterionName: 'Chosen Family vs. Legal Kinship', points: 4, percentage: 40 },
-              { criterionName: 'Written Report & Conceptual Synthesis', points: 2, percentage: 20 }
-            ],
-            8: [
-              { criterionName: 'Algorithmic Shadowbanning Analysis', points: 4, percentage: 40 },
-              { criterionName: 'Technoculture Theory & Somatic Affect Integration', points: 4, percentage: 40 },
-              { criterionName: 'Written Critique & Interface Documentation', points: 2, percentage: 20 }
-            ],
-            9: [
-              { criterionName: 'Institutional / Healthcare Evaluation', points: 4, percentage: 40 },
-              { criterionName: 'Application of McRuer\'s Crip Theory', points: 4, percentage: 40 },
-              { criterionName: 'Diagnostic Accessibility Blueprint', points: 2, percentage: 20 }
-            ],
-            10: [
-              { criterionName: 'Dual Thematic Module Synthesis', points: 8, percentage: 40 },
-              { criterionName: 'Archival Evidence & Historiographical Depth', points: 7, percentage: 35 },
-              { criterionName: 'Scholarly Defense, Argumentation & Structure', points: 5, percentage: 25 }
-            ]
-          };
-
-          let deliverableNote = sxstDeliverableNotes[assignNum];
-          if (!deliverableNote && desc) {
-            const wordMatch = desc.match(/^(\d+(?:,\d+)?-word\s+[a-z\s]+?)(?:\s+(?:analyzing|documenting|circulated|synthesizing|evaluating)|$|\.)/i);
-            if (wordMatch) {
-              deliverableNote = wordMatch[1].trim();
+          let deliverableNote: string | undefined;
+          const wordMatch = desc.match(/^(\d+(?:,\d+)?-word\s+[a-z\s]+?)(?:\s+(?:analyzing|documenting|circulated|synthesizing|evaluating)|$|\.)/i);
+          if (wordMatch) {
+            deliverableNote = wordMatch[1].trim();
+          } else {
+            const pageMatch = desc.match(/^(\d+-page\s+[a-z\s]+?)(?:\s+(?:identifying|analyzing)|$|\.)/i);
+            if (pageMatch) {
+              deliverableNote = pageMatch[1].trim();
             } else {
-              const pageMatch = desc.match(/^(\d+-page\s+[a-z\s]+?)(?:\s+(?:identifying|analyzing)|$|\.)/i);
-              if (pageMatch) {
-                deliverableNote = pageMatch[1].trim();
-              }
+              const firstClause = desc.split(/[.;]/)[0];
+              deliverableNote = firstClause ? firstClause.trim() : undefined;
             }
           }
 
@@ -1898,12 +1901,12 @@ export class LocalSyllabusParser {
             title: fullTitle,
             weekNumber: weekNum,
             weightPercentage: `${weight}%`,
-            pointsPossible: `${weight} pts`,
-            points: weight,
+            pointsPossible: null,
+            points: null,
             noteText: deliverableNote || undefined,
             dueDate: resolvedDueDate,
             fullInstructions: desc,
-            rubricCriteria: sxstRubricCriteriaMap[assignNum] || []
+            rubricCriteria: []
           });
         }
       }
@@ -6768,6 +6771,13 @@ export class LocalSyllabusParser {
         });
 
         // 1. Build distinct canonical Module Readings from Table 1
+        const isTopicalModTable = Boolean(
+          rawText && (
+            /the following modules and topics will be integrated/i.test(rawText) ||
+            /modules\s*[\t|]\s*topics\s*[\t|]\s*related readings/i.test(rawText)
+          )
+        );
+
         for (const [modNum, mod] of canonicalModules.entries()) {
           const { chapter, pages } = this.extractChapterAndPages(mod.reading);
           const { author } = this.extractAuthorAndResource(mod.reading);
@@ -6787,40 +6797,15 @@ export class LocalSyllabusParser {
             moduleMention: `Module ${mod.modNum}`,
             isCompleted: false,
             summaryText: '',
-            keyTakeawaysText: ''
-          });
+            keyTakeawaysText: '',
+            isTopicalTable: isTopicalModTable ? true : undefined
+          } as any);
         }
 
         if (activeWeeks.length >= canonicalModules.size) {
           activeWeeks.forEach((w, idx) => {
             const mod = canonicalModules.get(idx + 1);
             if (mod) {
-              const { chapter, pages } = this.extractChapterAndPages(mod.reading);
-              const { author } = this.extractAuthorAndResource(mod.reading);
-
-              // If week has no readings from Table 2 and is not a break week, add canonical module reading
-              if (!w.readings || w.readings.length === 0) {
-                const isBreak = /reading\s*week|flex\s*week|no\s*class/i.test(w.theme || '');
-                if (!isBreak) {
-                  const fullReadingTitle = mod.reading;
-                  w.readings = [{
-                    id: `reading-canonical-${mod.modNum}-${Math.random().toString(36).substring(2, 7)}`,
-                    title: fullReadingTitle,
-                    authorName: author || undefined,
-                    chapterText: chapter,
-                    pagesText: pages,
-                    dueDate: w.startDate,
-                    dateRangeStr: w.dateRangeStr,
-                    mediaType: 'textbook',
-                    relevantTopics: mod.theme,
-                    weekNumber: w.weekNumber,
-                    isCompleted: false,
-                    summaryText: `Study ${chapter || mod.reading} for Module ${mod.modNum}: ${mod.theme}`,
-                    keyTakeawaysText: `• Review ${chapter || mod.reading}`
-                  }];
-                }
-              }
-
               // Preserve week session theme if specific, or enrich with module theme if generic
               if (!w.theme || /^(?:week|wk|module|mod)\s*\d+$/i.test(w.theme.trim()) || w.theme === `Week ${w.weekNumber} Schedule`) {
                 w.theme = mod.theme;

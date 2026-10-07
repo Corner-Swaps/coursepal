@@ -81,4 +81,5 @@ module.exports = {
     canOpenURL: jest.fn(() => Promise.resolve(true)),
     openURL: jest.fn(() => Promise.resolve(true)),
   },
+  NativeModules: {},
 };

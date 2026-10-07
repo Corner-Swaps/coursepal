@@ -1958,15 +1958,11 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
       r.chapterText = r.chapterText.replace(/^\d+[\s:.\-–—]+\d+\s*[:·•\-–—]\s*/, '').trim();
     }
 
-    const isPureModule = Boolean(
-      (r as any).moduleNumber &&
-      ((r as any).weekNumber === null || (r as any).weekNumber === undefined || (r as any).weekId === 'none' || (r as any).weekNumber === 0)
-    );
-    const weekNum = isPureModule ? 0 : (extractReadingWeekNumber(r) ?? 0);
+    const weekNum = extractReadingWeekNumber(r) ?? 0;
     const modNum = (typeof (r as any).moduleNumber === 'number' && (r as any).moduleNumber > 0)
       ? (r as any).moduleNumber
       : (typeof (r as any).module_number === 'number' && (r as any).module_number > 0 ? (r as any).module_number : 0);
-    const scheduleKey = modNum > 0 && (!weekNum || weekNum === 0) ? `m${modNum}` : (weekNum > 0 ? `w${weekNum}` : `w0`);
+    const scheduleKey = weekNum > 0 ? `w${weekNum}` : (modNum > 0 ? `m${modNum}` : `w0`);
 
     const matchedCourse = courses ? matchCourseForItem(r, courses) : undefined;
     const courseKey = (matchedCourse?.courseCode || matchedCourse?.courseName || r.courseCode || 'default')
@@ -2082,15 +2078,11 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
 
     if (existingIndex === undefined && canonicalCh) {
       const candIdx = result.findIndex(existingR => {
-        const exIsPureMod = Boolean(
-          (existingR as any).moduleNumber &&
-          ((existingR as any).weekNumber === null || (existingR as any).weekNumber === undefined || (existingR as any).weekId === 'none' || (existingR as any).weekNumber === 0)
-        );
-        const exWeek = exIsPureMod ? 0 : (extractReadingWeekNumber(existingR) ?? 0);
+        const exWeek = extractReadingWeekNumber(existingR) ?? 0;
         const exMod = (typeof (existingR as any).moduleNumber === 'number' && (existingR as any).moduleNumber > 0)
           ? (existingR as any).moduleNumber
           : 0;
-        const exScheduleKey = exMod > 0 && (!exWeek || exWeek === 0) ? `m${exMod}` : (exWeek > 0 ? `w${exWeek}` : `w0`);
+        const exScheduleKey = exWeek > 0 ? `w${exWeek}` : (exMod > 0 ? `m${exMod}` : `w0`);
         if (exScheduleKey !== scheduleKey) return false;
         if (modNum > 0 && exMod > 0 && modNum !== exMod) return false;
         if ((modNum > 0 && !weekNum && exWeek > 0) || (exMod > 0 && !exWeek && weekNum > 0)) return false;
@@ -2129,12 +2121,6 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
       const mergedMediaType = (r.mediaType && r.mediaType !== 'textbook') ? r.mediaType : existing.mediaType;
       const mergedMediaTypeRaw = (r.mediaTypeRaw && r.mediaTypeRaw !== 'textbook') ? r.mediaTypeRaw : (existing.mediaTypeRaw || r.mediaTypeRaw);
 
-      const exIsPureMod = Boolean(
-        existing.moduleNumber &&
-        (existing.weekNumber === null || existing.weekNumber === undefined || existing.weekId === 'none' || existing.weekNumber === 0)
-      );
-      const isPureModMerge = isPureModule || exIsPureMod;
-
       const merged: T = {
         ...existing,
         title: isNewRicher ? r.title : existing.title,
@@ -2144,8 +2130,8 @@ export function deduplicateReadingsList<T extends MinimalReadingItem>(
         pagesText: existing.pagesText || r.pagesText,
         moduleNumber: existing.moduleNumber ?? (r as any).moduleNumber ?? null,
         moduleMention: existing.moduleMention || (r as any).moduleMention || null,
-        weekNumber: isPureModMerge ? null : (existing.weekNumber ?? (r as any).weekNumber ?? null),
-        weekId: isPureModMerge ? 'none' : (existing.weekId || (r as any).weekId || null),
+        weekNumber: existing.weekNumber ?? (r as any).weekNumber ?? null,
+        weekId: existing.weekId || (r as any).weekId || null,
         dueDate: existing.dueDate || r.dueDate || null,
         dateRangeStr: existing.dateRangeStr || r.dateRangeStr || null,
         relevantTopics: existing.relevantTopics || r.relevantTopics || null,

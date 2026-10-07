@@ -4,7 +4,8 @@ import { SyllabusImportManager } from '../src/services/SyllabusImportManager';
 import { formatDisplayTitleWithChapter, formatAuthorAndPagesSubtitle } from '../src/utils/readingDisplayHelper';
 
 describe('Critical Perspectives Modular Dossier Syllabus Ingestion Verification', () => {
-  const pyScript = `import pypdf; r=pypdf.PdfReader('/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded/media_1790289747188.pdf'); print('\\n'.join(p.extract_text() or '' for p in r.pages))`;
+  const pdfPath = require('path').resolve(__dirname, '../src/assets/syllabi/PRJ_SEX_2026_Human_Sexuality_Syllabus.pdf');
+  const pyScript = `import pypdf; r=pypdf.PdfReader('${pdfPath}'); print('\\n'.join(p.extract_text() or '' for p in r.pages))`;
   const rawText = execSync(`python3 -c "${pyScript}"`, { encoding: 'utf8' });
   const fs = require('fs');
   const rawTextPDFKit = fs.existsSync('/tmp/pdfkit_extracted.txt')

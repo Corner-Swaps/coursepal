@@ -657,6 +657,80 @@ static NSString *PerformVisionOCROnPDFDocument(PDFDocument *doc) {
   return [allText copy];
 }
 
+static NSArray<NSDictionary *> *ExtractLayoutFromCGImage(CGImageRef cgImage, NSInteger pageNumber, CGFloat width, CGFloat height) {
+  if (!cgImage) return @[];
+
+  __block NSMutableArray<NSDictionary *> *observationsArray = [NSMutableArray array];
+  VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:^(VNRequest * _Nonnull req, NSError * _Nullable error) {
+    if (error || !req.results || req.results.count == 0) return;
+
+    for (id obj in req.results) {
+      if ([obj isKindOfClass:[VNRecognizedTextObservation class]]) {
+        VNRecognizedTextObservation *obs = (VNRecognizedTextObservation *)obj;
+        NSArray<VNRecognizedText *> *topCandidates = [obs topCandidates:1];
+        if (topCandidates.count > 0) {
+          VNRecognizedText *cand = topCandidates.firstObject;
+          NSString *str = cand.string;
+          if (str && str.length > 0) {
+            CGRect b = obs.boundingBox;
+            [observationsArray addObject:@{
+              @"text": str,
+              @"confidence": @(cand.confidence),
+              @"box": @{
+                @"x": @(b.origin.x),
+                @"y": @(b.origin.y),
+                @"w": @(b.size.width),
+                @"h": @(b.size.height)
+              }
+            }];
+          }
+        }
+      }
+    }
+  }];
+
+  request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
+  request.usesLanguageCorrection = YES;
+  if (@available(iOS 16.0, *)) {
+    request.automaticallyDetectsLanguage = YES;
+  }
+
+  VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:cgImage options:@{}];
+  NSError *err = nil;
+  [handler performRequests:@[request] error:&err];
+  if (err) {
+    NSLog(@"[CoursePal Vision Layout OCR] Request error: %@", err.localizedDescription);
+  }
+
+  return observationsArray;
+}
+
+static NSArray<NSDictionary *> *ExtractLayoutFromPDFDocument(PDFDocument *doc) {
+  if (!doc || doc.pageCount == 0) return @[];
+
+  NSMutableArray<NSDictionary *> *pages = [NSMutableArray array];
+  for (NSUInteger i = 0; i < doc.pageCount; i++) {
+    PDFPage *page = [doc pageAtIndex:i];
+    if (!page) continue;
+    UIImage *pageImg = RenderPDFPageForOCR(page);
+    if (!pageImg) continue;
+
+    CGImageRef cgImage = pageImg.CGImage;
+    if (cgImage) {
+      CGFloat width = pageImg.size.width;
+      CGFloat height = pageImg.size.height;
+      NSArray *obs = ExtractLayoutFromCGImage(cgImage, i + 1, width, height);
+      [pages addObject:@{
+        @"pageNumber": @(i + 1),
+        @"width": @(width),
+        @"height": @(height),
+        @"observations": obs ?: @[]
+      }];
+    }
+  }
+  return [pages copy];
+}
+
 @interface PDFTextExtractor : NSObject <RCTBridgeModule>
 @end
 
@@ -857,6 +931,68 @@ RCT_EXPORT_METHOD(extractTextViaVision:(NSString *)filePath
     }
   } @catch (NSException *exception) {
     resolve(@"");
+  }
+}
+
+RCT_EXPORT_METHOD(extractLayoutFromPDF:(NSString *)filePath
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  @try {
+    if (!filePath || filePath.length == 0) {
+      resolve(@[]);
+      return;
+    }
+
+    NSString *cleanPath = ResolveLocalFilePath(filePath);
+    NSURL *url = cleanPath ? [NSURL fileURLWithPath:cleanPath] : nil;
+
+    BOOL isSecurityScoped = NO;
+    if (url && [url respondsToSelector:@selector(startAccessingSecurityScopedResource)]) {
+      isSecurityScoped = [url startAccessingSecurityScopedResource];
+    }
+
+    @try {
+      NSData *fileData = nil;
+      if (cleanPath) {
+        fileData = [NSData dataWithContentsOfFile:cleanPath];
+      }
+      if ((!fileData || fileData.length == 0) && url) {
+        fileData = [NSData dataWithContentsOfURL:url];
+      }
+
+      if (!fileData || fileData.length == 0) {
+        resolve(@[]);
+        return;
+      }
+
+      PDFDocument *doc = [[PDFDocument alloc] initWithData:fileData];
+      if (doc && doc.pageCount > 0) {
+        NSArray *layoutResult = ExtractLayoutFromPDFDocument(doc);
+        resolve(layoutResult ?: @[]);
+        return;
+      }
+
+      UIImage *img = [UIImage imageWithData:fileData];
+      if (img && img.CGImage) {
+        NSArray *obs = ExtractLayoutFromCGImage(img.CGImage, 1, img.size.width, img.size.height);
+        resolve(@[@{
+          @"pageNumber": @(1),
+          @"width": @(img.size.width),
+          @"height": @(img.size.height),
+          @"observations": obs ?: @[]
+        }]);
+        return;
+      }
+
+      resolve(@[]);
+    } @finally {
+      if (isSecurityScoped) {
+        [url stopAccessingSecurityScopedResource];
+      }
+    }
+  } @catch (NSException *exception) {
+    resolve(@[]);
   }
 }
 

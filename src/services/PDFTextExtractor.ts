@@ -116,9 +116,10 @@ export function extractTextFromPDFContent(content: string): string {
  */
 export async function extractTextViaVision(fileUri: string): Promise<string> {
   if (!fileUri) return '';
-  if (Platform.OS === 'ios' && PDFTextExtractor?.extractTextViaVision) {
+  const nativeMod = NativeModules?.PDFTextExtractor ?? PDFTextExtractor;
+  if (Platform.OS === 'ios' && nativeMod?.extractTextViaVision) {
     try {
-      const text = await PDFTextExtractor.extractTextViaVision(fileUri);
+      const text = await nativeMod.extractTextViaVision(fileUri);
       if (typeof text === 'string' && text.trim().length > 20) {
         return text.trim();
       }
@@ -130,6 +131,51 @@ export async function extractTextViaVision(fileUri: string): Promise<string> {
 }
 
 /**
+ * Quality gate to determine whether raw extracted PDF text is junk or sparse,
+ * requiring high-fidelity Apple Vision OCR on the document images.
+ *
+ * Evaluates:
+ * 1. Sparse text threshold (< 60 chars or < 8 recognizable words).
+ * 2. High ratio of unprintable, replacement (\uFFFD), or control characters.
+ * 3. Low alphabetic density (garbage symbols, unmapped font glyphs, noise).
+ * 4. Token anomalies (unbroken character soup without spaces or single-letter gibberish).
+ */
+export function needsVisionOCR(text: string | null | undefined): boolean {
+  if (!text || typeof text !== 'string') return true;
+
+  const trimmed = text.trim();
+  if (trimmed.length < 60) return true;
+
+  // 1. Replacement and unprintable control characters
+  const replacementCount = (trimmed.match(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F]/g) || []).length;
+  if (replacementCount / trimmed.length > 0.03) return true;
+
+  // 2. Alphabetic character ratio
+  const nonWhitespace = trimmed.replace(/\s+/g, '');
+  if (nonWhitespace.length < 30) return true;
+
+  const letterCount = (nonWhitespace.match(/[a-zA-Z]/g) || []).length;
+  const letterRatio = letterCount / nonWhitespace.length;
+  // If less than 40% of non-whitespace characters are letters (e.g. math/glyph garbage or random symbols)
+  if (letterRatio < 0.40) return true;
+
+  // 3. Word token quality
+  const tokens = trimmed.split(/\s+/).filter(t => t.length > 0);
+  if (tokens.length < 8) return true;
+
+  // Recognizable words (at least 2 letters, normal characters)
+  const recognizableWords = tokens.filter(t => /[a-zA-Z]{2,}/.test(t) && !/[^\x20-\x7E\u00A0-\u00FF]/.test(t));
+  if (recognizableWords.length < 6) return true;
+  if (recognizableWords.length / tokens.length < 0.35) return true;
+
+  // 4. Check for unspaced giant gibberish string
+  const maxTokenLen = Math.max(...tokens.map(t => t.length));
+  if (maxTokenLen > 60 && tokens.length < 5) return true;
+
+  return false;
+}
+
+/**
  * Extracts plain text from a local PDF file.
  * - If native module is available (iOS native PDFKit + Vision OCR, or Android native module), runs on-device.
  * - Automatically falls back to on-device Apple Vision OCR if raw text is sparse or missing (scanned PDFs).
@@ -137,12 +183,13 @@ export async function extractTextViaVision(fileUri: string): Promise<string> {
  */
 export async function extractTextFromPDF(fileUri: string): Promise<string> {
   if (!fileUri) return '';
+  const nativeMod = NativeModules?.PDFTextExtractor ?? PDFTextExtractor;
 
   // 1. Try native module if available (PDFKit with built-in Apple Vision OCR fallback)
-  if (PDFTextExtractor?.extractText) {
+  if (nativeMod?.extractText) {
     try {
-      const text = await PDFTextExtractor.extractText(fileUri);
-      if (typeof text === 'string' && text.trim().length > 20) {
+      const text = await nativeMod.extractText(fileUri);
+      if (typeof text === 'string' && text.trim().length > 20 && !needsVisionOCR(text)) {
         return text.trim();
       }
     } catch (err) {
@@ -150,10 +197,10 @@ export async function extractTextFromPDF(fileUri: string): Promise<string> {
     }
   }
 
-  // 2. Explicit Apple Vision OCR pass if initial native extract returned sparse text
-  if (Platform.OS === 'ios' && PDFTextExtractor?.extractTextViaVision) {
+  // 2. Explicit Apple Vision OCR pass if initial native extract returned sparse text or failed quality gate
+  if (Platform.OS === 'ios' && nativeMod?.extractTextViaVision) {
     try {
-      const visionText = await PDFTextExtractor.extractTextViaVision(fileUri);
+      const visionText = await nativeMod.extractTextViaVision(fileUri);
       if (typeof visionText === 'string' && visionText.trim().length > 20) {
         return visionText.trim();
       }
@@ -288,4 +335,24 @@ export async function openNativeDocumentViewer(fileUri: string): Promise<boolean
  * Backward-compatible alias for openNativeDocumentViewer.
  */
 export const openDocumentQuickLook = openNativeDocumentViewer;
+
+/**
+ * Extracts layout-aware observations and reconstructed structure from a local PDF file.
+ * Returns PageLayout[] or empty array on non-iOS / missing native module / failure. Never throws.
+ */
+export async function extractLayoutFromPDF(fileUri: string): Promise<any[]> {
+  if (!fileUri || Platform.OS !== 'ios') return [];
+  const nativeMod = NativeModules?.PDFTextExtractor ?? (PDFTextExtractor as any);
+  if (!nativeMod?.extractLayoutFromPDF) return [];
+
+  try {
+    const rawPages = await nativeMod.extractLayoutFromPDF(fileUri);
+    if (!Array.isArray(rawPages)) return [];
+    return rawPages;
+  } catch (err) {
+    console.warn('PDFTextExtractor extractLayoutFromPDF error:', err);
+    return [];
+  }
+}
+
 

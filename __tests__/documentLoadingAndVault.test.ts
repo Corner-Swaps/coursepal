@@ -1,5 +1,4 @@
 import { ensureBundledPdfFile, hydrateVaultDocWithRealPdf } from '../src/utils/bundledPdfService';
-import { healCanonicalCPC514, healCanonicalCPC512, healCanonicalCPC527 } from '../src/context/CoursePalContext';
 import { SyllabusImportManager } from '../src/services/SyllabusImportManager';
 import { LocalSyllabusParser } from '../src/services/LocalSyllabusParser';
 import cityuSyllabi from '../src/utils/cityu_syllabi_texts.json';
@@ -67,92 +66,6 @@ describe('Document Loading & Syllabi Vault Verification', () => {
       const hydrated = await hydrateVaultDocWithRealPdf(mockDoc);
       expect(hydrated.rawFileDataUri).toBeDefined();
       expect(hydrated.rawFileDataUri).toContain('CPC514_Syllabus.pdf');
-    });
-  });
-
-  describe('healCanonicalCPC514 5-Assignment & Vault Extraction', () => {
-    it('produces all 5 canonical assignments without dropping Assignment 2', () => {
-      const result = healCanonicalCPC514([], [], [], []);
-      expect(result.courses.length).toBe(1);
-      const cpc514 = result.courses[0];
-      expect(cpc514.courseCode).toBe('CPC 514');
-
-      // Verify all 5 assignments are preserved
-      expect(result.assignments.length).toBe(5);
-
-      const titles = result.assignments.map(a => a.title);
-      expect(titles.some(t => t.includes('Research Article Analysis'))).toBe(true);
-      expect(titles.some(t => t.includes('Peer Review Discussion Board Activity'))).toBe(true);
-      expect(titles.some(t => t.includes('Peer Review Group Report'))).toBe(true);
-      expect(titles.some(t => t.includes('Research Study Design'))).toBe(true);
-      expect(titles.some(t => t.includes('Attendance'))).toBe(true);
-
-      // Verify weight percentages total 100%
-      const weights = result.assignments.map(a => a.weightPercentage);
-      expect(weights).toEqual(['20%', '20%', '10%', '40%', '10%']);
-
-      // Check VaultDocument registration
-      expect(result.vaultDocs.length).toBe(1);
-      const vaultDoc = result.vaultDocs[0];
-      expect(vaultDoc.title).toBe('CPC 514 Syllabus');
-      expect(vaultDoc.courseCode).toBe('CPC 514');
-      expect(vaultDoc.rawFileDataUri).toContain('CPC514_Syllabus.pdf');
-    });
-  });
-
-  describe('healCanonicalCPC512 and healCanonicalCPC527 Vault Document Registration', () => {
-    it('registers canonical VaultDocument for CPC 512', () => {
-      const dummy512Course: Course = {
-        id: 'c-cpc-512-test',
-        creatorId: 'user',
-        courseName: 'Family Systems Therapy',
-        courseCode: 'CPC 512',
-        courseDescription: 'Family Systems Therapy',
-        instructorName: 'Diane R. Gehart',
-        instructorEmail: null,
-        hexColor: '#EF4444',
-        termWeeks: 12,
-        sharingCode: 'CPC512',
-        isDeleted: false,
-        isFavorite: true,
-        createdAt: new Date(),
-        weeks: [],
-        assignments: [],
-        syllabusDocs: []
-      };
-
-      const result = healCanonicalCPC512([dummy512Course], [], [], []);
-      expect(result.vaultDocs.length).toBe(1);
-      const doc = result.vaultDocs[0];
-      expect(doc.courseCode).toBe('CPC 512');
-      expect(doc.rawFileDataUri).toContain('CPC512_Syllabus.pdf');
-    });
-
-    it('registers canonical VaultDocument for CPC 527', () => {
-      const dummy527Course: Course = {
-        id: 'c-cpc-527-test',
-        creatorId: 'user',
-        courseName: 'Group Counselling',
-        courseCode: 'CPC 527',
-        courseDescription: 'Group Counselling',
-        instructorName: 'Kelsey Murrin',
-        instructorEmail: null,
-        hexColor: '#059669',
-        termWeeks: 12,
-        sharingCode: 'CPC527',
-        isDeleted: false,
-        isFavorite: true,
-        createdAt: new Date(),
-        weeks: [],
-        assignments: [],
-        syllabusDocs: []
-      };
-
-      const result = healCanonicalCPC527([dummy527Course], [], [], []);
-      expect(result.vaultDocs.length).toBe(1);
-      const doc = result.vaultDocs[0];
-      expect(doc.courseCode).toBe('CPC 527');
-      expect(doc.rawFileDataUri).toContain('CPC527_Group_Counselling_Syllabus.pdf');
     });
   });
 

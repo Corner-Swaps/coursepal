@@ -26,7 +26,7 @@ export const BundledSyllabiCatalog: BundledSyllabusItem[] = [
     instructorName: 'Dr. Aris Thorne, Ph.D., R.Psych.',
     instructorEmail: 'athorne@appliedpsych.edu',
     department: 'Department of Applied Psychology & Behavioural Sciences',
-    fileName: 'PSYC612_Advanced_CBT_Interventions.pdf',
+    fileName: 'PSYC612_Syllabus.pdf',
     fileSize: '410 KB',
     hexColor: '#4F46E5',
     rawText: `COURSE SYLLABUS & SCHEMA
@@ -98,7 +98,7 @@ Extension & Late Policy: Extensions must be requested in writing at least 48 hou
     instructorName: 'Dr. Alireza Sedghi Taromi, PhD',
     instructorEmail: 'sedghitaromialireza@cityu.edu',
     department: 'School of Health & Social Sciences',
-    fileName: 'CPC514_Research_Methods_Syllabus.pdf',
+    fileName: 'CPC514_Syllabus.pdf',
     fileSize: '300 KB',
     hexColor: '#2563EB',
     rawText: cityuSyllabi.cpc514
@@ -110,7 +110,7 @@ Extension & Late Policy: Extensions must be requested in writing at least 48 hou
     instructorName: 'Marie-Pier Gilbert',
     instructorEmail: 'gilbertmariepier@cityu.edu',
     department: 'School of Health & Social Sciences',
-    fileName: 'CPC523_Human_Sexuality_Syllabus.pdf',
+    fileName: 'CPC523_Syllabus.pdf',
     fileSize: '265 KB',
     hexColor: '#7C3AED',
     rawText: cityuSyllabi.cpc523
@@ -122,7 +122,7 @@ Extension & Late Policy: Extensions must be requested in writing at least 48 hou
     instructorName: 'Diana Morgan',
     instructorEmail: 'morgandiana@cityu.edu',
     department: 'School of Health and Social Sciences',
-    fileName: 'CPC511_Loss_and_Grief_Syllabus.pdf',
+    fileName: 'CPC511_Syllabus.pdf',
     fileSize: '320 KB',
     hexColor: '#EC4899',
     rawText: cityuSyllabi.cpc511
@@ -134,7 +134,7 @@ Extension & Late Policy: Extensions must be requested in writing at least 48 hou
     instructorName: 'Kelsey Murrin',
     instructorEmail: 'murrinkelsey@cityu.edu',
     department: 'School of Health and Social Sciences',
-    fileName: 'CPC527_Group_Counselling_Syllabus.pdf',
+    fileName: 'CPC527_Syllabus.pdf',
     fileSize: '480 KB',
     hexColor: '#059669',
     rawText: cityuSyllabi.cpc527
@@ -146,7 +146,7 @@ Extension & Late Policy: Extensions must be requested in writing at least 48 hou
     instructorName: 'Dr. Andrew Ng',
     instructorEmail: 'andrew.ng@stanford.edu',
     department: 'Department of Computer Science',
-    fileName: 'CS501_Machine_Learning_Syllabus.pdf',
+    fileName: 'Syllabus_1_CS501.pdf',
     fileSize: '310 KB',
     hexColor: '#EA580C',
     rawText: `CS 501: Machine Learning & Neural Algorithms
@@ -185,7 +185,7 @@ Goodfellow Chapter 8 — Optimization for Training Deep Models`
     instructorName: 'Dr. Sarah Jenkins, PhD',
     instructorEmail: 'jenkins.s@cityu.edu',
     department: 'School of Health & Social Sciences',
-    fileName: 'CPC511_Theoretical_Foundations_Syllabus.pdf',
+    fileName: 'CPC511_Syllabus.pdf',
     fileSize: '340 KB',
     hexColor: '#0284C7',
     rawText: `CPC 511: Theoretical Foundations of Psychotherapy
@@ -223,7 +223,7 @@ Yalom Chapter 2 — Death, Freedom, and Isolation in Clinical Care`
     instructorName: 'Prof. David Vance, MA, RCC',
     instructorEmail: 'vancedavid@cityu.edu',
     department: 'School of Health & Social Sciences',
-    fileName: 'CPC512_Counselling_Skills_Syllabus.pdf',
+    fileName: 'CPC512_Syllabus.pdf',
     fileSize: '290 KB',
     hexColor: '#10B981',
     rawText: `CPC 512: Counselling Skills & Clinical Interviewing
