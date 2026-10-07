@@ -770,6 +770,8 @@ export class SyllabusImportManager {
       dateRangeStr?: string;
       moduleNumber?: number | null;
       moduleMention?: string | null;
+      isNonInstructional?: boolean;
+      isReadingWeek?: boolean;
     }[] = [];
     const weekDateMap = new Map<number, string>();
 
@@ -853,40 +855,46 @@ export class SyllabusImportManager {
       );
     };
 
+    const isClassMeetingSchedule = Array.isArray(dto.weeks) && dto.weeks.some((w: any) => /^\s*Class\s*\d+/i.test(w.theme || ''));
+
     // Process nested weeks
     if (Array.isArray(dto.weeks)) {
       for (const w of dto.weeks) {
         if (!w || typeof w !== 'object') continue;
         const origWkNum = w.weekNumber || w.week_number;
         const rawDate = w.date || w.startDate || w.rawDate || w.dateRangeStr;
-
-        if (isNonInstructionalWeek(w)) {
+        const isNonInst = isNonInstructionalWeek(w);
+        if (isNonInst) {
           w.isNonInstructional = true;
           w.isReadingWeek = true;
           nonInstructionalWeeks.push({
-            weekNumber: origWkNum,
-            theme: w.theme || 'Reading Week',
+            weekNumber: origWkNum || currentInstructionalWeek + 1,
+            theme: w.theme || 'Reading Week – No Class',
             date: typeof rawDate === 'string' ? rawDate : undefined,
             isNonInstructional: true,
             isReadingWeek: true
           });
-          continue;
+          if (isClassMeetingSchedule) {
+            continue;
+          }
         }
 
         currentInstructionalWeek++;
-        const wkNum = currentInstructionalWeek;
+        const wkNum = (typeof origWkNum === 'number' && origWkNum > 0 && !isClassMeetingSchedule) ? origWkNum : currentInstructionalWeek;
         if (typeof origWkNum === 'number' && origWkNum > 0) {
           weekShiftMap.set(origWkNum, wkNum);
         }
 
         weeksSummary.push({
           weekNumber: wkNum,
-          theme: typeof w.theme === 'string' ? w.theme : undefined,
+          theme: typeof w.theme === 'string' ? w.theme : (isNonInst ? 'Reading Week – No Class' : undefined),
           date: typeof rawDate === 'string' ? rawDate : undefined,
           startDate: typeof (w as any).startDate === 'string' ? (w as any).startDate : (typeof rawDate === 'string' ? rawDate : undefined),
           dateRangeStr: typeof (w as any).dateRangeStr === 'string' ? (w as any).dateRangeStr : undefined,
           moduleNumber: 0,
-          moduleMention: ''
+          moduleMention: '',
+          isNonInstructional: isNonInst ? true : undefined,
+          isReadingWeek: isNonInst ? true : undefined
         });
 
         if (rawDate && typeof rawDate === 'string') {
@@ -896,8 +904,8 @@ export class SyllabusImportManager {
           }
         }
 
-        // Nested readings
-        if (Array.isArray(w.readings)) {
+        // Nested readings: never invent or assign readings on break / reading weeks
+        if (!isNonInst && Array.isArray(w.readings)) {
           for (const wr of w.readings) {
             if (wr && typeof wr === 'object') {
               for (const splitWr of SyllabusImportManager.splitMultiCitationCandidate(wr)) {
@@ -1368,9 +1376,12 @@ export class SyllabusImportManager {
 
     const hasTopicalModuleTable = Boolean(
       (Array.isArray(dto.topicalTables) && dto.topicalTables.some((t: any) => classifyBlock(t) === 'topical-table')) ||
+      (Array.isArray(dto.moduleReadings) && dto.moduleReadings.some((mr: any) => mr.isTopicalTable === true)) ||
       (rawTextContext && (
         /the following modules and topics will be integrated/i.test(rawTextContext) ||
-        /(?:modules?\s*[\t|]\s*topics\s*[\t|]\s*related readings?)/i.test(rawTextContext)
+        /(?:modules?\s*[\t|]\s*topics\s*[\t|]\s*related readings?)/i.test(rawTextContext) ||
+        /\*.*readings\s*=\s*related\s+but\s+not\s+required/i.test(rawTextContext) ||
+        (/\brelated\s+readings?\b/i.test(rawTextContext) && !/\b(?:required|core|foundational|mandatory)\s+(?:chapters?|readings?|texts?|materials?)\b/i.test(rawTextContext))
       ))
     );
 
@@ -1697,10 +1708,14 @@ export class SyllabusImportManager {
     );
 
     const hasTopicalModuleTable = Boolean(
-      (Array.isArray(payload.topics) && payload.topics.length > 0) ||
+      (Array.isArray((payload as any).topicalTables) && (payload as any).topicalTables.some((t: any) => classifyBlock(t) === 'topical-table')) ||
+      (Array.isArray(payload.candidateReadings) && payload.candidateReadings.some((cr: any) => (cr as any).isTopicalTable === true)) ||
+      (Array.isArray(payload.moduleReadings) && payload.moduleReadings.some((mr: any) => (mr as any).isTopicalTable === true)) ||
       (rawTextContext && (
         /the following modules and topics will be integrated/i.test(rawTextContext) ||
-        /(?:modules?\s*[\t|]\s*topics\s*[\t|]\s*related readings?)/i.test(rawTextContext)
+        /(?:modules?\s*[\t|]\s*topics\s*[\t|]\s*related readings?)/i.test(rawTextContext) ||
+        /\*.*readings\s*=\s*related\s+but\s+not\s+required/i.test(rawTextContext) ||
+        (/\brelated\s+readings?\b/i.test(rawTextContext) && !/\b(?:required|core|foundational|mandatory)\s+(?:chapters?|readings?|texts?|materials?)\b/i.test(rawTextContext))
       ))
     );
 
@@ -2123,7 +2138,16 @@ export class SyllabusImportManager {
     // Route to course.topics metadata and NEVER inject into cleanCandidateReadings!
     if (Array.isArray(localDto.moduleReadings) && localDto.moduleReadings.length > 0) {
       const hasIndependentWeeks = cleanWeeks.length > 0 && cleanWeeks.some(w => w.startDate || w.dateRangeStr || (w as any).date || ((w as any).readings && (w as any).readings.length > 0));
-      if (hasIndependentWeeks) {
+      const hasTopicalTable = Boolean(
+        localDto.moduleReadings.some((mr: any) => (mr as any).isTopicalTable === true) ||
+        (rawTextContext && (
+          /the following modules and topics will be integrated/i.test(rawTextContext) ||
+          /(?:modules?\s*[\t|]\s*topics\s*[\t|]\s*related readings?)/i.test(rawTextContext) ||
+          /\*.*readings\s*=\s*related\s+but\s+not\s+required/i.test(rawTextContext) ||
+          (/\brelated\s+readings?\b/i.test(rawTextContext) && !/\b(?:required|core|foundational|mandatory)\s+(?:chapters?|readings?|texts?|materials?)\b/i.test(rawTextContext))
+        ))
+      );
+      if (hasIndependentWeeks && hasTopicalTable) {
         if (!normalized.topics) normalized.topics = [];
         for (const mr of localDto.moduleReadings) {
           const t = mr.relevantTopics || (mr as any).theme || mr.title;
@@ -2732,7 +2756,7 @@ export class SyllabusImportManager {
       const textToScanAll = `${rawTitle} ${a.fullInstructions || ''} ${a.noteText || ''} ${(a as any).description || ''} ${(a as any).deliverable || ''}`;
       const hasExplicitPercent = Boolean(
         (typeof rawWeight === 'string' && (rawWeight.includes('%') || /\bpercent\b/i.test(rawWeight))) ||
-        (typeof rawWeight === 'number' && rawWeight > 0 && rawWeight <= 1) ||
+        (typeof rawWeight === 'number' && !isNaN(rawWeight) && rawWeight > 0 && rawWeight <= 100) ||
         /\b\d{1,3}(?:\.\d+)?\s*%|\b\d{1,3}\s*percent\b/i.test(textToScanAll)
       );
       if (!hasExplicitPercent && cleanPoints) {

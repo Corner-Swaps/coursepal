@@ -5838,7 +5838,7 @@ export class LocalSyllabusParser {
           lower.includes('calendar & class session') ||
           lower.includes('weekly calendar') ||
           lower.includes('table 2') ||
-          /^\s*(?:week|wk|module|mod)\s*0?1\b/i.test(line)
+          /^\s*(?:week|wk|session|class)\s*0?1\b/i.test(line)
         ) {
           inSummaryModuleOverview = false;
         } else {
@@ -6774,7 +6774,9 @@ export class LocalSyllabusParser {
         const isTopicalModTable = Boolean(
           rawText && (
             /the following modules and topics will be integrated/i.test(rawText) ||
-            /modules\s*[\t|]\s*topics\s*[\t|]\s*related readings/i.test(rawText)
+            /modules\s*[\t|]\s*topics\s*[\t|]\s*related readings/i.test(rawText) ||
+            /\*.*readings\s*=\s*related\s+but\s+not\s+required/i.test(rawText) ||
+            (/\brelated\s+readings?\b/i.test(rawText) && !/\b(?:required|core|foundational|mandatory)\s+(?:chapters?|readings?|texts?|materials?)\b/i.test(rawText))
           )
         );
 

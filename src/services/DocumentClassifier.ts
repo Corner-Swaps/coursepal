@@ -38,16 +38,18 @@ export function classifyBlock(block: TableBlock): BlockClassification {
   const scheduleRatio = rowsWithScheduleNumber / numRows;
   const headersText = (block.headers || []).join(' ');
   const firstRowText = (block.rows[0] || []).join(' ');
-  const hasTopicalHeader = TOPICAL_HEADER_REGEX.test(headersText) || TOPICAL_HEADER_REGEX.test(firstRowText);
+  const hasRequiredHeader = /\b(?:required|core|foundational|mandatory)\b/i.test(headersText) ||
+    /\b(?:required|core|foundational|mandatory)\b/i.test(firstRowText);
+  const hasTopicalHeader = (TOPICAL_HEADER_REGEX.test(headersText) || TOPICAL_HEADER_REGEX.test(firstRowText)) && !hasRequiredHeader;
 
   // 1. Explicit rule: dateless module / topical tables (e.g. headers "Modules | Topics | Related Readings", Module 1–10, no dates)
-  // MUST route to topical-table class per Layer 2 spec
-  if (rowsWithScheduleNumber === 0 && dateRatio < 0.20 && (hasTopicalHeader || rowsWithModuleNumber > 0)) {
+  // MUST route to topical-table class per Layer 2 spec ONLY when supplementary, NEVER when required/core/foundational!
+  if (rowsWithScheduleNumber === 0 && dateRatio < 0.20 && !hasRequiredHeader && (hasTopicalHeader || rowsWithModuleNumber > 0)) {
     return 'topical-table';
   }
 
-  // 2. Explicit rule: a table with week/session numbers or calendar dates is a schedule-table
-  if (dateRatio >= 0.50 || scheduleRatio >= 0.50 || rowsWithScheduleNumber > 0) {
+  // 2. Explicit rule: a table with week/session numbers, calendar dates, or required module readings is a schedule-table
+  if (dateRatio >= 0.50 || scheduleRatio >= 0.50 || rowsWithScheduleNumber > 0 || hasRequiredHeader) {
     return 'schedule-table';
   }
 
@@ -57,7 +59,7 @@ export function classifyBlock(block: TableBlock): BlockClassification {
   }
 
   // 4. Fallback: table with neither dates nor week numbers is topical or metadata
-  if (hasTopicalHeader || rowsWithModuleNumber > 0) {
+  if (hasTopicalHeader || (!hasRequiredHeader && rowsWithModuleNumber > 0)) {
     return 'topical-table';
   }
 
