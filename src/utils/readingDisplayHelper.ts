@@ -108,9 +108,13 @@ export function cleanChapterFromRaw(rawCh?: string | null): string | null {
   // Check if string starts with a leading chapter number e.g. "7 Experiential Family Therapy" or "7: Overview"
   const leadingNumMatch = cleaned.match(/^(\d{1,2})(?:[:.\s–-]+|\s+)(?!jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec\b)[A-Za-z]/i);
 
-  // If string is a standalone 4-digit year (1800-2099) without explicit chapter keywords, it is a publication year, NOT a chapter!
-  if (!hasChapterKeyword && !hasSectionKeyword && /^(?:18|19|20)\d{2}$/.test(cleaned.trim())) {
-    return null;
+  // If string consists solely of 4-digit years (1800-2099) without explicit chapter keywords (e.g. "2004", "(2004, 2007)", "1998, 2002"),
+  // they are publication years, NEVER chapters!
+  if (!hasChapterKeyword && !hasSectionKeyword) {
+    const allNums = cleaned.match(/\b\d+\b/g);
+    if (allNums && allNums.length > 0 && allNums.every(n => /^(?:18|19|20)\d{2}$/.test(n))) {
+      return null;
+    }
   }
 
   if (!hasChapterKeyword && !hasSectionKeyword && !isPureNumbers && !leadingNumMatch) {
@@ -178,8 +182,11 @@ export function cleanChapterFromRaw(rawCh?: string | null): string | null {
   // Extract all digit groups with connectors e.g. "12 & 13", "1, 2", "1-4", "1: 3", "4: 10", "12"
   const digitsMatch = cleaned.match(/\b\d+[\s&,:\-–andto\d]*\b/i);
   if (digitsMatch) {
-    if (!hasChapterKeyword && !hasSectionKeyword && /^(?:18|19|20)\d{2}$/.test(digitsMatch[0].trim())) {
-      return null;
+    if (!hasChapterKeyword && !hasSectionKeyword) {
+      const matchNums = digitsMatch[0].match(/\b\d+\b/g);
+      if (matchNums && matchNums.length > 0 && matchNums.every(n => /^(?:18|19|20)\d{2}$/.test(n))) {
+        return null;
+      }
     }
     let numPart = digitsMatch[0].trim();
     // Normalize colons between digits to en-dash: e.g. "1: 3" -> "1–3", "4: 10" -> "4–10"
@@ -680,7 +687,9 @@ export function formatDisplayTitleWithChapter(
   // If authorName is not explicitly provided, detect author citation prefix or name
   if (!authorName) {
     if (rawTitle) {
-      const authMatch = rawTitle.match(/^([A-Z][a-zA-Z\s.&'–\-,;]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|sec(?:tion)?s?|pp?\.?|\d)/i);
+      const authMatch =
+        rawTitle.match(/^([A-Z][a-zA-Z\s.&'–\-,;]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|sec(?:tion)?s?|pp?\.?|(?!(?:18|19|20)\d{2}\b)\d)/i) ||
+        rawTitle.match(/^([A-Z][a-zA-Z\s.&'–\-,;]+?)\s+(?:book|textbook)?\s*(?:chapters?|chaps?\.?|chs?\.?|ch\b)\s*\d+/i);
       if (authMatch) {
         authorName = authMatch[1].replace(/;\s*/g, ', ').replace(/[,;:\s]+$/, '').trim();
       } else if (rawTitle.toLowerCase().includes('groth-marnat') || /\bMarnat\b/i.test(rawTitle)) {
@@ -730,19 +739,20 @@ export function formatDisplayTitleWithChapter(
     }
   }
   if (resTitle && resTitle.trim()) {
-    const normRes = resTitle.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normAuth = (authorName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normRes = resTitle.trim().toLowerCase().replace(/\b(?:and|&|und|et|y)\b/g, '').replace(/[^a-z0-9]/g, '');
+    const normAuth = (authorName || '').trim().toLowerCase().replace(/\b(?:and|&|und|et|y)\b/g, '').replace(/[^a-z0-9]/g, '');
     const isAuthorAsRes = normAuth && (normRes === normAuth || normAuth.includes(normRes) || normRes.includes(normAuth));
 
     if (!isAuthorAsRes) {
       const escRes = resTitle.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const testRemainder = rawTitle
         .replace(new RegExp(`^${escRes}[:—–-\\s]+`, 'i'), '')
-        .replace(/\(\s*\d{4}\s*\)/g, '')
+        .replace(/\(\s*(?:(?:18|19|20)\d{2}[\s,;&\-/–—and]*)+\s*\)/g, '')
         .trim();
       const remainderWithoutCh = stripChapterMentions(testRemainder).trim();
       const remainderIsFragment = /^(?:articles?|papers?|essays?|readings?|in\b)\b/i.test(testRemainder);
-      if (remainderWithoutCh.length >= 3 && !remainderIsFragment) {
+      const isOnlyYearsOrParens = /^[\(\)\s\d,;&\-–—]+$/.test(testRemainder);
+      if (remainderWithoutCh.length >= 3 && !remainderIsFragment && !isOnlyYearsOrParens) {
         rawTitle = testRemainder;
       }
     }
@@ -751,6 +761,12 @@ export function formatDisplayTitleWithChapter(
   // Detect chapter candidate from either chapterText or rawTitle
   const chapterCandidate = rawCh || rawTitle;
   let canonicalChapter = cleanChapterFromRaw(chapterCandidate);
+  if (canonicalChapter) {
+    const chNums = canonicalChapter.match(/\b\d+\b/g);
+    if (chNums && chNums.length > 0 && chNums.every(n => /^(?:18|19|20)\d{2}$/.test(n))) {
+      canonicalChapter = null;
+    }
+  }
 
   // If not found yet, check if rawTitle starts with a chapter number: e.g. "7 Experiential Family Therapy"
   if (!canonicalChapter) {
@@ -843,6 +859,8 @@ export function formatDisplayTitleWithChapter(
     const fullAuth = authorName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     substantiveTitle = substantiveTitle.replace(new RegExp(`\\b${fullAuth}\\b`, 'gi'), '').trim();
     substantiveTitle = substantiveTitle.replace(/\bet\s+al\.?\b/gi, '').trim();
+    substantiveTitle = substantiveTitle.replace(/^(?:and|&|und|et|y|book|textbook)\b/gi, '').trim();
+    substantiveTitle = substantiveTitle.replace(/\b(?:and|&|und|et|y|book|textbook)$/gi, '').trim();
     substantiveTitle = substantiveTitle.replace(/^[:;•·\-–—\s.]+|[:;•·\-–—\s.]+$/g, '').trim();
   }
 
@@ -1031,10 +1049,12 @@ export function formatDisplayTitleWithChapter(
       for (const ap of authParts) {
         cleanSub = cleanSub.replace(new RegExp(`\\b${ap}\\b`, 'gi'), '').trim();
       }
+      cleanSub = cleanSub.replace(/^(?:and|&|und|et|y|book|textbook)\b/gi, '').trim();
+      cleanSub = cleanSub.replace(/\b(?:and|&|und|et|y|book|textbook)$/gi, '').trim();
       cleanSub = cleanSub.replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '').trim();
       const normAuth = cleanAuthor.toLowerCase().replace(/[^a-z0-9]/g, '');
       const normSub = cleanSub.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!normSub || normSub.length <= 2 || normAuth.includes(normSub) || normSub.includes(normAuth)) {
+      if (!normSub || normSub.length <= 2 || normAuth.includes(normSub) || normSub.includes(normAuth) || /^(?:and|&|und|et|y|book|textbook)$/i.test(cleanSub.trim())) {
         cleanSub = '';
       }
       // Never append course week/module topic to author chapter title
@@ -1082,8 +1102,10 @@ export function formatDisplayTitleWithChapter(
     .replace(/^[:;•·\-–—\s,.]+|[:;•·\-–—\s,.]+$/g, '')
     .trim();
 
-  // Strip trailing dangling fragments: e.g. " · 9", " · 8", " · et al. ( 5", " · et al.", " · ("
+  // Strip trailing dangling fragments: e.g. " · 9", " · 8", " · et al. ( 5", " · et al.", " · (", " · and"
   resultTitle = resultTitle.replace(/\s*·\s*(?:et\s+al\.?[\s(]*\d*|\d+|\(\s*\d*|\b[a-z]{1,2}\b)\s*$/i, '').trim();
+  resultTitle = resultTitle.replace(/\s*·\s*(?:and|&|book|textbook)\s*$/i, '').trim();
+  resultTitle = resultTitle.replace(/\s*·\s*$/i, '').trim();
   if (authorName) {
     const authPieces = authorName
       .toLowerCase()

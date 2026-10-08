@@ -1,6 +1,6 @@
 import { LocalSyllabusParser } from '../src/services/LocalSyllabusParser';
 import { SyllabusImportManager } from '../src/services/SyllabusImportManager';
-import { cleanAcademicWeekTheme } from '../src/utils/readingDisplayHelper';
+import { cleanAcademicWeekTheme, cleanChapterFromRaw, formatDisplayTitleWithChapter, parseChapterNumbers } from '../src/utils/readingDisplayHelper';
 
 describe('CPC 522 Psychology of Trauma Syllabus Ingestion', () => {
   const cpc522SampleMarkdown = `COURSE SCHEDULE - CPC 522: FALL 2026: PSYCHOLOGY OF TRAUMA
@@ -271,5 +271,120 @@ Linklater, R. (2014). Decolonizing trauma work: Indigenous stories and strategie
 
     fs.writeFileSync('/tmp/CoursePal_AutoBackup_Clean.json', JSON.stringify(cleanBackup, null, 2), 'utf8');
     console.log('Successfully wrote /tmp/CoursePal_AutoBackup_Clean.json with 10 weeks, 16 readings, 1 assignment!');
+  });
+
+  describe('CPC 522 Phone Findings (Bugs 1-4)', () => {
+    describe('Bug 1: Chapter list truncation', () => {
+      it('parses chapter numbers from "Chapters 1 and 2 in textbook" as {1, 2}', () => {
+        const chInfo = LocalSyllabusParser.shared.extractChapterAndPages('Chapters 1 and 2 in textbook');
+        const nums = parseChapterNumbers(chInfo.chapter || '');
+        expect(nums).toEqual([1, 2]);
+      });
+
+      it('parses chapter numbers from "Chapters 4, 5 and 7 in textbook" as {4, 5, 7}', () => {
+        const chInfo = LocalSyllabusParser.shared.extractChapterAndPages('Chapters 4, 5 and 7 in textbook');
+        const nums = parseChapterNumbers(chInfo.chapter || '');
+        expect(nums).toEqual([4, 5, 7]);
+      });
+
+      it('keeps green: "Chapters 7 and 10" -> {7, 10}', () => {
+        const chInfo = LocalSyllabusParser.shared.extractChapterAndPages('Chapters 7 and 10');
+        expect(parseChapterNumbers(chInfo.chapter || '')).toEqual([7, 10]);
+      });
+
+      it('keeps green: "Chapters 1, 2, 5" -> {1, 2, 5}', () => {
+        const chInfo = LocalSyllabusParser.shared.extractChapterAndPages('Chapters 1, 2, 5');
+        expect(parseChapterNumbers(chInfo.chapter || '')).toEqual([1, 2, 5]);
+      });
+
+      it('keeps green: "Chapters 8, 9, 12" -> {8, 9, 12}', () => {
+        const chInfo = LocalSyllabusParser.shared.extractChapterAndPages('Chapters 8, 9, 12');
+        expect(parseChapterNumbers(chInfo.chapter || '')).toEqual([8, 9, 12]);
+      });
+
+      it('ensures "(2004, 2007)" must never become chapters', () => {
+        expect(cleanChapterFromRaw('(2004, 2007)')).toBeNull();
+        expect(cleanChapterFromRaw('2004, 2007')).toBeNull();
+      });
+
+      it('ensures full import pipeline extracts {1, 2} for Week 1 textbook and {4, 5, 7} for Week 5 textbook', () => {
+        const dto = LocalSyllabusParser.shared.parseText(cpc522SampleMarkdown);
+        const norm = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(dto, cpc522SampleMarkdown);
+        const clean = SyllabusImportManager.shared.deduplicateReadings(norm.candidateReadings, norm.textbooks, norm.termYear);
+
+        const w1Tb = clean.find(r => r.weekNumber === 1 && r.title.toLowerCase().includes('textbook'));
+        expect(w1Tb).toBeDefined();
+        expect(parseChapterNumbers(w1Tb?.chapterText || '')).toEqual([1, 2]);
+
+        const w5Tb = clean.find(r => r.weekNumber === 5 && r.title.toLowerCase().includes('textbook'));
+        expect(w5Tb).toBeDefined();
+        expect(parseChapterNumbers(w5Tb?.chapterText || '')).toEqual([4, 5, 7]);
+      });
+    });
+
+    describe('Bug 2: Coates and Wade articles year display', () => {
+      it('reading titled "Coates and Wade articles (2004, 2007)" with null chapterText does not render "(Ch. 2004, 2007)"', () => {
+        const reading = {
+          title: 'Coates and Wade articles (2004, 2007)',
+          chapterText: null,
+          authorName: 'Coates & Wade articles',
+          resourceTitle: 'Coates and Wade articles'
+        };
+        const display = formatDisplayTitleWithChapter(reading as any);
+        expect(display).not.toContain('Ch.');
+        expect(display).not.toContain('(Ch. 2004, 2007)');
+        expect(display).toBe('Coates and Wade articles (2004, 2007)');
+
+        const dto = LocalSyllabusParser.shared.parseText(cpc522SampleMarkdown);
+        const norm = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(dto, cpc522SampleMarkdown);
+        const clean = SyllabusImportManager.shared.deduplicateReadings(norm.candidateReadings, norm.textbooks, norm.termYear);
+
+        const coatesReading = clean.find(r => r.weekNumber === 2 && r.title.toLowerCase().includes('coates'));
+        expect(coatesReading).toBeDefined();
+        const pipeDisplay = formatDisplayTitleWithChapter(coatesReading!);
+        expect(pipeDisplay).not.toContain('Ch.');
+        expect(pipeDisplay).not.toContain('(Ch. 2004, 2007)');
+      });
+
+      it('ensures 4-digit years 1800-2099 never get a "Ch." prefix in formatDisplayTitleWithChapter', () => {
+        const display = formatDisplayTitleWithChapter({
+          title: 'Smith and Jones report (1998, 2002)',
+          chapterText: null,
+          authorName: 'Smith & Jones',
+          resourceTitle: 'Smith and Jones report'
+        } as any);
+        expect(display).not.toContain('Ch.');
+      });
+    });
+
+    describe('Bug 3: Courtois and Ford book Chapters 9 and 10 display', () => {
+      it('removes dangling "· and" from "Courtois and Ford book Chapters 9 and 10"', () => {
+        const res1 = formatDisplayTitleWithChapter({
+          title: 'Courtois and Ford book Chapters 9 and 10',
+          chapterText: 'Chapters 9 & 10',
+          authorName: 'Courtois & Ford'
+        } as any);
+        expect(res1).not.toMatch(/·\s*and\b/i);
+        expect(res1).not.toMatch(/\band\s*$/i);
+        expect(res1).toBe('Courtois & Ford (Ch. 9 & 10)');
+
+        const res2 = formatDisplayTitleWithChapter('Courtois and Ford book Chapters 9 and 10');
+        expect(res2).not.toMatch(/·\s*and\b/i);
+        expect(res2).not.toMatch(/\band\s*$/i);
+      });
+    });
+
+    describe('Bug 4: Ogden & Fisher author credit', () => {
+      it('credits Ogden & Fisher for Chapter 19 by Pat Ogden and Janina Fisher in Lanius, Paulson, and Corrigan\'s (2014)', () => {
+        const dto = LocalSyllabusParser.shared.parseText(cpc522SampleMarkdown);
+        const norm = SyllabusImportManager.shared.normalizeAndValidateSyllabusPayload(dto, cpc522SampleMarkdown);
+        const clean = SyllabusImportManager.shared.deduplicateReadings(norm.candidateReadings, norm.textbooks, norm.termYear);
+
+        const ogdenReading = clean.find(r => r.weekNumber === 6 && (r.title.includes('19') || (r.chapterText && r.chapterText.includes('19'))));
+        expect(ogdenReading).toBeDefined();
+        expect(ogdenReading?.authorName).toBe('Ogden & Fisher');
+        expect(ogdenReading?.chapterText).toMatch(/Chapter 19/i);
+      });
+    });
   });
 });

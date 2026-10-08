@@ -492,22 +492,27 @@ export class SyllabusImportManager {
         const apaAuthMatch = seg.match(/^((?:[A-Z][a-zA-Z'’-]+(?:,\s*[A-Z][a-zA-Z'’.-]*(?:\s+[A-Z][a-zA-Z'’.-]*)*)?)(?:\s*(?:,\s*&|,\s*and|&|and|,)\s*(?:[A-Z][a-zA-Z'’-]+(?:,\s*[A-Z][a-zA-Z'’.-]*(?:\s+[A-Z][a-zA-Z'’.-]*)*)?))*)\s*(?:\(\s*\d{4}\s*\)|,\s*\(?\s*\d{4}\s*\)?|:\s+[A-Z])/i);
 
         // B. Direct author followed by chapter without parens e.g. "Gehart chapters 1-3", "Corey Chapter 4", "Nichols ch. 5"
-        const directChAuthMatch = seg.match(/^([A-Z][a-zA-Z\s.&'’–-]+?)(?:,\s*|\s+)(?:chapters?|chaps?\.?|chs?\.?|ch\b)\s*([\d\s&,\-–—]+)/i);
+        const directChAuthMatch = seg.match(/^([A-Z][a-zA-Z\s.&'’–-]+?)(?:,\s*|\s+)(?:chapters?|chaps?\.?|chs?\.?|ch\b)\s*[:\-–.]*\s*(\d+(?:[\s,:\-–—]+(?=\d)|\s+(?:and|to|und|et|y)\s+|\s*&\s*|\d+)*)/i);
 
         // C. Author followed by parenthesized chapter e.g. "Gehart (Ch. 1)", "Corey (Chapters 1-3)"
         const parenChAuthMatch = seg.match(/^([A-Z][a-zA-Z\s.&'’–-]+?)\s*\(\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|pp?\.?|\d)/i);
 
-        // D. General auth match with year or colon
+        // D. "by [Author]" pattern e.g. "Chapter 19 by Pat Ogden and Janina Fisher in..."
+        const byAuthMatch = seg.match(/\b(?:chapters?|chs?\.?|sections?|sec\.?|pp?\.?|pages?)\s*[\d\s&,\-–—]+\s+by\s+([A-Z][a-zA-Z\s.&'’–-]+?)(?:\s+(?:in|from)\b|,\s*pp?\.?|,\s*pages?|\s*\(|\s*$)/i) ||
+                            seg.match(/\bby\s+([A-Z][a-zA-Z\s.&'’–-]+?)(?:\s+(?:in|from)\b|,\s*pp?\.?|,\s*pages?|\s*\(|\s*$)/i);
+
+        // E. General auth match with year or colon
         const generalAuthMatch = seg.match(/^([A-Z][a-zA-Z0-9\s.&–-]+?)(?:,\s*\(?\s*\d{4}\)?|\s*\(\s*\d{4}\)|\s*\(\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|pp?\.?|\d)|:\s*(?:ch(?:apter)?s?\.?|chs?\.?|ch\b|sections?|sec\.?|\d)|:\s+[A-Z])/i);
 
-        // E. Manual / organization citations like DSM 5-TR, APA, WHO
+        // F. Manual / organization citations like DSM 5-TR, APA, WHO
         const manualAuthMatch = seg.match(/\b(DSM[-\s]*(?:5|IV|V|TR|\d)+(?:-TR)?)\b/i);
 
         let extractedAuthor = apaAuthMatch ? apaAuthMatch[1].trim()
           : (directChAuthMatch ? directChAuthMatch[1].trim()
           : (parenChAuthMatch ? parenChAuthMatch[1].trim()
+          : (byAuthMatch ? byAuthMatch[1].trim()
           : (generalAuthMatch ? generalAuthMatch[1].trim()
-          : (manualAuthMatch ? manualAuthMatch[1].trim() : undefined))));
+          : (manualAuthMatch ? manualAuthMatch[1].trim() : undefined)))));
 
         if (extractedAuthor) {
           extractedAuthor = extractedAuthor.replace(/[:;,\s]+$/, '').trim();
@@ -524,8 +529,8 @@ export class SyllabusImportManager {
         if (directChAuthMatch && directChAuthMatch[2]) {
           extractedChapter = cleanChapterFromRaw(directChAuthMatch[2]) || undefined;
         } else {
-          const chMatch = seg.match(/\((?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*([\d\s&,\-–—]+)\)/i) ||
-                          seg.match(/\b(?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*([\d\s&,\-–—]+)/i);
+          const chMatch = seg.match(/\((?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*[:\-–.]*\s*(\d+(?:[\s,:\-–—]+(?=\d)|\s+(?:and|to|und|et|y)\s+|\s*&\s*|\d+)*)\)/i) ||
+                          seg.match(/\b(?:ch(?:apter)?s?\.?|chs?\.?|ch\b\.?)\s*[:\-–.]*\s*(\d+(?:[\s,:\-–—]+(?=\d)|\s+(?:and|to|und|et|y)\s+|\s*&\s*|\d+)*)/i);
           const secMatch = seg.match(/\b(?:sections?|sec\.?)\s*[:\-–.]*\s*(\d+(?:[\s&,:\-–andto]+(?:sections?|sec\.?)?\s*\d+)*)/i);
           if (chMatch) {
             extractedChapter = cleanChapterFromRaw(chMatch[0]) || (chMatch[1] ? `Chapter ${chMatch[1].trim()}` : undefined);

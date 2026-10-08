@@ -222,6 +222,19 @@ const CANONICAL_SCHOLAR_REGISTRY: Record<string, string> = {
   'deshazer': 'Steve de Shazer',
   'suesue': 'Derald Wing Sue & David Sue',
 
+  // Trauma Psychology & Psychotherapy (CPC 522)
+  'courtois': 'Courtois & Ford',
+  'courtoisford': 'Courtois & Ford',
+  'courtoisandford': 'Courtois & Ford',
+  'ogden': 'Pat Ogden',
+  'patogden': 'Pat Ogden',
+  'fisher': 'Janina Fisher',
+  'janinafisher': 'Janina Fisher',
+  'ogdenfisher': 'Ogden & Fisher',
+  'ogdenandfisher': 'Ogden & Fisher',
+  'patogdenandjaninafisher': 'Ogden & Fisher',
+  'patogdenjaninafisher': 'Ogden & Fisher',
+
   // Mathematics & Calculus
   'stewart': 'James Stewart',
   'jamesstewart': 'James Stewart',
@@ -601,6 +614,18 @@ export function resolveFullAuthorName(
   }
 
   // 1b. Resilient domain pattern shortcuts for canonical academic scholars
+  if (normKey.includes('ogden') && normKey.includes('fisher')) {
+    return 'Ogden & Fisher';
+  }
+  if (normKey.includes('courtois') && normKey.includes('ford')) {
+    return 'Courtois & Ford';
+  }
+  if (normKey === 'ogden' || normKey === 'patogden') {
+    return 'Pat Ogden';
+  }
+  if (normKey === 'fisher' || normKey === 'janinafisher') {
+    return 'Janina Fisher';
+  }
   if (normKey.includes('creswell')) {
     return 'John W. Creswell & J. David Creswell';
   }

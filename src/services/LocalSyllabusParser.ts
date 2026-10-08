@@ -7092,10 +7092,19 @@ export class LocalSyllabusParser {
 
     // Strip long textbook/book title prefix (>25 chars) before chapter keywords or colons
     // e.g. "Growing into Resilience: Sexual and Gender Minority Youth in Canada: Chapter 1 — Sexual and Gender Minority Youth in Canada"
-    // BUT PRESERVE short author citations like "Sutton: Chapter 1-3" or "Anderson: Ch. 3-5"
+    // BUT PRESERVE short author citations like "Sutton: Chapter 1-3" or "Anderson: Ch. 3-5",
+    // AND PRESERVE multi-author prefixes like "Pat Ogden and Janina Fisher: Chapter 19"
     const longBookM = title.match(/^(.+?)(?:[:—–-]\s*)+(?=(?:chapters?|chps?\.?|chs?\.?|ch\b\.?|sections?|sec\.?)\s*\d+)/i);
     if (longBookM && longBookM[1].trim().length > 25) {
-      title = title.substring(longBookM[0].length).trim();
+      const prefix = longBookM[1].trim();
+      const isAuthorPrefix =
+        resolveFullAuthorName(prefix) !== null ||
+        /\b(?:ogden|fisher|courtois|ford|tedeschi|linklater|wada|fellner|creswell|gehart|corey|yalom|lezak|marnat)\b/i.test(prefix) ||
+        (/^[A-Z][a-zA-Z'’.-]+(?:\s+(?:[A-Z]\.?\s+)?[A-Z][a-zA-Z'’.-]+)*(?:\s*(?:,\s*&|&|and|,)\s*[A-Z][a-zA-Z'’.-]+(?:\s+(?:[A-Z]\.?\s+)?[A-Z][a-zA-Z'’.-]+)*)*$/i.test(prefix) &&
+          !/\b(?:resilience|sexuality|diversity|counseling|counselling|psychology|handbook|textbook|guide|manual|theory|research|practice)\b/i.test(prefix));
+      if (!isAuthorPrefix) {
+        title = title.substring(longBookM[0].length).trim();
+      }
     }
 
     title = title.replace(/^[|•\-*▪●:·~_§ \t\n–—]+|[|•\-*▪●:·~_§ \t\n–—]+$/g, '');
