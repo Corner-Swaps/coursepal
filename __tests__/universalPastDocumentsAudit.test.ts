@@ -13,7 +13,8 @@ describe('Universal Past Documents Audit Suite', () => {
   const userUploadedDir = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded';
   const syllabiDir = path.resolve(__dirname, '../src/assets/syllabi');
 
-  describe('1. User-Uploaded Past Documents Audit', () => {
+  const describeUserUploaded = fs.existsSync(userUploadedDir) ? describe : describe.skip;
+  describeUserUploaded('1. User-Uploaded Past Documents Audit', () => {
     it('Audits media_1790105675747.pdf (PRJ-SEX-2026-X: 5-Page Human Sexuality Dossier)', () => {
       const pdfPath = path.join(userUploadedDir, 'media_1790105675747.pdf');
       if (!fs.existsSync(pdfPath)) return;
