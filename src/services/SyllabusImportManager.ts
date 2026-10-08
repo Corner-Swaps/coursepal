@@ -30,7 +30,8 @@ import {
   getReadingChapterSortKey,
   isRealDateOrRangeString,
   isItemForCourse,
-  cleanAcademicWeekTheme
+  cleanAcademicWeekTheme,
+  filterCompositePhantomAssignments
 } from '../utils/readingDisplayHelper';
 import {
   resolveFullAuthorName,
@@ -219,6 +220,8 @@ export class SyllabusImportManager {
   ) {
     return SyllabusImportManager.shared.deduplicateAssignments(rawAssignments, courseYear, weekDateMap);
   }
+
+  public static deduplicateCompositePhantoms = filterCompositePhantomAssignments;
 
   public static determineImportOutcome(params: {
     fileName: string;
@@ -2988,19 +2991,22 @@ export class SyllabusImportManager {
       } as any);
     }
 
+    // Drop composite phantom overview artifacts (AGENTS.md Rule)
+    const finalAssignmentsList = filterCompositePhantomAssignments(cleanAssignmentsList);
+
     // Preserve sequential assignment numbering if course has numbered deliverables
-    const hasAnyNum = cleanAssignmentsList.some(a => a.assignmentNumber != null);
-    const allUnassigned = cleanAssignmentsList.length >= 2 && cleanAssignmentsList.every(a => !a.weekNumber || a.weekNumber <= 0);
+    const hasAnyNum = finalAssignmentsList.some(a => a.assignmentNumber != null);
+    const allUnassigned = finalAssignmentsList.length >= 2 && finalAssignmentsList.every(a => !a.weekNumber || a.weekNumber <= 0);
     if (hasAnyNum || allUnassigned) {
-      for (let idx = 0; idx < cleanAssignmentsList.length; idx++) {
-        if (!cleanAssignmentsList[idx].assignmentNumber) {
-          cleanAssignmentsList[idx].assignmentNumber = idx + 1;
-          cleanAssignmentsList[idx].assignmentNumberLabel = 'Task';
+      for (let idx = 0; idx < finalAssignmentsList.length; idx++) {
+        if (!finalAssignmentsList[idx].assignmentNumber) {
+          finalAssignmentsList[idx].assignmentNumber = idx + 1;
+          finalAssignmentsList[idx].assignmentNumberLabel = 'Task';
         }
       }
     }
 
-    return cleanAssignmentsList;
+    return finalAssignmentsList;
   }
 
   /**

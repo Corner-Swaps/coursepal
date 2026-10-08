@@ -2873,6 +2873,8 @@ export function isInvalidAssignmentTitle(raw: string): boolean {
     /^(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,\s*\d{4})?$/i.test(t) ||
     lower.includes('total 100%') ||
     lower.includes('overview of required') ||
+    lower.includes('over of required assig') ||
+    /(?:overview|over)\s+of\s+required\s+assig(?:n)?ments/i.test(lower) ||
     lower.includes('course assignment details') ||
     lower.includes('course policies') ||
     lower.includes('late assignments') ||
@@ -2985,6 +2987,139 @@ export function isInvalidAssignmentTitle(raw: string): boolean {
   if (instructionalStarts.some(verb => lower.startsWith(verb))) return true;
 
   return false;
+}
+
+/**
+ * Deduplicates composite phantom assignments.
+ * RULE (generic, structural, no course-code or filename branches):
+ * during assignment dedup, if an assignment's title contains the full titles of 2+ other assignments
+ * AND it carries no unique data (no rubric, no description, no points)
+ * while a component assignment already holds its weight/due, drop the phantom.
+ * If its weight/due are NOT duplicated by a component assignment, keep it and report why.
+ */
+export function filterCompositePhantomAssignments<T extends {
+  title: string;
+  weightPercentage?: string | null;
+  dueDate?: string | Date | null;
+  pointsPossible?: string | null;
+  points?: number | string | null;
+  rubricCriteria?: any[] | null;
+  rubric?: any[] | null;
+  fullInstructions?: string | null;
+  instructions?: string | null;
+  description?: string | null;
+  noteText?: string | null;
+}>(assignments: T[]): T[] {
+  if (!Array.isArray(assignments) || assignments.length < 3) {
+    return assignments;
+  }
+
+  const normalizeTitle = (raw: string): string =>
+    (raw || '')
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  return assignments.filter((candidate, cIdx) => {
+    const candNorm = normalizeTitle(candidate.title);
+    if (candNorm.length < 10) return true;
+    const candPadded = ` ${candNorm} `;
+
+    // Find other assignments whose full titles are contained in candidate's title
+    const componentAssignments = assignments.filter((other, oIdx) => {
+      if (cIdx === oIdx) return false;
+      const otherNorm = normalizeTitle(other.title);
+      if (otherNorm.length < 4) return false;
+
+      // Exact phrase match with word boundary
+      if (candPadded.includes(` ${otherNorm} `)) return true;
+
+      // Also check if otherNorm without common modality prefixes is contained
+      const strippedOther = otherNorm.replace(/^(?:group|individual|in class|final|oral)\s+/i, '').trim();
+      if (strippedOther.length >= 6 && candPadded.includes(` ${strippedOther} `)) {
+        return true;
+      }
+
+      return false;
+    });
+
+    if (componentAssignments.length < 2) {
+      return true;
+    }
+
+    // Check if candidate carries unique data (no rubric, no description, no points)
+    const hasRubric = Boolean(
+      (Array.isArray(candidate.rubricCriteria) && candidate.rubricCriteria.length > 0) ||
+      (Array.isArray(candidate.rubric) && candidate.rubric.length > 0) ||
+      (candidate as any).rubricJSON
+    );
+
+    const rawInstructions = (candidate.fullInstructions || candidate.instructions || candidate.description || candidate.noteText || '').trim();
+    const isBoilerplate =
+      rawInstructions === 'Parsed from course syllabus.' ||
+      rawInstructions === 'Parsed from syllabus.' ||
+      /^(?:see brightspace|over the course of the semester)$/i.test(rawInstructions);
+    const hasDescription = rawInstructions.length > 0 && !isBoilerplate;
+
+    const hasPoints = Boolean(candidate.pointsPossible || candidate.points || (candidate as any).totalPoints);
+
+    if (hasRubric || hasDescription || hasPoints) {
+      return true;
+    }
+
+    // Check if component assignments duplicate candidate's weight and due date
+    const candWeightDigits = (candidate.weightPercentage || '').replace(/[^\d.]/g, '');
+
+    let candDueStr: string | null = null;
+    if (candidate.dueDate) {
+      if (candidate.dueDate instanceof Date) {
+        candDueStr = candidate.dueDate.toISOString().slice(0, 10);
+      } else {
+        candDueStr = String(candidate.dueDate).trim().toLowerCase();
+      }
+    }
+
+    const weightDuplicated = !candWeightDigits || componentAssignments.some(comp => {
+      const compWeightDigits = (comp.weightPercentage || '').replace(/[^\d.]/g, '');
+      return compWeightDigits && compWeightDigits === candWeightDigits;
+    });
+
+    const dueDuplicated = !candDueStr || componentAssignments.some(comp => {
+      if (!comp.dueDate) return false;
+      const compDueStr = comp.dueDate instanceof Date
+        ? comp.dueDate.toISOString().slice(0, 10)
+        : String(comp.dueDate).trim().toLowerCase();
+
+      if (compDueStr === candDueStr) return true;
+
+      // Match month + day (e.g. "jul 31" vs "2026-07-31")
+      const m1 = candDueStr!.match(/(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*\d{1,2}/i);
+      const compMonthDay = compDueStr.match(/(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*\d{1,2}/i);
+      if (m1 && compMonthDay && m1[0].toLowerCase().replace(/\s+/g, '') === compMonthDay[0].toLowerCase().replace(/\s+/g, '')) {
+        return true;
+      }
+
+      const d1 = new Date(candDueStr!).getTime();
+      const d2 = new Date(compDueStr).getTime();
+      if (!isNaN(d1) && !isNaN(d2) && Math.abs(d1 - d2) <= 24 * 60 * 60 * 1000) {
+        return true;
+      }
+      return false;
+    });
+
+    if (weightDuplicated && dueDuplicated) {
+      // Drop the phantom
+      return false;
+    }
+
+    // If its weight/due are NOT duplicated by a component assignment, keep it and report why
+    console.warn(
+      `[AssignmentDedup] Kept composite assignment "${candidate.title}" because its weight/due (weight: ${candidate.weightPercentage || 'none'}, due: ${candidate.dueDate || 'none'}) is not duplicated by component assignments: ${componentAssignments.map(c => c.title).join(', ')}`
+    );
+    return true;
+  });
 }
 
 /**

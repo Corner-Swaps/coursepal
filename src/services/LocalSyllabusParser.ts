@@ -25,7 +25,8 @@ import {
   deduplicateReadingTitle,
   cleanAcademicWeekTheme,
   parseSafeDate,
-  cleanAssignmentTitle
+  cleanAssignmentTitle,
+  filterCompositePhantomAssignments
 } from '../utils/readingDisplayHelper';
 import { resolveFullAuthorName } from '../utils/authorResolver';
 import { PageLayout } from './LayoutReconstructor';
@@ -374,6 +375,7 @@ export class LocalSyllabusParser {
 
     let paddedWeeks = this.padWeeks(weeks, courseName, courseCode);
     this.harmonizeWeekDateRangesAndAssignments(paddedWeeks, assignments, rawText, termYear);
+    assignments = filterCompositePhantomAssignments(assignments);
 
     const synthesizedItems: ItemDTO[] = [];
     for (const a of assignments) {
@@ -5062,7 +5064,7 @@ export class LocalSyllabusParser {
       }
     }
 
-    return results;
+    return filterCompositePhantomAssignments(results);
 
 
   }
