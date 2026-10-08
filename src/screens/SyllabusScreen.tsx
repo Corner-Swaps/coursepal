@@ -345,13 +345,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.emptyDesc}>
                   Add your courses to keep track of readings and assignments.
                 </Text>
-                <TouchableOpacity
-                  style={styles.addCourseButton}
-                  onPress={() => setShowUploadModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.addCourseButtonText}>Upload Syllabus</Text>
-                </TouchableOpacity>
               </View>
             ) : (
               activeCourses.map(course => {
@@ -827,13 +820,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.emptyDesc}>
                   Documents from uploaded course syllabi will appear here.
                 </Text>
-                <TouchableOpacity
-                  style={styles.addCourseButton}
-                  onPress={() => setShowUploadModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.addCourseButtonText}>Upload Document</Text>
-                </TouchableOpacity>
               </View>
             ) : (
               <>
