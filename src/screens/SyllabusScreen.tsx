@@ -345,6 +345,13 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.emptyDesc}>
                   Add your courses to keep track of readings and assignments.
                 </Text>
+                <TouchableOpacity
+                  style={styles.addCourseButton}
+                  onPress={() => setShowUploadModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.addCourseButtonText}>Upload Syllabus</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               activeCourses.map(course => {
@@ -433,6 +440,11 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           <View style={styles.courseStatsPill}>
                             <Text style={styles.courseStatsPillText}>{courseAssignments.length} Assignments</Text>
                           </View>
+                          {course.lowConfidence ? (
+                            <View style={styles.reviewNeededBadge}>
+                              <Text style={styles.reviewNeededBadgeText}>Review needed</Text>
+                            </View>
+                          ) : null}
                         </View>
                       </TouchableOpacity>
 
@@ -815,6 +827,13 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                 <Text style={styles.emptyDesc}>
                   Documents from uploaded course syllabi will appear here.
                 </Text>
+                <TouchableOpacity
+                  style={styles.addCourseButton}
+                  onPress={() => setShowUploadModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.addCourseButtonText}>Upload Document</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <>
@@ -1850,5 +1869,18 @@ const styles = StyleSheet.create({
   uncertainItemHighlight: {
     borderColor: '#FDBA74',
     backgroundColor: '#FFFBF5'
+  },
+  reviewNeededBadge: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  reviewNeededBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#C2410C'
   }
 });

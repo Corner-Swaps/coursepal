@@ -898,6 +898,13 @@ export const ReadingsScreen: React.FC<ReadingsScreenProps> = ({
         );
       })()}
 
+      {/* Review Needed Banner (Layer 3) */}
+      {activeCourse?.lowConfidence ? (
+        <View style={styles.reviewNeededBanner}>
+          <Text style={styles.reviewNeededBannerText}>Review needed</Text>
+        </View>
+      ) : null}
+
       {/* Trash Mode Banner */}
       {sortMode === 'trash' && (
         <View style={styles.trashModeBanner}>
@@ -2345,5 +2352,22 @@ const styles = StyleSheet.create({
   },
   readingCardCompleted: {
     opacity: 0.85
+  },
+  reviewNeededBanner: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  reviewNeededBannerText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#C2410C'
   }
 });
