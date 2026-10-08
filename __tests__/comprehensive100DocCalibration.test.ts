@@ -10,8 +10,9 @@ function extractTextFromPdf(filePath: string): string {
 }
 
 const userUploadedDir = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded';
+const describeIf = fs.existsSync(userUploadedDir) ? describe : describe.skip;
 
-describe('Comprehensive 100+ Unit Test Calibration Suite Across Reference Documents', () => {
+describeIf('Comprehensive 100+ Unit Test Calibration Suite Across Reference Documents', () => {
 
   // =========================================================================
   // DOCUMENT 1: CPC 511 (Psychology of Loss and Grief) — 20 granular tests

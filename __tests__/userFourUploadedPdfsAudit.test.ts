@@ -8,8 +8,12 @@ function extractTextFromPdf(filePath: string): string {
   return execSync(`python3 -c "${pyScript}"`, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
 }
 
-describe('User Syllabi Comprehensive Audit: 100% Full Author Names & Offline Execution', () => {
-  const userUploadedDir = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded';
+import * as fs from 'fs';
+
+const userUploadedDir = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded';
+const describeIf = fs.existsSync(userUploadedDir) ? describe : describe.skip;
+
+describeIf('User Syllabi Comprehensive Audit: 100% Full Author Names & Offline Execution', () => {
 
   it('1. Audits DATA 630 (media_1790163839403.pdf) with Full Author Names', () => {
     const pdfPath = path.join(userUploadedDir, 'media_1790163839403.pdf');

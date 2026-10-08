@@ -4,9 +4,11 @@ import { extractTextFromDocxBytes } from '../src/services/DocxTextExtractor';
 import { LocalSyllabusParser } from '../src/services/LocalSyllabusParser';
 import { SyllabusImportManager } from '../src/services/SyllabusImportManager';
 
-describe('Test Docx', () => {
+const p = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded/media_1790267826626.docx';
+const describeIf = fs.existsSync(p) ? describe : describe.skip;
+
+describeIf('Test Docx', () => {
   it('extracts and parses media_1790267826626.docx', () => {
-    const p = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded/media_1790267826626.docx';
     const buf = fs.readFileSync(p);
     const text = extractTextFromDocxBytes(new Uint8Array(buf));
     console.log('Extracted docx text length:', text.length);

@@ -2443,6 +2443,13 @@ export class SyllabusImportManager {
           return false;
         }
 
+        if (wk > 0 && existingWk > 0 && wk !== existingWk) {
+          return false; // Different scheduled weeks -> never merge!
+        }
+        if (mod > 0 && existingMod > 0 && mod !== existingMod) {
+          return false; // Different modules -> never merge!
+        }
+
         // A genuine double-emission across module/week must have matching substantive title and locator:
         // If titles differ (e.g. "Sex, Politics and Society" vs "Erotic Regimes & Constructionism"), NEVER merge across week/module!
         const isDoubleEmission = isSameTitleAndLocator || (isSameBookAndLocator && isTitleMatch);
@@ -2451,12 +2458,6 @@ export class SyllabusImportManager {
           return true;
         }
 
-        if (wk > 0 && existingWk > 0 && wk !== existingWk) {
-          return false; // Different scheduled weeks -> never merge!
-        }
-        if (mod > 0 && existingMod > 0 && mod !== existingMod) {
-          return false; // Different modules -> never merge!
-        }
         // Zero Cross-Bleed Rule: One is a calendar weekly schedule reading (wk > 0) and the other is a pure curriculum module reading (wk === 0)
         // Never merge across week and module unless it is an exact double-emission (same title + locator):
         if ((wk > 0 && (!existingWk || existingWk === 0)) || ((!wk || wk === 0) && existingWk > 0)) {

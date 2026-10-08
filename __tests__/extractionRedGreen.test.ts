@@ -254,7 +254,7 @@ Assignment 1: Reflection Paper due Oct 15 - 100 points
       expect(merged[0].dateRangeStr).toBe('Sep 8 – Sep 14');
     });
 
-    it('merges same reading double-emissions across different week stamps (e.g. week 1 vs week 2)', () => {
+    it('strictly preserves same reading across different scheduled weeks (never merges week 1 vs week 2)', () => {
       const doubleWeeklyEmissions: RawReadingCandidate[] = [
         {
           title: 'The Gift of Therapy',
@@ -273,9 +273,9 @@ Assignment 1: Reflection Paper due Oct 15 - 100 points
       ];
 
       const merged = importManager.deduplicateReadings(doubleWeeklyEmissions);
-      expect(merged.length).toBe(1);
-      expect(merged[0].title).toContain('Gift of Therapy');
-      expect(merged[0].chapterText).toBe('Chapters 1–5');
+      expect(merged.length).toBe(2);
+      expect(merged[0].weekNumber).toBe(1);
+      expect(merged[1].weekNumber).toBe(2);
     });
 
     it('strictly preserves distinct books with the same chapter locator (never merges different books)', () => {

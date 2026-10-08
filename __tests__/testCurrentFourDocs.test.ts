@@ -8,8 +8,12 @@ function extractTextFromPdf(filePath: string): string {
   return execSync(`python3 -c "${pyScript}"`, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
 }
 
-describe('Detailed Inspection of 4 Uploaded Syllabi', () => {
-  const dir = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded';
+import * as fs from 'fs';
+
+const dir = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded';
+const describeIf = fs.existsSync(dir) ? describe : describe.skip;
+
+describeIf('Detailed Inspection of 4 Uploaded Syllabi', () => {
 
   const files = [
     { label: 'CPC 511', file: 'media_1790272219828.pdf' },

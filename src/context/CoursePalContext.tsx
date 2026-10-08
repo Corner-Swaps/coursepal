@@ -1876,6 +1876,13 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         });
       }
 
+      // Give users ample time to read the initial upload pill
+      const firstPillElapsed = Date.now() - importStartTime;
+      const MIN_FIRST_STAGE_TIME = process.env.NODE_ENV === 'test' ? 10 : 3500;
+      if (firstPillElapsed < MIN_FIRST_STAGE_TIME) {
+        await new Promise(r => setTimeout(r, MIN_FIRST_STAGE_TIME - firstPillElapsed));
+      }
+
       // Stage 2: 100% On-Device Deterministic Parsing Engine (Offline & Private)
       setUploadStatusText('Processing coursework, please wait...');
       currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.25);
@@ -2296,12 +2303,12 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       // Ensure minimum display duration so the user sees the loading bar and message telling them to wait
       const elapsed = Date.now() - importStartTime;
-      const minDisplayMs = 3200; // 3.2s graceful display window
+      const minDisplayMs = process.env.NODE_ENV === 'test' ? 20 : 5500; // 5.5s graceful display window
       if (elapsed < minDisplayMs) {
         currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.90);
         setUploadProgress(0.90);
         setUploadStatusText('Organizing your schedule, please wait...');
-        const pause1 = Math.min(800, minDisplayMs - elapsed);
+        const pause1 = Math.min(1000, Math.max(100, Math.floor((minDisplayMs - elapsed) / 2)));
         await new Promise(r => setTimeout(r, pause1));
 
         currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.96);
@@ -2320,7 +2327,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         const isTasklessDoc = newReadings.length === 0 && newAssignments.length === 0;
         // Step 1: The course and document are loaded. Display the state in the blue pill first
         setUploadStatusText(isTasklessDoc ? 'Document Stored in Vault' : 'Success! Course ready');
-        await new Promise(r => setTimeout(r, 1200));
+        await new Promise(r => setTimeout(r, process.env.NODE_ENV === 'test' ? 10 : 1800));
 
         // Step 2: Clear upload job before state commit so no async pause interrupts rendering
         await persistenceManager.clearPendingUploadJob();
@@ -2358,6 +2365,11 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
           message: outcomeDetails.message || (isTasklessDoc ? `Stored ${fileName} in Vault.` : `Added ${newReadings.length} readings & ${newAssignments.length} assignments.`)
         });
       } else {
+        const totalElapsed = Date.now() - importStartTime;
+        const minTotalMs = process.env.NODE_ENV === 'test' ? 20 : 4500;
+        if (totalElapsed < minTotalMs) {
+          await new Promise(r => setTimeout(r, minTotalMs - totalElapsed));
+        }
         await persistenceManager.clearPendingUploadJob();
 
         coursesRef.current = updatedCourses;

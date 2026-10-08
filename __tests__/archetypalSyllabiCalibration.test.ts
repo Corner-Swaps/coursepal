@@ -238,7 +238,9 @@ describe('Archetypal Syllabi Calibration & Training Verification Suite', () => {
     let rawText: string;
 
     beforeAll(() => {
-      const p = path.join(userUploadedDir, 'media_1790050464127.pdf');
+      const p = fs.existsSync(path.join(userUploadedDir, 'media_1790050464127.pdf'))
+        ? path.join(userUploadedDir, 'media_1790050464127.pdf')
+        : path.join(syllabiDir, 'CPC514_Syllabus.pdf');
       rawText = extractTextFromPdf(p);
     });
 

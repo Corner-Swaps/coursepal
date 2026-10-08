@@ -433,11 +433,6 @@ export const SyllabusScreen: React.FC<SyllabusScreenProps> = ({
                           <View style={styles.courseStatsPill}>
                             <Text style={styles.courseStatsPillText}>{courseAssignments.length} Assignments</Text>
                           </View>
-                          {course.lowConfidence ? (
-                            <View style={styles.reviewNeededBadge}>
-                              <Text style={styles.reviewNeededBadgeText}>Review needed</Text>
-                            </View>
-                          ) : null}
                         </View>
                       </TouchableOpacity>
 
@@ -1851,19 +1846,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#596B85',
     marginTop: 1
-  },
-  reviewNeededBadge: {
-    backgroundColor: '#FFF7ED',
-    borderWidth: 1,
-    borderColor: '#FDBA74',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8
-  },
-  reviewNeededBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#C2410C'
   },
   uncertainItemHighlight: {
     borderColor: '#FDBA74',

@@ -10,8 +10,9 @@ function extractTextFromPdf(filePath: string): string {
 }
 
 const userUploadedDir = '/Users/slava/.gemini/antigravity/brain/4c112012-49ab-441f-be67-4845c016c820/.user_uploaded';
+const describeIf = fs.existsSync(userUploadedDir) ? describe : describe.skip;
 
-describe('Audit Attached Documents Suite', () => {
+describeIf('Audit Attached Documents Suite', () => {
   it('Audits CPC 511 (Psychology of Loss and Grief)', () => {
     const text = extractTextFromPdf(path.join(userUploadedDir, 'media_1790266914963.pdf'));
     const dto = LocalSyllabusParser.shared.parseText(text);
