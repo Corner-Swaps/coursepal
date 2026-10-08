@@ -2303,12 +2303,12 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       // Ensure minimum display duration so the user sees the loading bar and message telling them to wait
       const elapsed = Date.now() - importStartTime;
-      const minDisplayMs = process.env.NODE_ENV === 'test' ? 20 : 3200; // 3.2s graceful display window
+      const minDisplayMs = process.env.NODE_ENV === 'test' ? 20 : 4500; // Graceful display window
       if (elapsed < minDisplayMs) {
         currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.90);
         setUploadProgress(0.90);
         setUploadStatusText('Organizing your schedule, please wait...');
-        const pause1 = Math.min(800, minDisplayMs - elapsed);
+        const pause1 = Math.min(1000, Math.max(200, Math.floor((minDisplayMs - elapsed) / 2)));
         await new Promise(r => setTimeout(r, pause1));
 
         currentSimulatedProgress = Math.max(currentSimulatedProgress, 0.96);
@@ -2327,7 +2327,7 @@ export const CoursePalProvider: React.FC<{ children: ReactNode }> = ({ children 
         const isTasklessDoc = newReadings.length === 0 && newAssignments.length === 0;
         // Step 1: The course and document are loaded. Display the state in the blue pill first
         setUploadStatusText(isTasklessDoc ? 'Document Stored in Vault' : 'Success! Course ready');
-        await new Promise(r => setTimeout(r, process.env.NODE_ENV === 'test' ? 10 : 1200));
+        await new Promise(r => setTimeout(r, process.env.NODE_ENV === 'test' ? 10 : 2200));
 
         // Step 2: Clear upload job before state commit so no async pause interrupts rendering
         await persistenceManager.clearPendingUploadJob();
