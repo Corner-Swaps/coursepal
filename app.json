@@ -2,7 +2,7 @@
   "expo": {
     "name": "CoursePal",
     "slug": "coursepal",
-    "version": "1.4.7",
+    "version": "1.4.8",
     "orientation": "portrait",
     "icon": "./src/assets/images/AppIcon-1024.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.coursepal.app",
-      "buildNumber": "19",
+      "buildNumber": "20",
       "infoPlist": {
         "NSCameraUsageDescription": "CoursePal needs camera access so you can scan physical syllabus documents to build your course schedule automatically.",
         "NSPhotoLibraryUsageDescription": "CoursePal needs photo library access to import syllabus images.",
