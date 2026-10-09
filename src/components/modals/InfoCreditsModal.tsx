@@ -314,7 +314,7 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
                 </View>
                 <Text style={styles.headerTitle}>CoursePal Mobile</Text>
                 <Text style={styles.versionBadge}>
-                  Version 1.4.8 (Build 23)
+                  Version 1.4.9 (Build 24)
                 </Text>
               </View>
 
