@@ -6,7 +6,7 @@ IOS_DIR="$PROJECT_DIR/ios"
 WORKSPACE="$IOS_DIR/CoursePal.xcworkspace"
 SCHEME="CoursePal"
 DATE_STR=$(date +%Y-%m-%d)
-ARCHIVE_PATH="$HOME/Library/Developer/Xcode/Archives/$DATE_STR/CoursePal 1.4.8 (Build 22).xcarchive"
+ARCHIVE_PATH="$HOME/Library/Developer/Xcode/Archives/$DATE_STR/CoursePal 1.4.8 (Build 23).xcarchive"
 EXPORT_DIR="$PROJECT_DIR/build/AppStore"
 
 echo "📦 1. Preparing export directory..."
