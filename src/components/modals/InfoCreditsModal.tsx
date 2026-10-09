@@ -313,7 +313,9 @@ export const InfoCreditsModal: React.FC<InfoCreditsModalProps> = ({
                   <GraduationCapFillIcon size={34} color="#FFFFFF" />
                 </View>
                 <Text style={styles.headerTitle}>CoursePal Mobile</Text>
-                <Text style={styles.versionBadge}>Version 1.4.1 (Build 2)</Text>
+                <Text style={styles.versionBadge}>
+                  Version 1.4.8 (Build 22)
+                </Text>
               </View>
 
               <View style={styles.legalCard}>

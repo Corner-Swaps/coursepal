@@ -13,7 +13,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.coursepal.app",
-      "buildNumber": "21",
+      "buildNumber": "22",
       "infoPlist": {
         "NSCameraUsageDescription": "CoursePal needs camera access so you can scan physical syllabus documents to build your course schedule automatically.",
         "NSPhotoLibraryUsageDescription": "CoursePal needs photo library access to import syllabus images.",
