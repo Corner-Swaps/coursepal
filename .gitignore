@@ -28,6 +28,7 @@ yarn-error.log*
 
 # Xcode / React Native iOS
 build/
+deliverables/*.ipa
 ios/build/
 ios/build_device/
 ios/Pods/
