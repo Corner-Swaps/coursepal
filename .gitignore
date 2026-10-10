@@ -47,7 +47,16 @@ project.xcworkspace/xcshareddata/SwiftPM/Package.resolved
 
 # Swift Package Manager
 .build/
-*.swiftdoc
+# Android artifacts
+android/.gradle/
+android/build/
+android/app/build/
+*.keystore
+*.jks
+.keystore_password
+backups/
+*.aab
+deliverables/*.aab
 *.swiftsourceinfo
 *.swiftmodule
 *.abi.json
