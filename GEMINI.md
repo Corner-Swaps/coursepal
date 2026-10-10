@@ -73,3 +73,7 @@ The ingestion pipeline is calibrated against four canonical academic document ar
   - Only separate coursework into weeks when the syllabus explicitly specifies weeks and modules differently (e.g. dual module/calendar tables like `CPC 512`, side-by-side timeline columns like `DATA 630`, or weekly session tables like `CPC 524` and `CPC 527`).
   - In weekly calendar sessions that bundle multiple modules (such as Week 7 covering `Module 7 & 8`, or Week 10 covering `Module 9 & 10` in `CPC 524`), keep the module deliverables together within that designated calendar week—never split bundled modules across multiple separate calendar weeks.
 
+## 9. Pre-Task Brief Protocol (Google Play & Master Releases)
+Before every task:
+- Check the `briefs` folder inside the `Google Play` folder in Google Drive and follow the briefs there, starting with `00-master-release-prompt.md`.
+
