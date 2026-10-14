@@ -300,9 +300,8 @@ export function isGenericPlaceholderReadingTitle(rawTitle: string | null | undef
   const strippedPunct = normalized.replace(/[:\-–—*?]+$/g, '').trim();
   if (/^(?:assigned|required|weekly|course)?\s*readings?(?:\s*\d+(?:\/\d+)?)?$/i.test(normalized)) return true;
   if (/^see\s+brightspace\b/i.test(normalized)) return true;
-  if (/^(?:[a-z]{2,5}\s*[-–:]\s*)?see\s+posted\s+articles?\b/i.test(normalized)) return true;
-  if (/^(?:[a-z]{2,5}\s*[-–:]\s*)?chapters?\s*$/i.test(normalized)) return true;
-  if (/^[a-z]{2,5}-\s*(?!.*\b(?:chapters?|chs?\.?|ch\.?)\s*\d)/i.test(normalized) && /\b(?:brightspace|smith|adcock|tucker|malchiodi)\b/i.test(normalized)) return true;
+  if (/^(?:[a-z]{1,4}\s*[-–—:]\s*)?see\s+posted\s+(?:articles?|readings?|materials?)\b/i.test(normalized)) return true;
+  if (/^(?:[a-z]{1,4}\s*[-–—:]\s*)?(?:chapters?|chs?\.?|ch\.?)\s*$/i.test(normalized)) return true;
   if (/^total\s+(?:course\s+|grade\s+|assignment\s+)?points?(?:\s*(?:possible|total))?(?:\s*[:=-]\s*\d+)?\b/i.test(normalized)) return true;
   if (/^total\s*[:=-]\s*\d+\s*(?:pts?|points?|%)/i.test(normalized)) return true;
   if (/^(?:points|points\s+possible|total\s+points|grade\s+points|total\s+grade)$/i.test(normalized)) return true;

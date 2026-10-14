@@ -1004,7 +1004,7 @@ export class LocalSyllabusParser {
   private reconstructScrambledClassScheduleTable(lines: string[]): string[] {
     const classHeaderRe = /^(?:Dates?\s+)?CLASS\s+(\d{1,2})\b(?:\s*(.*))?$/i;
     const weekdayRe = /^(?:MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)$/i;
-    const monthDayStartRe = /^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b/i;
+    const monthDayStartRe = /^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?\b/i;
 
     const classIndices: number[] = [];
     for (let i = 0; i < lines.length; i++) {
@@ -1034,10 +1034,6 @@ export class LocalSyllabusParser {
 
     const firstClassIdx = classIndices[0];
     const lastClassIdx = classIndices[classIndices.length - 1];
-    const isReadingOrBreakLine = (s: string) =>
-      /^(?:READING\s+WEEK|NO\s+CLASS(?:ES)?|FALL\s+BREAK|SPRING\s+BREAK|WINTER\s+BREAK)\b/i.test(s) ||
-      /^(?:[A-Z]{2,5}\s*[-–—:]\s*)?(?:Chapters?|Chs?\.?|Ch\.?)\b/i.test(s) ||
-      /^(?:SSA|CM|BS)\s*[-–—:]/i.test(s);
 
     let maxScanIdx = Math.min(lines.length, lastClassIdx + 65);
     for (let i = lastClassIdx + 1; i < Math.min(lines.length, lastClassIdx + 75); i++) {
@@ -1047,9 +1043,83 @@ export class LocalSyllabusParser {
         break;
       }
     }
+
+    // Derive the code legend dynamically from the schedule window:
+    // A legend entry is a short code (1–4 uppercase letters) + separator + a name/label (no digits, not a chapter/pointer keyword),
+    // appearing near the schedule header, where the same code also prefixes reading/pointer lines in the schedule.
+    const candidateWindow = lines.slice(firstClassIdx, maxScanIdx).map(l => l.trim());
+    const codedEntryRe = /^([A-Z]{1,4})\s*[-–—:]\s*(.+)$/;
+    const firstChapterLineOffset = candidateWindow.findIndex(l =>
+      /\b(?:Chapters?|Chs?\.?|Ch\.?|Pages?|Pp?\.?)\s*\d/i.test(l)
+    );
+    const legendHeaderCutoff = firstChapterLineOffset !== -1 ? firstChapterLineOffset : Math.min(candidateWindow.length, 45);
+
+    const candidateLegendDefs = new Map<string, string[]>();
+    const codeReadingUsageCount = new Map<string, number>();
+
+    for (let idx = 0; idx < candidateWindow.length; idx++) {
+      const s = candidateWindow[idx];
+      if (!s || LocalSyllabusParser.codeWithTitleRegex.test(s)) continue;
+      const m = s.match(codedEntryRe);
+      if (!m) continue;
+      const code = m[1];
+      const rhs = m[2].trim();
+
+      const isReadingOrPointerRhs =
+        /\b(?:Chapters?|Chs?\.?|Ch\.?|Sections?|Sec\.?|Pages?|Pp?\.?)\b/i.test(rhs) ||
+        /^(?:See|Check|Refer\s+to|View|Access|Posted|Available)\b/i.test(rhs) ||
+        /\d/.test(rhs);
+
+      const isLegendNameRhs =
+        !isReadingOrPointerRhs &&
+        /[A-Z][a-z]/.test(rhs) &&
+        rhs.length >= 2 &&
+        rhs.length <= 60;
+
+      if (isLegendNameRhs && idx <= legendHeaderCutoff) {
+        if (!candidateLegendDefs.has(code)) candidateLegendDefs.set(code, []);
+        candidateLegendDefs.get(code)!.push(s);
+      } else if (isReadingOrPointerRhs) {
+        codeReadingUsageCount.set(code, (codeReadingUsageCount.get(code) || 0) + 1);
+      }
+    }
+
+    const legendCodes = new Set<string>();
+    const legendEntryLines = new Set<string>();
+    for (const [code, defLines] of candidateLegendDefs.entries()) {
+      if ((codeReadingUsageCount.get(code) || 0) >= 1) {
+        legendCodes.add(code);
+        for (const dl of defLines) legendEntryLines.add(dl);
+      }
+    }
+
+    const matchCodedLine = (s: string): { code: string; rhs: string } | null => {
+      const m = s.match(codedEntryRe);
+      if (!m || !legendCodes.has(m[1])) return null;
+      return { code: m[1], rhs: m[2].trim() };
+    };
+
+    const isReadingOrBreakLine = (s: string): boolean => {
+      if (/^(?:READING\s+WEEK|NO\s+CLASS(?:ES)?|FALL\s+BREAK|SPRING\s+BREAK|WINTER\s+BREAK)\b/i.test(s)) {
+        return true;
+      }
+      if (legendEntryLines.has(s)) {
+        return false;
+      }
+      if (/^(?:[A-Z]{1,4}\s*[-–—:]\s*)?(?:Chapters?|Chs?\.?|Ch\.?)\b/i.test(s)) {
+        return true;
+      }
+      return matchCodedLine(s) !== null;
+    };
+
+    const isDueColumnLine = (s: string) =>
+      /\(\s*Due\b|\bDue\s+(?:at|by|on)\b/i.test(s) ||
+      /^(?:Group\s*\d+\s*:|Intervention\s+Presentation\b|In[\s-]class\s+Assignment\b|Case\s+Conceptualization\b|Treatment\s+Paper\b|Peer\s+Review\b|Research\s+Paper\b|Case\s+Study\b|Plan\s*\(|World\s+Caf[eé]\s+Participation\b|Evaluation\s*\()/i.test(s);
+
     let scheduleEndIdx = maxScanIdx;
     for (let i = maxScanIdx - 1; i > lastClassIdx; i--) {
-      if (isReadingOrBreakLine(lines[i].trim())) {
+      const t = lines[i].trim();
+      if (isReadingOrBreakLine(t) || isDueColumnLine(t)) {
         scheduleEndIdx = i + 1;
         break;
       }
@@ -1153,9 +1223,6 @@ export class LocalSyllabusParser {
     }
 
     // Pre-mark Due-column cells and deliverable lines in the schedule table
-    const isDueColumnLine = (s: string) =>
-      /\(\s*Due\b|\bDue\s+(?:at|by|on)\b/i.test(s) ||
-      /^(?:Group\s*\d+\s*:|Intervention\s+Presentation\b|In[\s-]class\s+Assignment\b|Case\s+Conceptualization\b|Treatment\s+Paper\b|Peer\s+Review\b|Research\s+Paper\b|Case\s+Study\b|Plan\s*\(|World\s+Caf[eé]\s+Participation\b|Evaluation\s*\()/i.test(s);
 
     for (let i = 0; i < working.length; i++) {
       if (consumed[i]) continue;
@@ -1211,11 +1278,11 @@ export class LocalSyllabusParser {
       const line = working[i];
       if (!line) continue;
 
-      // Skip table headers, abbreviation legend lines, footnotes, and page numbers
+      // Skip table headers, document-derived abbreviation legend lines, footnotes, and page numbers
       if (
+        legendEntryLines.has(line) ||
         /^(?:Dates?\s+)?Topics?\s+Readings?(?:\s+Due)?$/i.test(line) ||
         /^(?:Dates?|Topics?|Readings?|Due)$/i.test(line) ||
-        /^(?:SSA|CM|BS)\s*[-–—:]\s*(?:Smith[\s-]*Adcock|Cathy|Malchiodi|BrightSpace)/i.test(line) ||
         /^\*+\s*All\s+Assignments\s+due\b/i.test(line) ||
         /^midnight\s+via\b/i.test(line) ||
         /^\d{1,2}$/.test(line) ||
@@ -1258,14 +1325,18 @@ export class LocalSyllabusParser {
       // Check for reading column lines
       if (isReadingOrBreakLine(line)) {
         flushTopic();
-        // Placeholder reading lines ("BS- See posted article" or bare "CM- Chapter") close or sit inside reading cell without adding items
-        if (
-          /^BS\s*[-–—:]\s*See\s+posted\s+articles?\b/i.test(line) ||
-          /^(?:SSA|CM|BS)\s*[-–—:]\s*Chapters?\s*$/i.test(line)
-        ) {
+        // Structurally drop bare "CODE- Chapter" lines (no number) and LMS pointer lines
+        const isBareChapterLine =
+          /^(?:[A-Z]{1,4}\s*[-–—:]\s*)?(?:Chapters?|Chs?\.?|Ch\.?|Sections?|Sec\.?|Pages?|Pp?\.?)\s*$/i.test(line);
+        const isLmsPointerLine =
+          /^(?:[A-Z]{1,4}\s*[-–—:]\s*)?(?:See|Check|Refer\s+to|View|Access|Posted\s+(?:on|in|to)|Available\s+(?:on|in))\b/i.test(line) &&
+          !/\b(?:Chapters?|Chs?\.?|Ch\.?|Sections?|Sec\.?|Pages?|Pp?\.?)\s*\d/i.test(line);
+        const coded = matchCodedLine(line);
+        const isNumberlessCodedLine = coded !== null && !/\d/.test(coded.rhs);
+        if (isBareChapterLine || isLmsPointerLine || isNumberlessCodedLine) {
           continue;
         }
-        const prefixM = line.match(/^([A-Z]{2,5})\s*[-–—:]/i);
+        const prefixM = line.match(/^([A-Z]{1,4})\s*[-–—:]/i);
         const prefix = prefixM ? prefixM[1].toUpperCase() : '';
         if (prefix && currentReadingPrefixes.has(prefix)) {
           flushReading();
@@ -1323,7 +1394,13 @@ export class LocalSyllabusParser {
       const tb = rawTopicBlocks[bi];
       const remainingTopicBlocks = rawTopicBlocks.length - bi;
       const neededTopics = numberedSlotsCount - finalTopics.length;
-      if (remainingTopicBlocks === 1 && neededTopics > 1 && tb.lines.length >= neededTopics) {
+      const rawIdx = rawBlocks.indexOf(tb);
+      const nextBlock = rawIdx !== -1 && rawIdx + 1 < rawBlocks.length ? rawBlocks[rawIdx + 1] : null;
+      const isFollowedByBreakOnly = nextBlock !== null && nextBlock.kind === 'break';
+      const isContiguousTopicColumn =
+        (remainingTopicBlocks === 1 && neededTopics > 1 && tb.lines.length >= neededTopics) ||
+        (isFollowedByBreakOnly && neededTopics > remainingTopicBlocks && tb.lines.length >= 2);
+      if (isContiguousTopicColumn) {
         // Contiguous multi-row topic column: group lines by syntactic continuation
         const grouped: string[][] = [[tb.lines[0]]];
         for (let k = 1; k < tb.lines.length; k++) {
@@ -6879,7 +6956,12 @@ export class LocalSyllabusParser {
                 techM ||
                 segment.match(/\b([A-Z][a-zA-Z\s&,\.\-–—'’/]+?\b(?:Manuals?|Guides?|Scoring\s+Guides?|Packets?|Dossiers?|Protocol\s+Sheets?|Protocols?|Code\s+of\s+Ethics|Ethics\s+Code))\b/i)));
 
-          if (segment.includes(': Chapter ') || segment.includes(': chapter ') || segment.includes(': Ch.')) {
+          if (
+            segment.includes(': Chapter ') ||
+            segment.includes(': chapter ') ||
+            segment.includes(': Ch.') ||
+            /^[A-Z]{1,4}\s*[-–—:]\s*(?:Chapters?|Chs?\.?|Ch\.)/i.test(segment)
+          ) {
             exactTitle = segment.replace(/^[•\-*▪●: \t]+|[•\-*▪●: \t]+$/g, '').trim();
           } else if (citMatch && citMatch.index !== undefined) {
             let cleanCit = citMatch[0].replace(/^[•\-*▪●: \t]+|[•\-*▪●: \t]+$/g, '').trim();

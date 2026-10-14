@@ -236,6 +236,99 @@ describe('Modules Weeks Rebuild Suite (Red -> Green)', () => {
       expect(cleanReadings.some(r => /laws\s*&\s*ethics/i.test(r.title))).toBe(false);
       expect(cleanReadings.some(r => /group\s*1/i.test(r.title))).toBe(false);
     });
+
+    it('reconstructs a synthetic scrambled schedule table with arbitrary document-derived codes (AB, XY, PORT)', () => {
+      const syntheticScrambled = [
+        'PSY 710: Advanced Developmental Seminar',
+        'Course Schedule',
+        'CLASS 1',
+        'THURSDAY',
+        'OCT. 1,',
+        '2026',
+        'Dates Topics Readings Due',
+        'AB- Author One',
+        'XY- Author Two',
+        'PORT- Course Portal',
+        'Foundations of Development',
+        'AB- Chapter 1',
+        'XY- Chapter 2',
+        'PORT- See posted article',
+        'CLASS 2',
+        'THURSDAY',
+        'OCT. 8,',
+        '2026',
+        'CLASS 3',
+        'THURSDAY',
+        'OCT. 15,',
+        '2026',
+        'THURSDAY',
+        'OCT. 22,',
+        '2026',
+        'CLASS 4',
+        'THURSDAY',
+        'OCT. 29,',
+        '2026',
+        'CLASS 5',
+        'THURSDAY',
+        'NOV. 5,',
+        '2026',
+        'Neurobiology & Regulation',
+        'Attachment Systems',
+        'READING WEEK',
+        'NO CLASS',
+        'WORLD CAFÉ',
+        'Adolescent Identity',
+        'AB- Chapter 3',
+        'XY- Chapters 4, 5',
+        'AB- Chapters 6, 7',
+        'XY- Chapter',
+        'AB- Chapter 8',
+        'XY- Chapter 9',
+        'Group 1: Intervention Presentation (Due Oct 15)',
+        'Case Study Paper (Due Nov 5)',
+        'Course Description',
+        'This seminar examines developmental frameworks across childhood and adolescence.'
+      ].join('\n');
+
+      const { norm, cleanReadings } = runPipeline(syntheticScrambled);
+
+      expect(norm.weeks).toBeDefined();
+      expect(norm.weeks?.length).toBe(6);
+      expect(norm.weeks?.map(w => w.weekNumber)).toEqual([1, 2, 3, 4, 5, 6]);
+
+      const readingsFor = (wk: number) => cleanReadings.filter(r => r.weekNumber === wk).map(r => r.title);
+      const weekFor = (wk: number) => norm.weeks?.find(w => w.weekNumber === wk);
+
+      // Legend lines ("AB- Author One", "XY- Author Two", "PORT- Course Portal") must never leak into themes or readings
+      for (const w of norm.weeks || []) {
+        expect(w.theme || '').not.toMatch(/Author One|Author Two|Course Portal|\bAB-|\bXY-|\bPORT-/i);
+      }
+      expect(cleanReadings.some(r => /Author One|Author Two|Course Portal|See posted/i.test(r.title))).toBe(false);
+
+      // Week 1 (Class 1): Foundations of Development — AB Ch.1, XY Ch.2 (PORT pointer dropped)
+      expect(weekFor(1)?.theme).toMatch(/Foundations of Development/i);
+      expect(readingsFor(1)).toEqual(['AB- Chapter 1', 'XY- Chapter 2']);
+
+      // Week 2 (Class 2): Neurobiology & Regulation — AB Ch.3, XY Ch.4,5
+      expect(weekFor(2)?.theme).toMatch(/Neurobiology\s*&\s*Regulation/i);
+      expect(readingsFor(2)).toEqual(['AB- Chapter 3', 'XY- Chapters 4, 5']);
+
+      // Week 3 (Class 3): Attachment Systems — AB Ch.6,7 (bare "XY- Chapter" dropped)
+      expect(weekFor(3)?.theme).toMatch(/Attachment Systems/i);
+      expect(readingsFor(3)).toEqual(['AB- Chapters 6, 7']);
+
+      // Week 4 (Oct 22): Reading Week — empty
+      expect(weekFor(4)?.theme).toMatch(/Reading Week/i);
+      expect(readingsFor(4)).toEqual([]);
+
+      // Week 5 (Class 4): World Café — empty
+      expect(weekFor(5)?.theme).toMatch(/World\s*Caf[eé]/i);
+      expect(readingsFor(5)).toEqual([]);
+
+      // Week 6 (Class 5): Adolescent Identity — AB Ch.8, XY Ch.9
+      expect(weekFor(6)?.theme).toMatch(/Adolescent Identity/i);
+      expect(readingsFor(6)).toEqual(['AB- Chapter 8', 'XY- Chapter 9']);
+    });
   });
 
   describe('D. Module axis dead (all fixtures)', () => {
