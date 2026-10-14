@@ -863,8 +863,6 @@ export class SyllabusImportManager {
       );
     };
 
-    const isClassMeetingSchedule = Array.isArray(dto.weeks) && dto.weeks.some((w: any) => /^\s*Class\s*\d+/i.test(w.theme || ''));
-
     // Process nested weeks
     if (Array.isArray(dto.weeks)) {
       for (const w of dto.weeks) {
@@ -882,13 +880,10 @@ export class SyllabusImportManager {
             isNonInstructional: true,
             isReadingWeek: true
           });
-          if (isClassMeetingSchedule) {
-            continue;
-          }
         }
 
         currentInstructionalWeek++;
-        const wkNum = (typeof origWkNum === 'number' && origWkNum > 0 && !isClassMeetingSchedule) ? origWkNum : currentInstructionalWeek;
+        const wkNum = (typeof origWkNum === 'number' && origWkNum > 0) ? origWkNum : currentInstructionalWeek;
         if (typeof origWkNum === 'number' && origWkNum > 0) {
           weekShiftMap.set(origWkNum, wkNum);
         }

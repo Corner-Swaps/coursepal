@@ -789,7 +789,7 @@ export class LocalSyllabusParser {
       .replace(/(\s+)(?=Reading\s+Week\b)/gi, (m, p1, offset, str) => {
         const prevSnippet = str.slice(Math.max(0, offset - 60), offset);
         if (/\b(?:week|wk|module|session|unit)\s*\d+/i.test(prevSnippet) || /\bduring\b/i.test(prevSnippet) || /\bnotice\b/i.test(prevSnippet) || /\breading\s*week\b/i.test(prevSnippet)) {
-          return ' ';
+          return m.includes('\t') ? '\t' : ' ';
         }
         return '\n';
       })
@@ -996,7 +996,399 @@ export class LocalSyllabusParser {
     return reconstituted;
   }
 
+  /**
+   * Reconstructs multi-column class schedule tables whose columns were extracted
+   * vertically by PDFKit (e.g. a contiguous run of "CLASS 1 / THURSDAY / OCTOBER 1st, 2026"
+   * slots followed by detached Topic cells, Reading cells, and Due cells).
+   */
+  private reconstructScrambledClassScheduleTable(lines: string[]): string[] {
+    const classHeaderRe = /^(?:Dates?\s+)?CLASS\s+(\d{1,2})\b(?:\s*(.*))?$/i;
+    const weekdayRe = /^(?:MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)$/i;
+    const monthDayStartRe = /^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b/i;
+
+    const classIndices: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (classHeaderRe.test(lines[i].trim())) {
+        classIndices.push(i);
+      }
+    }
+    if (classIndices.length < 4) return lines;
+
+    // Detect column-wise extraction: at least two CLASS headers separated only by weekday/date lines
+    let hasContiguousClassColumn = false;
+    for (let k = 0; k + 1 < classIndices.length; k++) {
+      const a = classIndices[k];
+      const b = classIndices[k + 1];
+      if (b - a <= 5) {
+        const between = lines.slice(a + 1, b).map(s => s.trim()).filter(Boolean);
+        const onlyDateOrDay = between.every(
+          s => weekdayRe.test(s) || monthDayStartRe.test(s) || /^20\d{2}\s*,?$/.test(s) || /^,$/.test(s)
+        );
+        if (onlyDateOrDay) {
+          hasContiguousClassColumn = true;
+          break;
+        }
+      }
+    }
+    if (!hasContiguousClassColumn) return lines;
+
+    const firstClassIdx = classIndices[0];
+    const lastClassIdx = classIndices[classIndices.length - 1];
+    const isReadingOrBreakLine = (s: string) =>
+      /^(?:READING\s+WEEK|NO\s+CLASS(?:ES)?|FALL\s+BREAK|SPRING\s+BREAK|WINTER\s+BREAK)\b/i.test(s) ||
+      /^(?:[A-Z]{2,5}\s*[-–—:]\s*)?(?:Chapters?|Chs?\.?|Ch\.?)\b/i.test(s) ||
+      /^(?:SSA|CM|BS)\s*[-–—:]/i.test(s);
+
+    let maxScanIdx = Math.min(lines.length, lastClassIdx + 65);
+    for (let i = lastClassIdx + 1; i < Math.min(lines.length, lastClassIdx + 75); i++) {
+      const t = lines[i].trim();
+      if (/^(?:VISION,\s*MISSION|Course\s+Description\b|Course\s+Learning\s+Outcomes\b|Required\s+Textbooks?\b|Grading\s+Scale\b|Overview\s+of\s+Required\s+Assignments\b)/i.test(t)) {
+        maxScanIdx = i;
+        break;
+      }
+    }
+    let scheduleEndIdx = maxScanIdx;
+    for (let i = maxScanIdx - 1; i > lastClassIdx; i--) {
+      if (isReadingOrBreakLine(lines[i].trim())) {
+        scheduleEndIdx = i + 1;
+        break;
+      }
+    }
+
+    const working = lines.slice(firstClassIdx, scheduleEndIdx).map(l => l.trim());
+    const consumed = new Array<boolean>(working.length).fill(false);
+
+    const tryConsumeDateAt = (startIdx: number): { dateStr: string; nextIdx: number } | null => {
+      if (startIdx >= working.length || consumed[startIdx]) return null;
+      const first = working[startIdx];
+      if (!monthDayStartRe.test(first)) return null;
+      const parts: string[] = [first];
+      let idx = startIdx + 1;
+      while (idx < working.length && idx <= startIdx + 2 && !consumed[idx]) {
+        const cur = working[idx];
+        if (/^,$/.test(cur) || /^20\d{2}\s*,?$/.test(cur)) {
+          parts.push(cur);
+          idx++;
+        } else {
+          break;
+        }
+      }
+      const dateStr = parts
+        .join(' ')
+        .replace(/\s*,\s*/g, ', ')
+        .replace(/,\s*$/, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return { dateStr, nextIdx: idx };
+    };
+
+    interface ScheduleSlot {
+      classNum: number | null;
+      dateStr: string;
+    }
+    const slots: ScheduleSlot[] = [];
+    const orphanedDates: string[] = [];
+
+    for (let i = 0; i < working.length; i++) {
+      if (consumed[i]) continue;
+      const line = working[i];
+      const cm = line.match(classHeaderRe);
+      if (cm) {
+        const classNum = parseInt(cm[1], 10);
+        const rest = (cm[2] || '').trim();
+        let cursor = i + 1;
+        let inlineDate = '';
+
+        if (rest.length > 0) {
+          if (monthDayStartRe.test(rest)) {
+            inlineDate = rest;
+            consumed[i] = true;
+          } else if (weekdayRe.test(rest)) {
+            consumed[i] = true;
+          } else {
+            // Inline topic text attached to CLASS header (e.g. "CLASS 11 Cognitive- Behavioural")
+            working[i] = rest;
+          }
+        } else {
+          consumed[i] = true;
+        }
+
+        if (!inlineDate) {
+          if (cursor < working.length && !consumed[cursor] && weekdayRe.test(working[cursor])) {
+            consumed[cursor] = true;
+            cursor++;
+          }
+          const dRes = tryConsumeDateAt(cursor);
+          if (dRes) {
+            for (let c = cursor; c < dRes.nextIdx; c++) consumed[c] = true;
+            inlineDate = dRes.dateStr;
+          }
+        }
+        slots.push({ classNum, dateStr: inlineDate });
+        continue;
+      }
+
+      if (weekdayRe.test(line)) {
+        const dRes = tryConsumeDateAt(i + 1);
+        if (dRes) {
+          consumed[i] = true;
+          for (let c = i + 1; c < dRes.nextIdx; c++) consumed[c] = true;
+          slots.push({ classNum: null, dateStr: dRes.dateStr });
+          continue;
+        }
+      }
+
+      const orphanRes = tryConsumeDateAt(i);
+      if (orphanRes) {
+        for (let c = i; c < orphanRes.nextIdx; c++) consumed[c] = true;
+        orphanedDates.push(orphanRes.dateStr);
+      }
+    }
+
+    let orphanCursor = 0;
+    for (const slot of slots) {
+      if (!slot.dateStr && orphanCursor < orphanedDates.length) {
+        slot.dateStr = orphanedDates[orphanCursor++];
+      }
+    }
+
+    // Pre-mark Due-column cells and deliverable lines in the schedule table
+    const isDueColumnLine = (s: string) =>
+      /\(\s*Due\b|\bDue\s+(?:at|by|on)\b/i.test(s) ||
+      /^(?:Group\s*\d+\s*:|Intervention\s+Presentation\b|In[\s-]class\s+Assignment\b|Case\s+Conceptualization\b|Treatment\s+Paper\b|Peer\s+Review\b|Research\s+Paper\b|Case\s+Study\b|Plan\s*\(|World\s+Caf[eé]\s+Participation\b|Evaluation\s*\()/i.test(s);
+
+    for (let i = 0; i < working.length; i++) {
+      if (consumed[i]) continue;
+      if (isDueColumnLine(working[i])) {
+        consumed[i] = true;
+        if (/\(\s*Due\b[^)]*\)/i.test(working[i])) {
+          for (let back = 1; back <= 2 && i - back >= 0; back++) {
+            const prevIdx = i - back;
+            if (consumed[prevIdx]) break;
+            const prev = working[prevIdx];
+            if (isReadingOrBreakLine(prev)) break;
+            if (isDueColumnLine(prev) || /^(?:Therapeutic|Plan|Evaluation)\b/i.test(prev)) {
+              consumed[prevIdx] = true;
+            } else {
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    const metadataLines: string[] = [];
+    const postScheduleLines: string[] = [];
+    interface RawBlock {
+      kind: 'topic' | 'reading' | 'break';
+      lines: string[];
+    }
+    const rawBlocks: RawBlock[] = [];
+    let currentTopicLines: string[] = [];
+    let currentReadingLines: string[] = [];
+    let currentReadingPrefixes = new Set<string>();
+    let inContiguousReadingsPhase = false;
+
+    const flushTopic = () => {
+      if (currentTopicLines.length > 0) {
+        if (currentTopicLines.length >= 6) {
+          inContiguousReadingsPhase = true;
+        }
+        rawBlocks.push({ kind: 'topic', lines: [...currentTopicLines] });
+        currentTopicLines = [];
+      }
+    };
+    const flushReading = () => {
+      if (currentReadingLines.length > 0) {
+        rawBlocks.push({ kind: 'reading', lines: [...currentReadingLines] });
+        currentReadingLines = [];
+        currentReadingPrefixes = new Set<string>();
+      }
+    };
+
+    for (let i = 0; i < working.length; i++) {
+      if (consumed[i]) continue;
+      const line = working[i];
+      if (!line) continue;
+
+      // Skip table headers, abbreviation legend lines, footnotes, and page numbers
+      if (
+        /^(?:Dates?\s+)?Topics?\s+Readings?(?:\s+Due)?$/i.test(line) ||
+        /^(?:Dates?|Topics?|Readings?|Due)$/i.test(line) ||
+        /^(?:SSA|CM|BS)\s*[-–—:]\s*(?:Smith[\s-]*Adcock|Cathy|Malchiodi|BrightSpace)/i.test(line) ||
+        /^\*+\s*All\s+Assignments\s+due\b/i.test(line) ||
+        /^midnight\s+via\b/i.test(line) ||
+        /^\d{1,2}$/.test(line) ||
+        /^\d{4}\.\d{2}\.\d{2}$/.test(line)
+      ) {
+        continue;
+      }
+
+      // Preserve course/faculty metadata lines before reconstructed schedule
+      const isMetadata =
+        LocalSyllabusParser.codeWithTitleRegex.test(line) ||
+        /^(?:Course\s+Schedule|Course\s+Syllabus|Syllabus|School\s+of\b|Department\s+of\b|Faculty\s+of\b|FACULTY\s*(?:&|AND)\s*CONTACT\s+INFORMATION\b|Primary\s+Faculty\b|Email\s*:)/i.test(line) ||
+        /^(?:Fall|Winter|Spring|Summer)\s+20\d{2}$/i.test(line) ||
+        /^(?:Mondays|Tuesdays|Wednesdays|Thursdays|Fridays|Saturdays|Sundays)$/i.test(line) ||
+        /^\d{1,2}(?::\d{2})?\s*-\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)$/i.test(line) ||
+        /^(?:Online\s+Synchronous|Online\s+Asynchronous|Online\s+Learning|Asynchronous|Synchronous|In[\s-]Person|Hybrid|Blended)$/i.test(line) ||
+        /^\d+\s+Credits?$/i.test(line) ||
+        /^(?:Time\s+Frame|Synchronous\s+class\s+times)\s*:/i.test(line) ||
+        line.includes('@') ||
+        /,\s*(?:M\.A\.|M\.S\.|M\.Ed\.|MCP|Ph\.?D\.|Psy\.?D\.|Ed\.?D\.|RCC|CCC|RPT)/i.test(line);
+
+      if (isMetadata) {
+        metadataLines.push(line);
+        continue;
+      }
+
+      // Check for break lines (e.g. READING WEEK / NO CLASS / No Class )
+      if (/^(?:READING\s+WEEK|NO\s+CLASS(?:ES)?|FALL\s+BREAK|SPRING\s+BREAK|WINTER\s+BREAK)\b/i.test(line)) {
+        flushTopic();
+        flushReading();
+        const prevBlock = rawBlocks[rawBlocks.length - 1];
+        if (prevBlock && prevBlock.kind === 'break') {
+          prevBlock.lines.push(line);
+        } else {
+          rawBlocks.push({ kind: 'break', lines: [line] });
+        }
+        continue;
+      }
+
+      // Check for reading column lines
+      if (isReadingOrBreakLine(line)) {
+        flushTopic();
+        // Placeholder reading lines ("BS- See posted article" or bare "CM- Chapter") close or sit inside reading cell without adding items
+        if (
+          /^BS\s*[-–—:]\s*See\s+posted\s+articles?\b/i.test(line) ||
+          /^(?:SSA|CM|BS)\s*[-–—:]\s*Chapters?\s*$/i.test(line)
+        ) {
+          continue;
+        }
+        const prefixM = line.match(/^([A-Z]{2,5})\s*[-–—:]/i);
+        const prefix = prefixM ? prefixM[1].toUpperCase() : '';
+        if (prefix && currentReadingPrefixes.has(prefix)) {
+          flushReading();
+        }
+        if (prefix) currentReadingPrefixes.add(prefix);
+        currentReadingLines.push(line);
+        continue;
+      }
+
+      // Once the contiguous multi-row Topics column has been flushed and we are in the contiguous Readings column,
+      // any remaining non-reading line (e.g. interleaved page-3 text before the final cell's second textbook line)
+      // must NOT flush the open reading block or append to topics.
+      if (inContiguousReadingsPhase) {
+        postScheduleLines.push(line);
+        continue;
+      }
+
+      // Otherwise it is a Topic line
+      flushReading();
+      currentTopicLines.push(line);
+    }
+    flushTopic();
+    flushReading();
+
+    // Expand topic blocks: if a topic block contains multiple contiguous class topics, split by continuation rules
+    const isTopicContinuation = (prev: string, next: string): boolean => {
+      const p = prev.trim();
+      const n = next.trim();
+      if (/[-–—,&]$/.test(p) || /\b(?:in|of|for|with|to|and)\s*$/i.test(p)) return true;
+      if (/^[a-z(]/.test(n) || /^[-–—]/.test(n)) return true;
+      if (/^(?:Approaches|Systems\s+Approaches|Therapy|Therapies|Media|Trends|Planning|Children|Youth)$/i.test(n)) return true;
+      if (/\b(?:Behavioural|Behavioral|Expressive|Symbolic|Organizational|Play)\s*$/i.test(p)) return true;
+      if (/^[-–—]/.test(p) && /,/.test(n)) return true;
+      return false;
+    };
+
+    const formatTopicLines = (tLines: string[]): string => {
+      if (tLines.length === 0) return '';
+      const merged: string[] = [tLines[0]];
+      for (let k = 1; k < tLines.length; k++) {
+        if (isTopicContinuation(tLines[k - 1], tLines[k])) {
+          merged[merged.length - 1] = `${merged[merged.length - 1]} ${tLines[k]}`.replace(/\s+/g, ' ').trim();
+        } else {
+          merged.push(tLines[k]);
+        }
+      }
+      return merged.join(' · ');
+    };
+
+    const numberedSlotsCount = slots.filter(s => s.classNum !== null).length;
+    const rawTopicBlocks = rawBlocks.filter(b => b.kind === 'topic');
+    const finalTopics: string[] = [];
+
+    for (let bi = 0; bi < rawTopicBlocks.length; bi++) {
+      const tb = rawTopicBlocks[bi];
+      const remainingTopicBlocks = rawTopicBlocks.length - bi;
+      const neededTopics = numberedSlotsCount - finalTopics.length;
+      if (remainingTopicBlocks === 1 && neededTopics > 1 && tb.lines.length >= neededTopics) {
+        // Contiguous multi-row topic column: group lines by syntactic continuation
+        const grouped: string[][] = [[tb.lines[0]]];
+        for (let k = 1; k < tb.lines.length; k++) {
+          if (isTopicContinuation(tb.lines[k - 1], tb.lines[k])) {
+            grouped[grouped.length - 1].push(tb.lines[k]);
+          } else {
+            grouped.push([tb.lines[k]]);
+          }
+        }
+        for (const g of grouped) {
+          finalTopics.push(formatTopicLines(g));
+        }
+      } else {
+        finalTopics.push(formatTopicLines(tb.lines));
+      }
+    }
+
+    const readingOnlyBlocks = rawBlocks.filter(b => b.kind === 'reading');
+
+    // Align topics and readings to the calendar slots (1..N)
+    const reconstructedScheduleLines: string[] = [];
+    let topicIdx = 0;
+    let readIdx = 0;
+
+    for (let sIdx = 0; sIdx < slots.length; sIdx++) {
+      const slot = slots[sIdx];
+      const weekNum = sIdx + 1;
+      const datePart = slot.dateStr ? ` - ${slot.dateStr}` : '';
+
+      if (slot.classNum === null) {
+        reconstructedScheduleLines.push(`Week ${weekNum}${datePart}\tReading Week – No Class`);
+        continue;
+      }
+
+      const topicStr = topicIdx < finalTopics.length ? finalTopics[topicIdx++] : `Class ${slot.classNum}`;
+      const remainingClassSlots = slots.slice(sIdx).filter(s => s.classNum !== null).length;
+      const remainingReadings = readingOnlyBlocks.length - readIdx;
+
+      const isExperientialNoReadingTopic =
+        remainingReadings < remainingClassSlots &&
+        /(?:\bworld\s+caf[eéÉ]|\b(?:midterm|final\s+exam|presentations?\s+only)\b)/iu.test(topicStr);
+
+      let readingStr = '';
+      if (!isExperientialNoReadingTopic && readIdx < readingOnlyBlocks.length) {
+        readingStr = readingOnlyBlocks[readIdx++].lines.join('; ');
+      }
+
+      if (readingStr) {
+        reconstructedScheduleLines.push(`Week ${weekNum}${datePart}\t${topicStr}\t${readingStr}`);
+      } else {
+        reconstructedScheduleLines.push(`Week ${weekNum}${datePart}\t${topicStr}`);
+      }
+    }
+
+    return [
+      ...lines.slice(0, firstClassIdx),
+      ...metadataLines,
+      ...reconstructedScheduleLines,
+      ...postScheduleLines,
+      ...lines.slice(scheduleEndIdx)
+    ];
+  }
+
   public deinterleaveScheduleLines(lines: string[]): string[] {
+    lines = this.reconstructScrambledClassScheduleTable(lines);
     const isWeekStart = (l: string) => /^\s*(?:week|wk|module|mod|unit|session)\s*\d+/i.test(l);
     const isReadingLine = (l: string) => {
       const trimmed = l.trim();

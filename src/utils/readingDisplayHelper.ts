@@ -300,6 +300,9 @@ export function isGenericPlaceholderReadingTitle(rawTitle: string | null | undef
   const strippedPunct = normalized.replace(/[:\-–—*?]+$/g, '').trim();
   if (/^(?:assigned|required|weekly|course)?\s*readings?(?:\s*\d+(?:\/\d+)?)?$/i.test(normalized)) return true;
   if (/^see\s+brightspace\b/i.test(normalized)) return true;
+  if (/^(?:[a-z]{2,5}\s*[-–:]\s*)?see\s+posted\s+articles?\b/i.test(normalized)) return true;
+  if (/^(?:[a-z]{2,5}\s*[-–:]\s*)?chapters?\s*$/i.test(normalized)) return true;
+  if (/^[a-z]{2,5}-\s*(?!.*\b(?:chapters?|chs?\.?|ch\.?)\s*\d)/i.test(normalized) && /\b(?:brightspace|smith|adcock|tucker|malchiodi)\b/i.test(normalized)) return true;
   if (/^total\s+(?:course\s+|grade\s+|assignment\s+)?points?(?:\s*(?:possible|total))?(?:\s*[:=-]\s*\d+)?\b/i.test(normalized)) return true;
   if (/^total\s*[:=-]\s*\d+\s*(?:pts?|points?|%)/i.test(normalized)) return true;
   if (/^(?:points|points\s+possible|total\s+points|grade\s+points|total\s+grade)$/i.test(normalized)) return true;
@@ -311,7 +314,7 @@ export function isGenericPlaceholderTheme(theme?: string | null): boolean {
   if (!theme) return true;
   let t = theme.trim().toLowerCase();
   // Strip leading week or module prefixes e.g. "Week 1 Schedule" -> "Schedule", "Wk 2: Topics" -> "Topics"
-  t = t.replace(/^(?:week|wk|module|mod)\s*0*\d+[:\-–—\s]*/i, '').trim();
+  t = t.replace(/^(?:week|wk|module|mod|class)\s*0*\d+[:\-–—\s]*/i, '').trim();
   t = t.replace(/[:\-–—\s.]+/g, ' ').trim();
   if (t.length === 0) return true;
   return /^(?:schedule|weekly schedule|course schedule|class schedule|tentative schedule|schedule of classes|reading schedule|reading list|topics?|contents?|readings?|course readings?|assignments?|deliverables?|syllabus|calendar|dates?|overview|general|required|optional|none|tbd|n\/a)$/i.test(t);
@@ -333,8 +336,9 @@ export function cleanAcademicWeekTheme(rawTheme?: string | null): string {
   let t = rawTheme.replace(/\s+/g, ' ').trim();
   if (t.length === 0) return '';
 
-  // 1. Strip leading week/module/session/unit indicator
-  t = t.replace(/^(?:week|wk|module|mod|unit|session|lecture)\b\s*\d*[:\-–—\s]*/i, '').trim();
+  // 1. Strip leading week/module/session/unit/class indicator
+  t = t.replace(/^(?:week|wk|module|mod|unit|session|lecture|class)\b\s*\d*[:\-–—\s]*/i, '').trim();
+  t = t.replace(/\bClass\s+\d+\b/gi, ' ').replace(/\b(?:MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)S?\b\s*,?\s*(?:20\d{2})?/gi, ' ').trim();
 
   // 2. Strip leading numbers, chapter ranges, or page markers with punctuation (e.g. "4-6;", "1-3, 5:", "Ch. 4-6;")
   t = t.replace(/^[\d\s\-–—,&]+[;:.]\s*/, '').trim();

@@ -12,9 +12,16 @@ function extractDocx(fileName: string): string {
 }
 
 function extractPdf(fileName: string): string {
-  const filePath = path.resolve(__dirname, 'fixtures/modules-weeks', fileName);
-  const pyScript = `import pypdf; r=pypdf.PdfReader('${filePath}'); print('\\n'.join(p.extract_text() or '' for p in r.pages))`;
-  return execSync(`python3 -c "${pyScript}"`, { encoding: 'utf8' });
+  const fullPath = path.resolve(__dirname, 'fixtures/modules-weeks', fileName);
+  const swiftCmd = `swift -e '
+import PDFKit
+import Foundation
+let url = URL(fileURLWithPath: "${fullPath}")
+if let doc = PDFDocument(url: url), let str = doc.string {
+    print(str)
+}
+'`;
+  return execSync(swiftCmd, { encoding: 'utf8' });
 }
 
 function runPipeline(rawText: string) {
@@ -139,26 +146,95 @@ describe('Modules Weeks Rebuild Suite (Red -> Green)', () => {
     it('meets all weekly schedule and non-instructional specs for CPC 600', () => {
       const rawText = extractPdf('Child and youth - syllabus.pdf');
       const { dto, norm, cleanReadings } = runPipeline(rawText);
-      console.log('CPC 600 WEEKS:', norm.weeks?.map(w => ({ wk: w.weekNumber, theme: w.theme, date: w.dateRangeStr || w.startDate })));
-      console.log('CPC 600 CLEAN READINGS:', cleanReadings.map(r => ({ wk: r.weekNumber, title: r.title })));
-      expect(norm.weeks).toBeDefined();
-      expect(norm.weeks?.length).toBe(10);
-      const weekNums = norm.weeks?.map(w => w.weekNumber).sort((a, b) => a - b);
-      expect(weekNums).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
-      // Week 7 readings match /CM- Chapter 3/i and /SSA- Chapter 9/i
-      const w7Readings = cleanReadings.filter(r => r.weekNumber === 7);
-      expect(w7Readings.some(r => /CM- Chapter 3/i.test(r.title))).toBe(true);
-      expect(w7Readings.some(r => /SSA- Chapter 9/i.test(r.title))).toBe(true);
+      expect(norm.weeks).toBeDefined();
+      expect(norm.weeks?.length).toBe(12);
+      const weekNums = norm.weeks?.map(w => w.weekNumber).sort((a, b) => a - b);
+      expect(weekNums).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+
+      const readingsFor = (wk: number) => cleanReadings.filter(r => r.weekNumber === wk).map(r => r.title);
+      const weekFor = (wk: number) => norm.weeks?.find(w => w.weekNumber === wk);
+
+      // Themes = topic lines, never "Class N THURSDAY, 2026" fragments, never SSA/CM/BS legend
+      for (const w of norm.weeks || []) {
+        const theme = w.theme || '';
+        expect(theme).not.toMatch(/\bClass\s*\d+\b/i);
+        expect(theme).not.toMatch(/\bTHURSDAY\b/i);
+        expect(theme).not.toMatch(/\b2026\b/);
+        expect(theme).not.toMatch(/Smith-\s*Adcock|Malchiodi|BrightSpace|\bSSA-|\bCM-|\bBS-/i);
+      }
+
+      // Week 1: Class 1 (Oct 1) — SSA Ch.1, CM Ch.1
+      expect(weekFor(1)?.theme).toMatch(/Introductions|Historical and Contextual Trends/i);
+      expect(readingsFor(1).some(t => /SSA.*Chapters?\s*1\b/i.test(t))).toBe(true);
+      expect(readingsFor(1).some(t => /CM.*Chapters?\s*1\b/i.test(t))).toBe(true);
+      expect(readingsFor(1).length).toBe(2);
+
+      // Week 2: Class 2 (Oct 8) — Laws & Ethics — SSA Ch.2, CM Ch.2
+      expect(weekFor(2)?.theme).toMatch(/Laws\s*&\s*Ethics/i);
+      expect(readingsFor(2).some(t => /SSA.*Chapters?\s*2\b/i.test(t))).toBe(true);
+      expect(readingsFor(2).some(t => /CM.*Chapters?\s*2\b/i.test(t))).toBe(true);
+      expect(readingsFor(2).length).toBe(2);
+
+      // Week 3: Class 3 (Oct 15) — Attachment, Trauma & Repair — SSA Ch.3, CM Ch.6
+      expect(weekFor(3)?.theme).toMatch(/Attachment,\s*Trauma\s*&\s*Repair/i);
+      expect(readingsFor(3).some(t => /SSA.*Chapters?\s*3\b/i.test(t))).toBe(true);
+      expect(readingsFor(3).some(t => /CM.*Chapters?\s*6\b/i.test(t))).toBe(true);
+      expect(readingsFor(3).length).toBe(2);
+
+      // Week 4: Class 4 (Oct 22) — Therapeutic Alliance / Psychodynamic Approaches — SSA Ch.4,5, CM Ch.7,9
+      expect(weekFor(4)?.theme).toMatch(/Therapeutic Alliance|Psychodynamic Approaches/i);
+      expect(readingsFor(4).some(t => /SSA.*Chapters?\s*4,\s*5\b/i.test(t))).toBe(true);
+      expect(readingsFor(4).some(t => /CM.*Chapters?\s*7,\s*9\b/i.test(t))).toBe(true);
+      expect(readingsFor(4).length).toBe(2);
+
+      // Week 5: Class 5 (Oct 29) — Humanistic Approaches — SSA Ch.6, CM Ch.4,5
+      expect(weekFor(5)?.theme).toMatch(/Humanistic Approaches/i);
+      expect(readingsFor(5).some(t => /SSA.*Chapters?\s*6\b/i.test(t))).toBe(true);
+      expect(readingsFor(5).some(t => /CM.*Chapters?\s*4,\s*5\b/i.test(t))).toBe(true);
+      expect(readingsFor(5).length).toBe(2);
+
+      // Week 6: Class 6 (Nov 5) — Cognitive-Behavioural Approaches — SSA Ch.7, CM Ch.13
+      expect(weekFor(6)?.theme).toMatch(/Cognitive-\s*Behavioural Approaches/i);
+      expect(readingsFor(6).some(t => /SSA.*Chapters?\s*7\b/i.test(t))).toBe(true);
+      expect(readingsFor(6).some(t => /CM.*Chapters?\s*13\b/i.test(t))).toBe(true);
+      expect(readingsFor(6).length).toBe(2);
+
+      // Week 7: Week of Nov 12 = Reading Week, empty
+      expect(weekFor(7)?.theme).toMatch(/Reading Week/i);
+      expect((weekFor(7) as any)?.isReadingWeek || (weekFor(7) as any)?.isNonInstructional).toBe(true);
+      expect(readingsFor(7).length).toBe(0);
+
+      // Week 8: Class 7 (Nov 19) = World Café, empty
+      expect(weekFor(8)?.theme).toMatch(/World\s*Caf[eé]/i);
+      expect(readingsFor(8).length).toBe(0);
+
+      // Week 9: Class 8 (Nov 26) — Conceptualization, Assessment and Treatment Planning — SSA Ch.9, CM Ch.3
+      expect(weekFor(9)?.theme).toMatch(/Conceptualization,\s*Assessment\s+and\s+Treatment\s+Planning/i);
+      expect(readingsFor(9).some(t => /SSA.*Chapters?\s*9\b/i.test(t))).toBe(true);
+      expect(readingsFor(9).some(t => /CM.*Chapters?\s*3\b/i.test(t))).toBe(true);
+      expect(readingsFor(9).length).toBe(2);
+
+      // Week 10: Class 9 (Dec 3) — Family and Organizational Systems Approaches — SSA Ch.8, CM Ch.10,12
+      expect(weekFor(10)?.theme).toMatch(/Family and Organizational Systems Approaches/i);
+      expect(readingsFor(10).some(t => /SSA.*Chapters?\s*8\b/i.test(t))).toBe(true);
+      expect(readingsFor(10).some(t => /CM.*Chapters?\s*10,\s*12\b/i.test(t))).toBe(true);
+      expect(readingsFor(10).length).toBe(2);
+
+      // Week 11: Class 10 (Dec 10) — Counselling Young Children — SSA Ch.10,11,12
+      expect(weekFor(11)?.theme).toMatch(/Counselling Young Children/i);
+      expect(readingsFor(11).some(t => /SSA.*Chapters?\s*10,\s*11,\s*12\b/i.test(t))).toBe(true);
+      expect(readingsFor(11).length).toBe(1);
+
+      // Week 12: Class 11 (Dec 17) — Counselling with Adolescents — SSA Ch.13,14,15, CM Ch.14
+      expect(weekFor(12)?.theme).toMatch(/Counselling with Adolescents/i);
+      expect(readingsFor(12).some(t => /SSA.*Chapters?\s*13,\s*14,\s*15\b/i.test(t))).toBe(true);
+      expect(readingsFor(12).some(t => /CM.*Chapters?\s*14\b/i.test(t))).toBe(true);
+      expect(readingsFor(12).length).toBe(2);
 
       // No reading titled "laws & ethics" or "group 1"
       expect(cleanReadings.some(r => /laws\s*&\s*ethics/i.test(r.title))).toBe(false);
       expect(cleanReadings.some(r => /group\s*1/i.test(r.title))).toBe(false);
-
-      // At least one non-instructional week flagged (reading week) and it did not consume week number 7
-      const hasNonInstructional = norm.weeks?.some(w => (w as any).isNonInstructional === true || (w as any).isReadingWeek === true) ||
-        (norm as any).nonInstructionalWeeks?.length > 0;
-      expect(hasNonInstructional).toBe(true);
     });
   });
 
