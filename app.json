@@ -23,7 +23,7 @@
     },
     "android": {
       "package": "com.coursepal.app",
-      "versionCode": 6,
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/images/AppIcon-1024.png",
         "backgroundColor": "#F2F5FA"
