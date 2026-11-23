@@ -87,6 +87,7 @@
             color: var(--text-secondary);
             text-decoration: none;
             font-weight: 500;
+            flex-shrink: 0;
             transition: color 0.15s ease;
         }
 
@@ -95,11 +96,26 @@
             text-decoration: underline;
         }
 
+        @media (max-width: 640px) {
+            .nav-links {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                white-space: nowrap;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                gap: 14px;
+            }
+
+            .nav-links::-webkit-scrollbar {
+                display: none;
+            }
+        }
+
         section {
             margin-bottom: 56px;
             padding-bottom: 40px;
             border-bottom: 1px solid var(--border);
-            scroll-margin-top: 60px;
+            scroll-margin-block-start: var(--nav-offset, 72px);
         }
 
         section:last-of-type {
@@ -245,17 +261,17 @@
 
             <h3>Core Application Features</h3>
             <ul>
-                <li><strong>Syllabus Document Parsing:</strong> Processes syllabus text and document scans to identify weekly course modules, required textbook readings, assignment due dates, point weightings, and exam schedules.</li>
-                <li><strong>Native iOS Calendar Integration:</strong> Exports scheduled assignment deadlines directly to your native Apple Calendar and Reminders app.</li>
-                <li><strong>Local-First Storage:</strong> Stores course schedules, progress, and custom notes on-device using encrypted SwiftData storage within the iOS application sandbox.</li>
-                <li><strong>Course Code Sharing:</strong> Allows students to generate alphanumeric invite codes to share structured course schedules with classmates.</li>
+                <li><strong>Syllabus Document Parsing:</strong> Processes syllabus text and document scans locally on your device to identify weekly course modules, required textbook readings, assignment due dates, point weightings, and exam schedules.</li>
+                <li><strong>Native Calendar Integration:</strong> Exports scheduled assignment deadlines directly to your device calendar (Apple Calendar, Google Calendar, and standard .ics calendars).</li>
+                <li><strong>Local-First Storage:</strong> Stores course schedules, progress, and custom notes on-device using encrypted local storage within the application sandbox.</li>
+                <li><strong>Course Code Sharing:</strong> Allows students to generate invite codes and QR links to share structured course schedules with classmates.</li>
             </ul>
 
             <h3>Frequently Asked Questions</h3>
 
             <div class="faq-item">
                 <h4>How do I import a course syllabus?</h4>
-                <p>Open CoursePal and tap the + button in the navigation bar or in the Syllabus tab. You can select a digital PDF syllabus document from your iOS Files app or use your camera to photograph a physical paper handout.</p>
+                <p>Open CoursePal and tap the + button in the navigation bar or in the Syllabus tab. You can select a digital PDF or Word (.docx) syllabus document from your device files.</p>
             </div>
 
             <div class="faq-item">
@@ -265,12 +281,12 @@
 
             <div class="faq-item">
                 <h4>Can CoursePal operate offline?</h4>
-                <p>Yes. CoursePal includes an offline parsing engine and supports full offline creation, reading tracking, assignment editing, and calendar scheduling without an active internet connection.</p>
+                <p>Yes. CoursePal runs a 100% on-device parsing engine and supports full offline creation, reading tracking, assignment editing, and calendar scheduling without an active internet connection.</p>
             </div>
 
             <div class="faq-item">
-                <h4>How does Apple Calendar and Reminders synchronization work?</h4>
-                <p>When you enable calendar permissions, CoursePal creates native iOS calendar events for assignment deadlines and reading targets. These synchronize across your iCloud-connected Apple devices.</p>
+                <h4>How does Calendar synchronization work?</h4>
+                <p>CoursePal exports native calendar events (.ics) and supports direct calendar integration for assignment deadlines and reading targets across your iOS and Android devices.</p>
             </div>
 
             <div class="faq-item">
@@ -280,22 +296,23 @@
 
             <div class="faq-item">
                 <h4>How do course sharing codes work?</h4>
-                <p>When a course is created, CoursePal generates a unique share code. Classmates can enter this code in the Invite tab to import the course schedule to their device.</p>
+                <p>When a course is created, CoursePal generates a shareable invite link and QR code. Classmates can enter this link or code in the Invite tab to import the course schedule to their device.</p>
             </div>
 
             <div class="faq-item">
                 <h4>How do I delete a course or erase my data?</h4>
-                <p>Deleting a course within the app immediately removes all associated records from your local database. Deleting the CoursePal application from your iOS device immediately and irrevocably erases 100% of stored data.</p>
+                <p>Deleting a course within the app immediately removes all associated records from your local database. Deleting the CoursePal application from your iOS or Android device immediately and irrevocably erases 100% of stored data.</p>
             </div>
 
             <div class="faq-item">
                 <h4>How do I contact support?</h4>
-                <p>For technical support, parsing inquiries, or feedback, email developer support directly at <a href="mailto:goloubov@gmail.com">goloubov@gmail.com</a>. Inquiries are answered within 24 to 48 business hours.</p>
+                <p>For technical support, parsing inquiries, or feedback, email developer support directly at <a href="mailto:support@coursepal.app">support@coursepal.app</a>. Inquiries are answered within 24 to 48 business hours.</p>
             </div>
 
             <div class="contact-block">
                 <p><strong>Developer & Support Contact:</strong> Viatcheslav Goloubov</p>
-                <p><strong>Email:</strong> <a href="mailto:goloubov@gmail.com">goloubov@gmail.com</a></p>
+                <p><strong>Support Email:</strong> <a href="mailto:support@coursepal.app">support@coursepal.app</a></p>
+                <p><strong>Privacy & Legal:</strong> <a href="mailto:privacy@coursepal.app">privacy@coursepal.app</a> • <a href="mailto:legal@coursepal.app">legal@coursepal.app</a></p>
                 <p><strong>Location:</strong> Vancouver, British Columbia, Canada</p>
             </div>
         </section>
@@ -308,8 +325,8 @@
                 <strong>AUTHORITATIVE SOURCE CLAUSE:</strong> CoursePal is an auxiliary organizational aid. The official syllabus distributed by your instructor, academic department, university, college, or school board, along with official university Learning Management Systems (including Canvas, Blackboard, Brightspace/D2L, Moodle, and Google Classroom) and direct instructor announcements, remain the <strong>SOLE AND FINAL AUTHORITATIVE SOURCES OF TRUTH</strong> for all course deadlines, exam dates, classroom locations, and grading policies.
             </div>
 
-            <h3>1. AI and Optical Character Recognition (OCR) Limitations</h3>
-            <p>Automated syllabus parsing, optical character recognition (OCR), and artificial intelligence language models operate on probabilistic algorithms. You explicitly understand and agree that:</p>
+            <h3>1. Automated Parsing and Optical Character Recognition (OCR) Limitations</h3>
+            <p>Automated syllabus parsing and optical character recognition (OCR) operate on deterministic text and layout algorithms. You explicitly understand and agree that:</p>
             <ul>
                 <li>The parser may occasionally miss, omit, misinterpret, or misattribute assignment due dates, quiz times, chapter page numbers, weight percentages, or course codes;</li>
                 <li>Errors may occur due to blurry document scans, complex multi-column formatting, or unannounced instructor revisions;</li>
@@ -335,7 +352,7 @@
             <p>Please read these Terms of Service ("Terms", "Agreement") carefully before using the CoursePal mobile application ("CoursePal", "the App", "we", "our", or "us"). CoursePal is developed and operated by Viatcheslav Goloubov, an independent software developer and sole proprietor based in Vancouver, British Columbia, Canada. By accessing or using the App, you agree to be bound by these Terms.</p>
 
             <h3>1. Eligibility and License Grant</h3>
-            <p>You must be at least 13 years of age (or the applicable age of digital consent in your jurisdiction) to use CoursePal. Subject to your compliance with these Terms, you are granted a limited, non-exclusive, non-transferable, non-sublicensable, revocable license to download, install, and use CoursePal on iOS devices that you own or control, solely for your personal, non-commercial academic study and organization.</p>
+            <p>You must be at least 13 years of age (or the applicable age of digital consent in your jurisdiction) to use CoursePal. Subject to your compliance with these Terms, you are granted a limited, non-exclusive, non-transferable, non-sublicensable, revocable license to download, install, and use CoursePal on iOS and Android devices that you own or control, solely for your personal, non-commercial academic study and organization.</p>
 
             <h3>2. Prohibited Conduct</h3>
             <p>You agree not to:</p>
@@ -369,34 +386,33 @@
         <!-- SECTION 4: PRIVACY POLICY -->
         <section id="privacy">
             <h2>Comprehensive Privacy Policy and Data Governance</h2>
-            <p>CoursePal ("we", "our", or "the App") is committed to protecting student and user privacy. This Privacy Policy describes how information is collected, processed, stored, and protected when you use CoursePal on iOS.</p>
+            <p>CoursePal ("we", "our", or "the App") is committed to protecting student and user privacy. This Privacy Policy describes how information is processed, stored, and protected when you use CoursePal on iOS and Android.</p>
 
             <div class="notice-box">
                 <strong>PRIVACY COMMITMENTS:</strong>
                 <ul style="margin-top: 6px; margin-bottom: 0;">
-                    <li><strong>100% Local-First Sandbox:</strong> Course data, notes, assignments, and reading progress are stored locally on your device via SwiftData.</li>
-                    <li><strong>Zero Foundation Model Training:</strong> Your private course documents and syllabi are never used to train public or foundation AI models.</li>
+                    <li><strong>100% Local-First Sandbox:</strong> Course data, notes, assignments, and reading progress are stored locally on your device in an encrypted on-device sandbox.</li>
+                    <li><strong>100% On-Device Document Parsing:</strong> Your private course documents and syllabi are parsed locally on your device without uploading files to external cloud servers.</li>
                     <li><strong>No Data Monetization:</strong> We do not sell, rent, license, or monetize your personal data to data brokers or advertising networks.</li>
                     <li><strong>No Tracking SDKs:</strong> Zero cross-app tracking SDKs, marketing beacons, or commercial analytics trackers.</li>
                 </ul>
             </div>
 
             <h3>1. Local-First On-Device Architecture</h3>
-            <p>CoursePal operates on-device. When you create courses, track reading progress, add homework tasks, or write study notes, that information is stored directly in your device's local SwiftData database, protected by Apple's hardware-level AES-256 data protection. We do not operate a centralized cloud database storing your private student records.</p>
+            <p>CoursePal operates on-device. When you create courses, track reading progress, add homework tasks, or write study notes, that information is stored directly in your device's local hardware-encrypted application sandbox on iOS and Android. We do not operate a centralized cloud database storing your private student records.</p>
 
-            <h3>2. AI Syllabus Processing and Zero Model Training Guarantee</h3>
-            <p>When you choose to parse a syllabus document using automated AI:</p>
+            <h3>2. 100% On-Device Syllabus Processing Guarantee</h3>
+            <p>When you choose to import a syllabus document:</p>
             <ul>
-                <li><strong>Transient Transmission:</strong> The document text or image is transmitted over encrypted HTTPS (TLS 1.3) directly to the Google Gemini API solely for real-time parsing into structured calendar milestones.</li>
-                <li><strong>Zero Model Training:</strong> Your private course syllabi, homework items, and schedules are never used to train public or foundation AI models.</li>
-                <li><strong>Voluntary:</strong> Automated syllabus parsing is completely optional. You may enter and manage courses manually offline at any time.</li>
+                <li><strong>100% Local Execution:</strong> Document text extraction, layout reconstruction, and schedule parsing run directly on your device without transmitting your course materials to external servers.</li>
+                <li><strong>Zero External Model Training:</strong> Your private course syllabi, homework items, and schedules remain exclusively in your local sandbox and are never transmitted for external model training.</li>
+                <li><strong>Voluntary & Offline-Ready:</strong> Automated syllabus parsing works offline, and you may enter and manage courses manually at any time.</li>
             </ul>
 
-            <h3>3. iOS Device Permissions Justifications</h3>
+            <h3>3. Device Permissions Justifications (iOS & Android)</h3>
             <ul>
-                <li><strong>Camera Access (NSCameraUsageDescription):</strong> Used solely when you capture a photo of a printed paper syllabus. Images are processed in-memory.</li>
-                <li><strong>Photo Library Access (NSPhotoLibraryUsageDescription):</strong> Used solely when you choose to import a syllabus image from your photo album.</li>
-                <li><strong>Calendar and Reminders Access (NSCalendarsUsageDescription / NSRemindersUsageDescription):</strong> Used solely to export assignment due dates and reading targets to your native iOS Calendar and Reminders when you explicitly request calendar sync.</li>
+                <li><strong>Document Picker & Scoped File Access:</strong> Used solely when you explicitly choose a syllabus PDF, DOCX, or image file to import.</li>
+                <li><strong>Calendar and Reminders Access:</strong> Used solely to export assignment due dates and reading targets to your native device calendar when you explicitly request calendar sync.</li>
             </ul>
 
             <h3>4. Multi-Jurisdictional Regulatory Compliance</h3>
@@ -408,10 +424,10 @@
             </ul>
 
             <h3>5. Data Retention and Right to Erasure</h3>
-            <p>You maintain 100% ownership and control over your academic data. Deleting a course permanently removes all associated records from your device. Deleting the CoursePal app from iOS immediately and irrevocably purges 100% of stored data from your device sandbox.</p>
+            <p>You maintain 100% ownership and control over your academic data. Deleting a course permanently removes all associated records from your device. Deleting the CoursePal app from your iOS or Android device immediately and irrevocably purges 100% of stored data from your device sandbox.</p>
 
             <h3>6. Privacy Contact</h3>
-            <p>For privacy-related questions or data governance inquiries, contact Viatcheslav Goloubov directly at <a href="mailto:goloubov@gmail.com">goloubov@gmail.com</a>.</p>
+            <p>For privacy-related questions or data governance inquiries, contact Viatcheslav Goloubov at <a href="mailto:privacy@coursepal.app">privacy@coursepal.app</a> or <a href="mailto:support@coursepal.app">support@coursepal.app</a>.</p>
         </section>
 
         <!-- SECTION 5: NON-AFFILIATION -->
@@ -419,13 +435,13 @@
             <h2>Institutional Non-Affiliation and System Disclaimers</h2>
 
             <h3>1. Trademark and Non-Affiliation Disclaimer</h3>
-            <p>CoursePal is an independent productivity application developed by Viatcheslav Goloubov. CoursePal is NOT affiliated with, endorsed by, sponsored by, or associated with Canvas (Instructure, Inc.), Blackboard (Anthology Inc.), Brightspace / D2L (Desire2Learn Corporation), Moodle (Moodle Pty Ltd), Google Classroom (Google LLC), Apple Inc., Microsoft Corporation, or any college, university, or educational institution. All product names, logos, and registered trademarks mentioned are property of their respective owners.</p>
+            <p>CoursePal is an independent productivity application developed by Viatcheslav Goloubov. CoursePal is NOT affiliated with, endorsed by, sponsored by, or associated with Canvas (Instructure, Inc.), Blackboard (Anthology Inc.), Brightspace / D2L (Desire2Learn Corporation), Moodle (Moodle Pty Ltd), Google Classroom (Google LLC), Apple Inc., Google LLC, Microsoft Corporation, or any college, university, or educational institution. All product names, logos, and registered trademarks mentioned are property of their respective owners.</p>
 
             <h3>2. Medical and Psychological Disclaimer</h3>
             <p>CoursePal is strictly an academic organization and time-management tool. It does not provide medical, psychiatric, psychological, or clinical diagnostic advice, assessments, or treatment plans. Any focus or sound features are provided solely for general non-clinical study focus.</p>
 
             <h3>3. Notification and Alarm Reliability Disclaimer</h3>
-            <p>While CoursePal can schedule reminders and calendar events, notifications rely on Apple iOS system scheduling, battery optimization settings, Focus modes, and device power state. CoursePal does not guarantee timely delivery or audible sounding of alarms, and users should not rely solely on software reminders for critical deadlines.</p>
+            <p>While CoursePal can schedule reminders and calendar events, notifications rely on iOS and Android system scheduling, battery optimization settings, Focus/Do Not Disturb modes, and device power state. CoursePal does not guarantee timely delivery or audible sounding of alarms, and users should not rely solely on software reminders for critical deadlines.</p>
         </section>
 
         <!-- SECTION 6: COPYRIGHT & DMCA -->
@@ -440,7 +456,7 @@
             
             <div class="legal-code">
                 Designated Copyright Agent: Viatcheslav Goloubov<br>
-                Email: goloubov@gmail.com<br>
+                Email: legal@coursepal.app<br>
                 Subject: DMCA / Copyright Notice - CoursePal<br>
                 Location: Vancouver, British Columbia, Canada
             </div>
@@ -453,34 +469,52 @@
         </footer>
     </div>
 
-    <!-- Smooth Scroll Link Handler -->
+    <!-- Sticky Nav Offset Sync & Smooth Scroll Link Handler -->
     <script>
-        window.addEventListener('DOMContentLoaded', function() {
-            var path = window.location.pathname.toLowerCase();
-            var hash = window.location.hash;
-            if (hash) {
-                var target = document.querySelector(hash);
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
-            } else if (path.includes('terms')) {
-                var target = document.getElementById('terms');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
-            } else if (path.includes('privacy')) {
-                var target = document.getElementById('privacy');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
-            } else if (path.includes('support')) {
-                var target = document.getElementById('support');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
-            } else if (path.includes('academic') || path.includes('notice')) {
-                var target = document.getElementById('academic-notice');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
-            } else if (path.includes('disclaimer')) {
-                var target = document.getElementById('disclaimers');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
-            } else if (path.includes('dmca') || path.includes('copyright')) {
-                var target = document.getElementById('dmca');
-                if (target) { setTimeout(function() { target.scrollIntoView({ behavior: 'smooth' }); }, 100); }
+        (function() {
+            function syncNavOffset() {
+                var navEl = document.querySelector('nav');
+                if (!navEl) return;
+                var h = Math.ceil(navEl.getBoundingClientRect().height);
+                document.documentElement.style.setProperty('--nav-offset', (h + 16) + 'px');
             }
-        });
+
+            window.addEventListener('DOMContentLoaded', function() {
+                syncNavOffset();
+                var navEl = document.querySelector('nav');
+                if (navEl && typeof ResizeObserver !== 'undefined') {
+                    new ResizeObserver(syncNavOffset).observe(navEl);
+                }
+                window.addEventListener('resize', syncNavOffset);
+
+                var path = window.location.pathname.toLowerCase();
+                var hash = window.location.hash;
+                var target = null;
+                if (hash && hash.length > 1) {
+                    var rawId = hash.slice(1);
+                    try { rawId = decodeURIComponent(rawId); } catch (e) {}
+                    target = document.getElementById(rawId);
+                } else if (path.includes('terms')) {
+                    target = document.getElementById('terms');
+                } else if (path.includes('privacy')) {
+                    target = document.getElementById('privacy');
+                } else if (path.includes('support')) {
+                    target = document.getElementById('support');
+                } else if (path.includes('academic') || path.includes('notice')) {
+                    target = document.getElementById('academic-notice');
+                } else if (path.includes('disclaimer')) {
+                    target = document.getElementById('disclaimers');
+                } else if (path.includes('dmca') || path.includes('copyright')) {
+                    target = document.getElementById('dmca');
+                }
+                if (target) {
+                    setTimeout(function() {
+                        syncNavOffset();
+                        target.scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
+                }
+            });
+        })();
     </script>
 </body>
 </html>
